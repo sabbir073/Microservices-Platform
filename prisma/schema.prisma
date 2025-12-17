@@ -1,0 +1,743 @@
+// EarnGPT Database Schema
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  SUPER_ADMIN
+  FINANCE_ADMIN
+  CONTENT_ADMIN
+  SUPPORT_ADMIN
+  MARKETING_ADMIN
+  MODERATOR
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  PENDING_VERIFICATION
+}
+
+enum KYCStatus {
+  NOT_SUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TaskType {
+  VIDEO
+  ARTICLE
+  QUIZ
+  SURVEY
+  SOCIAL
+  PROXY
+  OFFERWALL
+  CUSTOM
+}
+
+enum TaskStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  EXPIRED
+}
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  AUTO_APPROVED
+}
+
+enum TransactionType {
+  EARNING
+  WITHDRAWAL
+  BONUS
+  REFERRAL
+  PURCHASE
+  REFUND
+  PENALTY
+  GIFT
+  LOTTERY_WIN
+  CHECKIN
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  REJECTED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  BKASH
+  NAGAD
+  ROCKET
+  BINANCE
+  PAYPAL
+}
+
+enum PackageTier {
+  FREE
+  BASIC
+  STANDARD
+  PREMIUM
+}
+
+enum MarketplaceListingStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+  EXPIRED
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum LotteryStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  SYSTEM
+  TASK
+  WALLET
+  REFERRAL
+  PROMOTION
+  ACHIEVEMENT
+  LOTTERY
+  SOCIAL
+}
+model User {
+  id                String      @id @default(cuid())
+  email             String      @unique
+  emailVerified     DateTime?
+  phone             String?
+  phoneVerified     DateTime?
+  password          String?
+  name              String?
+  username          String?     @unique
+  avatar            String?
+  bio               String?
+  country           String?
+  timezone          String?     @default("UTC")
+  role              UserRole    @default(USER)
+  status            UserStatus  @default(PENDING_VERIFICATION)
+  pointsBalance     Int         @default(0)
+  cashBalance       Float       @default(0)
+  totalEarnings     Float       @default(0)
+  totalWithdrawals  Float       @default(0)
+  xp                Int         @default(0)
+  level             Int         @default(1)
+  streak            Int         @default(0)
+  lastCheckIn       DateTime?
+  packageTier       PackageTier @default(FREE)
+  packageExpiresAt  DateTime?
+  kycStatus         KYCStatus   @default(NOT_SUBMITTED)
+  kycSubmittedAt    DateTime?
+  kycApprovedAt     DateTime?
+  referralCode      String      @unique
+  referredById      String?
+  referredBy        User?       @relation("ReferralRelation", fields: [referredById], references: [id])
+  referrals         User[]      @relation("ReferralRelation")
+  theme             String      @default("dark")
+  language          String      @default("en")
+  notificationsEnabled Boolean  @default(true)
+  emailNotifications Boolean    @default(true)
+  pushNotifications  Boolean    @default(true)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  lastLoginAt       DateTime?
+  accounts          Account[]
+  sessions          Session[]
+  kycDocuments      KYCDocument[]
+  taskSubmissions   TaskSubmission[]
+  transactions      Transaction[]
+  withdrawals       Withdrawal[]
+  paymentMethods    UserPaymentMethod[]
+  notifications     Notification[]
+  marketplaceListings MarketplaceListing[]
+  marketplacePurchases MarketplacePurchase[]
+  courseEnrollments CourseEnrollment[]
+  lotteryTickets    LotteryTicket[]
+  posts             Post[]
+  comments          Comment[]
+  likes             Like[]
+  badges            UserBadge[]
+  achievements      UserAchievement[]
+  referralEarnings  ReferralEarning[]
+  pointGifts        PointGift[]         @relation("PointGiftSender")
+  receivedGifts     PointGift[]         @relation("PointGiftReceiver")
+  @@index([email])
+  @@index([referralCode])
+  @@index([referredById])
+  @@index([status])
+  @@index([role])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  type       String   @default("EMAIL")
+  @@unique([identifier, token])
+}
+
+model KYCDocument {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  documentType String
+  documentUrl String
+  status      KYCStatus @default(PENDING)
+  rejectionReason String?
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  @@index([userId])
+  @@index([status])
+}
+
+model Task {
+  id              String       @id @default(cuid())
+  title           String
+  description     String       @db.Text
+  instructions    String?      @db.Text
+  type            TaskType
+  status          TaskStatus   @default(ACTIVE)
+  pointsReward    Int
+  xpReward        Int          @default(0)
+  dailyLimit      Int?
+  totalLimit      Int?
+  completedCount  Int          @default(0)
+  minLevel        Int          @default(1)
+  requiredPackage PackageTier  @default(FREE)
+  countries       String[]     @default([])
+  contentUrl      String?
+  thumbnailUrl    String?
+  duration        Int?
+  questions       Json?
+  socialPlatform  String?
+  socialAction    String?
+  socialUrl       String?
+  proxyInstructions String?    @db.Text
+  startsAt        DateTime?
+  expiresAt       DateTime?
+  cooldownMinutes Int          @default(0)
+  autoApprove     Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  createdById     String?
+  submissions     TaskSubmission[]
+  categories      TaskCategory[]
+  @@index([status])
+  @@index([type])
+  @@index([requiredPackage])
+}
+
+model TaskCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  icon        String?
+  color       String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  tasks       Task[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TaskSubmission {
+  id            String           @id @default(cuid())
+  taskId        String
+  task          Task             @relation(fields: [taskId], references: [id])
+  userId        String
+  user          User             @relation(fields: [userId], references: [id])
+  status        SubmissionStatus @default(PENDING)
+  proof         String?          @db.Text
+  proofImages   String[]
+  answers       Json?
+  score         Int?
+  reviewedBy    String?
+  reviewedAt    DateTime?
+  rejectionReason String?
+  pointsEarned  Int?
+  xpEarned      Int?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  @@unique([taskId, userId, createdAt])
+  @@index([userId])
+  @@index([taskId])
+  @@index([status])
+}
+
+model Transaction {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id])
+  type        TransactionType
+  status      TransactionStatus @default(COMPLETED)
+  points      Int               @default(0)
+  amount      Float             @default(0)
+  description String?
+  reference   String?
+  metadata    Json?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Withdrawal {
+  id              String           @id @default(cuid())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id])
+  amount          Float
+  fee             Float            @default(0)
+  netAmount       Float
+  method          PaymentMethod
+  accountDetails  Json
+  status          WithdrawalStatus @default(PENDING)
+  processedBy     String?
+  processedAt     DateTime?
+  transactionId   String?
+  rejectionReason String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model UserPaymentMethod {
+  id            String        @id @default(cuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id])
+  method        PaymentMethod
+  accountNumber String
+  accountName   String?
+  isDefault     Boolean       @default(false)
+  isVerified    Boolean       @default(false)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  @@index([userId])
+}
+
+model Package {
+  id              String      @id @default(cuid())
+  tier            PackageTier @unique
+  name            String
+  description     String?
+  priceMonthly    Float
+  priceYearly     Float?
+  dailyTaskLimit  Int
+  withdrawalFee   Float       @default(0)
+  minWithdrawal   Float
+  features        String[]
+  referralBonus   Float       @default(0)
+  xpMultiplier    Float       @default(1)
+  isActive        Boolean     @default(true)
+  order           Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+}
+
+model Subscription {
+  id            String      @id @default(cuid())
+  userId        String
+  packageTier   PackageTier
+  startDate     DateTime    @default(now())
+  endDate       DateTime
+  amount        Float
+  paymentMethod PaymentMethod?
+  transactionId String?
+  isActive      Boolean     @default(true)
+  autoRenew     Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  @@index([userId])
+  @@index([isActive])
+}
+
+model ReferralLevel {
+  id              String   @id @default(cuid())
+  level           Int      @unique
+  commissionRate  Float
+  description     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ReferralEarning {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  referredUserId  String
+  level           Int
+  amount          Float
+  sourceType      String
+  sourceId        String?
+  createdAt       DateTime @default(now())
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model MarketplaceListing {
+  id              String                   @id @default(cuid())
+  sellerId        String
+  seller          User                     @relation(fields: [sellerId], references: [id])
+  title           String
+  description     String                   @db.Text
+  category        String
+  price           Float
+  currency        String                   @default("USD")
+  images          String[]
+  files           String[]
+  status          MarketplaceListingStatus @default(ACTIVE)
+  views           Int                      @default(0)
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  expiresAt       DateTime?
+  purchases       MarketplacePurchase[]
+  @@index([sellerId])
+  @@index([status])
+  @@index([category])
+}
+
+model MarketplacePurchase {
+  id          String             @id @default(cuid())
+  listingId   String
+  listing     MarketplaceListing @relation(fields: [listingId], references: [id])
+  buyerId     String
+  buyer       User               @relation(fields: [buyerId], references: [id])
+  amount      Float
+  fee         Float
+  sellerAmount Float
+  status      String             @default("COMPLETED")
+  createdAt   DateTime           @default(now())
+  @@index([listingId])
+  @@index([buyerId])
+}
+
+model Course {
+  id              String        @id @default(cuid())
+  title           String
+  description     String        @db.Text
+  thumbnail       String?
+  category        String
+  difficulty      String        @default("BEGINNER")
+  price           Float         @default(0)
+  isFree          Boolean       @default(false)
+  totalLessons    Int           @default(0)
+  totalDuration   Int           @default(0)
+  status          CourseStatus  @default(DRAFT)
+  enrollmentCount Int           @default(0)
+  rating          Float         @default(0)
+  createdById     String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  publishedAt     DateTime?
+  lessons         CourseLesson[]
+  enrollments     CourseEnrollment[]
+  @@index([status])
+  @@index([category])
+}
+
+model CourseLesson {
+  id          String   @id @default(cuid())
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  content     String?  @db.Text
+  videoUrl    String?
+  duration    Int      @default(0)
+  order       Int
+  isFree      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([courseId])
+}
+
+model CourseEnrollment {
+  id              String   @id @default(cuid())
+  courseId        String
+  course          Course   @relation(fields: [courseId], references: [id])
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  progress        Int      @default(0)
+  completedLessons String[] @default([])
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@unique([courseId, userId])
+  @@index([userId])
+}
+
+model Lottery {
+  id              String        @id @default(cuid())
+  title           String
+  description     String?
+  startDate       DateTime
+  endDate         DateTime
+  drawDate        DateTime
+  ticketPrice     Int
+  maxTickets      Int?
+  ticketsSold     Int           @default(0)
+  maxTicketsPerUser Int         @default(10)
+  prizes          Json
+  status          LotteryStatus @default(UPCOMING)
+  winningNumbers  String?
+  winners         Json?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  tickets         LotteryTicket[]
+  @@index([status])
+  @@index([drawDate])
+}
+
+model LotteryTicket {
+  id          String   @id @default(cuid())
+  lotteryId   String
+  lottery     Lottery  @relation(fields: [lotteryId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  ticketNumber String
+  numbers     String?
+  isWinner    Boolean  @default(false)
+  prizeAmount Int?
+  createdAt   DateTime @default(now())
+  @@index([lotteryId])
+  @@index([userId])
+}
+
+model Post {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  content     String    @db.Text
+  images      String[]
+  isPublic    Boolean   @default(true)
+  isPinned    Boolean   @default(false)
+  likesCount  Int       @default(0)
+  commentsCount Int     @default(0)
+  sharesCount Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  comments    Comment[]
+  likes       Like[]
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model Comment {
+  id          String   @id @default(cuid())
+  postId      String
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  content     String
+  parentId    String?
+  parent      Comment? @relation("CommentReplies", fields: [parentId], references: [id])
+  replies     Comment[] @relation("CommentReplies")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  @@index([postId])
+  @@index([userId])
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+  @@unique([postId, userId])
+  @@index([postId])
+}
+
+model Badge {
+  id          String      @id @default(cuid())
+  name        String      @unique
+  description String?
+  icon        String?
+  color       String?
+  requirement String
+  xpReward    Int         @default(0)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  users       UserBadge[]
+}
+
+model UserBadge {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id])
+  earnedAt  DateTime @default(now())
+  @@unique([userId, badgeId])
+  @@index([userId])
+}
+
+model Achievement {
+  id          String            @id @default(cuid())
+  name        String            @unique
+  description String?
+  icon        String?
+  type        String
+  threshold   Int
+  pointsReward Int              @default(0)
+  xpReward    Int               @default(0)
+  isActive    Boolean           @default(true)
+  createdAt   DateTime          @default(now())
+  users       UserAchievement[]
+}
+
+model UserAchievement {
+  id            String      @id @default(cuid())
+  userId        String
+  user          User        @relation(fields: [userId], references: [id])
+  achievementId String
+  achievement   Achievement @relation(fields: [achievementId], references: [id])
+  progress      Int         @default(0)
+  isCompleted   Boolean     @default(false)
+  completedAt   DateTime?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  @@unique([userId, achievementId])
+  @@index([userId])
+}
+
+model PointGift {
+  id          String   @id @default(cuid())
+  senderId    String
+  sender      User     @relation("PointGiftSender", fields: [senderId], references: [id])
+  receiverId  String
+  receiver    User     @relation("PointGiftReceiver", fields: [receiverId], references: [id])
+  points      Int
+  message     String?
+  createdAt   DateTime @default(now())
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id])
+  type        NotificationType
+  title       String
+  message     String
+  data        Json?
+  isRead      Boolean          @default(false)
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+  @@index([userId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+model SystemSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  category  String   @default("general")
+  description String?
+  updatedAt DateTime @updatedAt
+  @@index([category])
+}
+
+model OfferwallConfig {
+  id          String   @id @default(cuid())
+  provider    String   @unique
+  isActive    Boolean  @default(false)
+  apiKey      String?
+  secretKey   String?
+  callbackUrl String?
+  config      Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model VideoAdConfig {
+  id          String   @id @default(cuid())
+  provider    String   @unique
+  isActive    Boolean  @default(false)
+  appId       String?
+  adUnitId    String?
+  config      Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  entity      String
+  entityId    String?
+  oldData     Json?
+  newData     Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+}
