@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import {
+  sendPushToUsers,
+  sendPushToAll,
+  isOneSignalConfigured,
+} from "@/lib/onesignal";
 
 interface SendNotificationBody {
   type: string;
@@ -10,6 +15,9 @@ interface SendNotificationBody {
   target: "all" | "package" | "specific";
   packageFilter?: string[];
   userIds?: string[];
+  sendPush?: boolean;
+  url?: string;
+  data?: Record<string, unknown>;
 }
 
 export async function POST(request: NextRequest) {
@@ -26,7 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body: SendNotificationBody = await request.json();
-    const { type, title, message, target, packageFilter, userIds } = body;
+    const { type, title, message, target, packageFilter, userIds, sendPush, url, data } = body;
 
     // Validate required fields
     if (!type || !title || !message || !target) {
@@ -86,8 +94,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create notifications for all target users
-    // Using createMany for better performance
+    // Create in-app notifications for all target users
     await prisma.notification.createMany({
       data: targetUserIds.map((userId) => ({
         userId,
@@ -98,14 +105,45 @@ export async function POST(request: NextRequest) {
           sentBy: session.user.id,
           sentAt: new Date().toISOString(),
           targetType: target,
+          ...data,
         },
       })),
     });
+
+    // Send push notifications via OneSignal if requested
+    let pushResult = null;
+    if (sendPush) {
+      if (!isOneSignalConfigured()) {
+        pushResult = { success: false, error: "OneSignal not configured" };
+      } else if (target === "all") {
+        pushResult = await sendPushToAll(
+          title,
+          message,
+          { type, ...data },
+          url
+        );
+      } else {
+        pushResult = await sendPushToUsers(
+          targetUserIds,
+          title,
+          message,
+          { type, ...data },
+          url
+        );
+      }
+    }
 
     return NextResponse.json({
       success: true,
       recipientCount: targetUserIds.length,
       message: `Notification sent to ${targetUserIds.length} user(s)`,
+      push: sendPush
+        ? {
+            sent: pushResult?.success || false,
+            recipients: pushResult?.recipients,
+            error: pushResult?.error,
+          }
+        : null,
     });
   } catch (error) {
     console.error("Error sending notification:", error);

@@ -1,0 +1,263 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { generateTaskQuiz, isGeminiConfigured } from "@/lib/gemini";
+import { TaskType, TaskStatus } from "@/generated/prisma";
+
+// GET /api/tasks/quiz - Get quiz for a specific task or generate new one
+export async function GET(request: NextRequest) {
+  try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const taskId = searchParams.get("taskId");
+
+    if (!taskId) {
+      return NextResponse.json(
+        { error: "Task ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Get the task
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+    });
+
+    if (!task) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+
+    // Check if task is a quiz type
+    if (task.type !== TaskType.QUIZ) {
+      return NextResponse.json(
+        { error: "This task is not a quiz" },
+        { status: 400 }
+      );
+    }
+
+    // Check if task is active
+    if (task.status !== TaskStatus.ACTIVE) {
+      return NextResponse.json(
+        { error: "This task is not available" },
+        { status: 400 }
+      );
+    }
+
+    // Check if task has pre-defined questions
+    if (task.questions) {
+      return NextResponse.json({
+        taskId: task.id,
+        title: task.title,
+        description: task.description,
+        questions: task.questions,
+        pointsReward: task.pointsReward,
+        xpReward: task.xpReward,
+        isAIGenerated: false,
+      });
+    }
+
+    // Generate questions using AI if not pre-defined
+    if (!isGeminiConfigured()) {
+      return NextResponse.json(
+        { error: "Quiz generation is not available" },
+        { status: 503 }
+      );
+    }
+
+    const result = await generateTaskQuiz(
+      task.title,
+      task.description,
+      task.contentUrl || undefined
+    );
+
+    if (!result.success || !result.questions) {
+      return NextResponse.json(
+        { error: result.error || "Failed to generate quiz" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      taskId: task.id,
+      title: task.title,
+      description: task.description,
+      questions: result.questions,
+      pointsReward: task.pointsReward,
+      xpReward: task.xpReward,
+      isAIGenerated: true,
+    });
+  } catch (error) {
+    console.error("Error getting quiz:", error);
+    return NextResponse.json(
+      { error: "Failed to get quiz" },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/tasks/quiz - Submit quiz answers
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const { taskId, answers, questions } = body;
+
+    if (!taskId || !answers || !questions) {
+      return NextResponse.json(
+        { error: "Task ID, answers, and questions are required" },
+        { status: 400 }
+      );
+    }
+
+    // Get the task
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+    });
+
+    if (!task) {
+      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+    }
+
+    // Check if task is a quiz type
+    if (task.type !== TaskType.QUIZ) {
+      return NextResponse.json(
+        { error: "This task is not a quiz" },
+        { status: 400 }
+      );
+    }
+
+    // Check if user already submitted today
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const existingSubmission = await prisma.taskSubmission.findFirst({
+      where: {
+        taskId,
+        userId: session.user.id,
+        createdAt: { gte: todayStart },
+      },
+    });
+
+    if (existingSubmission) {
+      return NextResponse.json(
+        { error: "You have already completed this quiz today" },
+        { status: 400 }
+      );
+    }
+
+    // Calculate score
+    let correctAnswers = 0;
+    const totalQuestions = questions.length;
+    const results: Array<{
+      questionId: number;
+      isCorrect: boolean;
+      userAnswer: number;
+      correctAnswer: number;
+    }> = [];
+
+    for (let i = 0; i < questions.length; i++) {
+      const question = questions[i];
+      const userAnswer = answers[i];
+      const isCorrect = userAnswer === question.correctAnswer;
+
+      if (isCorrect) {
+        correctAnswers++;
+      }
+
+      results.push({
+        questionId: question.id,
+        isCorrect,
+        userAnswer,
+        correctAnswer: question.correctAnswer,
+      });
+    }
+
+    const score = Math.round((correctAnswers / totalQuestions) * 100);
+    const passed = score >= 70; // 70% passing threshold
+
+    // Calculate rewards based on score
+    const pointsEarned = passed ? Math.round(task.pointsReward * (score / 100)) : 0;
+    const xpEarned = passed ? Math.round(task.xpReward * (score / 100)) : 0;
+
+    // Create submission
+    const submission = await prisma.taskSubmission.create({
+      data: {
+        taskId,
+        userId: session.user.id,
+        status: passed ? "AUTO_APPROVED" : "REJECTED",
+        answers: {
+          questions: questions.map((q: { id: number; question: string }) => q.question),
+          userAnswers: answers,
+          results,
+        },
+        score,
+        pointsEarned,
+        xpEarned,
+      },
+    });
+
+    // If passed, update user balance and XP
+    if (passed) {
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: session.user.id },
+          data: {
+            pointsBalance: { increment: pointsEarned },
+            xp: { increment: xpEarned },
+            totalEarnings: { increment: pointsEarned / 1000 },
+          },
+        }),
+        prisma.task.update({
+          where: { id: taskId },
+          data: { completedCount: { increment: 1 } },
+        }),
+        prisma.transaction.create({
+          data: {
+            userId: session.user.id,
+            type: "EARNING",
+            status: "COMPLETED",
+            points: pointsEarned,
+            amount: pointsEarned / 1000,
+            description: `Quiz completed: ${task.title} (Score: ${score}%)`,
+            reference: `quiz_${submission.id}`,
+            metadata: { taskId, score, correctAnswers, totalQuestions },
+          },
+        }),
+      ]);
+    }
+
+    return NextResponse.json({
+      submissionId: submission.id,
+      score,
+      correctAnswers,
+      totalQuestions,
+      passed,
+      pointsEarned,
+      xpEarned,
+      results: results.map((r, i) => ({
+        ...r,
+        question: questions[i].question,
+        explanation: questions[i].explanation,
+      })),
+      message: passed
+        ? `Congratulations! You scored ${score}% and earned ${pointsEarned} points!`
+        : `You scored ${score}%. You need at least 70% to pass. Try again tomorrow!`,
+    });
+  } catch (error) {
+    console.error("Error submitting quiz:", error);
+    return NextResponse.json(
+      { error: "Failed to submit quiz" },
+      { status: 500 }
+    );
+  }
+}

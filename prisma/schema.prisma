@@ -469,6 +469,7 @@ model MarketplacePurchase {
   sellerAmount Float
   status      String             @default("COMPLETED")
   createdAt   DateTime           @default(now())
+  disputes    MarketplaceDispute[]
   @@index([listingId])
   @@index([buyerId])
 }
@@ -740,4 +741,60 @@ model AuditLog {
   @@index([userId])
   @@index([entity])
   @@index([createdAt])
+}
+
+enum DisputeStatus {
+  OPEN
+  IN_REVIEW
+  RESOLVED_BUYER
+  RESOLVED_SELLER
+  CLOSED
+  ESCALATED
+}
+
+enum DisputeReason {
+  ITEM_NOT_RECEIVED
+  ITEM_NOT_AS_DESCRIBED
+  PAYMENT_ISSUE
+  SELLER_UNRESPONSIVE
+  BUYER_UNRESPONSIVE
+  QUALITY_ISSUE
+  OTHER
+}
+
+model MarketplaceDispute {
+  id              String        @id @default(cuid())
+  purchaseId      String
+  purchase        MarketplacePurchase @relation(fields: [purchaseId], references: [id])
+  initiatorId     String        // User who initiated the dispute (buyer or seller)
+  initiatorType   String        @default("BUYER") // BUYER or SELLER
+  reason          DisputeReason
+  description     String        @db.Text
+  evidence        String[]      // Array of evidence image/file URLs
+  status          DisputeStatus @default(OPEN)
+  resolution      String?       @db.Text
+  resolvedAmount  Float?        // Amount returned to buyer if any
+  assignedAdminId String?
+  adminNotes      String?       @db.Text
+  messages        DisputeMessage[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  resolvedAt      DateTime?
+  @@index([purchaseId])
+  @@index([initiatorId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model DisputeMessage {
+  id          String             @id @default(cuid())
+  disputeId   String
+  dispute     MarketplaceDispute @relation(fields: [disputeId], references: [id], onDelete: Cascade)
+  senderId    String
+  senderType  String             @default("USER") // USER, ADMIN, SYSTEM
+  message     String             @db.Text
+  attachments String[]
+  createdAt   DateTime           @default(now())
+  @@index([disputeId])
+  @@index([senderId])
 }

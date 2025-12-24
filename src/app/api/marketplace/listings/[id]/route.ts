@@ -1,0 +1,207 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { MarketplaceListingStatus } from "@/generated/prisma";
+
+// GET /api/marketplace/listings/:id - Get listing details
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+    const { id } = await params;
+
+    const listing = await prisma.marketplaceListing.findUnique({
+      where: { id },
+      include: {
+        seller: {
+          select: {
+            id: true,
+            name: true,
+            avatar: true,
+            level: true,
+            createdAt: true,
+            _count: {
+              select: { marketplaceListings: true },
+            },
+          },
+        },
+        _count: {
+          select: { purchases: true },
+        },
+      },
+    });
+
+    if (!listing) {
+      return NextResponse.json(
+        { error: "Listing not found" },
+        { status: 404 }
+      );
+    }
+
+    // Only show non-active listings to the owner
+    if (
+      listing.status !== MarketplaceListingStatus.ACTIVE &&
+      listing.sellerId !== session?.user?.id
+    ) {
+      return NextResponse.json(
+        { error: "Listing not found" },
+        { status: 404 }
+      );
+    }
+
+    // Increment view count
+    await prisma.marketplaceListing.update({
+      where: { id },
+      data: { views: { increment: 1 } },
+    });
+
+    return NextResponse.json({
+      listing: {
+        id: listing.id,
+        title: listing.title,
+        description: listing.description,
+        images: listing.images,
+        files: listing.files,
+        category: listing.category,
+        price: listing.price,
+        currency: listing.currency,
+        status: listing.status,
+        views: listing.views + 1,
+        salesCount: listing._count.purchases,
+        createdAt: listing.createdAt,
+        expiresAt: listing.expiresAt,
+      },
+      seller: {
+        id: listing.seller.id,
+        name: listing.seller.name,
+        avatar: listing.seller.avatar,
+        level: listing.seller.level,
+        memberSince: listing.seller.createdAt,
+        totalListings: listing.seller._count.marketplaceListings,
+      },
+      isOwner: session?.user?.id === listing.sellerId,
+    });
+  } catch (error) {
+    console.error("Error fetching listing:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch listing" },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT /api/marketplace/listings/:id - Update listing
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+    const body = await request.json();
+
+    // Get listing and verify ownership
+    const listing = await prisma.marketplaceListing.findUnique({
+      where: { id },
+    });
+
+    if (!listing) {
+      return NextResponse.json(
+        { error: "Listing not found" },
+        { status: 404 }
+      );
+    }
+
+    if (listing.sellerId !== session.user.id) {
+      return NextResponse.json(
+        { error: "Not authorized" },
+        { status: 403 }
+      );
+    }
+
+    // Extract allowed update fields
+    const { title, description, images, files, price, category } = body;
+
+    // Update listing
+    const updatedListing = await prisma.marketplaceListing.update({
+      where: { id },
+      data: {
+        ...(title !== undefined && { title }),
+        ...(description !== undefined && { description }),
+        ...(images !== undefined && { images }),
+        ...(files !== undefined && { files }),
+        ...(price !== undefined && { price }),
+        ...(category !== undefined && { category }),
+      },
+    });
+
+    return NextResponse.json({
+      listing: updatedListing,
+      message: "Listing updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating listing:", error);
+    return NextResponse.json(
+      { error: "Failed to update listing" },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/marketplace/listings/:id - Delete listing
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await auth();
+
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { id } = await params;
+
+    // Get listing and verify ownership
+    const listing = await prisma.marketplaceListing.findUnique({
+      where: { id },
+    });
+
+    if (!listing) {
+      return NextResponse.json(
+        { error: "Listing not found" },
+        { status: 404 }
+      );
+    }
+
+    if (listing.sellerId !== session.user.id) {
+      return NextResponse.json(
+        { error: "Not authorized" },
+        { status: 403 }
+      );
+    }
+
+    // Mark as cancelled instead of hard delete
+    await prisma.marketplaceListing.update({
+      where: { id },
+      data: { status: MarketplaceListingStatus.CANCELLED },
+    });
+
+    return NextResponse.json({
+      message: "Listing deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting listing:", error);
+    return NextResponse.json(
+      { error: "Failed to delete listing" },
+      { status: 500 }
+    );
+  }
+}
