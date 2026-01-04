@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "npx prisma generate && next build",
-    "postinstall": "npx prisma generate",
+    "prisma:generate": "npx prisma generate && node scripts/post-prisma-generate.js",
+    "build": "npm run prisma:generate && next build",
+    "postinstall": "npm run prisma:generate",
     "start": "next start",
     "lint": "eslint",
     "db:seed": "npx tsx prisma/seed.ts",
@@ -36,7 +37,6 @@
     "next": "16.0.10",
     "next-auth": "^5.0.0-beta.30",
     "nodemailer": "^7.0.11",
-    "prisma": "^7.1.0",
     "react": "19.2.1",
     "react-day-picker": "^9.12.0",
     "react-dom": "19.2.1",
@@ -47,6 +47,9 @@
     "vaul": "^1.1.2",
     "zod": "^4.2.0",
     "zustand": "^5.0.9"
+  },
+  "overrides": {
+    "@auth/core": "0.41.1"
   },
   "devDependencies": {
     "@prisma/adapter-pg": "^7.2.0",
@@ -61,6 +64,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.0.10",
     "pg": "^8.16.3",
+    "prisma": "^7.2.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "typescript": "^5"
