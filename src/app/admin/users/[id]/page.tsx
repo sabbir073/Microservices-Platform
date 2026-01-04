@@ -8,11 +8,7 @@ import {
   MapPin,
   Calendar,
   Clock,
-  Shield,
   CheckCircle,
-  XCircle,
-  Ban,
-  Edit,
   Wallet,
   Star,
   Trophy,
@@ -21,12 +17,11 @@ import {
   FileCheck,
   Activity,
   Package,
-  Plus,
-  Minus,
 } from "lucide-react";
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import { hasPermission, ROLE_CONFIG, type UserRole } from "@/lib/rbac";
+import { UserDetailActions, AdjustBalanceButton } from "@/components/admin/user-detail-actions";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -184,23 +179,14 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
             Manage user account and view activity
           </p>
         </div>
-        <div className="flex gap-2">
-          {hasPermission(adminRole, "users.edit") && (
-            <Link
-              href={`/admin/users/${id}/edit`}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              <Edit className="w-4 h-4" />
-              Edit
-            </Link>
-          )}
-          {hasPermission(adminRole, "users.ban") && user.status !== "BANNED" && (
-            <button className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/20 transition-colors">
-              <Ban className="w-4 h-4" />
-              Ban User
-            </button>
-          )}
-        </div>
+        <UserDetailActions
+          userId={id}
+          userName={user.name}
+          userEmail={user.email}
+          userStatus={user.status}
+          canEdit={hasPermission(adminRole, "users.edit")}
+          canBan={hasPermission(adminRole, "users.ban")}
+        />
       </div>
 
       {/* User Profile Card */}
@@ -293,16 +279,10 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
             <span className="text-xs text-gray-500">Points</span>
           </div>
           <p className="text-xl font-bold text-white">{user.pointsBalance.toLocaleString()}</p>
-          {hasPermission(adminRole, "users.adjust_balance") && (
-            <div className="flex gap-1 mt-1">
-              <button className="p-1 text-gray-400 hover:text-emerald-400 transition-colors" title="Add Points">
-                <Plus className="w-3 h-3" />
-              </button>
-              <button className="p-1 text-gray-400 hover:text-red-400 transition-colors" title="Deduct Points">
-                <Minus className="w-3 h-3" />
-              </button>
-            </div>
-          )}
+          <div className="flex gap-1 mt-1">
+            <AdjustBalanceButton userId={id} type="points" action="add" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="points" action="deduct" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+          </div>
         </div>
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -310,16 +290,10 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
             <span className="text-xs text-gray-500">Cash Balance</span>
           </div>
           <p className="text-xl font-bold text-white">${user.cashBalance.toFixed(2)}</p>
-          {hasPermission(adminRole, "users.adjust_balance") && (
-            <div className="flex gap-1 mt-1">
-              <button className="p-1 text-gray-400 hover:text-emerald-400 transition-colors" title="Add Cash">
-                <Plus className="w-3 h-3" />
-              </button>
-              <button className="p-1 text-gray-400 hover:text-red-400 transition-colors" title="Deduct Cash">
-                <Minus className="w-3 h-3" />
-              </button>
-            </div>
-          )}
+          <div className="flex gap-1 mt-1">
+            <AdjustBalanceButton userId={id} type="cash" action="add" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="cash" action="deduct" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+          </div>
         </div>
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <div className="flex items-center gap-2 mb-2">

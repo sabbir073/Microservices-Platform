@@ -8,10 +8,6 @@ import {
   CheckCircle,
   Clock,
   Ban,
-  Eye,
-  Edit,
-  Download,
-  Plus,
   FileCheck,
   ChevronLeft,
   ChevronRight,
@@ -20,6 +16,7 @@ import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { hasPermission, ROLE_CONFIG, type UserRole } from "@/lib/rbac";
 import { Prisma } from "@/generated/prisma/client";
+import { UserActions, ExportUsersButton, AddUserButton } from "@/components/admin/user-actions";
 
 interface PageProps {
   searchParams: Promise<{
@@ -149,16 +146,8 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
               KYC Queue ({pendingKycCount})
             </Link>
           )}
-          <button className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors">
-            <Download className="w-4 h-4" />
-            Export
-          </button>
-          {hasPermission(userRole, "users.edit") && (
-            <button className="inline-flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">
-              <Plus className="w-4 h-4" />
-              Add User
-            </button>
-          )}
+          <ExportUsersButton queryParams={`status=${params.status || ""}&role=${params.role || ""}&kyc=${params.kyc || ""}&package=${params.package || ""}`} />
+          <AddUserButton canEdit={hasPermission(userRole, "users.edit")} />
         </div>
       </div>
 
@@ -415,32 +404,17 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
                       </div>
                     </td>
                     <td className="py-4 px-6">
-                      <div className="flex items-center gap-2">
-                        <Link
-                          href={`/admin/users/${user.id}`}
-                          className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                          title="View Details"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Link>
-                        {hasPermission(userRole, "users.edit") && (
-                          <Link
-                            href={`/admin/users/${user.id}/edit`}
-                            className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                            title="Edit User"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Link>
-                        )}
-                        {hasPermission(userRole, "users.ban") && user.status !== "BANNED" && (
-                          <button
-                            className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-800 rounded-lg transition-colors"
-                            title="Ban User"
-                          >
-                            <Ban className="w-4 h-4" />
-                          </button>
-                        )}
-                      </div>
+                      <UserActions
+                        user={{
+                          id: user.id,
+                          name: user.name,
+                          email: user.email,
+                          status: user.status,
+                          role: user.role,
+                        }}
+                        canEdit={hasPermission(userRole, "users.edit")}
+                        canBan={hasPermission(userRole, "users.ban")}
+                      />
                     </td>
                   </tr>
                 ))

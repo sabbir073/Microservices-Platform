@@ -6,11 +6,7 @@ import {
   Search,
   Filter,
   Plus,
-  Eye,
-  Edit,
   Pause,
-  Play,
-  Trash2,
   Video,
   FileText,
   HelpCircle,
@@ -23,13 +19,13 @@ import {
   ChevronRight,
   Clock,
   CheckCircle,
-  XCircle,
   Star,
 } from "lucide-react";
 import Link from "next/link";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Prisma } from "@/generated/prisma/client";
+import { TaskActions } from "@/components/admin/task-actions";
 
 interface PageProps {
   searchParams: Promise<{
@@ -358,49 +354,16 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
                   <span className="text-xs text-gray-500">
                     Created {formatDistanceToNow(task.createdAt, { addSuffix: true })}
                   </span>
-                  <div className="flex items-center gap-1">
-                    <Link
-                      href={`/admin/tasks/${task.id}`}
-                      className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                      title="View"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Link>
-                    {canEdit && (
-                      <>
-                        <Link
-                          href={`/admin/tasks/${task.id}/edit`}
-                          className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </Link>
-                        {task.status === "ACTIVE" ? (
-                          <button
-                            className="p-1.5 text-gray-400 hover:text-amber-400 hover:bg-gray-800 rounded-lg transition-colors"
-                            title="Pause"
-                          >
-                            <Pause className="w-4 h-4" />
-                          </button>
-                        ) : task.status === "PAUSED" ? (
-                          <button
-                            className="p-1.5 text-gray-400 hover:text-emerald-400 hover:bg-gray-800 rounded-lg transition-colors"
-                            title="Resume"
-                          >
-                            <Play className="w-4 h-4" />
-                          </button>
-                        ) : null}
-                      </>
-                    )}
-                    {canDelete && (
-                      <button
-                        className="p-1.5 text-gray-400 hover:text-red-400 hover:bg-gray-800 rounded-lg transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
+                  <TaskActions
+                    task={{
+                      id: task.id,
+                      title: task.title,
+                      status: task.status,
+                    }}
+                    canEdit={canEdit}
+                    canDelete={canDelete}
+                    canCreate={canCreate}
+                  />
                 </div>
               </div>
             );

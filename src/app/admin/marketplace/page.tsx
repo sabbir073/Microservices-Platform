@@ -10,7 +10,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
-  AlertTriangle,
   CheckCircle,
   XCircle,
   Clock,
@@ -18,6 +17,7 @@ import {
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { CreateListingButton } from "@/components/admin/marketplace-actions";
 
 interface PageProps {
   searchParams: Promise<{
@@ -140,11 +140,14 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white">Marketplace Management</h1>
-        <p className="text-gray-400 mt-1">
-          Manage listings, sales, and marketplace activity
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Marketplace Management</h1>
+          <p className="text-gray-400 mt-1">
+            Manage listings, sales, and marketplace activity
+          </p>
+        </div>
+        <CreateListingButton canManage={canManage} />
       </div>
 
       {/* Stats */}

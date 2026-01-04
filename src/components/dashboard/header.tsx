@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Menu,
   Bell,
@@ -22,6 +23,8 @@ import {
   Store,
   Ticket,
   MessageSquare,
+  FileText,
+  Check,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -37,6 +40,15 @@ interface HeaderProps {
   };
 }
 
+interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
 const mobileNavigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Tasks", href: "/tasks", icon: ListTodo },
@@ -48,16 +60,76 @@ const mobileNavigation = [
   { name: "Marketplace", href: "/marketplace", icon: Store },
   { name: "Lottery", href: "/lottery", icon: Ticket },
   { name: "Social", href: "/social", icon: MessageSquare },
+  { name: "Notifications", href: "/notifications", icon: Bell },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
 export function Header({ user }: HeaderProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [walletBalance, setWalletBalance] = useState(0);
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Fetch notifications and wallet balance
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch notifications
+        const notifRes = await fetch("/api/notifications?limit=5&unread=true");
+        if (notifRes.ok) {
+          const notifData = await notifRes.json();
+          setNotifications(notifData.notifications || []);
+          setUnreadCount(notifData.unreadCount || 0);
+        }
+
+        // Fetch wallet balance
+        const walletRes = await fetch("/api/wallet");
+        if (walletRes.ok) {
+          const walletData = await walletRes.json();
+          setWalletBalance(walletData.pointsBalance || 0);
+        }
+      } catch (error) {
+        console.error("Error fetching header data:", error);
+      }
+    };
+
+    fetchData();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSignOut = () => {
     signOut({ callbackUrl: "/login" });
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markAll: true }),
+      });
+      setUnreadCount(0);
+      setNotifications(notifications.map((n) => ({ ...n, isRead: true })));
+    } catch (error) {
+      console.error("Error marking notifications as read:", error);
+    }
+  };
+
+  const formatTimeAgo = (date: string) => {
+    const now = new Date();
+    const then = new Date(date);
+    const seconds = Math.floor((now.getTime() - then.getTime()) / 1000);
+
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
   };
 
   return (
@@ -93,25 +165,121 @@ export function Header({ user }: HeaderProps) {
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2 sm:gap-4">
+            {/* View Reports Button (desktop) */}
+            <Link
+              href="/wallet"
+              className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+            >
+              <FileText className="w-4 h-4" />
+              <span className="text-sm">Reports</span>
+            </Link>
+
             {/* Wallet Balance */}
             <Link
               href="/wallet"
               className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 hover:border-gray-700 transition-colors"
             >
               <Wallet className="w-4 h-4 text-indigo-400" />
-              <span className="text-sm font-medium text-white">0 PTS</span>
+              <span className="text-sm font-medium text-white">
+                {walletBalance.toLocaleString()} PTS
+              </span>
             </Link>
 
             {/* Notifications */}
-            <button className="relative p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setIsNotificationOpen(!isNotificationOpen);
+                  setIsProfileOpen(false);
+                }}
+                className="relative p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center px-1 text-xs font-bold text-white bg-red-500 rounded-full">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Dropdown */}
+              {isNotificationOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsNotificationOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-80 rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+                      <h3 className="text-sm font-semibold text-white">
+                        Notifications
+                      </h3>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={handleMarkAllRead}
+                          className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                        >
+                          <Check className="w-3 h-3" />
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-80 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-gray-500">
+                          <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No notifications</p>
+                        </div>
+                      ) : (
+                        notifications.map((notif) => (
+                          <Link
+                            key={notif.id}
+                            href="/notifications"
+                            onClick={() => setIsNotificationOpen(false)}
+                            className={cn(
+                              "block px-4 py-3 border-b border-gray-800 hover:bg-gray-800/50 transition-colors",
+                              !notif.isRead && "bg-indigo-500/5"
+                            )}
+                          >
+                            <div className="flex items-start gap-3">
+                              {!notif.isRead && (
+                                <span className="w-2 h-2 mt-1.5 bg-indigo-500 rounded-full flex-shrink-0" />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-white truncate">
+                                  {notif.title}
+                                </p>
+                                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                                  {notif.message}
+                                </p>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  {formatTimeAgo(notif.createdAt)}
+                                </p>
+                              </div>
+                            </div>
+                          </Link>
+                        ))
+                      )}
+                    </div>
+                    <Link
+                      href="/notifications"
+                      onClick={() => setIsNotificationOpen(false)}
+                      className="block px-4 py-3 text-center text-sm text-indigo-400 hover:text-indigo-300 border-t border-gray-800"
+                    >
+                      View all notifications
+                    </Link>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Profile Dropdown */}
             <div className="relative">
               <button
-                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                onClick={() => {
+                  setIsProfileOpen(!isProfileOpen);
+                  setIsNotificationOpen(false);
+                }}
                 className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
               >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
@@ -144,6 +312,14 @@ export function Header({ user }: HeaderProps) {
                       >
                         <User className="w-4 h-4" />
                         Profile
+                      </Link>
+                      <Link
+                        href="/wallet"
+                        onClick={() => setIsProfileOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800"
+                      >
+                        <FileText className="w-4 h-4" />
+                        Reports & Transactions
                       </Link>
                       <Link
                         href="/settings"
@@ -244,6 +420,11 @@ export function Header({ user }: HeaderProps) {
                     >
                       <item.icon className="w-5 h-5" />
                       {item.name}
+                      {item.name === "Notifications" && unreadCount > 0 && (
+                        <span className="ml-auto px-2 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">
+                          {unreadCount > 9 ? "9+" : unreadCount}
+                        </span>
+                      )}
                     </Link>
                   </li>
                 );
