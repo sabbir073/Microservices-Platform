@@ -75,8 +75,17 @@ export async function registerUser({
     },
   });
 
-  // Send verification email
-  await sendVerificationEmail(email, verificationToken, name);
+  // Send verification email (skip if SMTP not configured)
+  try {
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
+      await sendVerificationEmail(email, verificationToken, name);
+    } else {
+      console.warn("SMTP not configured - skipping verification email");
+    }
+  } catch (error) {
+    console.error("Failed to send verification email:", error);
+    // Don't fail registration if email fails
+  }
 
   return { user, verificationToken };
 }
@@ -166,7 +175,16 @@ export async function resendVerificationEmail(email: string) {
     },
   });
 
-  await sendVerificationEmail(email, verificationToken, user.name || "User");
+  // Send verification email (skip if SMTP not configured)
+  try {
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
+      await sendVerificationEmail(email, verificationToken, user.name || "User");
+    } else {
+      console.warn("SMTP not configured - skipping verification email");
+    }
+  } catch (error) {
+    console.error("Failed to send verification email:", error);
+  }
 
   return { success: true };
 }
@@ -199,7 +217,16 @@ export async function requestPasswordReset(email: string) {
     },
   });
 
-  await sendPasswordResetEmail(email, resetToken, user.name || "User");
+  // Send password reset email (skip if SMTP not configured)
+  try {
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
+      await sendPasswordResetEmail(email, resetToken, user.name || "User");
+    } else {
+      console.warn("SMTP not configured - skipping password reset email");
+    }
+  } catch (error) {
+    console.error("Failed to send password reset email:", error);
+  }
 
   return { success: true };
 }
