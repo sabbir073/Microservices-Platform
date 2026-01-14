@@ -184,8 +184,15 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
           userName={user.name}
           userEmail={user.email}
           userStatus={user.status}
+          userRole={user.role}
+          userPhone={user.phone}
+          userCountry={user.country}
+          userPackageTier={user.packageTier}
+          userUsername={user.username}
           canEdit={hasPermission(adminRole, "users.edit")}
           canBan={hasPermission(adminRole, "users.ban")}
+          canDelete={hasPermission(adminRole, "users.delete")}
+          canImpersonate={adminRole === "SUPER_ADMIN" && user.role !== "SUPER_ADMIN" && user.id !== session.user.id}
         />
       </div>
 

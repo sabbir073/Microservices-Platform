@@ -10,18 +10,31 @@ import {
   Loader2,
   Plus,
   Minus,
+  Trash2,
+  User,
+  Mail,
+  Phone,
+  MapPin,
+  Shield,
+  LogIn,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import Link from "next/link";
 
 interface UserDetailActionsProps {
   userId: string;
   userName: string | null;
   userEmail: string;
   userStatus: string;
+  userRole: string;
+  userPhone: string | null;
+  userCountry: string | null;
+  userPackageTier: string;
+  userUsername: string | null;
   canEdit: boolean;
   canBan: boolean;
+  canDelete: boolean;
+  canImpersonate: boolean;
 }
 
 export function UserDetailActions({
@@ -29,13 +42,37 @@ export function UserDetailActions({
   userName,
   userEmail,
   userStatus,
+  userRole,
+  userPhone,
+  userCountry,
+  userPackageTier,
+  userUsername,
   canEdit,
   canBan,
+  canDelete,
+  canImpersonate,
 }: UserDetailActionsProps) {
   const router = useRouter();
   const [isBanning, setIsBanning] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isImpersonating, setIsImpersonating] = useState(false);
   const [showBanModal, setShowBanModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showImpersonateModal, setShowImpersonateModal] = useState(false);
   const [banReason, setBanReason] = useState("");
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+
+  const [editForm, setEditForm] = useState({
+    name: userName || "",
+    email: userEmail,
+    username: userUsername || "",
+    phone: userPhone || "",
+    country: userCountry || "",
+    role: userRole,
+    status: userStatus,
+    packageTier: userPackageTier,
+  });
 
   const handleBan = async () => {
     setIsBanning(true);
@@ -85,17 +122,89 @@ export function UserDetailActions({
     }
   };
 
+  const handleDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to delete user");
+      }
+
+      toast.success("User deleted successfully");
+      router.push("/admin/users");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete user");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleEdit = async () => {
+    setIsEditSubmitting(true);
+    try {
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to update user");
+      }
+
+      toast.success("User updated successfully");
+      setShowEditModal(false);
+      router.refresh();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update user");
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  };
+
+  const handleImpersonate = async () => {
+    setIsImpersonating(true);
+    try {
+      const response = await fetch(`/api/admin/users/${userId}/impersonate`, {
+        method: "POST",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to impersonate user");
+      }
+
+      toast.success(`Opening new tab as ${userName || userEmail}...`);
+      setShowImpersonateModal(false);
+
+      // Open impersonation in a new tab
+      window.open(`/impersonate?token=${data.token}`, '_blank');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to impersonate user");
+    } finally {
+      setIsImpersonating(false);
+    }
+  };
+
   return (
     <>
       <div className="flex gap-2">
         {canEdit && (
-          <Link
-            href={`/admin/users/${userId}/edit`}
+          <button
+            onClick={() => setShowEditModal(true)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
           >
             <Edit className="w-4 h-4" />
             Edit
-          </Link>
+          </button>
         )}
         {canBan && userStatus === "BANNED" && (
           <button
@@ -120,7 +229,177 @@ export function UserDetailActions({
             Ban User
           </button>
         )}
+        {canDelete && (
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/20 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete
+          </button>
+        )}
+        {canImpersonate && (
+          <button
+            onClick={() => setShowImpersonateModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500/10 text-indigo-400 border border-indigo-500/30 rounded-lg hover:bg-indigo-500/20 transition-colors"
+          >
+            <LogIn className="w-4 h-4" />
+            Login as User
+          </button>
+        )}
       </div>
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-900 rounded-xl border border-gray-800 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b border-gray-800">
+              <h2 className="text-lg font-semibold text-white">Edit User</h2>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <User className="w-4 h-4 inline mr-1" /> Full Name
+                </label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Enter name"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <Mail className="w-4 h-4 inline mr-1" /> Email
+                </label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Enter email"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  <User className="w-4 h-4 inline mr-1" /> Username
+                </label>
+                <input
+                  type="text"
+                  value={editForm.username}
+                  onChange={(e) => setEditForm({ ...editForm, username: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Enter username"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <Phone className="w-4 h-4 inline mr-1" /> Phone
+                  </label>
+                  <input
+                    type="tel"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Phone"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <MapPin className="w-4 h-4 inline mr-1" /> Country
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.country}
+                    onChange={(e) => setEditForm({ ...editForm, country: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Country"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    <Shield className="w-4 h-4 inline mr-1" /> Role
+                  </label>
+                  <select
+                    value={editForm.role}
+                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="USER">User</option>
+                    <option value="MODERATOR">Moderator</option>
+                    <option value="SUPPORT_ADMIN">Support Admin</option>
+                    <option value="CONTENT_ADMIN">Content Admin</option>
+                    <option value="MARKETING_ADMIN">Marketing Admin</option>
+                    <option value="FINANCE_ADMIN">Finance Admin</option>
+                    <option value="SUPER_ADMIN">Super Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">
+                    Status
+                  </label>
+                  <select
+                    value={editForm.status}
+                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="ACTIVE">Active</option>
+                    <option value="PENDING_VERIFICATION">Pending Verification</option>
+                    <option value="SUSPENDED">Suspended</option>
+                    <option value="BANNED">Banned</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Package Tier
+                </label>
+                <select
+                  value={editForm.packageTier}
+                  onChange={(e) => setEditForm({ ...editForm, packageTier: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="FREE">Free</option>
+                  <option value="BASIC">Basic</option>
+                  <option value="STANDARD">Standard</option>
+                  <option value="PREMIUM">Premium</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-3 p-6 border-t border-gray-800">
+              <Button
+                variant="secondary"
+                onClick={() => setShowEditModal(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleEdit}
+                isLoading={isEditSubmitting}
+                className="flex-1"
+              >
+                Save Changes
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Ban Modal */}
       {showBanModal && (
@@ -174,6 +453,111 @@ export function UserDetailActions({
                   <>
                     <Ban className="w-4 h-4" />
                     Ban User
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-900 rounded-xl border border-gray-800 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-6 border-b border-gray-800">
+              <h2 className="text-lg font-semibold text-white">Delete User</h2>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-400 mb-2">
+                Are you sure you want to delete <span className="text-white font-medium">{userName || userEmail}</span>?
+              </p>
+              <p className="text-red-400 text-sm">
+                This action cannot be undone. The user account will be permanently removed.
+              </p>
+            </div>
+            <div className="flex gap-3 p-6 border-t border-gray-800">
+              <Button
+                variant="secondary"
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Deleting...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Delete User
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Impersonate Modal */}
+      {showImpersonateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-900 rounded-xl border border-gray-800 w-full max-w-md mx-4">
+            <div className="flex items-center justify-between p-6 border-b border-gray-800">
+              <div className="flex items-center gap-3">
+                <LogIn className="w-5 h-5 text-indigo-400" />
+                <h2 className="text-lg font-semibold text-white">Login as User</h2>
+              </div>
+              <button
+                onClick={() => setShowImpersonateModal(false)}
+                className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-gray-400 mb-4">
+                You are about to login as <span className="text-white font-medium">{userName || userEmail}</span>.
+              </p>
+              <p className="text-amber-400 text-sm">
+                This will log you out from your current session and log you in as this user. You can return to your admin account by logging out and logging back in.
+              </p>
+            </div>
+            <div className="flex gap-3 p-6 border-t border-gray-800">
+              <Button
+                variant="secondary"
+                onClick={() => setShowImpersonateModal(false)}
+                className="flex-1"
+              >
+                Cancel
+              </Button>
+              <button
+                onClick={handleImpersonate}
+                disabled={isImpersonating}
+                className="flex-1 px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isImpersonating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Logging in...
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="w-4 h-4" />
+                    Login as User
                   </>
                 )}
               </button>

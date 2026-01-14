@@ -5,7 +5,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { z } from "zod";
 
 const banSchema = z.object({
-  reason: z.string().min(1).max(500).optional(),
+  reason: z.string().max(500).optional(),
 });
 
 // POST /api/admin/users/[id]/ban - Ban a user

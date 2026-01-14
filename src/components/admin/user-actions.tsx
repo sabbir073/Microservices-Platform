@@ -126,7 +126,7 @@ export function UserActions({ user, canEdit, canBan }: UserActionsProps) {
 
         {canEdit && (
           <Link
-            href={`/admin/users/${user.id}/edit`}
+            href={`/admin/users/${user.id}`}
             className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
             title="Edit User"
           >
