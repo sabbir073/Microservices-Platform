@@ -339,8 +339,11 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
           </div>
 
           {/* Actions */}
-          {canManage && typedListing.status === "ACTIVE" && (
-            <ListingActions listingId={typedListing.id} />
+          {canManage && (
+            <ListingActions
+              listingId={typedListing.id}
+              listingTitle={typedListing.title}
+            />
           )}
         </div>
       </div>

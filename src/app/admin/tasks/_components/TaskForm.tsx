@@ -50,6 +50,14 @@ const socialPlatforms = [
   "Telegram",
   "Reddit",
   "Threads",
+  "Quora",
+  "Medium",
+  "Mind",
+  "SoundCloud",
+  "Amazon",
+  "Spotify",
+  "Deezer",
+  "Google",
 ];
 
 const socialActions = [
@@ -63,6 +71,10 @@ const socialActions = [
   "Retweet",
   "Save",
   "Upvote",
+  "Post",
+  "Music Play",
+  "Connect",
+  "Pin",
 ];
 
 const countries = [
@@ -88,6 +100,7 @@ interface TaskFormProps {
     title: string;
     description: string;
     instructions: string | null;
+    instructionVideoUrl: string | null;
     type: string;
     status: string;
     pointsReward: number;
@@ -128,6 +141,7 @@ export function TaskForm({ task }: TaskFormProps) {
     title: task?.title || "",
     description: task?.description || "",
     instructions: task?.instructions || "",
+    instructionVideoUrl: task?.instructionVideoUrl || "",
     type: task?.type || "",
     pointsReward: task?.pointsReward || 0,
     xpReward: task?.xpReward || 0,
@@ -745,42 +759,67 @@ export function TaskForm({ task }: TaskFormProps) {
 
       {/* Instructions */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">Instructions</h2>
-          <button
-            type="button"
-            onClick={addInstructionStep}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add Step
-          </button>
+        <h2 className="text-lg font-semibold text-white">Instructions</h2>
+
+        {/* Video Instructions */}
+        <div>
+          <label className="block text-sm font-medium text-gray-400 mb-2">
+            <Video className="w-4 h-4 inline mr-1" />
+            Video Instructions (Optional)
+          </label>
+          <input
+            type="url"
+            value={formData.instructionVideoUrl}
+            onChange={(e) => setFormData({ ...formData, instructionVideoUrl: e.target.value })}
+            placeholder="https://www.youtube.com/watch?v=..."
+            className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
+          />
+          <p className="text-xs text-gray-500 mt-2">
+            Enter a YouTube video URL to provide video instructions
+          </p>
         </div>
 
-        <div className="space-y-3">
-          {instructionSteps.map((step, index) => (
-            <div key={index} className="flex items-center gap-3">
-              <span className="w-8 h-8 flex-shrink-0 flex items-center justify-center bg-gray-800 rounded-lg text-sm text-gray-400">
-                {index + 1}
-              </span>
-              <input
-                type="text"
-                value={step}
-                onChange={(e) => updateInstructionStep(index, e.target.value)}
-                placeholder={`Step ${index + 1} instructions...`}
-                className="flex-1 px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
-              />
-              {instructionSteps.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => removeInstructionStep(index)}
-                  className="p-2 text-gray-500 hover:text-red-400 transition-colors"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-          ))}
+        {/* Text Instructions */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-sm font-medium text-gray-400">
+              <FileText className="w-4 h-4 inline mr-1" />
+              Text Instructions (Optional)
+            </label>
+            <button
+              type="button"
+              onClick={addInstructionStep}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add Step
+            </button>
+          </div>
+          <div className="space-y-3">
+            {instructionSteps.map((step, index) => (
+              <div key={index} className="flex items-center gap-3">
+                <span className="w-8 h-8 flex-shrink-0 flex items-center justify-center bg-gray-800 rounded-lg text-sm text-gray-400">
+                  {index + 1}
+                </span>
+                <input
+                  type="text"
+                  value={step}
+                  onChange={(e) => updateInstructionStep(index, e.target.value)}
+                  placeholder={`Step ${index + 1} instructions...`}
+                  className="flex-1 px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
+                />
+                {instructionSteps.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeInstructionStep(index)}
+                    className="p-2 text-gray-500 hover:text-red-400 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

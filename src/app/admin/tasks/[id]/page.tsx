@@ -3,10 +3,6 @@ import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
   ArrowLeft,
-  Edit,
-  Pause,
-  Play,
-  Trash2,
   Video,
   FileText,
   HelpCircle,
@@ -19,8 +15,6 @@ import {
   Clock,
   Users,
   CheckCircle,
-  XCircle,
-  Calendar,
   Target,
   Layers,
   ExternalLink,
@@ -28,6 +22,8 @@ import {
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { YouTubePlayer } from "@/components/YouTubePlayer";
+import { TaskDetailActions } from "@/components/admin/task-actions";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -112,6 +108,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
 
   const canEdit = hasPermission(adminRole, "tasks.edit");
   const canDelete = hasPermission(adminRole, "tasks.delete");
+  const canCreate = hasPermission(adminRole, "tasks.create");
 
   // Parse instructions into steps
   const instructionSteps = task.instructions?.split("\n").filter(Boolean) || [];
@@ -154,36 +151,14 @@ export default async function TaskDetailPage({ params }: PageProps) {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2">
-          {canEdit && (
-            <>
-              <Link
-                href={`/admin/tasks/${task.id}/edit`}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-              >
-                <Edit className="w-4 h-4" />
-                Edit
-              </Link>
-              {task.status === "ACTIVE" ? (
-                <button className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-lg hover:bg-amber-500/20 transition-colors">
-                  <Pause className="w-4 h-4" />
-                  Pause
-                </button>
-              ) : task.status === "PAUSED" ? (
-                <button className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/20 transition-colors">
-                  <Play className="w-4 h-4" />
-                  Resume
-                </button>
-              ) : null}
-            </>
-          )}
-          {canDelete && (
-            <button className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/20 transition-colors">
-              <Trash2 className="w-4 h-4" />
-              Delete
-            </button>
-          )}
-        </div>
+        <TaskDetailActions
+          taskId={task.id}
+          taskTitle={task.title}
+          taskStatus={task.status}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          canCreate={canCreate}
+        />
       </div>
 
       {/* Stats */}
@@ -228,19 +203,40 @@ export default async function TaskDetailPage({ params }: PageProps) {
           </div>
 
           {/* Instructions */}
-          {instructionSteps.length > 0 && (
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-              <h2 className="text-lg font-semibold text-white mb-4">Instructions</h2>
-              <div className="space-y-3">
-                {instructionSteps.map((step, index) => (
-                  <div key={index} className="flex items-start gap-3">
-                    <span className="w-6 h-6 flex-shrink-0 flex items-center justify-center bg-indigo-500/10 rounded-full text-xs text-indigo-400">
-                      {index + 1}
-                    </span>
-                    <p className="text-gray-400">{step}</p>
+          {(task.instructionVideoUrl || instructionSteps.length > 0) && (
+            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+              <h2 className="text-lg font-semibold text-white">Instructions</h2>
+
+              {/* Video Instructions */}
+              {task.instructionVideoUrl && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Video className="w-4 h-4 text-red-400" />
+                    <h3 className="text-sm font-medium text-gray-300">Video Instructions</h3>
                   </div>
-                ))}
-              </div>
+                  <YouTubePlayer url={task.instructionVideoUrl} />
+                </div>
+              )}
+
+              {/* Text Instructions */}
+              {instructionSteps.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <FileText className="w-4 h-4 text-blue-400" />
+                    <h3 className="text-sm font-medium text-gray-300">Text Instructions</h3>
+                  </div>
+                  <div className="space-y-3">
+                    {instructionSteps.map((step, index) => (
+                      <div key={index} className="flex items-start gap-3">
+                        <span className="w-6 h-6 flex-shrink-0 flex items-center justify-center bg-indigo-500/10 rounded-full text-xs text-indigo-400">
+                          {index + 1}
+                        </span>
+                        <p className="text-gray-400">{step}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

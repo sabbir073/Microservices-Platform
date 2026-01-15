@@ -9,9 +9,19 @@ const createListingSchema = z.object({
   description: z.string().min(10).max(1000),
   category: z.string().min(1),
   price: z.number().positive(),
-  images: z.array(z.string()).optional(),
-  files: z.array(z.string()).optional(),
+  images: z.array(z.string().url()).optional(),
+  files: z.array(z.string().url()).optional(),
   status: z.enum(["ACTIVE", "SOLD", "CANCELLED", "EXPIRED"]).default("ACTIVE"),
+});
+
+const updateListingSchema = z.object({
+  title: z.string().min(3).max(100).optional(),
+  description: z.string().min(10).max(1000).optional(),
+  category: z.string().min(1).optional(),
+  price: z.number().positive().optional(),
+  images: z.array(z.string().url()).optional(),
+  files: z.array(z.string().url()).optional(),
+  status: z.enum(["ACTIVE", "SOLD", "CANCELLED", "EXPIRED"]).optional(),
 });
 
 // POST /api/admin/marketplace/listings - Create a new listing (admin)

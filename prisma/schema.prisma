@@ -253,6 +253,7 @@ model Task {
   title           String
   description     String       @db.Text
   instructions    String?      @db.Text
+  instructionVideoUrl String?
   type            TaskType
   status          TaskStatus   @default(ACTIVE)
   pointsReward    Int
