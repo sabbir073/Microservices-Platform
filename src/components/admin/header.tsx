@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Menu,
@@ -23,6 +23,12 @@ import {
   BarChart3,
   FileText,
   CreditCard,
+  Check,
+  AlertCircle,
+  CheckCircle,
+  Megaphone,
+  Trophy,
+  MessageSquare,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -37,6 +43,29 @@ interface AdminHeaderProps {
     role?: string;
   };
 }
+
+interface Notification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+const NOTIFICATION_TYPE_CONFIG: Record<
+  string,
+  { icon: typeof Bell; color: string }
+> = {
+  SYSTEM: { icon: AlertCircle, color: "text-gray-400" },
+  TASK: { icon: CheckCircle, color: "text-blue-400" },
+  WALLET: { icon: Wallet, color: "text-emerald-400" },
+  REFERRAL: { icon: Users, color: "text-purple-400" },
+  PROMOTION: { icon: Megaphone, color: "text-amber-400" },
+  ACHIEVEMENT: { icon: Trophy, color: "text-yellow-400" },
+  LOTTERY: { icon: Ticket, color: "text-pink-400" },
+  SOCIAL: { icon: MessageSquare, color: "text-indigo-400" },
+};
 
 const mobileNavigation = [
   { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
@@ -56,10 +85,61 @@ const mobileNavigation = [
 export function AdminHeader({ user }: AdminHeaderProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const pathname = usePathname();
+
+  // Fetch notifications
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const response = await fetch("/api/notifications?limit=5&unread=true");
+        if (response.ok) {
+          const data = await response.json();
+          setNotifications(data.notifications || []);
+          setUnreadCount(data.unreadCount || 0);
+        }
+      } catch (error) {
+        console.error("Error fetching notifications:", error);
+      }
+    };
+
+    fetchNotifications();
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   const handleSignOut = () => {
     signOut({ callbackUrl: "/login" });
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ markAll: true }),
+      });
+      if (response.ok) {
+        setUnreadCount(0);
+        setNotifications(notifications.map((n) => ({ ...n, isRead: true })));
+      }
+    } catch (error) {
+      console.error("Error marking notifications as read:", error);
+    }
+  };
+
+  const formatTimeAgo = (date: string) => {
+    const now = new Date();
+    const then = new Date(date);
+    const seconds = Math.floor((now.getTime() - then.getTime()) / 1000);
+
+    if (seconds < 60) return "just now";
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
   };
 
   return (
@@ -102,15 +182,117 @@ export function AdminHeader({ user }: AdminHeaderProps) {
             </span>
 
             {/* Notifications */}
-            <button className="relative p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setIsNotificationOpen(!isNotificationOpen);
+                  setIsProfileOpen(false);
+                }}
+                className="relative p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center px-1 text-xs font-bold text-white bg-red-500 rounded-full">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {/* Notification Dropdown */}
+              {isNotificationOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsNotificationOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-2 w-80 rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
+                      <h3 className="text-sm font-semibold text-white">
+                        Notifications
+                      </h3>
+                      {unreadCount > 0 && (
+                        <button
+                          onClick={handleMarkAllRead}
+                          className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                        >
+                          <Check className="w-3 h-3" />
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-80 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className="px-4 py-8 text-center text-gray-500">
+                          <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No notifications</p>
+                        </div>
+                      ) : (
+                        notifications.map((notif) => {
+                          const typeConfig =
+                            NOTIFICATION_TYPE_CONFIG[notif.type] ||
+                            NOTIFICATION_TYPE_CONFIG.SYSTEM;
+                          const Icon = typeConfig.icon;
+
+                          return (
+                            <Link
+                              key={notif.id}
+                              href="/admin/notifications"
+                              onClick={() => setIsNotificationOpen(false)}
+                              className={cn(
+                                "block px-4 py-3 border-b border-gray-800 hover:bg-gray-800/50 transition-colors",
+                                !notif.isRead && "bg-red-500/5"
+                              )}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div
+                                  className={cn(
+                                    "p-1.5 rounded-lg bg-gray-800",
+                                    typeConfig.color
+                                  )}
+                                >
+                                  <Icon className="w-4 h-4" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <p className="text-sm font-medium text-white truncate">
+                                      {notif.title}
+                                    </p>
+                                    {!notif.isRead && (
+                                      <span className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0" />
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                                    {notif.message}
+                                  </p>
+                                  <p className="text-xs text-gray-600 mt-1">
+                                    {formatTimeAgo(notif.createdAt)}
+                                  </p>
+                                </div>
+                              </div>
+                            </Link>
+                          );
+                        })
+                      )}
+                    </div>
+                    <Link
+                      href="/admin/notifications"
+                      onClick={() => setIsNotificationOpen(false)}
+                      className="block px-4 py-3 text-center text-sm text-red-400 hover:text-red-300 border-t border-gray-800"
+                    >
+                      View all notifications
+                    </Link>
+                  </div>
+                </>
+              )}
+            </div>
 
             {/* Profile Dropdown */}
             <div className="relative">
               <button
-                onClick={() => setIsProfileOpen(!isProfileOpen)}
+                onClick={() => {
+                  setIsProfileOpen(!isProfileOpen);
+                  setIsNotificationOpen(false);
+                }}
                 className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
               >
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-white text-sm font-medium">

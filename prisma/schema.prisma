@@ -190,6 +190,7 @@ model User {
   referralEarnings  ReferralEarning[]
   pointGifts        PointGift[]         @relation("PointGiftSender")
   receivedGifts     PointGift[]         @relation("PointGiftReceiver")
+  mediaUploads      Media[]
   @@index([email])
   @@index([referralCode])
   @@index([referredById])
@@ -413,14 +414,21 @@ model Subscription {
   @@index([isActive])
 }
 
+enum CommissionType {
+  PERCENTAGE
+  FLAT_RATE
+}
+
 model ReferralLevel {
-  id              String   @id @default(cuid())
-  level           Int      @unique
-  commissionRate  Float
+  id              String         @id @default(cuid())
+  level           Int            @unique
+  commissionType  CommissionType @default(PERCENTAGE)
+  commissionValue Float          @default(0)
+  commissionRate  Float?         // Legacy field, will be migrated
   description     String?
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  isActive        Boolean        @default(true)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 }
 
 model ReferralEarning {
@@ -798,4 +806,39 @@ model DisputeMessage {
   createdAt   DateTime           @default(now())
   @@index([disputeId])
   @@index([senderId])
+}
+
+enum MediaFileType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+  AUDIO
+  OTHER
+}
+
+model Media {
+  id                String        @id @default(cuid())
+  filename          String        // Server-generated filename
+  originalFilename  String        // Original filename from user
+  fileType          MediaFileType @default(IMAGE)
+  mimeType          String
+  fileSize          Int           // File size in bytes
+  s3Key             String        @unique // S3 object key
+  s3Url             String        // Direct S3 URL
+  cloudFrontUrl     String?       // CloudFront CDN URL (optional)
+  altText           String?
+  caption           String?       @db.Text
+  description       String?       @db.Text
+  width             Int?          // Image/video width in pixels
+  height            Int?          // Image/video height in pixels
+  duration          Int?          // Video/audio duration in seconds
+  uploadedById      String
+  uploadedBy        User          @relation(fields: [uploadedById], references: [id])
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([uploadedById])
+  @@index([fileType])
+  @@index([createdAt])
+  @@index([s3Key])
 }

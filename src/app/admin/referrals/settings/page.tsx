@@ -23,18 +23,27 @@ export default async function ReferralSettingsPage() {
     orderBy: { level: "asc" },
   });
 
-  // If no levels exist, create default structure
-  const levels = referralLevels.length > 0
-    ? referralLevels
-    : Array.from({ length: 10 }, (_, i) => ({
-        id: `temp-${i + 1}`,
-        level: i + 1,
-        commissionRate: 0,
-        description: null,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }));
+  // Ensure we have all 10 levels
+  const levels = Array.from({ length: 10 }, (_, i) => {
+    const level = i + 1;
+    const existingLevel = referralLevels.find((l) => l.level === level);
+
+    if (existingLevel) {
+      return existingLevel;
+    }
+
+    // Create default level if it doesn't exist
+    return {
+      id: `temp-${level}`,
+      level,
+      commissionType: "PERCENTAGE" as const,
+      commissionValue: 0,
+      description: null,
+      isActive: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -58,7 +67,7 @@ export default async function ReferralSettingsPage() {
       </div>
 
       {/* Form */}
-      <ReferralSettingsForm levels={levels} isNew={referralLevels.length === 0} />
+      <ReferralSettingsForm levels={levels} isNew={referralLevels.length < 10} />
     </div>
   );
 }

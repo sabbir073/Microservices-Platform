@@ -7,6 +7,7 @@ import {
   TransactionStatus,
   NotificationType,
 } from "@/generated/prisma";
+import { processReferralCommissions } from "@/lib/referral-commissions";
 
 // POST /api/tasks/:id/submit - Submit task proof
 export async function POST(
@@ -238,103 +239,3 @@ function calculateLevel(xp: number): number {
   return Math.floor(10 + (xp - 22000) / 10000);
 }
 
-// Process referral commissions (3-level MLM)
-async function processReferralCommissions(
-  userId: string,
-  pointsEarned: number,
-  taskId: string
-) {
-  try {
-    // Get referral settings
-    const referralLevels = await prisma.referralLevel.findMany({
-      where: { isActive: true },
-      orderBy: { level: "asc" },
-    });
-
-    if (referralLevels.length === 0) {
-      // Use default rates if no settings
-      referralLevels.push(
-        { id: "1", level: 1, commissionRate: 0.1, description: null, isActive: true, createdAt: new Date(), updatedAt: new Date() },
-        { id: "2", level: 2, commissionRate: 0.05, description: null, isActive: true, createdAt: new Date(), updatedAt: new Date() },
-        { id: "3", level: 3, commissionRate: 0.02, description: null, isActive: true, createdAt: new Date(), updatedAt: new Date() }
-      );
-    }
-
-    // Get user's referral chain (up to 3 levels)
-    let currentUser = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { referredById: true },
-    });
-
-    for (let level = 1; level <= Math.min(3, referralLevels.length); level++) {
-      if (!currentUser?.referredById) break;
-
-      const referrerConfig = referralLevels.find((r) => r.level === level);
-      if (!referrerConfig) break;
-
-      const commission = Math.floor(pointsEarned * referrerConfig.commissionRate);
-
-      if (commission > 0) {
-        // Credit the referrer
-        await prisma.user.update({
-          where: { id: currentUser.referredById },
-          data: {
-            pointsBalance: { increment: commission },
-            totalEarnings: { increment: commission / 1000 },
-          },
-        });
-
-        // Create transaction
-        await prisma.transaction.create({
-          data: {
-            userId: currentUser.referredById,
-            type: TransactionType.REFERRAL,
-            status: TransactionStatus.COMPLETED,
-            points: commission,
-            amount: commission / 1000,
-            description: `Level ${level} referral commission`,
-            reference: `referral_${userId}_${taskId}`,
-            metadata: {
-              referredUserId: userId,
-              sourceTaskId: taskId,
-              level,
-              commissionRate: referrerConfig.commissionRate,
-            },
-          },
-        });
-
-        // Record referral earning
-        await prisma.referralEarning.create({
-          data: {
-            userId: currentUser.referredById,
-            referredUserId: userId,
-            level,
-            amount: commission / 1000,
-            sourceType: "TASK",
-            sourceId: taskId,
-          },
-        });
-
-        // Create notification for referrer
-        await prisma.notification.create({
-          data: {
-            userId: currentUser.referredById,
-            type: NotificationType.REFERRAL,
-            title: "Referral Commission!",
-            message: `You earned ${commission} points from your level ${level} referral's activity!`,
-            data: { commission, level, referredUserId: userId },
-          },
-        });
-      }
-
-      // Move up the chain
-      currentUser = await prisma.user.findUnique({
-        where: { id: currentUser.referredById },
-        select: { referredById: true },
-      });
-    }
-  } catch (error) {
-    console.error("Error processing referral commissions:", error);
-    // Don't throw - referral errors shouldn't block the main task
-  }
-}

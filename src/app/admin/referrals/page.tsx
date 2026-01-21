@@ -42,8 +42,9 @@ export default async function AdminReferralsPage({ searchParams }: PageProps) {
   const pageSize = 20;
   const skip = (page - 1) * pageSize;
 
-  // Fetch referral levels
+  // Fetch only active referral levels for display
   const referralLevels = await prisma.referralLevel.findMany({
+    where: { isActive: true },
     orderBy: { level: "asc" },
   });
 
@@ -188,34 +189,39 @@ export default async function AdminReferralsPage({ searchParams }: PageProps) {
           )}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 lg:grid-cols-10 gap-4">
-          {referralLevels.length > 0 ? (
-            referralLevels.map((level) => (
+        {referralLevels.length > 0 ? (
+          <div className={`grid gap-4 ${
+            referralLevels.length <= 5
+              ? "grid-cols-2 md:grid-cols-3 lg:grid-cols-5"
+              : "grid-cols-2 md:grid-cols-5 lg:grid-cols-10"
+          }`}>
+            {referralLevels.map((level) => (
               <div
                 key={level.id}
-                className={`p-4 rounded-lg border text-center ${
-                  level.isActive
-                    ? "bg-gray-800/50 border-gray-700"
-                    : "bg-gray-800/20 border-gray-800 opacity-50"
-                }`}
+                className="p-4 rounded-lg border bg-gray-800/50 border-gray-700 text-center"
               >
                 <p className="text-sm text-gray-500 mb-1">Level {level.level}</p>
-                <p className="text-xl font-bold text-white">{level.commissionRate}%</p>
+                <p className="text-xl font-bold text-white">
+                  {level.commissionType === "PERCENTAGE"
+                    ? `${level.commissionValue}%`
+                    : `$${level.commissionValue.toFixed(2)}`}
+                </p>
               </div>
-            ))
-          ) : (
-            // Default display if no levels configured
-            Array.from({ length: 10 }, (_, i) => (
-              <div
-                key={i}
-                className="p-4 rounded-lg bg-gray-800/50 border border-gray-700 text-center"
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p className="text-gray-400">No active commission levels configured.</p>
+            {canEdit && (
+              <Link
+                href="/admin/referrals/settings"
+                className="inline-block mt-4 px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors"
               >
-                <p className="text-sm text-gray-500 mb-1">Level {i + 1}</p>
-                <p className="text-xl font-bold text-gray-600">-</p>
-              </div>
-            ))
-          )}
-        </div>
+                Configure Levels
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Top Referrers */}

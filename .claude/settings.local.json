@@ -7,7 +7,14 @@
       "Bash(npm run build:*)",
       "Bash(npx prisma migrate dev:*)",
       "Bash(npx prisma db push:*)",
-      "Bash(npx prisma generate:*)"
+      "Bash(npx prisma generate:*)",
+      "Bash(npm install:*)",
+      "Bash([ -f src/lib/s3.ts ])",
+      "Bash(npx ts-node:*)",
+      "Bash(npx prisma db execute:*)",
+      "Bash(npm run dev:*)",
+      "Bash(tasklist:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }

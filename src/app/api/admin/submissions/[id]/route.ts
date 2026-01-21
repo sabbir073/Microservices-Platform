@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { processReferralCommissions } from "@/lib/referral-commissions";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -134,6 +135,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           },
         }),
       ]);
+
+      // Process referral commissions (after transaction completes)
+      await processReferralCommissions(
+        existingSubmission.userId,
+        existingSubmission.task.pointsReward,
+        existingSubmission.taskId
+      );
 
       return NextResponse.json({
         success: true,

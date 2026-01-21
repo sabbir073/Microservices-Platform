@@ -63,12 +63,6 @@ export type Permission =
   | "referrals.configure"
   | "proxy.view"
   | "proxy.manage"
-  | "quiz.view"
-  | "quiz.create"
-  | "quiz.edit"
-  | "ai.view"
-  | "ai.configure"
-  | "ai.generate"
   | "notifications.view"
   | "notifications.send"
   | "analytics.view"
@@ -95,8 +89,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "packages.view", "packages.edit",
     "referrals.view", "referrals.configure",
     "proxy.view", "proxy.manage",
-    "quiz.view", "quiz.create", "quiz.edit",
-    "ai.view", "ai.configure", "ai.generate",
     "notifications.view", "notifications.send",
     "analytics.view", "analytics.export",
     "settings.view", "settings.edit",
@@ -118,8 +110,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "users.view",
     "tasks.view", "tasks.create", "tasks.edit",
     "submissions.view", "submissions.approve", "submissions.reject",
-    "quiz.view", "quiz.create", "quiz.edit",
-    "ai.view", "ai.generate",
     "notifications.view", "notifications.send",
     "analytics.view",
   ],
@@ -223,6 +213,12 @@ export const ADMIN_MODULES: AdminModule[] = [
     permissions: ["marketplace.view"],
   },
   {
+    name: "Media Library",
+    href: "/admin/media",
+    icon: "ImageIcon",
+    permissions: ["tasks.create"], // Only SUPER_ADMIN and admins with content creation access
+  },
+  {
     name: "Lottery",
     href: "/admin/lottery",
     icon: "Ticket",
@@ -245,20 +241,6 @@ export const ADMIN_MODULES: AdminModule[] = [
     href: "/admin/proxy",
     icon: "Globe",
     permissions: ["proxy.view"],
-  },
-  {
-    name: "Quiz Management",
-    href: "/admin/quiz",
-    icon: "HelpCircle",
-    permissions: ["quiz.view"],
-    badge: "NEW",
-  },
-  {
-    name: "AI Content",
-    href: "/admin/ai",
-    icon: "Sparkles",
-    permissions: ["ai.view"],
-    badge: "NEW",
   },
   {
     name: "Notifications",

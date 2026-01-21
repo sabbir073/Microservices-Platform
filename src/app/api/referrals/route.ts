@@ -40,7 +40,13 @@ export async function GET(request: NextRequest) {
     // Default rates if not configured
     const commissionRates = referralLevels.length > 0
       ? referralLevels.reduce((acc, lvl) => {
-          acc[lvl.level] = lvl.commissionRate * 100; // Convert to percentage
+          // Store commission value with type indicator
+          if (lvl.commissionType === "PERCENTAGE") {
+            acc[lvl.level] = lvl.commissionValue;
+          } else {
+            // For flat rate, store as negative to differentiate (temporary workaround)
+            acc[lvl.level] = -lvl.commissionValue;
+          }
           return acc;
         }, {} as Record<number, number>)
       : { 1: 10, 2: 5, 3: 2 };

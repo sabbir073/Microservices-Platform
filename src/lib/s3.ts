@@ -382,3 +382,97 @@ export async function listUploadedParts(
 export function getPublicUrl(key: string): string {
   return `https://${AWS_S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
 }
+
+/**
+ * Get CloudFront URL if configured, otherwise S3 URL
+ */
+export function getMediaUrl(s3Key: string): { s3Url: string; cloudFrontUrl?: string } {
+  const s3Url = `https://${AWS_S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${s3Key}`;
+  const cloudFrontDomain = process.env.AWS_CLOUDFRONT_DOMAIN;
+  const cloudFrontUrl = cloudFrontDomain ? `https://${cloudFrontDomain}/${s3Key}` : undefined;
+
+  return { s3Url, cloudFrontUrl };
+}
+
+/**
+ * Determine media file type from MIME type
+ */
+export function getMediaFileType(mimeType: string): "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT" | "OTHER" {
+  if (mimeType.startsWith("image/")) return "IMAGE";
+  if (mimeType.startsWith("video/")) return "VIDEO";
+  if (mimeType.startsWith("audio/")) return "AUDIO";
+  if (mimeType.includes("pdf") || mimeType.includes("document") || mimeType.includes("text")) return "DOCUMENT";
+  return "OTHER";
+}
+
+/**
+ * Get S3 key path based on file type for media library
+ */
+export function getMediaS3KeyPath(fileType: string, filename: string): string {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+
+  let folder = "other";
+  if (fileType.startsWith("image/")) folder = "images";
+  else if (fileType.startsWith("video/")) folder = "videos";
+  else if (fileType.startsWith("audio/")) folder = "audio";
+  else if (fileType.includes("pdf") || fileType.includes("document")) folder = "documents";
+
+  return `media/${folder}/${year}/${month}/${filename}`;
+}
+
+/**
+ * Generate a unique filename with timestamp for media
+ */
+export function generateMediaFilename(originalFilename: string): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 15);
+  const ext = originalFilename.split(".").pop();
+  const nameWithoutExt = originalFilename.replace(/\.[^/.]+$/, "");
+  const sanitized = nameWithoutExt.replace(/[^a-zA-Z0-9-_]/g, "-");
+  return `${sanitized}-${timestamp}-${random}.${ext}`;
+}
+
+/**
+ * Validate media file
+ */
+export function validateMediaFile(
+  mimeType: string,
+  fileSize: number,
+  allowedTypes?: string[],
+  maxSizeBytes?: number
+): { isValid: boolean; error?: string } {
+  // Check file size (default 100MB)
+  const maxSize = maxSizeBytes || 100 * 1024 * 1024;
+  if (fileSize > maxSize) {
+    return {
+      isValid: false,
+      error: `File size exceeds ${Math.round(maxSize / (1024 * 1024))}MB limit`,
+    };
+  }
+
+  // Check file type if specified
+  if (allowedTypes && allowedTypes.length > 0) {
+    const isAllowed = allowedTypes.some((type) => {
+      if (type.endsWith("/*")) {
+        const prefix = type.replace("/*", "");
+        return mimeType.startsWith(prefix);
+      }
+      return mimeType === type;
+    });
+
+    if (!isAllowed) {
+      return {
+        isValid: false,
+        error: `File type ${mimeType} is not allowed`,
+      };
+    }
+  }
+
+  return { isValid: true };
+}
+
+// Multipart upload constants
+export const S3_PART_SIZE = 5 * 1024 * 1024; // 5MB
+export const MULTIPART_THRESHOLD = 1 * 1024 * 1024; // 1MB

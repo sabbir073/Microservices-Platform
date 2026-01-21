@@ -5,11 +5,9 @@ import {
   Bell,
   Send,
   Users,
-  Filter,
   ChevronLeft,
   ChevronRight,
   Megaphone,
-  Gift,
   Wallet,
   Trophy,
   Ticket,
@@ -18,8 +16,8 @@ import {
   CheckCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { NotificationsList } from "./_components/NotificationsList";
 
 interface PageProps {
   searchParams: Promise<{
@@ -230,63 +228,10 @@ export default async function AdminNotificationsPage({ searchParams }: PageProps
 
       {/* Notifications List */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-        {typedNotifications.length > 0 ? (
-          <div className="divide-y divide-gray-800">
-            {typedNotifications.map((notification) => {
-              const typeConfig = NOTIFICATION_TYPE_CONFIG[notification.type] || NOTIFICATION_TYPE_CONFIG.SYSTEM;
-              const Icon = typeConfig.icon;
-
-              return (
-                <div
-                  key={notification.id}
-                  className="p-4 hover:bg-gray-800/50 transition-colors"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className={`p-2 rounded-lg bg-gray-800 ${typeConfig.color}`}>
-                      <Icon className="w-5 h-5" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-4">
-                        <div>
-                          <h3 className="font-medium text-white">{notification.title}</h3>
-                          <p className="text-sm text-gray-400 mt-0.5">{notification.message}</p>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <span
-                            className={`px-2 py-0.5 rounded text-xs ${
-                              notification.isRead
-                                ? "bg-gray-700 text-gray-400"
-                                : "bg-indigo-500/10 text-indigo-400"
-                            }`}
-                          >
-                            {notification.isRead ? "Read" : "Unread"}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                        <span>To: {notification.user.name || notification.user.email}</span>
-                        <span>•</span>
-                        <span>{formatDistanceToNow(new Date(notification.createdAt))} ago</span>
-                        <span>•</span>
-                        <span className={typeConfig.color}>{typeConfig.label}</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="p-16 text-center">
-            <Bell className="w-12 h-12 mx-auto mb-4 text-gray-600" />
-            <h3 className="text-lg font-medium text-white mb-2">No notifications</h3>
-            <p className="text-gray-400">
-              {typeFilter
-                ? `No ${NOTIFICATION_TYPE_CONFIG[typeFilter]?.label.toLowerCase() || ""} notifications found`
-                : "Sent notifications will appear here"}
-            </p>
-          </div>
-        )}
+        <NotificationsList
+          notifications={typedNotifications}
+          canSend={canSend}
+        />
 
         {/* Pagination */}
         {totalCount > pageSize && (

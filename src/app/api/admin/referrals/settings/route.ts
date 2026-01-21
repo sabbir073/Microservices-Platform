@@ -6,7 +6,8 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 interface ReferralLevelInput {
   id: string;
   level: number;
-  commissionRate: number;
+  commissionType: "PERCENTAGE" | "FLAT_RATE";
+  commissionValue: number;
   description: string | null;
   isActive: boolean;
 }
@@ -69,11 +70,22 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      if (level.commissionRate < 0 || level.commissionRate > 100) {
-        return NextResponse.json(
-          { error: "Commission rate must be between 0 and 100" },
-          { status: 400 }
-        );
+
+      // Validate commission value based on type
+      if (level.commissionType === "PERCENTAGE") {
+        if (level.commissionValue < 0 || level.commissionValue > 100) {
+          return NextResponse.json(
+            { error: "Percentage commission must be between 0 and 100" },
+            { status: 400 }
+          );
+        }
+      } else if (level.commissionType === "FLAT_RATE") {
+        if (level.commissionValue < 0) {
+          return NextResponse.json(
+            { error: "Flat rate commission must be greater than or equal to 0" },
+            { status: 400 }
+          );
+        }
       }
     }
 
@@ -86,7 +98,8 @@ export async function POST(request: NextRequest) {
       await tx.referralLevel.createMany({
         data: levels.map((level) => ({
           level: level.level,
-          commissionRate: level.commissionRate,
+          commissionType: level.commissionType,
+          commissionValue: level.commissionValue,
           description: level.description || null,
           isActive: level.isActive,
         })),

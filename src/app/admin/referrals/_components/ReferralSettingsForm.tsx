@@ -13,7 +13,8 @@ import {
 interface ReferralLevel {
   id: string;
   level: number;
-  commissionRate: number;
+  commissionType: "PERCENTAGE" | "FLAT_RATE";
+  commissionValue: number;
   description: string | null;
   isActive: boolean;
 }
@@ -30,7 +31,8 @@ export function ReferralSettingsForm({ levels, isNew }: ReferralSettingsFormProp
     levels.map((l) => ({
       id: l.id,
       level: l.level,
-      commissionRate: l.commissionRate,
+      commissionType: l.commissionType,
+      commissionValue: l.commissionValue,
       description: l.description,
       isActive: l.isActive,
     }))
@@ -67,8 +69,10 @@ export function ReferralSettingsForm({ levels, isNew }: ReferralSettingsFormProp
 
   const updateLevel = (index: number, field: keyof ReferralLevel, value: unknown) => {
     const newData = [...formData];
-    if (field === "commissionRate") {
-      newData[index].commissionRate = value as number;
+    if (field === "commissionType") {
+      newData[index].commissionType = value as "PERCENTAGE" | "FLAT_RATE";
+    } else if (field === "commissionValue") {
+      newData[index].commissionValue = value as number;
     } else if (field === "description") {
       newData[index].description = value as string | null;
     } else if (field === "isActive") {
@@ -77,7 +81,23 @@ export function ReferralSettingsForm({ levels, isNew }: ReferralSettingsFormProp
     setFormData(newData);
   };
 
-  const totalCommission = formData.reduce((sum, level) => sum + level.commissionRate, 0);
+  // Calculate totals for active commissions
+  const totalPercentage = formData.reduce((sum, level) => {
+    if (level.isActive && level.commissionType === "PERCENTAGE") {
+      return sum + level.commissionValue;
+    }
+    return sum;
+  }, 0);
+
+  const totalFlatRate = formData.reduce((sum, level) => {
+    if (level.isActive && level.commissionType === "FLAT_RATE") {
+      return sum + level.commissionValue;
+    }
+    return sum;
+  }, 0);
+
+  const hasPercentage = formData.some(l => l.isActive && l.commissionType === "PERCENTAGE" && l.commissionValue > 0);
+  const hasFlatRate = formData.some(l => l.isActive && l.commissionType === "FLAT_RATE" && l.commissionValue > 0);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
@@ -104,15 +124,30 @@ export function ReferralSettingsForm({ levels, isNew }: ReferralSettingsFormProp
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-lg font-semibold text-white">Commission Rates</h2>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-400">Total:</span>
-            <span
-              className={`text-lg font-bold ${
-                totalCommission > 100 ? "text-red-400" : "text-emerald-400"
-              }`}
-            >
-              {totalCommission.toFixed(1)}%
-            </span>
+          <div className="flex items-center gap-4">
+            {hasPercentage && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Total %:</span>
+                <span
+                  className={`text-lg font-bold ${
+                    totalPercentage > 100 ? "text-red-400" : "text-emerald-400"
+                  }`}
+                >
+                  {totalPercentage.toFixed(1)}%
+                </span>
+              </div>
+            )}
+            {hasFlatRate && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-400">Total $:</span>
+                <span className="text-lg font-bold text-emerald-400">
+                  ${totalFlatRate.toFixed(2)}
+                </span>
+              </div>
+            )}
+            {!hasPercentage && !hasFlatRate && (
+              <span className="text-sm text-gray-400">No active commissions</span>
+            )}
           </div>
         </div>
 
@@ -126,24 +161,57 @@ export function ReferralSettingsForm({ levels, isNew }: ReferralSettingsFormProp
                 <span className="text-lg font-bold text-indigo-400">L{level.level}</span>
               </div>
 
-              <div className="flex-1 grid md:grid-cols-3 gap-4">
+              <div className="flex-1 grid md:grid-cols-4 gap-4">
+                {/* Commission Type Toggle */}
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">
-                    Commission Rate (%)
+                    Commission Type
+                  </label>
+                  <div className="flex items-center gap-2 bg-gray-900 rounded-lg p-1">
+                    <button
+                      type="button"
+                      onClick={() => updateLevel(index, "commissionType", "PERCENTAGE")}
+                      className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                        level.commissionType === "PERCENTAGE"
+                          ? "bg-indigo-500 text-white"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      %
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateLevel(index, "commissionType", "FLAT_RATE")}
+                      className={`flex-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
+                        level.commissionType === "FLAT_RATE"
+                          ? "bg-indigo-500 text-white"
+                          : "text-gray-400 hover:text-white"
+                      }`}
+                    >
+                      $
+                    </button>
+                  </div>
+                </div>
+
+                {/* Commission Value */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">
+                    {level.commissionType === "PERCENTAGE" ? "Rate (%)" : "Amount ($)"}
                   </label>
                   <input
                     type="number"
                     min="0"
-                    max="100"
-                    step="0.1"
-                    value={level.commissionRate}
+                    max={level.commissionType === "PERCENTAGE" ? "100" : undefined}
+                    step={level.commissionType === "PERCENTAGE" ? "0.1" : "0.01"}
+                    value={level.commissionValue ?? 0}
                     onChange={(e) =>
-                      updateLevel(index, "commissionRate", parseFloat(e.target.value) || 0)
+                      updateLevel(index, "commissionValue", parseFloat(e.target.value) || 0)
                     }
                     className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500"
                   />
                 </div>
 
+                {/* Description */}
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">
                     Description (optional)
@@ -157,6 +225,7 @@ export function ReferralSettingsForm({ levels, isNew }: ReferralSettingsFormProp
                   />
                 </div>
 
+                {/* Active Toggle */}
                 <div className="flex items-end">
                   <label className="flex items-center gap-2">
                     <input
@@ -173,72 +242,135 @@ export function ReferralSettingsForm({ levels, isNew }: ReferralSettingsFormProp
           ))}
         </div>
 
-        {totalCommission > 100 && (
+        {totalPercentage > 100 && (
           <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
             <p className="text-sm text-red-400">
-              Warning: Total commission exceeds 100%. This may result in losses on each referral.
+              Warning: Total percentage commission exceeds 100%. This may result in losses on each referral.
             </p>
           </div>
         )}
       </div>
 
       {/* Quick Presets */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Quick Presets</h2>
-        <div className="flex flex-wrap gap-3">
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+        {/* Percentage Presets */}
+        <div>
+          <h2 className="text-lg font-semibold text-white mb-4">Percentage Presets</h2>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(
+                  formData.map((l) => ({
+                    ...l,
+                    commissionType: "PERCENTAGE",
+                    commissionValue: l.level <= 3 ? 10 - (l.level - 1) * 2 : l.level <= 6 ? 3 : 1,
+                  }))
+                );
+              }}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              % Aggressive (10-8-6-3-3-3-1-1-1-1)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(
+                  formData.map((l) => ({
+                    ...l,
+                    commissionType: "PERCENTAGE",
+                    commissionValue: Math.max(1, 6 - Math.floor((l.level - 1) / 2)),
+                  }))
+                );
+              }}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              % Balanced (6-6-5-5-4-4-3-3-2-2)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(
+                  formData.map((l) => ({
+                    ...l,
+                    commissionType: "PERCENTAGE",
+                    commissionValue: 3,
+                  }))
+                );
+              }}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              % Flat (3% all levels)
+            </button>
+          </div>
+        </div>
+
+        {/* Flat Rate Presets */}
+        <div>
+          <h2 className="text-lg font-semibold text-white mb-4">Flat Rate Presets</h2>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(
+                  formData.map((l) => ({
+                    ...l,
+                    commissionType: "FLAT_RATE",
+                    commissionValue: l.level <= 3 ? 1 - (l.level - 1) * 0.2 : l.level <= 6 ? 0.3 : 0.1,
+                  }))
+                );
+              }}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              $ Aggressive ($1-$0.8-$0.6-$0.3...)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(
+                  formData.map((l) => ({
+                    ...l,
+                    commissionType: "FLAT_RATE",
+                    commissionValue: Math.max(0.1, 0.6 - Math.floor((l.level - 1) / 2) * 0.1),
+                  }))
+                );
+              }}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              $ Balanced ($0.6-$0.5-$0.4...)
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFormData(
+                  formData.map((l) => ({
+                    ...l,
+                    commissionType: "FLAT_RATE",
+                    commissionValue: 0.25,
+                  }))
+                );
+              }}
+              className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              $ Flat ($0.25 all levels)
+            </button>
+          </div>
+        </div>
+
+        {/* Clear All */}
+        <div className="pt-4 border-t border-gray-800">
           <button
             type="button"
             onClick={() => {
               setFormData(
                 formData.map((l) => ({
                   ...l,
-                  commissionRate: l.level <= 3 ? 10 - (l.level - 1) * 2 : l.level <= 6 ? 3 : 1,
+                  commissionType: "PERCENTAGE",
+                  commissionValue: 0,
                 }))
               );
             }}
-            className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
-          >
-            Aggressive (10-8-6-3-3-3-1-1-1-1)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setFormData(
-                formData.map((l) => ({
-                  ...l,
-                  commissionRate: Math.max(1, 6 - Math.floor((l.level - 1) / 2)),
-                }))
-              );
-            }}
-            className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
-          >
-            Balanced (6-6-5-5-4-4-3-3-2-2)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setFormData(
-                formData.map((l) => ({
-                  ...l,
-                  commissionRate: 3,
-                }))
-              );
-            }}
-            className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
-          >
-            Flat (3% all levels)
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setFormData(
-                formData.map((l) => ({
-                  ...l,
-                  commissionRate: 0,
-                }))
-              );
-            }}
-            className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            className="px-4 py-2 bg-red-500/10 text-red-400 rounded-lg hover:bg-red-500/20 transition-colors text-sm border border-red-500/30"
           >
             Clear All
           </button>
