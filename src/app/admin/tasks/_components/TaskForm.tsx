@@ -17,7 +17,10 @@ import {
   Trash2,
   AlertCircle,
   Loader2,
+  Image as ImageIcon,
 } from "lucide-react";
+import { MediaSelector } from "@/components/media/MediaSelector";
+import type { MediaItem } from "@/types/media";
 
 // Task types with icons and colors
 const taskTypes = [
@@ -127,6 +130,7 @@ interface TaskFormProps {
 
 interface QuizQuestion {
   question: string;
+  imageUrl?: string;
   options: string[];
   correctAnswer: number;
   explanation: string;
@@ -171,9 +175,13 @@ export function TaskForm({ task }: TaskFormProps) {
   // Quiz questions
   const [questions, setQuestions] = useState<QuizQuestion[]>(
     (task?.questions as QuizQuestion[]) || [
-      { question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" },
+      { question: "", imageUrl: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" },
     ]
   );
+
+  // Media selector state
+  const [mediaSelectorOpen, setMediaSelectorOpen] = useState(false);
+  const [mediaSelectorTarget, setMediaSelectorTarget] = useState<"thumbnail" | { type: "quiz"; index: number } | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -237,7 +245,7 @@ export function TaskForm({ task }: TaskFormProps) {
   const addQuestion = () => {
     setQuestions([
       ...questions,
-      { question: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" },
+      { question: "", imageUrl: "", options: ["", "", "", ""], correctAnswer: 0, explanation: "" },
     ]);
   };
 
@@ -253,8 +261,29 @@ export function TaskForm({ task }: TaskFormProps) {
       newQuestions[index].correctAnswer = value as number;
     } else if (field === "explanation") {
       newQuestions[index].explanation = value as string;
+    } else if (field === "imageUrl") {
+      newQuestions[index].imageUrl = value as string;
     }
     setQuestions(newQuestions);
+  };
+
+  // Handle media selection
+  const handleMediaSelect = (media: MediaItem | MediaItem[]) => {
+    const selectedMedia = Array.isArray(media) ? media[0] : media;
+    const url = selectedMedia.cloudFrontUrl || selectedMedia.s3Url;
+
+    if (mediaSelectorTarget === "thumbnail") {
+      setFormData({ ...formData, thumbnailUrl: url });
+    } else if (mediaSelectorTarget && typeof mediaSelectorTarget === "object" && mediaSelectorTarget.type === "quiz") {
+      updateQuestion(mediaSelectorTarget.index, "imageUrl", url);
+    }
+    setMediaSelectorOpen(false);
+    setMediaSelectorTarget(null);
+  };
+
+  const openMediaSelector = (target: "thumbnail" | { type: "quiz"; index: number }) => {
+    setMediaSelectorTarget(target);
+    setMediaSelectorOpen(true);
   };
 
   const updateQuestionOption = (qIndex: number, oIndex: number, value: string) => {
@@ -384,15 +413,38 @@ export function TaskForm({ task }: TaskFormProps) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-400 mb-2">
-                  Thumbnail URL
+                  Thumbnail
                 </label>
-                <input
-                  type="url"
-                  value={formData.thumbnailUrl}
-                  onChange={(e) => setFormData({ ...formData, thumbnailUrl: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
-                />
+                <div className="space-y-3">
+                  {formData.thumbnailUrl ? (
+                    <div className="relative inline-block">
+                      <img
+                        src={formData.thumbnailUrl}
+                        alt="Thumbnail"
+                        className="w-32 h-20 object-cover rounded-lg border border-gray-700"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, thumbnailUrl: "" })}
+                        className="absolute -top-2 -right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-32 h-20 bg-gray-800 border border-gray-700 border-dashed rounded-lg flex items-center justify-center">
+                      <ImageIcon className="w-8 h-8 text-gray-600" />
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => openMediaSelector("thumbnail")}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    {formData.thumbnailUrl ? "Change Thumbnail" : "Select Thumbnail"}
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -562,6 +614,44 @@ export function TaskForm({ task }: TaskFormProps) {
                   placeholder="Enter question..."
                   className="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
                 />
+
+                {/* Question Image (Optional) */}
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    <ImageIcon className="w-4 h-4 inline mr-1" />
+                    Question Image (Optional)
+                  </label>
+                  <div className="flex items-center gap-3">
+                    {q.imageUrl ? (
+                      <div className="relative">
+                        <img
+                          src={q.imageUrl}
+                          alt={`Question ${qIndex + 1} image`}
+                          className="w-24 h-16 object-cover rounded-lg border border-gray-700"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => updateQuestion(qIndex, "imageUrl", "")}
+                          className="absolute -top-2 -right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-24 h-16 bg-gray-900 border border-gray-700 border-dashed rounded-lg flex items-center justify-center">
+                        <ImageIcon className="w-6 h-6 text-gray-600" />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => openMediaSelector({ type: "quiz", index: qIndex })}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-900 text-gray-300 rounded-lg hover:bg-gray-700 border border-gray-700 transition-colors"
+                    >
+                      <ImageIcon className="w-4 h-4" />
+                      {q.imageUrl ? "Change" : "Add Image"}
+                    </button>
+                  </div>
+                </div>
 
                 <div className="space-y-2">
                   <p className="text-sm text-gray-400">Options (select correct answer)</p>
@@ -893,6 +983,18 @@ export function TaskForm({ task }: TaskFormProps) {
           </button>
         </div>
       </div>
+
+      {/* Media Selector Modal */}
+      <MediaSelector
+        isOpen={mediaSelectorOpen}
+        onClose={() => {
+          setMediaSelectorOpen(false);
+          setMediaSelectorTarget(null);
+        }}
+        onSelect={handleMediaSelect}
+        fileType="IMAGE"
+        title={mediaSelectorTarget === "thumbnail" ? "Select Thumbnail" : "Select Question Image"}
+      />
     </form>
   );
 }

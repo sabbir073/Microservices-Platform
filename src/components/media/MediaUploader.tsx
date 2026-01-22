@@ -26,6 +26,7 @@ export function MediaUploader({
   const [uploads, setUploads] = useState<UploadProgress[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isFileDialogOpenRef = useRef(false);
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const fileArray = Array.from(files);
@@ -195,13 +196,25 @@ export function MediaUploader({
   };
 
   return (
-    <div className={className}>
+    <div
+      className={className}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onFocus={(e) => e.stopPropagation()}
+      onBlur={(e) => e.stopPropagation()}
+    >
       {/* Drop Zone */}
       <div
         onDrop={handleDrop}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onClick={() => fileInputRef.current?.click()}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          isFileDialogOpenRef.current = true;
+          fileInputRef.current?.click();
+        }}
         className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
           isDragging
             ? "border-indigo-500 bg-indigo-500/10"
@@ -213,7 +226,19 @@ export function MediaUploader({
           type="file"
           multiple
           accept={acceptedTypes.join(",")}
-          onChange={handleFileInputChange}
+          onChange={(e) => {
+            isFileDialogOpenRef.current = false;
+            handleFileInputChange(e);
+          }}
+          onFocus={(e) => e.stopPropagation()}
+          onBlur={(e) => {
+            e.stopPropagation();
+            // Small delay to ensure file dialog has closed
+            setTimeout(() => {
+              isFileDialogOpenRef.current = false;
+            }, 100);
+          }}
+          onClick={(e) => e.stopPropagation()}
           className="hidden"
         />
 

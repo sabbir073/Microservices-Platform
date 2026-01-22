@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { X, Search, Grid3x3, List, Filter, CheckCircle, Loader2, Image as ImageIcon, Video, FileAudio, FileText, File } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MediaItem, MediaFilter } from "@/types/media";
@@ -36,6 +37,7 @@ export function MediaSelector({
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [activeTab, setActiveTab] = useState<"library" | "upload">("library");
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const fetchMedia = useCallback(async (loadMore = false) => {
     setLoading(true);
@@ -129,11 +131,54 @@ export function MediaSelector({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  if (!isOpen) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-gray-900 rounded-xl border border-gray-800 w-full max-w-6xl mx-4 max-h-[90vh] flex flex-col">
+  // Handle mounting for portal
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Handle escape key to close modal
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener("keydown", handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen || !mounted) return null;
+
+  const modalContent = (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onMouseDown={(e) => {
+        // Only close if clicking directly on the backdrop (not on modal content)
+        if (e.target === e.currentTarget) {
+          // Don't close - user must click Cancel or X button
+        }
+        e.stopPropagation();
+      }}
+      onClick={(e) => e.stopPropagation()}
+      onFocus={(e) => e.stopPropagation()}
+      onBlur={(e) => e.stopPropagation()}
+    >
+      <div
+        ref={modalRef}
+        className="bg-gray-900 rounded-xl border border-gray-800 w-full max-w-6xl mx-4 max-h-[90vh] flex flex-col"
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        onFocus={(e) => e.stopPropagation()}
+        onBlur={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-800">
           <div>
@@ -368,4 +413,8 @@ export function MediaSelector({
       </div>
     </div>
   );
+
+  // Use portal to render modal outside of the DOM hierarchy
+  // This prevents issues with form events, focus trapping, etc.
+  return createPortal(modalContent, document.body);
 }

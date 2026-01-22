@@ -5,6 +5,7 @@ import {
   getUploadUrl,
   generateFileKey,
   uploadFile,
+  getPublicUrl,
 } from "@/lib/s3";
 
 // Maximum file size for direct upload (5MB)
@@ -84,7 +85,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       uploadUrl: result.uploadUrl,
       key: result.key,
-      publicUrl: `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION || "us-east-1"}.amazonaws.com/${key}`,
+      publicUrl: getPublicUrl(key),
     });
   } catch (error) {
     console.error("Error generating upload URL:", error);
