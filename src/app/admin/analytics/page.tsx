@@ -18,6 +18,7 @@ import Link from "next/link";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { ExportDropdown } from "./_components/ExportDropdown";
+import { AnalyticsCharts } from "@/components/admin/analytics/analytics-charts";
 
 interface PageProps {
   searchParams: Promise<{
@@ -336,58 +337,8 @@ export default async function AdminAnalyticsPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* Charts */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* Activity Chart */}
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">Daily Activity</h2>
-          <div className="h-64 flex items-end justify-between gap-2">
-            {dailyData.map((day, index) => {
-              const maxTasks = Math.max(...dailyData.map((d) => d.tasks), 1);
-              const height = (day.tasks / maxTasks) * 100;
-
-              return (
-                <div key={index} className="flex-1 flex flex-col items-center gap-2">
-                  <div className="w-full flex flex-col items-center">
-                    <span className="text-xs text-gray-500 mb-1">{day.tasks}</span>
-                    <div
-                      className="w-full bg-indigo-500 rounded-t transition-all"
-                      style={{ height: `${Math.max(height, 4)}%`, minHeight: "8px" }}
-                    />
-                  </div>
-                  <span className="text-xs text-gray-500">{day.date}</span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-xs text-gray-600 text-center mt-4">Tasks Completed Per Day</p>
-        </div>
-
-        {/* User Growth Chart */}
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">New Users</h2>
-          <div className="h-64 flex items-end justify-between gap-2">
-            {dailyData.map((day, index) => {
-              const maxUsers = Math.max(...dailyData.map((d) => d.users), 1);
-              const height = (day.users / maxUsers) * 100;
-
-              return (
-                <div key={index} className="flex-1 flex flex-col items-center gap-2">
-                  <div className="w-full flex flex-col items-center">
-                    <span className="text-xs text-gray-500 mb-1">{day.users}</span>
-                    <div
-                      className="w-full bg-emerald-500 rounded-t transition-all"
-                      style={{ height: `${Math.max(height, 4)}%`, minHeight: "8px" }}
-                    />
-                  </div>
-                  <span className="text-xs text-gray-500">{day.date}</span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="text-xs text-gray-600 text-center mt-4">New Users Per Day</p>
-        </div>
-      </div>
+      {/* Charts — Recharts */}
+      <AnalyticsCharts daily={dailyData} />
 
       {/* Top Earners */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">

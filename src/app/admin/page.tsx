@@ -4,402 +4,424 @@ import { prisma } from "@/lib/prisma";
 import { isAdmin, type UserRole } from "@/lib/rbac";
 import {
   Users,
-  Wallet,
-  ListTodo,
-  TrendingUp,
-  ArrowUpRight,
-  ArrowDownRight,
+  Activity,
+  DollarSign,
+  GitBranch,
   Clock,
+  TrendingUp,
+  CalendarDays,
+  ListTodo,
+  ClipboardCheck,
+  Wallet,
   CheckCircle,
-  XCircle,
-  AlertCircle,
 } from "lucide-react";
-import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
+import { StatCard } from "@/components/admin/stat-card";
+import { UserGrowthChart } from "@/components/admin/user-growth-chart";
+import { PlatformStats } from "@/components/admin/platform-stats";
+import { PendingActions } from "@/components/admin/pending-actions";
+import { PlatformOverview } from "@/components/admin/platform-overview";
+import {
+  RecentActivityFeed,
+  type ActivityLogEntry,
+} from "@/components/admin/recent-activity-feed";
+import { format, startOfDay, subDays, startOfMonth } from "date-fns";
 
-// Stats Card Component
-function StatsCard({
-  title,
-  value,
-  change,
-  changeType,
-  icon: Icon,
-  href,
-}: {
-  title: string;
-  value: string;
-  change?: string;
-  changeType?: "positive" | "negative";
-  icon: React.ElementType;
-  href: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="bg-gray-900 rounded-xl border border-gray-800 p-6 hover:border-gray-700 transition-colors"
-    >
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-gray-400">{title}</p>
-          <p className="text-2xl font-bold text-white mt-1">{value}</p>
-          {change && (
-            <div className="flex items-center gap-1 mt-2">
-              {changeType === "positive" ? (
-                <ArrowUpRight className="w-4 h-4 text-emerald-400" />
-              ) : (
-                <ArrowDownRight className="w-4 h-4 text-red-400" />
-              )}
-              <span
-                className={
-                  changeType === "positive" ? "text-emerald-400" : "text-red-400"
-                }
-              >
-                {change}
-              </span>
-              <span className="text-gray-500 text-sm">vs last week</span>
-            </div>
-          )}
-        </div>
-        <div className="p-3 bg-red-500/10 rounded-lg">
-          <Icon className="w-6 h-6 text-red-400" />
-        </div>
-      </div>
-    </Link>
-  );
-}
+// Auto-revalidate every 30 seconds (matches PROTOTYPE_ADMIN.md §38 spec)
+export const revalidate = 30;
 
-// Pending Item Component
-function PendingItem({
-  title,
-  description,
-  time,
-  status,
-  href,
-}: {
-  title: string;
-  description: string;
-  time: string;
-  status: "pending" | "approved" | "rejected";
-  href: string;
-}) {
-  const statusConfig = {
-    pending: { icon: AlertCircle, color: "text-amber-400 bg-amber-500/10" },
-    approved: { icon: CheckCircle, color: "text-emerald-400 bg-emerald-500/10" },
-    rejected: { icon: XCircle, color: "text-red-400 bg-red-500/10" },
-  };
-
-  const { icon: StatusIcon, color } = statusConfig[status];
-
-  return (
-    <Link
-      href={href}
-      className="flex items-start gap-4 py-4 border-b border-gray-800 last:border-0 hover:bg-gray-800/50 px-2 -mx-2 rounded-lg transition-colors"
-    >
-      <div className={`p-2 rounded-lg ${color}`}>
-        <StatusIcon className="w-4 h-4" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-white">{title}</p>
-        <p className="text-xs text-gray-500 mt-0.5">{description}</p>
-      </div>
-      <div className="flex items-center gap-1 text-xs text-gray-500">
-        <Clock className="w-3 h-3" />
-        {time}
-      </div>
-    </Link>
-  );
+// Build the 7-day user-growth dataset (oldest first)
+function buildGrowthSeries(
+  users: Array<{ createdAt: Date }>,
+  days = 7
+): Array<{ label: string; count: number }> {
+  const today = startOfDay(new Date());
+  const series: Array<{ label: string; count: number; date: Date }> = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = subDays(today, i);
+    series.push({ label: format(d, "EEE"), count: 0, date: d });
+  }
+  for (const u of users) {
+    const d = startOfDay(u.createdAt).getTime();
+    const slot = series.find((s) => s.date.getTime() === d);
+    if (slot) slot.count += 1;
+  }
+  return series.map(({ label, count }) => ({ label, count }));
 }
 
 export default async function AdminDashboardPage() {
   const session = await auth();
+  if (!session?.user) redirect("/login");
+  if (!isAdmin(session.user.role as UserRole)) redirect("/dashboard");
 
-  if (!session?.user) {
-    redirect("/login");
-  }
+  const now = new Date();
+  const fiveMinAgo = new Date(now.getTime() - 5 * 60 * 1000);
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const todayStart = startOfDay(now);
+  const monthStart = startOfMonth(now);
+  const sevenDaysAgo = subDays(todayStart, 7);
 
-  // Check admin role
-  if (!isAdmin(session.user.role as UserRole)) {
-    redirect("/dashboard");
-  }
-
-  // Fetch admin dashboard stats
   const [
     totalUsers,
-    activeTasks,
+    newUsersToday,
+    realtimeActive5m,
+    activeUsers24h,
+    last7DaysUsers,
+
+    totalTasks,
+    completionsToday,
+    completionsMonth,
+    pendingApprovalsCount,
+
+    pendingKYC,
+    pendingAppeals,
+    pendingAccountApprovals,
+
+    pendingWithdrawAgg,
     pendingWithdrawalsCount,
-    recentUsers,
-    pendingTaskSubmissionsRaw,
-    pendingWithdrawalsRaw,
+    paidWithdrawalsAgg,
+    todayRevenueAgg,
+    monthRevenueAgg,
+    totalRevenueAgg,
+    referralEarningsAgg,
+
+    activeSubscriptions,
+
+    totalListings,
+    totalOrders,
+    pendingOrders,
+    openDisputes,
+
+    totalCourses,
+    totalEnrollments,
+    verifiedKycCount,
+
+    auditLogs,
+    auditLogActorIds,
   ] = await Promise.all([
-    // Total users count
     prisma.user.count(),
-    // Active tasks count
-    prisma.task.count({ where: { status: "ACTIVE" } }),
-    // Pending withdrawals count
-    prisma.withdrawal.count({ where: { status: "PENDING" } }),
-    // Recent users (last 5)
+    prisma.user.count({ where: { createdAt: { gte: todayStart } } }),
+    prisma.user.count({ where: { lastLoginAt: { gte: fiveMinAgo } } }),
+    prisma.user.count({ where: { lastLoginAt: { gte: dayAgo } } }),
     prisma.user.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 5,
+      where: { createdAt: { gte: sevenDaysAgo } },
+      select: { createdAt: true },
     }),
-    // Pending task submissions (last 5)
-    prisma.taskSubmission.findMany({
+
+    prisma.task.count(),
+    prisma.taskSubmission.count({
+      where: { status: "APPROVED", reviewedAt: { gte: todayStart } },
+    }),
+    prisma.taskSubmission.count({
+      where: { status: "APPROVED", reviewedAt: { gte: monthStart } },
+    }),
+    prisma.taskSubmission.count({ where: { status: "PENDING" } }),
+
+    prisma.kYCDocument.count({ where: { status: "PENDING" } }),
+    // Verification appeals don't have their own model yet — leave at 0 until added
+    Promise.resolve(0),
+    prisma.user.count({ where: { status: "PENDING_VERIFICATION" } }),
+
+    prisma.withdrawal.aggregate({
       where: { status: "PENDING" },
-      orderBy: { createdAt: "desc" },
-      take: 5,
+      _sum: { amount: true },
     }),
-    // Pending withdrawals (last 5)
-    prisma.withdrawal.findMany({
-      where: { status: "PENDING" },
-      orderBy: { createdAt: "desc" },
-      take: 5,
+    prisma.withdrawal.count({ where: { status: "PENDING" } }),
+    prisma.withdrawal.aggregate({
+      where: { status: "COMPLETED" },
+      _sum: { amount: true },
     }),
+    prisma.subscription.aggregate({
+      where: { createdAt: { gte: todayStart }, isActive: true },
+      _sum: { amount: true },
+    }),
+    prisma.subscription.aggregate({
+      where: { createdAt: { gte: monthStart }, isActive: true },
+      _sum: { amount: true },
+    }),
+    prisma.subscription.aggregate({
+      where: { isActive: true },
+      _sum: { amount: true },
+    }),
+    prisma.referralEarning.aggregate({ _sum: { amount: true } }),
+
+    prisma.subscription.count({ where: { isActive: true } }),
+
+    prisma.marketplaceListing.count(),
+    prisma.marketplacePurchase.count(),
+    prisma.marketplacePurchase.count({ where: { status: "PENDING" } }),
+    prisma.marketplaceDispute.count({
+      where: { status: { in: ["OPEN", "IN_REVIEW", "ESCALATED"] } },
+    }),
+
+    prisma.course.count({ where: { status: "PUBLISHED" } }),
+    prisma.courseEnrollment.count(),
+    prisma.user.count({ where: { kycStatus: "APPROVED" } }),
+
+    prisma.auditLog.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
+    // Pre-fetch admin user names — done in next step using already-fetched logs
+    Promise.resolve([] as string[]),
   ]);
 
-  // Fetch related data for task submissions
-  const taskIds = [...new Set(pendingTaskSubmissionsRaw.map(s => s.taskId))];
-  const userIds = [...new Set([
-    ...pendingTaskSubmissionsRaw.map(s => s.userId),
-    ...pendingWithdrawalsRaw.map(w => w.userId),
-  ])];
+  // Resolve admin/user names for the audit log entries
+  const actorIds = Array.from(
+    new Set(auditLogs.map((l) => l.userId).filter((v): v is string => !!v))
+  );
+  const actorMap = actorIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: actorIds } },
+        select: { id: true, name: true, email: true, username: true },
+      })
+    : [];
+  const actorById = new Map(actorMap.map((a) => [a.id, a]));
 
-  const [tasks, users] = await Promise.all([
-    taskIds.length > 0 ? prisma.task.findMany({ where: { id: { in: taskIds } } }) : [],
-    userIds.length > 0 ? prisma.user.findMany({ where: { id: { in: userIds } } }) : [],
-  ]);
+  const recentEntries: ActivityLogEntry[] = auditLogs.map((log) => {
+    const actor = log.userId ? actorById.get(log.userId) : null;
+    let detailsString: string | null = null;
+    if (log.newData && typeof log.newData === "object") {
+      try {
+        detailsString = JSON.stringify(log.newData);
+        if (detailsString.length > 120)
+          detailsString = detailsString.slice(0, 120) + "…";
+      } catch {
+        detailsString = null;
+      }
+    }
+    return {
+      id: log.id,
+      action: log.action,
+      entity: log.entity,
+      adminName:
+        actor?.username ?? actor?.name ?? actor?.email ?? null,
+      details: detailsString,
+      createdAt: log.createdAt,
+    };
+  });
 
-  const taskMap = new Map(tasks.map(t => [t.id, t]));
-  const userMap = new Map(users.map(u => [u.id, u]));
+  // Derive numbers
+  const pendingPayoutsAmount = pendingWithdrawAgg._sum.amount ?? 0;
+  const totalPaid = paidWithdrawalsAgg._sum.amount ?? 0;
+  const todayRevenue = todayRevenueAgg._sum.amount ?? 0;
+  const monthRevenue = monthRevenueAgg._sum.amount ?? 0;
+  const totalRevenue = totalRevenueAgg._sum.amount ?? 0;
+  const totalReferralEarnings = referralEarningsAgg._sum.amount ?? 0;
+  const _ = activeSubscriptions; // currently unused but we may surface later
 
-  // Map task submissions with related data
-  const pendingTaskSubmissions = pendingTaskSubmissionsRaw.map(s => ({
-    ...s,
-    task: taskMap.get(s.taskId),
-    user: userMap.get(s.userId),
-  }));
+  // Platform Stats — % rates (capped 0–100)
+  const totalSubmissionsAttempted =
+    completionsMonth + pendingApprovalsCount;
+  const taskCompletionRate =
+    totalSubmissionsAttempted > 0
+      ? (completionsMonth / totalSubmissionsAttempted) * 100
+      : 0;
+  const totalWithdrawalRequests =
+    pendingWithdrawalsCount +
+    (await prisma.withdrawal.count({ where: { status: "COMPLETED" } }));
+  const withdrawalSuccessRate =
+    totalWithdrawalRequests > 0
+      ? ((totalWithdrawalRequests - pendingWithdrawalsCount) /
+          totalWithdrawalRequests) *
+        100
+      : 0;
+  const referralUsers = await prisma.user.count({
+    where: { referredById: { not: null } },
+  });
+  const referralConvRate =
+    totalUsers > 0 ? (referralUsers / totalUsers) * 100 : 0;
+  const subsRate =
+    totalUsers > 0 ? (activeSubscriptions / totalUsers) * 100 : 0;
+  const kycVerifiedRate =
+    totalUsers > 0 ? (verifiedKycCount / totalUsers) * 100 : 0;
 
-  // Map withdrawals with related data
-  const pendingWithdrawalsList = pendingWithdrawalsRaw.map(w => ({
-    ...w,
-    user: userMap.get(w.userId),
-  }));
-
-  const revenue = 0; // TODO: Calculate from subscriptions when needed
-  const pendingWithdrawals = pendingWithdrawalsCount;
+  const growthSeries = buildGrowthSeries(last7DaysUsers);
 
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white">Admin Dashboard</h1>
-        <p className="text-gray-400 mt-1">
-          Overview of platform statistics and pending actions.
-        </p>
-      </div>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard
+    <div className="space-y-6 max-w-[1600px] mx-auto">
+      {/* Stats row 1 — 5 cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+        <StatCard
           title="Total Users"
-          value={totalUsers.toLocaleString()}
+          value={totalUsers}
+          subtext={`+${newUsersToday} today`}
           icon={Users}
+          tone="blue"
           href="/admin/users"
         />
-        <StatsCard
-          title="Active Tasks"
-          value={activeTasks.toLocaleString()}
-          icon={ListTodo}
-          href="/admin/tasks"
+        <StatCard
+          title="Realtime Active"
+          value={realtimeActive5m}
+          subtext={`${activeUsers24h} in 24h`}
+          icon={Activity}
+          tone="purple"
+          href="/admin/users"
         />
-        <StatsCard
-          title="Pending Withdrawals"
-          value={pendingWithdrawals.toLocaleString()}
-          icon={Wallet}
+        <StatCard
+          title="Subscription Revenue"
+          value={`$${monthRevenue.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`}
+          subtext="this month"
+          icon={DollarSign}
+          tone="green"
+          href="/admin/packages"
+        />
+        <StatCard
+          title="Referral Earnings"
+          value={`$${totalReferralEarnings.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`}
+          subtext="total paid out"
+          icon={GitBranch}
+          tone="indigo"
+          href="/admin/referrals"
+        />
+        <StatCard
+          title="Pending Payouts"
+          value={`$${pendingPayoutsAmount.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`}
+          subtext={`${pendingWithdrawalsCount} awaiting`}
+          icon={Clock}
+          tone="orange"
           href="/admin/withdrawals"
         />
-        <StatsCard
+      </div>
+
+      {/* Stats row 2 — 4 cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard
           title="Total Revenue"
-          value={`$${revenue.toFixed(2)}`}
+          value={`$${totalRevenue.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`}
+          subtext="all time"
           icon={TrendingUp}
-          href="/admin/reports"
+          tone="green"
+          href="/admin/analytics"
+        />
+        <StatCard
+          title="Today Revenue"
+          value={`$${todayRevenue.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`}
+          subtext={format(now, "MMM d, yyyy")}
+          icon={CalendarDays}
+          tone="blue"
+        />
+        <StatCard
+          title="Pending Withdrawals"
+          value={pendingWithdrawalsCount}
+          subtext={`$${pendingPayoutsAmount.toFixed(2)} total`}
+          icon={Wallet}
+          tone="amber"
+          href="/admin/withdrawals"
+        />
+        <StatCard
+          title="Total Paid"
+          value={`$${totalPaid.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}`}
+          subtext="since launch"
+          icon={CheckCircle}
+          tone="purple"
+          href="/admin/withdrawals?status=COMPLETED"
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pending Withdrawals */}
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">
-              Pending Withdrawals
-            </h2>
-            <Link
-              href="/admin/withdrawals"
-              className="text-sm text-red-400 hover:text-red-300"
-            >
-              View all
-            </Link>
-          </div>
-          <div className="space-y-0">
-            {pendingWithdrawalsList.length > 0 ? (
-              pendingWithdrawalsList.map((withdrawal) => (
-                <PendingItem
-                  key={withdrawal.id}
-                  title={`$${withdrawal.amount.toFixed(2)} via ${withdrawal.method}`}
-                  description={withdrawal.user?.name || withdrawal.user?.email || "Unknown user"}
-                  time={formatDistanceToNow(withdrawal.createdAt, { addSuffix: true })}
-                  status="pending"
-                  href={`/admin/withdrawals/${withdrawal.id}`}
-                />
-              ))
-            ) : (
-              <div className="flex items-center justify-center py-12 text-gray-500">
-                <div className="text-center">
-                  <Wallet className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No pending withdrawals</p>
-                </div>
-              </div>
-            )}
-          </div>
+      {/* Charts row — 2/3 + 1/3 */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <div className="lg:col-span-2">
+          <UserGrowthChart data={growthSeries} />
         </div>
-
-        {/* Pending Task Submissions */}
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold text-white">
-              Pending Task Reviews
-            </h2>
-            <Link
-              href="/admin/tasks"
-              className="text-sm text-red-400 hover:text-red-300"
-            >
-              View all
-            </Link>
-          </div>
-          <div className="space-y-0">
-            {pendingTaskSubmissions.length > 0 ? (
-              pendingTaskSubmissions.map((submission) => (
-                <PendingItem
-                  key={submission.id}
-                  title={submission.task?.title || "Unknown task"}
-                  description={submission.user?.name || submission.user?.email || "Unknown user"}
-                  time={formatDistanceToNow(submission.createdAt, { addSuffix: true })}
-                  status="pending"
-                  href={`/admin/tasks/submissions/${submission.id}`}
-                />
-              ))
-            ) : (
-              <div className="flex items-center justify-center py-12 text-gray-500">
-                <div className="text-center">
-                  <ListTodo className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                  <p>No pending task submissions</p>
-                </div>
-              </div>
-            )}
-          </div>
+        <div>
+          <PlatformStats
+            bars={[
+              { label: "Task Completion", percent: taskCompletionRate, tone: "blue" },
+              { label: "Withdrawal Success", percent: withdrawalSuccessRate, tone: "green" },
+              { label: "Referral Conv.", percent: referralConvRate, tone: "purple" },
+              { label: "Subscriptions", percent: subsRate, tone: "amber" },
+              { label: "KYC Verified", percent: kycVerifiedRate, tone: "pink" },
+            ]}
+          />
         </div>
       </div>
 
-      {/* Recent Users */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">Recent Users</h2>
-          <Link
-            href="/admin/users"
-            className="text-sm text-red-400 hover:text-red-300"
-          >
-            View all
-          </Link>
+      {/* Detailed stats — Task Performance + Platform Overview */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {/* Task Performance — 2x2 grid of stats */}
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-5">
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <ListTodo className="w-4 h-4 text-blue-400" />
+            Task Performance
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {completionsToday.toLocaleString()}
+              </p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">
+                Today&apos;s Completions
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {completionsMonth.toLocaleString()}
+              </p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">
+                Monthly Completions
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {totalTasks.toLocaleString()}
+              </p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">
+                Total Tasks
+              </p>
+            </div>
+            <div className="rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+              <p className="text-2xl font-bold text-white tabular-nums flex items-center gap-2">
+                {pendingApprovalsCount.toLocaleString()}
+                {pendingApprovalsCount > 0 && (
+                  <ClipboardCheck className="w-4 h-4 text-amber-400" />
+                )}
+              </p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider mt-1">
+                Approval Queue
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
-                  User
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
-                  Email
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
-                  Status
-                </th>
-                <th className="text-left py-3 px-4 text-sm font-medium text-gray-400">
-                  Joined
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentUsers.length > 0 ? (
-                recentUsers.map((user) => (
-                  <tr key={user.id} className="border-b border-gray-800 last:border-0">
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
-                          {user.name?.charAt(0) || user.email?.charAt(0) || "U"}
-                        </div>
-                        <span className="text-sm text-white">{user.name || "Unnamed"}</span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-400">{user.email}</td>
-                    <td className="py-3 px-4">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.status === "ACTIVE"
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : user.status === "PENDING_VERIFICATION"
-                          ? "bg-amber-500/10 text-amber-400"
-                          : "bg-red-500/10 text-red-400"
-                      }`}>
-                        {user.status.replace("_", " ")}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-gray-400">
-                      {formatDistanceToNow(user.createdAt, { addSuffix: true })}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4} className="py-12 text-center text-gray-500">
-                    <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>No users yet</p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+
+        <PlatformOverview
+          marketplace={{
+            listings: totalListings,
+            orders: totalOrders,
+            pending: pendingOrders,
+          }}
+          courses={{ active: totalCourses, enrollments: totalEnrollments }}
+          financials={{ totalWithdrawn: totalPaid }}
+        />
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Link
-          href="/admin/users"
-          className="bg-gray-900 rounded-xl border border-gray-800 p-5 hover:border-gray-700 transition-colors text-center"
-        >
-          <Users className="w-8 h-8 text-red-400 mx-auto mb-2" />
-          <p className="text-sm font-medium text-white">Manage Users</p>
-        </Link>
-        <Link
-          href="/admin/tasks"
-          className="bg-gray-900 rounded-xl border border-gray-800 p-5 hover:border-gray-700 transition-colors text-center"
-        >
-          <ListTodo className="w-8 h-8 text-red-400 mx-auto mb-2" />
-          <p className="text-sm font-medium text-white">Manage Tasks</p>
-        </Link>
-        <Link
-          href="/admin/withdrawals"
-          className="bg-gray-900 rounded-xl border border-gray-800 p-5 hover:border-gray-700 transition-colors text-center"
-        >
-          <Wallet className="w-8 h-8 text-red-400 mx-auto mb-2" />
-          <p className="text-sm font-medium text-white">Withdrawals</p>
-        </Link>
-        <Link
-          href="/admin/reports"
-          className="bg-gray-900 rounded-xl border border-gray-800 p-5 hover:border-gray-700 transition-colors text-center"
-        >
-          <TrendingUp className="w-8 h-8 text-red-400 mx-auto mb-2" />
-          <p className="text-sm font-medium text-white">View Reports</p>
-        </Link>
+      {/* Pending Actions + Recent Activity */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <PendingActions
+          pendingKYC={pendingKYC}
+          pendingApprovals={pendingAccountApprovals}
+          pendingWithdrawals={pendingWithdrawalsCount}
+          pendingAppeals={pendingAppeals}
+          openDisputes={openDisputes}
+        />
+        <RecentActivityFeed entries={recentEntries} />
       </div>
     </div>
   );

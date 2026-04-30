@@ -21,6 +21,23 @@ import {
 } from "lucide-react";
 import { MediaSelector } from "@/components/media/MediaSelector";
 import type { MediaItem } from "@/types/media";
+import { SocialTaskBuilder } from "./SocialTaskBuilder";
+import { ArticleTaskBuilder } from "./ArticleTaskBuilder";
+import { VideoTaskBuilder } from "./VideoTaskBuilder";
+import {
+  emptySocialConfig,
+  type SocialConfig,
+} from "@/lib/social-tasks";
+import {
+  emptyArticleConfig,
+  validateArticleConfig,
+  type ArticleConfig,
+} from "@/lib/article-tasks";
+import {
+  emptyVideoConfig,
+  validateVideoConfig,
+  type VideoConfig,
+} from "@/lib/video-tasks";
 
 // Task types with icons and colors
 const taskTypes = [
@@ -36,9 +53,10 @@ const taskTypes = [
 
 const packageTiers = [
   { id: "FREE", label: "Free" },
-  { id: "BASIC", label: "Basic" },
-  { id: "STANDARD", label: "Standard" },
-  { id: "PREMIUM", label: "Premium" },
+  { id: "STARTER", label: "Starter" },
+  { id: "PRO", label: "Pro" },
+  { id: "ELITE", label: "Elite" },
+  { id: "VIP", label: "VIP" },
 ];
 
 const socialPlatforms = [
@@ -120,6 +138,9 @@ interface TaskFormProps {
     socialPlatform: string | null;
     socialAction: string | null;
     socialUrl: string | null;
+    socialConfig?: SocialConfig | null;
+    articleConfig?: ArticleConfig | null;
+    videoConfig?: VideoConfig | null;
     proxyInstructions: string | null;
     startsAt: Date | null;
     expiresAt: Date | null;
@@ -179,6 +200,21 @@ export function TaskForm({ task }: TaskFormProps) {
     ]
   );
 
+  // Social task config
+  const [socialConfig, setSocialConfig] = useState<SocialConfig>(
+    task?.socialConfig ?? emptySocialConfig()
+  );
+
+  // Article task config
+  const [articleConfig, setArticleConfig] = useState<ArticleConfig>(
+    task?.articleConfig ?? emptyArticleConfig()
+  );
+
+  // Video task config
+  const [videoConfig, setVideoConfig] = useState<VideoConfig>(
+    task?.videoConfig ?? emptyVideoConfig()
+  );
+
   // Media selector state
   const [mediaSelectorOpen, setMediaSelectorOpen] = useState(false);
   const [mediaSelectorTarget, setMediaSelectorTarget] = useState<"thumbnail" | { type: "quiz"; index: number } | null>(null);
@@ -192,13 +228,68 @@ export function TaskForm({ task }: TaskFormProps) {
     setError("");
 
     try {
+      // For SOCIAL tasks, validate the builder and override legacy fields
+      let socialPlatformOut = formData.socialPlatform;
+      let socialActionOut = formData.socialAction;
+      let socialUrlOut = formData.socialUrl;
+      let socialConfigOut: SocialConfig | null = null;
+
+      if (formData.type === "SOCIAL") {
+        if (!socialConfig.platform || !socialConfig.action) {
+          throw new Error(
+            "Pick a platform and an action for this social task."
+          );
+        }
+        socialPlatformOut = socialConfig.platform;
+        socialActionOut = socialConfig.action;
+        socialUrlOut =
+          socialConfig.fields.targetUrl ??
+          socialConfig.fields.targetHandle ??
+          formData.socialUrl;
+        socialConfigOut = socialConfig;
+      }
+
+      // For ARTICLE tasks, validate and prep config
+      let articleConfigOut: ArticleConfig | null = null;
+      let contentUrlOut = formData.contentUrl;
+      if (formData.type === "ARTICLE") {
+        const v = validateArticleConfig(articleConfig);
+        if (!v.ok) throw new Error(v.error ?? "Invalid article config");
+        // Strip blank links and back-fill contentUrl with first link
+        articleConfigOut = {
+          ...articleConfig,
+          links: articleConfig.links.filter((l) => l.url.trim()),
+        };
+        contentUrlOut = articleConfigOut.links[0]?.url ?? "";
+      }
+
+      // For VIDEO tasks, validate and prep config
+      let videoConfigOut: VideoConfig | null = null;
+      let durationOut: string | number = formData.duration;
+      if (formData.type === "VIDEO") {
+        const v = validateVideoConfig(videoConfig);
+        if (!v.ok) throw new Error(v.error ?? "Invalid video config");
+        videoConfigOut = videoConfig;
+        contentUrlOut = videoConfig.videoUrl;
+        durationOut = videoConfig.watchSeconds;
+      }
+
       // Prepare the data
       const submitData = {
         ...formData,
+        socialPlatform: socialPlatformOut,
+        socialAction: socialActionOut,
+        socialUrl: socialUrlOut,
+        socialConfig: socialConfigOut,
+        articleConfig: articleConfigOut,
+        videoConfig: videoConfigOut,
+        contentUrl: contentUrlOut,
+        duration: durationOut
+          ? parseInt(durationOut.toString())
+          : null,
         instructions: instructionSteps.filter(Boolean).join("\n"),
         dailyLimit: formData.dailyLimit ? parseInt(formData.dailyLimit.toString()) : null,
         totalLimit: formData.totalLimit ? parseInt(formData.totalLimit.toString()) : null,
-        duration: formData.duration ? parseInt(formData.duration.toString()) : null,
         startsAt: formData.startsAt ? new Date(formData.startsAt).toISOString() : null,
         expiresAt: formData.expiresAt ? new Date(formData.expiresAt).toISOString() : null,
         status: isDraft ? "PAUSED" : "ACTIVE",
@@ -397,118 +488,100 @@ export function TaskForm({ task }: TaskFormProps) {
             />
           </div>
 
-          {(formData.type === "VIDEO" || formData.type === "ARTICLE") && (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
-                  Content URL
-                </label>
-                <input
-                  type="url"
-                  value={formData.contentUrl}
-                  onChange={(e) => setFormData({ ...formData, contentUrl: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
-                />
+          {(formData.type === "VIDEO" ||
+            formData.type === "ARTICLE" ||
+            formData.type === "SOCIAL") && (
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-2">
+                Thumbnail
+              </label>
+              <div className="space-y-3">
+                {formData.thumbnailUrl ? (
+                  <div className="relative inline-block">
+                    <img
+                      src={formData.thumbnailUrl}
+                      alt="Thumbnail"
+                      className="w-32 h-20 object-cover rounded-lg border border-gray-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({ ...formData, thumbnailUrl: "" })
+                      }
+                      className="absolute -top-2 -right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="w-32 h-20 bg-gray-800 border border-gray-700 border-dashed rounded-lg flex items-center justify-center">
+                    <ImageIcon className="w-8 h-8 text-gray-600" />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openMediaSelector("thumbnail")}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  <ImageIcon className="w-4 h-4" />
+                  {formData.thumbnailUrl ? "Change Thumbnail" : "Select Thumbnail"}
+                </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-2">
-                  Thumbnail
-                </label>
-                <div className="space-y-3">
-                  {formData.thumbnailUrl ? (
-                    <div className="relative inline-block">
-                      <img
-                        src={formData.thumbnailUrl}
-                        alt="Thumbnail"
-                        className="w-32 h-20 object-cover rounded-lg border border-gray-700"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, thumbnailUrl: "" })}
-                        className="absolute -top-2 -right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600 transition-colors"
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="w-32 h-20 bg-gray-800 border border-gray-700 border-dashed rounded-lg flex items-center justify-center">
-                      <ImageIcon className="w-8 h-8 text-gray-600" />
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => openMediaSelector("thumbnail")}
-                    className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                  >
-                    <ImageIcon className="w-4 h-4" />
-                    {formData.thumbnailUrl ? "Change Thumbnail" : "Select Thumbnail"}
-                  </button>
-                </div>
-              </div>
-            </>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Social Settings */}
+      {/* Article Settings — links + keywords + proof builder */}
+      {formData.type === "ARTICLE" && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              Article Task Settings
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Add one or many article links, optional keywords, and what proof
+              the user must submit. Submissions go to PENDING; admin approves
+              to credit points.
+            </p>
+          </div>
+          <ArticleTaskBuilder
+            value={articleConfig}
+            onChange={setArticleConfig}
+          />
+        </div>
+      )}
+
+      {/* Video Settings — autoplay player config + watch time + warmup */}
+      {formData.type === "VIDEO" && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              Video Task Settings
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Supports YouTube, Facebook, Vimeo, and direct video files. The
+              user-side player is autoplay with controls disabled — they
+              can&apos;t skip or pause.
+            </p>
+          </div>
+          <VideoTaskBuilder value={videoConfig} onChange={setVideoConfig} />
+        </div>
+      )}
+
+      {/* Social Settings — Platform-aware action builder with AI prompt support */}
       {formData.type === "SOCIAL" && (
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
-          <h2 className="text-lg font-semibold text-white">Social Media Settings</h2>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                Platform <span className="text-red-400">*</span>
-              </label>
-              <select
-                required
-                value={formData.socialPlatform}
-                onChange={(e) => setFormData({ ...formData, socialPlatform: e.target.value })}
-                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
-              >
-                <option value="">Select Platform</option>
-                {socialPlatforms.map((platform) => (
-                  <option key={platform} value={platform}>
-                    {platform}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                Action <span className="text-red-400">*</span>
-              </label>
-              <select
-                required
-                value={formData.socialAction}
-                onChange={(e) => setFormData({ ...formData, socialAction: e.target.value })}
-                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
-              >
-                <option value="">Select Action</option>
-                {socialActions.map((action) => (
-                  <option key={action} value={action}>
-                    {action}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-400 mb-2">
-                Target URL / Username <span className="text-red-400">*</span>
-              </label>
-              <input
-                type="text"
-                required
-                value={formData.socialUrl}
-                onChange={(e) => setFormData({ ...formData, socialUrl: e.target.value })}
-                placeholder="@username or https://..."
-                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
-              />
-            </div>
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              Social Media Settings
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Choose the platform first — only that platform&apos;s actions
+              will appear. Each action has its own required fields.
+            </p>
           </div>
+          <SocialTaskBuilder value={socialConfig} onChange={setSocialConfig} />
         </div>
       )}
 

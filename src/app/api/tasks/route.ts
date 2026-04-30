@@ -6,9 +6,10 @@ import { TaskStatus, TaskType, PackageTier } from "@/generated/prisma";
 // Package tier order for comparison
 const PACKAGE_ORDER: Record<PackageTier, number> = {
   FREE: 0,
-  BASIC: 1,
-  STANDARD: 2,
-  PREMIUM: 3,
+  STARTER: 1,
+  PRO: 2,
+  ELITE: 3,
+  VIP: 4,
 };
 
 // GET /api/tasks - Fetch available tasks for user

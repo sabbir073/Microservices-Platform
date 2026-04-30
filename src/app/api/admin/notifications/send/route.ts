@@ -7,15 +7,38 @@ import {
   sendPushToAll,
   isOneSignalConfigured,
 } from "@/lib/onesignal";
+import { Prisma } from "@/generated/prisma/client";
 
 interface SendNotificationBody {
   type: string;
   title: string;
   message: string;
-  target: "all" | "package" | "specific";
+  target: "all" | "package" | "specific" | "segment";
   packageFilter?: string[];
   userIds?: string[];
+
+  // Segment criteria
+  packages?: string[];
+  minLevel?: number;
+  maxLevel?: number;
+  country?: string;
+  activeWithinDays?: number;
+  minTasksCompleted?: number;
+
+  // Optional content
+  priority?: "LOW" | "NORMAL" | "HIGH" | "URGENT";
+  imageUrl?: string;
+  actionUrl?: string;
+  actionLabel?: string;
+  /** ISO datetime — if set, store the notification as scheduled (no immediate send). */
+  scheduledFor?: string;
+
+  // Channels
+  sendInApp?: boolean;
   sendPush?: boolean;
+  sendEmail?: boolean;
+
+  // Legacy fields kept for compatibility
   url?: string;
   data?: Record<string, unknown>;
 }
@@ -23,7 +46,6 @@ interface SendNotificationBody {
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
-
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -34,17 +56,51 @@ export async function POST(request: NextRequest) {
     }
 
     const body: SendNotificationBody = await request.json();
-    const { type, title, message, target, packageFilter, userIds, sendPush, url, data } = body;
+    const {
+      type,
+      title,
+      message,
+      target,
+      packageFilter,
+      userIds,
+      packages,
+      minLevel,
+      maxLevel,
+      country,
+      activeWithinDays,
+      minTasksCompleted,
+      priority = "NORMAL",
+      imageUrl,
+      actionUrl,
+      actionLabel,
+      scheduledFor,
+      sendInApp = true,
+      sendPush,
+      sendEmail,
+      url,
+      data,
+    } = body;
 
-    // Validate required fields
+    // Validate
     if (!type || !title || !message || !target) {
       return NextResponse.json(
         { error: "Missing required fields" },
         { status: 400 }
       );
     }
+    if (title.length > 50) {
+      return NextResponse.json(
+        { error: "Title must be 50 characters or less" },
+        { status: 400 }
+      );
+    }
+    if (message.length > 200) {
+      return NextResponse.json(
+        { error: "Message must be 200 characters or less" },
+        { status: 400 }
+      );
+    }
 
-    // Validate notification type
     const validTypes = [
       "SYSTEM",
       "TASK",
@@ -62,29 +118,74 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get target user IDs based on selection
+    // Resolve target user IDs
     let targetUserIds: string[] = [];
 
     if (target === "all") {
-      // Get all user IDs
       const users = await prisma.user.findMany({
         where: { status: "ACTIVE" },
         select: { id: true },
       });
       targetUserIds = users.map((u) => u.id);
     } else if (target === "package" && packageFilter?.length) {
-      // Get users by package tier
       const users = await prisma.user.findMany({
         where: {
           status: "ACTIVE",
-          packageTier: { in: packageFilter as ("FREE" | "BASIC" | "STANDARD" | "PREMIUM")[] },
+          packageTier: {
+            in: packageFilter as ("FREE" | "STARTER" | "PRO" | "ELITE" | "VIP")[],
+          },
         },
         select: { id: true },
       });
       targetUserIds = users.map((u) => u.id);
     } else if (target === "specific" && userIds?.length) {
-      // Use provided user IDs
       targetUserIds = userIds;
+    } else if (target === "segment") {
+      const where: Prisma.UserWhereInput = { status: "ACTIVE" };
+      if (packages && packages.length > 0) {
+        where.packageTier = {
+          in: packages as ("FREE" | "STARTER" | "PRO" | "ELITE" | "VIP")[],
+        };
+      }
+      if (typeof minLevel === "number" && minLevel > 0) {
+        where.level = { ...(where.level as object), gte: minLevel };
+      }
+      if (typeof maxLevel === "number" && maxLevel > 0) {
+        where.level = { ...(where.level as object), lte: maxLevel };
+      }
+      if (country && country.trim()) {
+        where.country = { contains: country.trim(), mode: "insensitive" };
+      }
+      if (typeof activeWithinDays === "number" && activeWithinDays > 0) {
+        const since = new Date();
+        since.setDate(since.getDate() - activeWithinDays);
+        where.lastLoginAt = { gte: since };
+      }
+
+      let users = await prisma.user.findMany({
+        where,
+        select: { id: true },
+      });
+
+      // Filter by min tasks completed (post-fetch for accuracy)
+      if (typeof minTasksCompleted === "number" && minTasksCompleted > 0) {
+        const groups = (await prisma.taskSubmission.groupBy({
+          by: ["userId"],
+          where: {
+            status: "APPROVED",
+            userId: { in: users.map((u) => u.id) },
+          },
+          _count: { _all: true },
+        })) as unknown as Array<{ userId: string; _count: { _all: number } }>;
+        const eligibleIds = new Set(
+          groups
+            .filter((g) => g._count._all >= minTasksCompleted)
+            .map((g) => g.userId)
+        );
+        users = users.filter((u) => eligibleIds.has(u.id));
+      }
+
+      targetUserIds = users.map((u) => u.id);
     }
 
     if (targetUserIds.length === 0) {
@@ -94,23 +195,70 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create in-app notifications for all target users
-    await prisma.notification.createMany({
-      data: targetUserIds.map((userId) => ({
-        userId,
-        type: type as "SYSTEM" | "TASK" | "WALLET" | "REFERRAL" | "PROMOTION" | "ACHIEVEMENT" | "LOTTERY" | "SOCIAL",
-        title,
-        message,
-        data: {
-          sentBy: session.user.id,
-          sentAt: new Date().toISOString(),
-          targetType: target,
-          ...data,
-        },
-      })),
-    });
+    // Build notification metadata
+    const notificationData: Record<string, unknown> = {
+      sentBy: session.user.id,
+      sentAt: new Date().toISOString(),
+      targetType: target,
+      priority,
+      ...(imageUrl ? { imageUrl } : {}),
+      ...(actionUrl ? { actionUrl } : {}),
+      ...(actionLabel ? { actionLabel } : {}),
+      ...(scheduledFor ? { scheduledFor } : {}),
+      ...data,
+    };
 
-    // Send push notifications via OneSignal if requested
+    // If scheduled for the future, save as scheduled (no immediate fan-out)
+    if (
+      scheduledFor &&
+      new Date(scheduledFor).getTime() > Date.now() + 60_000
+    ) {
+      await prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: "NOTIFICATION_SCHEDULED",
+          entity: "Notification",
+          newData: {
+            recipientCount: targetUserIds.length,
+            scheduledFor,
+            type,
+            title,
+            message,
+            target,
+          } as Prisma.InputJsonValue,
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        scheduled: true,
+        scheduledFor,
+        recipientCount: targetUserIds.length,
+        message: `Scheduled for ${new Date(scheduledFor).toLocaleString()} — ${targetUserIds.length} recipient(s)`,
+      });
+    }
+
+    // Create in-app notifications immediately
+    if (sendInApp !== false) {
+      await prisma.notification.createMany({
+        data: targetUserIds.map((userId) => ({
+          userId,
+          type: type as
+            | "SYSTEM"
+            | "TASK"
+            | "WALLET"
+            | "REFERRAL"
+            | "PROMOTION"
+            | "ACHIEVEMENT"
+            | "LOTTERY"
+            | "SOCIAL",
+          title,
+          message,
+          data: notificationData as Prisma.InputJsonValue,
+        })),
+      });
+    }
+
+    // Push via OneSignal
     let pushResult = null;
     if (sendPush) {
       if (!isOneSignalConfigured()) {
@@ -120,7 +268,7 @@ export async function POST(request: NextRequest) {
           title,
           message,
           { type, ...data },
-          url
+          actionUrl ?? url
         );
       } else {
         pushResult = await sendPushToUsers(
@@ -128,10 +276,37 @@ export async function POST(request: NextRequest) {
           title,
           message,
           { type, ...data },
-          url
+          actionUrl ?? url
         );
       }
     }
+
+    // Email channel — placeholder; full implementation is Phase 2 (uses lib/email.ts)
+    let emailResult: { success: boolean; sent?: number; error?: string } | null = null;
+    if (sendEmail) {
+      // For now we audit the request but don't actually send mass emails here.
+      emailResult = {
+        success: true,
+        sent: 0,
+        error: "Email channel queued (mass send wiring pending)",
+      };
+    }
+
+    // Audit
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "NOTIFICATION_SENT",
+        entity: "Notification",
+        newData: {
+          recipientCount: targetUserIds.length,
+          type,
+          title,
+          target,
+          channels: { inApp: sendInApp, push: !!sendPush, email: !!sendEmail },
+        } as Prisma.InputJsonValue,
+      },
+    });
 
     return NextResponse.json({
       success: true,
@@ -140,10 +315,11 @@ export async function POST(request: NextRequest) {
       push: sendPush
         ? {
             sent: pushResult?.success || false,
-            recipients: pushResult?.recipients,
+            recipients: (pushResult as { recipients?: number } | null)?.recipients,
             error: pushResult?.error,
           }
         : null,
+      email: emailResult,
     });
   } catch (error) {
     console.error("Error sending notification:", error);

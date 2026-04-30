@@ -13,17 +13,14 @@ import {
   DollarSign,
   AlertTriangle,
   Shield,
-  MapPin,
-  Smartphone,
   Activity,
-  FileCheck,
-  Gift,
   TrendingUp,
 } from "lucide-react";
 import Link from "next/link";
-import { format, formatDistanceToNow } from "date-fns";
+import { format, differenceInDays } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { WithdrawalActions } from "./_components/WithdrawalActions";
+import { assessWithdrawalRisk } from "@/lib/withdrawal-risk";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -118,16 +115,25 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
   };
   const withdrawal = withdrawalRaw as WithdrawalWithUser;
 
-  // Fetch user's previous withdrawals for risk assessment
-  const previousWithdrawals = await prisma.withdrawal.findMany({
-    where: {
-      userId: withdrawal.userId,
-      id: { not: withdrawal.id },
-      status: "COMPLETED",
-    },
-    orderBy: { createdAt: "desc" },
-    take: 5,
-  });
+  // Fetch user's previous withdrawal stats for risk assessment
+  const [previousWithdrawals, rejectedCount] = await Promise.all([
+    prisma.withdrawal.findMany({
+      where: {
+        userId: withdrawal.userId,
+        id: { not: withdrawal.id },
+        status: "COMPLETED",
+      },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+    }),
+    prisma.withdrawal.count({
+      where: {
+        userId: withdrawal.userId,
+        id: { not: withdrawal.id },
+        status: "REJECTED",
+      },
+    }),
+  ]);
 
   const config = statusConfig[withdrawal.status] || statusConfig.PENDING;
   const StatusIcon = config.icon;
@@ -137,19 +143,20 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
   // Parse account details from JSON
   const accountDetails = withdrawal.accountDetails as Record<string, string> | null;
 
-  // Risk assessment (simplified)
-  const accountAge = Math.floor((Date.now() - new Date(withdrawal.user.createdAt).getTime()) / (1000 * 60 * 60 * 24));
-  const isKycVerified = withdrawal.user.kycStatus === "APPROVED";
-  const hasPreviousWithdrawals = previousWithdrawals.length > 0;
-  const isHighAmount = withdrawal.amount > 100;
-
-  let riskLevel: "LOW" | "MEDIUM" | "HIGH" = "LOW";
-  if (!isKycVerified && isHighAmount) {
-    riskLevel = "HIGH";
-  } else if (!isKycVerified || (accountAge < 7 && !hasPreviousWithdrawals)) {
-    riskLevel = "MEDIUM";
-  }
-
+  // Risk assessment using shared helper
+  const accountAge = differenceInDays(
+    new Date(),
+    new Date(withdrawal.user.createdAt)
+  );
+  const risk = assessWithdrawalRisk({
+    amount: withdrawal.amount,
+    userKycStatus: withdrawal.user.kycStatus,
+    userPackageTier: withdrawal.user.packageTier,
+    accountAgeDays: accountAge,
+    previousSuccessfulWithdrawals: previousWithdrawals.length,
+    previousRejectedWithdrawals: rejectedCount,
+  });
+  const riskLevel = risk.level.toUpperCase() as "LOW" | "MEDIUM" | "HIGH";
   const riskColors = {
     LOW: "text-emerald-400 bg-emerald-500/10",
     MEDIUM: "text-amber-400 bg-amber-500/10",
@@ -253,9 +260,10 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
                   <span className="text-sm text-gray-500">Level {withdrawal.user.level}</span>
                   <span className="text-gray-600">|</span>
                   <span className={`text-sm ${
-                    withdrawal.user.packageTier === "PREMIUM" ? "text-purple-400" :
-                    withdrawal.user.packageTier === "STANDARD" ? "text-indigo-400" :
-                    withdrawal.user.packageTier === "BASIC" ? "text-blue-400" :
+                    withdrawal.user.packageTier === "VIP" ? "text-amber-400" :
+                    withdrawal.user.packageTier === "ELITE" ? "text-purple-400" :
+                    withdrawal.user.packageTier === "PRO" ? "text-indigo-400" :
+                    withdrawal.user.packageTier === "STARTER" ? "text-blue-400" :
                     "text-gray-400"
                   }`}>{withdrawal.user.packageTier}</span>
                   <span className="text-gray-600">|</span>
@@ -320,42 +328,44 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
               <Shield className="w-5 h-5 text-amber-400" />
               Risk Assessment
             </h2>
-            <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg ${riskColors[riskLevel]} mb-4`}>
-              <AlertTriangle className="w-4 h-4" />
-              <span className="font-medium">{riskLevel} Risk</span>
+            <div className="flex items-center justify-between mb-4">
+              <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg ${riskColors[riskLevel]}`}>
+                <AlertTriangle className="w-4 h-4" />
+                <span className="font-medium">{riskLevel} Risk</span>
+              </div>
+              <span className="text-sm text-slate-400 tabular-nums">
+                Score: {risk.score}/100
+              </span>
             </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileCheck className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-400">KYC Verified</span>
-                </div>
-                <span className={isKycVerified ? "text-emerald-400" : "text-red-400"}>
-                  {isKycVerified ? "Yes" : "No"}
-                </span>
+
+            {risk.flags.length > 0 && (
+              <div className="mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/30">
+                <p className="text-xs font-bold text-red-300 uppercase tracking-wider mb-1">
+                  Flags
+                </p>
+                <ul className="text-sm text-red-200 space-y-0.5 list-disc list-inside">
+                  {risk.flags.map((f, i) => (
+                    <li key={i}>{f}</li>
+                  ))}
+                </ul>
               </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-400">Account Age</span>
+            )}
+
+            <div className="space-y-2">
+              {risk.checks.map((c, i) => (
+                <div key={i} className="flex items-center justify-between text-sm">
+                  <span className="text-slate-400">{c.label}</span>
+                  {c.ok ? (
+                    <span className="text-emerald-400">✓</span>
+                  ) : (
+                    <span className="text-red-400">✗</span>
+                  )}
                 </div>
-                <span className={accountAge >= 7 ? "text-emerald-400" : "text-amber-400"}>
-                  {accountAge} days
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
+              ))}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-sm">
                 <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-400">Previous Withdrawals</span>
-                </div>
-                <span className={hasPreviousWithdrawals ? "text-emerald-400" : "text-amber-400"}>
-                  {previousWithdrawals.length}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-400">Tasks Completed</span>
+                  <Activity className="w-4 h-4 text-slate-500" />
+                  <span className="text-slate-400">Tasks Completed</span>
                 </div>
                 <span className="text-white">{withdrawal.user._count.taskSubmissions}</span>
               </div>
@@ -398,12 +408,15 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
             </div>
           </div>
 
-          {/* Actions */}
-          {canProcess && withdrawal.status === "PENDING" && (
+          {/* Status-aware Process panel */}
+          {canProcess && (
             <WithdrawalActions
               withdrawalId={withdrawal.id}
-              amount={withdrawal.netAmount}
+              status={withdrawal.status}
+              amount={withdrawal.amount}
+              netAmount={withdrawal.netAmount}
               method={methodLabels[withdrawal.method] || withdrawal.method}
+              existingTransactionId={withdrawal.transactionId ?? null}
             />
           )}
 

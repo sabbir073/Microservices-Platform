@@ -375,9 +375,10 @@ export function UserDetailActions({
                   className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 >
                   <option value="FREE">Free</option>
-                  <option value="BASIC">Basic</option>
-                  <option value="STANDARD">Standard</option>
-                  <option value="PREMIUM">Premium</option>
+                  <option value="STARTER">Starter</option>
+                  <option value="PRO">Pro</option>
+                  <option value="ELITE">Elite</option>
+                  <option value="VIP">VIP</option>
                 </select>
               </div>
             </div>
@@ -571,7 +572,7 @@ export function UserDetailActions({
 
 interface AdjustBalanceButtonProps {
   userId: string;
-  type: "points" | "cash";
+  type: "points" | "cash" | "level" | "xp";
   action: "add" | "deduct";
   canAdjust: boolean;
 }
@@ -642,7 +643,14 @@ export function AdjustBalanceButton({
           <div className="bg-gray-900 rounded-xl border border-gray-800 w-full max-w-md mx-4">
             <div className="flex items-center justify-between p-6 border-b border-gray-800">
               <h2 className="text-lg font-semibold text-white">
-                {action === "add" ? "Add" : "Deduct"} {type === "points" ? "Points" : "Cash"}
+                {action === "add" ? "Add" : "Deduct"}{" "}
+                {type === "points"
+                  ? "Points"
+                  : type === "cash"
+                  ? "Cash"
+                  : type === "level"
+                  ? "Level"
+                  : "XP"}
               </h2>
               <button
                 onClick={() => setShowModal(false)}

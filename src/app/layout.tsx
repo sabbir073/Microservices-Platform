@@ -10,6 +10,7 @@ import "@fontsource/plus-jakarta-sans/700.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -71,6 +72,19 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ThemeProvider defaultTheme="dark" storageKey="earngpt-theme">
           {children}
+          <Toaster
+            position="top-right"
+            theme="dark"
+            richColors
+            closeButton
+            toastOptions={{
+              style: {
+                background: "rgb(15 23 42)",
+                border: "1px solid rgb(51 65 85)",
+                color: "white",
+              },
+            }}
+          />
         </ThemeProvider>
       </body>
     </html>

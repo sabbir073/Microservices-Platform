@@ -1,0 +1,269 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import { ArrowUpRight, AlertTriangle, CreditCard, Loader2, Lock, Plus } from "lucide-react";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
+
+interface PaymentMethod {
+  id: string;
+  type: string;
+  label: string;
+  isDefault: boolean;
+}
+
+interface WithdrawalViewProps {
+  cashBalance: number;
+  pointsBalance: number;
+  packageTier: string;
+  methods: PaymentMethod[];
+}
+
+const TIER_LIMITS: Record<string, { min: number; max: number }> = {
+  FREE: { min: 0, max: 0 },
+  STARTER: { min: 5, max: 1000 },
+  PRO: { min: 10, max: 5000 },
+  ELITE: { min: 20, max: 25000 },
+  VIP: { min: 50, max: 100000 },
+};
+
+const TIER_FEE_DISCOUNT: Record<string, number> = {
+  FREE: 0,
+  STARTER: 0.1,
+  PRO: 0.25,
+  ELITE: 0.4,
+  VIP: 0.5,
+};
+
+const BASE_FEE_PCT = 0.05;
+
+export function WithdrawalView({
+  cashBalance,
+  pointsBalance,
+  packageTier,
+  methods,
+}: WithdrawalViewProps) {
+  const router = useRouter();
+  const limits = TIER_LIMITS[packageTier] ?? TIER_LIMITS.FREE;
+  const feePct = BASE_FEE_PCT * (1 - (TIER_FEE_DISCOUNT[packageTier] ?? 0));
+
+  const [amount, setAmount] = useState(limits.min);
+  const [methodId, setMethodId] = useState(
+    methods.find((m) => m.isDefault)?.id ?? methods[0]?.id ?? ""
+  );
+  const [busy, setBusy] = useState(false);
+
+  const fee = amount * feePct;
+  const youReceive = amount - fee;
+
+  const isFree = packageTier === "FREE";
+  const tooLow = amount < limits.min;
+  const tooHigh = amount > limits.max;
+  const overBalance = amount > cashBalance;
+  const valid = !isFree && !tooLow && !tooHigh && !overBalance && !!methodId;
+
+  const submit = async () => {
+    if (!valid) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/withdrawals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount, methodId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast.success("Withdrawal request submitted");
+      router.push("/wallet?tab=transactions");
+    } catch (err) {
+      toast.error("Failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <h1 className="text-xl font-bold text-white flex items-center gap-2">
+        💸 Withdraw
+      </h1>
+
+      <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-emerald-600/15 to-gray-900 p-4">
+        <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400">
+          Available Cash
+        </p>
+        <p className="text-3xl font-extrabold text-emerald-400 tabular-nums mt-1">
+          ${cashBalance.toFixed(2)}
+        </p>
+        <p className="text-[11px] text-gray-500">
+          Plus {pointsBalance.toLocaleString()} points (≈ $
+          {(pointsBalance * 0.001).toFixed(2)})
+        </p>
+      </div>
+
+      {isFree && (
+        <div className="rounded-xl bg-amber-500/10 border border-amber-500/30 p-4">
+          <div className="flex items-start gap-3">
+            <Lock className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-bold text-amber-300">
+                Withdrawals locked
+              </p>
+              <p className="text-xs text-amber-400/80 mt-0.5">
+                Upgrade from FREE to STARTER or higher to unlock withdrawals.
+                Min withdrawal on STARTER: $5.
+              </p>
+              <Link
+                href="/packages"
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-gray-900 text-xs font-bold"
+              >
+                Upgrade Now
+                <ArrowUpRight className="w-3.5 h-3.5" />
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isFree && (
+        <>
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                Amount (USD)
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                  $
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={limits.min}
+                  max={limits.max}
+                  value={amount}
+                  onChange={(e) => setAmount(Number(e.target.value))}
+                  className="w-full pl-7 pr-3 py-2.5 bg-gray-950 border border-gray-700 rounded-lg text-white text-base font-bold tabular-nums focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex items-center justify-between text-[11px] mt-1.5">
+                <span className="text-gray-500">
+                  Min: ${limits.min} · Max: $
+                  {limits.max.toLocaleString()}
+                </span>
+                <button
+                  onClick={() => setAmount(Math.min(cashBalance, limits.max))}
+                  className="text-indigo-400 font-semibold hover:text-indigo-300"
+                >
+                  Max
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-gray-950 border border-gray-800 p-3 text-xs space-y-1">
+              <div className="flex justify-between text-gray-400">
+                <span>Withdraw amount</span>
+                <span className="tabular-nums">${amount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-gray-400">
+                <span>
+                  Fee ({(feePct * 100).toFixed(1)}%
+                  {TIER_FEE_DISCOUNT[packageTier] > 0 && (
+                    <span className="text-emerald-400 ml-1">
+                      −{(TIER_FEE_DISCOUNT[packageTier] * 100).toFixed(0)}% tier discount
+                    </span>
+                  )})
+                </span>
+                <span className="tabular-nums text-red-400">
+                  −${fee.toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between font-bold text-white pt-1 border-t border-gray-800">
+                <span>You receive</span>
+                <span className="tabular-nums text-emerald-400">
+                  ${youReceive.toFixed(2)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-sm font-semibold text-white">Payment Method</p>
+              <Link
+                href="/profile?tab=payment"
+                className="inline-flex items-center gap-1 text-xs text-indigo-400"
+              >
+                <Plus className="w-3 h-3" />
+                Add
+              </Link>
+            </div>
+            {methods.length === 0 ? (
+              <p className="text-xs text-gray-400">
+                Add a payment method first.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {methods.map((m) => (
+                  <label
+                    key={m.id}
+                    className={cn(
+                      "flex items-center gap-2 p-2.5 rounded-lg border cursor-pointer transition-colors",
+                      methodId === m.id
+                        ? "border-indigo-500 bg-indigo-500/5"
+                        : "border-gray-700 hover:border-gray-600"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="pm"
+                      checked={methodId === m.id}
+                      onChange={() => setMethodId(m.id)}
+                      className="accent-indigo-500"
+                    />
+                    <CreditCard className="w-4 h-4 text-gray-400" />
+                    <span className="flex-1 text-sm text-white">{m.label}</span>
+                    {m.isDefault && (
+                      <span className="text-[10px] font-bold text-emerald-400">
+                        DEFAULT
+                      </span>
+                    )}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {(tooLow || tooHigh || overBalance) && (
+            <div className="rounded-xl bg-red-500/10 border border-red-500/30 p-3 flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+              <p className="text-xs text-red-300">
+                {overBalance
+                  ? "Amount exceeds your available cash balance."
+                  : tooLow
+                    ? `Minimum withdrawal is $${limits.min}.`
+                    : `Maximum withdrawal is $${limits.max.toLocaleString()}.`}
+              </p>
+            </div>
+          )}
+
+          <button
+            disabled={!valid || busy}
+            onClick={submit}
+            className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-90 text-white font-bold text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {busy ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <ArrowUpRight className="w-4 h-4" />
+            )}
+            Submit Withdrawal Request
+          </button>
+        </>
+      )}
+    </div>
+  );
+}

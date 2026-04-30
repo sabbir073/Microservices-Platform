@@ -20,9 +20,10 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 
 const tierConfig: Record<string, { icon: typeof Package; color: string; bgColor: string }> = {
   FREE: { icon: Package, color: "text-gray-400", bgColor: "bg-gray-500/10" },
-  BASIC: { icon: Star, color: "text-blue-400", bgColor: "bg-blue-500/10" },
-  STANDARD: { icon: Sparkles, color: "text-indigo-400", bgColor: "bg-indigo-500/10" },
-  PREMIUM: { icon: Crown, color: "text-purple-400", bgColor: "bg-purple-500/10" },
+  STARTER: { icon: Star, color: "text-blue-400", bgColor: "bg-blue-500/10" },
+  PRO: { icon: Sparkles, color: "text-indigo-400", bgColor: "bg-indigo-500/10" },
+  ELITE: { icon: Crown, color: "text-purple-400", bgColor: "bg-purple-500/10" },
+  VIP: { icon: Crown, color: "text-amber-400", bgColor: "bg-amber-500/10" },
 };
 
 export default async function AdminPackagesPage() {
@@ -152,11 +153,13 @@ export default async function AdminPackagesPage() {
             <div
               key={pkg.id}
               className={`bg-gray-900 rounded-xl border overflow-hidden ${
-                pkg.tier === "PREMIUM"
+                pkg.tier === "VIP"
+                  ? "border-amber-500/50"
+                  : pkg.tier === "ELITE"
                   ? "border-purple-500/50"
-                  : pkg.tier === "STANDARD"
+                  : pkg.tier === "PRO"
                   ? "border-indigo-500/30"
-                  : pkg.tier === "BASIC"
+                  : pkg.tier === "STARTER"
                   ? "border-blue-500/30"
                   : "border-gray-800"
               }`}

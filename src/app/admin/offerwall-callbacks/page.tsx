@@ -1,0 +1,226 @@
+import { auth } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { hasPermission, type UserRole } from "@/lib/rbac";
+import { FileText, Clock, CheckCircle, XCircle, ShieldAlert } from "lucide-react";
+import Link from "next/link";
+import { format } from "date-fns";
+
+interface PageProps {
+  searchParams: Promise<{ status?: string }>;
+}
+
+export default async function OfferwallCallbacksPage({
+  searchParams,
+}: PageProps) {
+  const session = await auth();
+  if (!session?.user) redirect("/login");
+  const adminRole = session.user.role as UserRole | undefined;
+  if (!hasPermission(adminRole, "offerwalls.view")) redirect("/admin");
+
+  const params = await searchParams;
+  const status = params.status || "";
+  const where = status ? { status } : {};
+
+  const [
+    callbacks,
+    pendingCount,
+    approvedCount,
+    rejectedCount,
+    fraudCount,
+  ] = await Promise.all([
+    prisma.offerwallCallback.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    }),
+    prisma.offerwallCallback.count({ where: { status: "PENDING" } }),
+    prisma.offerwallCallback.count({ where: { status: "APPROVED" } }),
+    prisma.offerwallCallback.count({ where: { status: "REJECTED" } }),
+    prisma.offerwallCallback.count({ where: { status: "FRAUD" } }),
+  ]);
+
+  // Resolve users
+  const userIds = Array.from(new Set(callbacks.map((c) => c.userId)));
+  const users = userIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: { id: true, name: true, email: true },
+      })
+    : [];
+  const userMap = new Map(users.map((u) => [u.id, u]));
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
+          <FileText className="w-6 h-6 text-cyan-400" />
+          Offerwall Callback Logs
+        </h1>
+        <p className="text-slate-400 text-sm mt-1">
+          Postback callbacks from offerwall providers — review, approve, reject.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Stat
+          icon={<Clock className="w-5 h-5" />}
+          tone="amber"
+          value={pendingCount}
+          label="Pending"
+        />
+        <Stat
+          icon={<CheckCircle className="w-5 h-5" />}
+          tone="emerald"
+          value={approvedCount}
+          label="Approved"
+        />
+        <Stat
+          icon={<XCircle className="w-5 h-5" />}
+          tone="red"
+          value={rejectedCount}
+          label="Rejected"
+        />
+        <Stat
+          icon={<ShieldAlert className="w-5 h-5" />}
+          tone="purple"
+          value={fraudCount}
+          label="Fraud"
+        />
+      </div>
+
+      <div className="border-b border-slate-800 flex gap-1">
+        <Link
+          href="/admin/offerwall-callbacks"
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${
+            !status
+              ? "border-blue-500 text-white"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
+        >
+          All
+        </Link>
+        {["PENDING", "APPROVED", "REJECTED", "FRAUD"].map((s) => (
+          <Link
+            key={s}
+            href={`/admin/offerwall-callbacks?status=${s}`}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px capitalize ${
+              status === s
+                ? "border-blue-500 text-white"
+                : "border-transparent text-slate-400 hover:text-white"
+            }`}
+          >
+            {s.toLowerCase()}
+          </Link>
+        ))}
+      </div>
+
+      {callbacks.length === 0 ? (
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-16 text-center">
+          <FileText className="w-12 h-12 mx-auto mb-4 text-slate-600" />
+          <h3 className="text-lg font-medium text-white mb-1">No callbacks yet</h3>
+          <p className="text-sm text-slate-400">
+            Postback callbacks will appear here when offerwall providers send them.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+          <table className="w-full">
+            <thead className="bg-slate-800/50 border-b border-slate-800">
+              <tr>
+                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">User</th>
+                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">Transaction</th>
+                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">Payout</th>
+                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">Fraud Score</th>
+                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">Status</th>
+                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">When</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {callbacks.map((c) => {
+                const u = userMap.get(c.userId);
+                const fraudCls =
+                  c.fraudScore >= 70
+                    ? "bg-red-500/15 text-red-400"
+                    : c.fraudScore >= 40
+                    ? "bg-amber-500/15 text-amber-400"
+                    : "bg-emerald-500/15 text-emerald-400";
+                return (
+                  <tr key={c.id} className="hover:bg-slate-800/40">
+                    <td className="py-3 px-6 text-sm text-white">
+                      {u?.name ?? u?.email ?? "—"}
+                    </td>
+                    <td className="py-3 px-6 font-mono text-xs text-slate-300">
+                      {c.transactionId.slice(0, 12)}…
+                    </td>
+                    <td className="py-3 px-6 text-sm">
+                      <span className="text-amber-400 tabular-nums">
+                        {c.userPayout}
+                      </span>{" "}
+                      <span className="text-slate-500">pts</span>
+                    </td>
+                    <td className="py-3 px-6">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-bold ${fraudCls}`}
+                      >
+                        {c.fraudScore}%
+                      </span>
+                    </td>
+                    <td className="py-3 px-6">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          c.status === "APPROVED"
+                            ? "bg-emerald-500/15 text-emerald-400"
+                            : c.status === "PENDING"
+                            ? "bg-amber-500/15 text-amber-400"
+                            : c.status === "REJECTED"
+                            ? "bg-red-500/15 text-red-400"
+                            : "bg-purple-500/15 text-purple-400"
+                        }`}
+                      >
+                        {c.status}
+                      </span>
+                    </td>
+                    <td className="py-3 px-6 text-xs text-slate-400">
+                      {format(c.createdAt, "MMM d, HH:mm")}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({
+  icon,
+  tone,
+  value,
+  label,
+}: {
+  icon: React.ReactNode;
+  tone: "amber" | "emerald" | "red" | "purple";
+  value: number;
+  label: string;
+}) {
+  const cls = {
+    amber: "bg-amber-500/10 text-amber-400",
+    emerald: "bg-emerald-500/10 text-emerald-400",
+    red: "bg-red-500/10 text-red-400",
+    purple: "bg-purple-500/10 text-purple-400",
+  }[tone];
+  return (
+    <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+      <div className="flex items-center gap-3">
+        <div className={`p-2 rounded-lg ${cls}`}>{icon}</div>
+        <div>
+          <p className="text-2xl font-bold text-white tabular-nums">{value}</p>
+          <p className="text-sm text-slate-500">{label}</p>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -231,9 +231,10 @@ export async function POST(request: NextRequest) {
 function getPackageOrder(tier: string): number {
   const order: Record<string, number> = {
     FREE: 0,
-    BASIC: 1,
-    STANDARD: 2,
-    PREMIUM: 3,
+    STARTER: 1,
+    PRO: 2,
+    ELITE: 3,
+    VIP: 4,
   };
   return order[tier] ?? 0;
 }

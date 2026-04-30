@@ -12,9 +12,10 @@ interface PageProps {
 
 const tierConfig: Record<string, { icon: typeof Package; color: string }> = {
   FREE: { icon: Package, color: "text-gray-400" },
-  BASIC: { icon: Star, color: "text-blue-400" },
-  STANDARD: { icon: Sparkles, color: "text-indigo-400" },
-  PREMIUM: { icon: Crown, color: "text-purple-400" },
+  STARTER: { icon: Star, color: "text-blue-400" },
+  PRO: { icon: Sparkles, color: "text-indigo-400" },
+  ELITE: { icon: Crown, color: "text-purple-400" },
+  VIP: { icon: Crown, color: "text-amber-400" },
 };
 
 export default async function EditPackagePage({ params }: PageProps) {

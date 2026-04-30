@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
     );
 
     // Get user's tickets if authenticated
-    let userTickets: Record<string, { count: number; tickets: string[] }> = {};
+    const userTickets: Record<string, { count: number; tickets: string[] }> = {};
 
     if (session?.user?.id) {
       const tickets = await prisma.lotteryTicket.findMany({

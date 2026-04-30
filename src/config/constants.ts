@@ -11,35 +11,42 @@ export const MINIMUM_WITHDRAWAL_USD = 50;
 // MLM Levels (10 levels)
 export const DEFAULT_REFERRAL_LEVELS = 10;
 
-// Package Tiers
+// Package Tiers (5-tier system per admin_oo.md / USER_MANAGEMENT_PACKAGE_TIERS_UPDATE.md)
 export const PACKAGE_TIERS = {
   FREE: {
     name: "Free",
-    dailyTaskLimit: 5,
+    dailyTaskLimit: 10,
     withdrawalFee: 5, // percentage
     minWithdrawal: 50,
-    features: ["5 tasks per day", "Basic support", "Standard rewards"],
+    features: ["10 tasks per day", "Basic support", "Standard rewards"],
   },
-  BASIC: {
-    name: "Basic",
+  STARTER: {
+    name: "Starter",
     dailyTaskLimit: 15,
     withdrawalFee: 3,
     minWithdrawal: 30,
-    features: ["15 tasks per day", "Priority support", "1.2x XP bonus", "Reduced withdrawal fee"],
+    features: ["15 tasks per day", "Email support", "1.1x earning bonus", "Reduced withdrawal fee"],
   },
-  STANDARD: {
-    name: "Standard",
-    dailyTaskLimit: 30,
+  PRO: {
+    name: "Pro",
+    dailyTaskLimit: 25,
     withdrawalFee: 2,
     minWithdrawal: 20,
-    features: ["30 tasks per day", "Premium support", "1.5x XP bonus", "Lower withdrawal fee", "Early access to tasks"],
+    features: ["25 tasks per day", "Priority support", "1.25x earning bonus", "Lower withdrawal fee", "Exclusive tasks"],
   },
-  PREMIUM: {
-    name: "Premium",
+  ELITE: {
+    name: "Elite",
+    dailyTaskLimit: 50,
+    withdrawalFee: 1,
+    minWithdrawal: 10,
+    features: ["50 tasks per day", "Priority 24/7 support", "1.5x earning bonus", "Faster payouts", "All exclusive tasks"],
+  },
+  VIP: {
+    name: "VIP",
     dailyTaskLimit: -1, // unlimited
     withdrawalFee: 0,
-    minWithdrawal: 10,
-    features: ["Unlimited tasks", "VIP support", "2x XP bonus", "No withdrawal fee", "Exclusive tasks", "Priority payouts"],
+    minWithdrawal: 5,
+    features: ["Unlimited tasks", "Dedicated account manager", "2x earning bonus", "Zero withdrawal fees", "Instant payouts", "VIP-only events"],
   },
 } as const;
 

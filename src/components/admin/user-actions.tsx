@@ -484,9 +484,10 @@ export function AddUserButton({ canEdit }: AddUserButtonProps) {
                     className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     <option value="FREE">Free</option>
-                    <option value="BASIC">Basic</option>
-                    <option value="STANDARD">Standard</option>
-                    <option value="PREMIUM">Premium</option>
+                    <option value="STARTER">Starter</option>
+                    <option value="PRO">Pro</option>
+                    <option value="ELITE">Elite</option>
+                    <option value="VIP">VIP</option>
                   </select>
                 </div>
               </div>

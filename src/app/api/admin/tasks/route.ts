@@ -39,6 +39,9 @@ export async function POST(request: NextRequest) {
       socialPlatform,
       socialAction,
       socialUrl,
+      socialConfig,
+      articleConfig,
+      videoConfig,
       proxyInstructions,
       startsAt,
       expiresAt,
@@ -83,6 +86,15 @@ export async function POST(request: NextRequest) {
         socialPlatform: socialPlatform || null,
         socialAction: socialAction || null,
         socialUrl: socialUrl || null,
+        socialConfig: socialConfig
+          ? JSON.parse(JSON.stringify(socialConfig))
+          : null,
+        articleConfig: articleConfig
+          ? JSON.parse(JSON.stringify(articleConfig))
+          : null,
+        videoConfig: videoConfig
+          ? JSON.parse(JSON.stringify(videoConfig))
+          : null,
         proxyInstructions: proxyInstructions || null,
         startsAt: startsAt ? new Date(startsAt) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,

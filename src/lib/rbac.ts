@@ -1,5 +1,5 @@
 // RBAC (Role-Based Access Control) Configuration
-// Based on ADMIN_DASHBOARD_SPECS.md
+// Based on admin_oo.md specification (33 modules across 6 categories)
 
 // Note: We define UserRole locally for client components
 // This should match the enum in prisma/schema.prisma
@@ -32,74 +32,172 @@ export const ADMIN_ROLE_STRINGS = [
   "MODERATOR",
 ] as const;
 
+// Sidebar category groups
+export type ModuleCategory =
+  | "CORE"
+  | "FINANCE"
+  | "PLATFORM"
+  | "SECURITY"
+  | "MARKETING"
+  | "SYSTEM";
+
+export const CATEGORY_LABELS: Record<ModuleCategory, string> = {
+  CORE: "",
+  FINANCE: "Finance",
+  PLATFORM: "Platform",
+  SECURITY: "Security",
+  MARKETING: "Marketing",
+  SYSTEM: "System",
+};
+
 // Permission types for each module
 export type Permission =
+  // Dashboard
   | "dashboard.view"
+  // Users
   | "users.view"
   | "users.edit"
   | "users.ban"
   | "users.delete"
   | "users.adjust_balance"
+  | "users.impersonate"
+  // KYC / Verification
   | "kyc.view"
   | "kyc.approve"
   | "kyc.reject"
+  // Tasks & Boards
   | "tasks.view"
   | "tasks.create"
   | "tasks.edit"
   | "tasks.delete"
+  | "boards.view"
+  | "boards.manage"
+  // Submissions
   | "submissions.view"
   | "submissions.approve"
   | "submissions.reject"
+  // Leaderboard
+  | "leaderboards.view"
+  | "leaderboards.manage"
+  // Withdrawals
   | "withdrawals.view"
   | "withdrawals.process"
   | "withdrawals.approve"
   | "withdrawals.reject"
+  // Payment methods
+  | "payment_methods.view"
+  | "payment_methods.manage"
+  // Marketplace
   | "marketplace.view"
   | "marketplace.manage"
   | "marketplace.disputes"
+  // Packages / Subscriptions
   | "packages.view"
   | "packages.edit"
+  // Referrals
   | "referrals.view"
   | "referrals.configure"
+  // Lottery
+  | "lottery.view"
+  | "lottery.manage"
+  // Courses
+  | "courses.view"
+  | "courses.manage"
+  // Missions
+  | "missions.view"
+  | "missions.manage"
+  // Quizzes
+  | "quizzes.view"
+  | "quizzes.manage"
+  // Offerwalls
+  | "offerwalls.view"
+  | "offerwalls.manage"
+  // Fraud
+  | "fraud.view"
+  | "fraud.manage"
+  // Proxy
   | "proxy.view"
   | "proxy.manage"
+  // Moderation
+  | "moderation.view"
+  | "moderation.manage"
+  | "social.moderate"
+  // Logs
+  | "logs.view"
+  // Marketing
+  | "campaigns.view"
+  | "campaigns.manage"
   | "notifications.view"
   | "notifications.send"
+  | "banners.view"
+  | "banners.manage"
+  | "ads.view"
+  | "ads.manage"
+  | "landing.view"
+  | "landing.edit"
+  | "ticker.view"
+  | "ticker.edit"
+  // Analytics
   | "analytics.view"
   | "analytics.export"
+  // AI
+  | "ai.view"
+  | "ai.manage"
+  // Settings
   | "settings.view"
   | "settings.edit"
+  // Admin control
   | "admins.view"
   | "admins.manage"
-  | "logs.view";
+  // Media
+  | "media.view"
+  | "media.manage";
 
-// Permission matrix based on ADMIN_DASHBOARD_SPECS.md
+// Permission matrix based on admin_oo.md / PROTOTYPE_ADMIN.md
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   USER: [], // No admin permissions
 
   SUPER_ADMIN: [
     // Full access to everything
     "dashboard.view",
-    "users.view", "users.edit", "users.ban", "users.delete", "users.adjust_balance",
+    "users.view", "users.edit", "users.ban", "users.delete", "users.adjust_balance", "users.impersonate",
     "kyc.view", "kyc.approve", "kyc.reject",
     "tasks.view", "tasks.create", "tasks.edit", "tasks.delete",
+    "boards.view", "boards.manage",
     "submissions.view", "submissions.approve", "submissions.reject",
+    "leaderboards.view", "leaderboards.manage",
     "withdrawals.view", "withdrawals.process", "withdrawals.approve", "withdrawals.reject",
+    "payment_methods.view", "payment_methods.manage",
     "marketplace.view", "marketplace.manage", "marketplace.disputes",
     "packages.view", "packages.edit",
     "referrals.view", "referrals.configure",
+    "lottery.view", "lottery.manage",
+    "courses.view", "courses.manage",
+    "missions.view", "missions.manage",
+    "quizzes.view", "quizzes.manage",
+    "offerwalls.view", "offerwalls.manage",
+    "fraud.view", "fraud.manage",
     "proxy.view", "proxy.manage",
+    "moderation.view", "moderation.manage", "social.moderate",
+    "logs.view",
+    "campaigns.view", "campaigns.manage",
     "notifications.view", "notifications.send",
+    "banners.view", "banners.manage",
+    "ads.view", "ads.manage",
+    "landing.view", "landing.edit",
+    "ticker.view", "ticker.edit",
     "analytics.view", "analytics.export",
+    "ai.view", "ai.manage",
     "settings.view", "settings.edit",
     "admins.view", "admins.manage",
-    "logs.view",
+    "media.view", "media.manage",
   ],
 
   FINANCE_ADMIN: [
     "dashboard.view",
     "users.view",
     "withdrawals.view", "withdrawals.process", "withdrawals.approve", "withdrawals.reject",
+    "payment_methods.view", "payment_methods.manage",
     "marketplace.view",
     "packages.view", "packages.edit",
     "analytics.view", "analytics.export",
@@ -109,31 +207,47 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "dashboard.view",
     "users.view",
     "tasks.view", "tasks.create", "tasks.edit",
+    "boards.view", "boards.manage",
     "submissions.view", "submissions.approve", "submissions.reject",
+    "courses.view", "courses.manage",
+    "missions.view", "missions.manage",
+    "quizzes.view", "quizzes.manage",
+    "lottery.view", "lottery.manage",
+    "leaderboards.view", "leaderboards.manage",
     "notifications.view", "notifications.send",
+    "media.view", "media.manage",
+    "ai.view", "ai.manage",
     "analytics.view",
   ],
 
   SUPPORT_ADMIN: [
     "dashboard.view",
-    "users.view", "users.edit", "users.ban",
+    "users.view", "users.edit", "users.ban", "users.impersonate",
     "kyc.view", "kyc.approve", "kyc.reject",
     "tasks.view",
     "marketplace.view", "marketplace.disputes",
+    "moderation.view", "moderation.manage",
   ],
 
   MARKETING_ADMIN: [
     "dashboard.view",
     "users.view",
+    "campaigns.view", "campaigns.manage",
     "notifications.view", "notifications.send",
+    "banners.view", "banners.manage",
+    "ads.view", "ads.manage",
+    "landing.view", "landing.edit",
+    "ticker.view", "ticker.edit",
     "analytics.view", "analytics.export",
     "referrals.view",
+    "media.view",
   ],
 
   MODERATOR: [
     "dashboard.view",
     "tasks.view",
     "submissions.view", "submissions.approve", "submissions.reject",
+    "moderation.view", "moderation.manage", "social.moderate",
   ],
 };
 
@@ -172,99 +286,253 @@ export interface AdminModule {
   href: string;
   icon: string;
   permissions: Permission[];
+  category: ModuleCategory;
   badge?: string;
 }
 
+// Full 33-module admin navigation per admin_oo.md specification
 export const ADMIN_MODULES: AdminModule[] = [
+  // ── CORE ──
   {
     name: "Dashboard",
     href: "/admin",
     icon: "LayoutDashboard",
     permissions: ["dashboard.view"],
+    category: "CORE",
   },
   {
     name: "Users",
     href: "/admin/users",
     icon: "Users",
     permissions: ["users.view"],
+    category: "CORE",
+  },
+  {
+    name: "Leaderboard",
+    href: "/admin/leaderboard",
+    icon: "Trophy",
+    permissions: ["leaderboards.view"],
+    category: "CORE",
   },
   {
     name: "Tasks",
     href: "/admin/tasks",
     icon: "ListTodo",
     permissions: ["tasks.view"],
+    category: "CORE",
+  },
+  {
+    name: "Task Boards",
+    href: "/admin/boards",
+    icon: "Layers",
+    permissions: ["boards.view"],
+    category: "CORE",
   },
   {
     name: "Submissions",
     href: "/admin/submissions",
     icon: "ClipboardCheck",
     permissions: ["submissions.view"],
+    category: "CORE",
   },
+
+  // ── FINANCE ──
   {
     name: "Withdrawals",
     href: "/admin/withdrawals",
     icon: "Wallet",
     permissions: ["withdrawals.view"],
+    category: "FINANCE",
   },
   {
-    name: "Marketplace",
-    href: "/admin/marketplace",
-    icon: "Store",
-    permissions: ["marketplace.view"],
-  },
-  {
-    name: "Media Library",
-    href: "/admin/media",
-    icon: "ImageIcon",
-    permissions: ["tasks.create"], // Only SUPER_ADMIN and admins with content creation access
-  },
-  {
-    name: "Lottery",
-    href: "/admin/lottery",
-    icon: "Ticket",
-    permissions: ["settings.view"],
+    name: "Payment Methods",
+    href: "/admin/payment-methods",
+    icon: "CreditCard",
+    permissions: ["payment_methods.view"],
+    category: "FINANCE",
   },
   {
     name: "Packages",
     href: "/admin/packages",
     icon: "Package",
     permissions: ["packages.view"],
+    category: "FINANCE",
   },
   {
     name: "Referrals",
     href: "/admin/referrals",
     icon: "GitBranch",
     permissions: ["referrals.view"],
+    category: "FINANCE",
+  },
+
+  // ── PLATFORM ──
+  {
+    name: "Marketplace",
+    href: "/admin/marketplace",
+    icon: "Store",
+    permissions: ["marketplace.view"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Social Feed",
+    href: "/admin/social-moderation",
+    icon: "MessageSquare",
+    permissions: ["social.moderate"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Lottery",
+    href: "/admin/lottery",
+    icon: "Ticket",
+    permissions: ["lottery.view"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Courses",
+    href: "/admin/courses",
+    icon: "GraduationCap",
+    permissions: ["courses.view"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Daily Missions",
+    href: "/admin/missions",
+    icon: "Target",
+    permissions: ["missions.view"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Quizzes",
+    href: "/admin/quizzes",
+    icon: "Brain",
+    permissions: ["quizzes.view"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Offerwalls",
+    href: "/admin/offerwalls",
+    icon: "Gift",
+    permissions: ["offerwalls.view"],
+    category: "PLATFORM",
+  },
+
+  // ── SECURITY ──
+  {
+    name: "Fraud Monitor",
+    href: "/admin/fraud",
+    icon: "ShieldAlert",
+    permissions: ["fraud.view"],
+    category: "SECURITY",
+  },
+  {
+    name: "KYC / Blue Badge",
+    href: "/admin/users/kyc",
+    icon: "BadgeCheck",
+    permissions: ["kyc.view"],
+    category: "SECURITY",
   },
   {
     name: "Proxy Servers",
     href: "/admin/proxy",
     icon: "Globe",
     permissions: ["proxy.view"],
+    category: "SECURITY",
+  },
+  {
+    name: "Moderation",
+    href: "/admin/moderation",
+    icon: "Flag",
+    permissions: ["moderation.view"],
+    category: "SECURITY",
+  },
+  {
+    name: "Security Logs",
+    href: "/admin/logs",
+    icon: "FileText",
+    permissions: ["logs.view"],
+    category: "SECURITY",
+  },
+
+  // ── MARKETING ──
+  {
+    name: "Campaigns",
+    href: "/admin/campaigns",
+    icon: "Megaphone",
+    permissions: ["campaigns.view"],
+    category: "MARKETING",
   },
   {
     name: "Notifications",
     href: "/admin/notifications",
     icon: "Bell",
     permissions: ["notifications.view"],
+    category: "MARKETING",
   },
+  {
+    name: "Banners",
+    href: "/admin/banners",
+    icon: "Image",
+    permissions: ["banners.view"],
+    category: "MARKETING",
+  },
+  {
+    name: "Ads Manager",
+    href: "/admin/ads",
+    icon: "Newspaper",
+    permissions: ["ads.view"],
+    category: "MARKETING",
+  },
+  {
+    name: "Landing Page",
+    href: "/admin/landing-page",
+    icon: "Layout",
+    permissions: ["landing.view"],
+    category: "MARKETING",
+  },
+  {
+    name: "Withdrawal Ticker",
+    href: "/admin/ticker",
+    icon: "Activity",
+    permissions: ["ticker.view"],
+    category: "MARKETING",
+  },
+
+  // ── SYSTEM ──
   {
     name: "Analytics",
     href: "/admin/analytics",
     icon: "BarChart3",
     permissions: ["analytics.view"],
+    category: "SYSTEM",
   },
   {
-    name: "Settings",
+    name: "AI Content",
+    href: "/admin/ai",
+    icon: "Sparkles",
+    permissions: ["ai.view"],
+    category: "SYSTEM",
+  },
+  {
+    name: "System Settings",
     href: "/admin/settings",
     icon: "Settings",
     permissions: ["settings.view"],
+    category: "SYSTEM",
   },
   {
-    name: "Admin Access",
+    name: "Admin Control",
     href: "/admin/access",
     icon: "Shield",
     permissions: ["admins.view"],
+    category: "SYSTEM",
+  },
+  {
+    name: "Media Library",
+    href: "/admin/media",
+    icon: "ImageIcon",
+    permissions: ["media.view"],
+    category: "SYSTEM",
   },
 ];
 
@@ -274,6 +542,28 @@ export function getAccessibleModules(role: UserRole | undefined): AdminModule[] 
   return ADMIN_MODULES.filter((module) =>
     module.permissions.some((p) => hasPermission(role, p))
   );
+}
+
+// Get modules grouped by category, filtered by role
+export function getGroupedModules(
+  role: UserRole | undefined
+): Array<{ category: ModuleCategory; label: string; modules: AdminModule[] }> {
+  const accessible = getAccessibleModules(role);
+  const order: ModuleCategory[] = [
+    "CORE",
+    "FINANCE",
+    "PLATFORM",
+    "SECURITY",
+    "MARKETING",
+    "SYSTEM",
+  ];
+  return order
+    .map((category) => ({
+      category,
+      label: CATEGORY_LABELS[category],
+      modules: accessible.filter((m) => m.category === category),
+    }))
+    .filter((g) => g.modules.length > 0);
 }
 
 // Role display names and colors

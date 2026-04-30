@@ -21,7 +21,7 @@ const createUserSchema = z.object({
     "MODERATOR",
   ]).default("USER"),
   status: z.enum(["ACTIVE", "PENDING_VERIFICATION"]).default("ACTIVE"),
-  packageTier: z.enum(["FREE", "BASIC", "STANDARD", "PREMIUM"]).default("FREE"),
+  packageTier: z.enum(["FREE", "STARTER", "PRO", "ELITE", "VIP"]).default("FREE"),
   phone: z.string().optional(),
   country: z.string().optional(),
 });

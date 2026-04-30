@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
     ]);
 
     // Get user's enrollments if authenticated
-    let userEnrollments: Record<string, { progress: number; completedAt: Date | null }> = {};
+    const userEnrollments: Record<string, { progress: number; completedAt: Date | null }> = {};
 
     if (session?.user?.id) {
       const enrollments = await prisma.courseEnrollment.findMany({

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
 
 // GET /api/admin/users/[id] - Get user details
@@ -70,13 +71,16 @@ export async function GET(
   }
 }
 
-// Update schema
+// Update schema — extended with all spec fields (admin_oo.md §5.02 Edit User Modal)
 const updateUserSchema = z.object({
+  // Account
   name: z.string().min(2).max(50).optional(),
+  firstName: z.string().max(50).optional().nullable(),
+  lastName: z.string().max(50).optional().nullable(),
   email: z.string().email().optional(),
-  username: z.string().min(3).max(30).optional(),
+  username: z.string().min(3).max(30).optional().nullable(),
+  password: z.string().min(6).max(100).optional(),
   phone: z.string().optional().nullable(),
-  country: z.string().optional().nullable(),
   role: z.enum([
     "USER",
     "SUPER_ADMIN",
@@ -87,9 +91,41 @@ const updateUserSchema = z.object({
     "MODERATOR",
   ]).optional(),
   status: z.enum(["ACTIVE", "PENDING_VERIFICATION", "SUSPENDED", "BANNED"]).optional(),
-  packageTier: z.enum(["FREE", "BASIC", "STANDARD", "PREMIUM"]).optional(),
+
+  // Balance / progression
+  level: z.number().int().min(1).max(100).optional(),
+  xp: z.number().int().min(0).optional(),
+  pointsBalance: z.number().int().min(0).optional(),
+  cashBalance: z.number().min(0).optional(),
+  packageTier: z.enum(["FREE", "STARTER", "PRO", "ELITE", "VIP"]).optional(),
   packageExpiresAt: z.string().datetime().optional().nullable(),
   kycStatus: z.enum(["NOT_SUBMITTED", "PENDING", "APPROVED", "REJECTED"]).optional(),
+  isBlueVerified: z.boolean().optional(),
+
+  // Personal
+  gender: z.enum(["Male", "Female", "Other"]).optional().nullable(),
+  dateOfBirth: z.string().datetime().optional().nullable(),
+  nidNumber: z.string().max(64).optional().nullable(),
+  profession: z.string().max(64).optional().nullable(),
+  maritalStatus: z.enum(["Single", "Married", "Divorced", "Widowed"]).optional().nullable(),
+  studyLevel: z.enum(["School", "College", "University", "Not study right now"]).optional().nullable(),
+  nationality: z.string().max(64).optional().nullable(),
+  bloodGroup: z.enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]).optional().nullable(),
+  secondaryEmail: z.string().email().optional().nullable(),
+  secondaryPhone: z.string().max(32).optional().nullable(),
+  bio: z.string().max(500).optional().nullable(),
+
+  // Address
+  country: z.string().optional().nullable(),
+  region: z.string().max(64).optional().nullable(),
+  division: z.string().max(64).optional().nullable(),
+  subDivision: z.string().max(64).optional().nullable(),
+  district: z.string().max(64).optional().nullable(),
+  subDistrict: z.string().max(64).optional().nullable(),
+  city: z.string().max(64).optional().nullable(),
+  village: z.string().max(64).optional().nullable(),
+  street: z.string().max(128).optional().nullable(),
+  postalCode: z.string().max(16).optional().nullable(),
 });
 
 // PATCH /api/admin/users/[id] - Update user
@@ -165,21 +201,69 @@ export async function PATCH(
       }
     }
 
-    // Build update object
+    // Build update object — pass through all defined fields
     const updateData: Record<string, unknown> = {};
 
+    // Account
     if (data.name !== undefined) updateData.name = data.name;
+    if (data.firstName !== undefined) updateData.firstName = data.firstName;
+    if (data.lastName !== undefined) updateData.lastName = data.lastName;
     if (data.email !== undefined) updateData.email = data.email;
     if (data.username !== undefined) updateData.username = data.username;
     if (data.phone !== undefined) updateData.phone = data.phone;
-    if (data.country !== undefined) updateData.country = data.country;
     if (data.role !== undefined) updateData.role = data.role;
     if (data.status !== undefined) updateData.status = data.status;
+
+    // Password (hashed)
+    if (data.password) {
+      const bcrypt = (await import("bcryptjs")).default;
+      updateData.password = await bcrypt.hash(data.password, 10);
+    }
+
+    // Balance / progression
+    if (data.level !== undefined) updateData.level = data.level;
+    if (data.xp !== undefined) updateData.xp = data.xp;
+    if (data.pointsBalance !== undefined) updateData.pointsBalance = data.pointsBalance;
+    if (data.cashBalance !== undefined) updateData.cashBalance = data.cashBalance;
     if (data.packageTier !== undefined) updateData.packageTier = data.packageTier;
     if (data.packageExpiresAt !== undefined) {
-      updateData.packageExpiresAt = data.packageExpiresAt ? new Date(data.packageExpiresAt) : null;
+      updateData.packageExpiresAt = data.packageExpiresAt
+        ? new Date(data.packageExpiresAt)
+        : null;
     }
     if (data.kycStatus !== undefined) updateData.kycStatus = data.kycStatus;
+    if (data.isBlueVerified !== undefined)
+      updateData.isBlueVerified = data.isBlueVerified;
+
+    // Personal
+    if (data.gender !== undefined) updateData.gender = data.gender;
+    if (data.dateOfBirth !== undefined) {
+      updateData.dateOfBirth = data.dateOfBirth ? new Date(data.dateOfBirth) : null;
+    }
+    if (data.nidNumber !== undefined) updateData.nidNumber = data.nidNumber;
+    if (data.profession !== undefined) updateData.profession = data.profession;
+    if (data.maritalStatus !== undefined)
+      updateData.maritalStatus = data.maritalStatus;
+    if (data.studyLevel !== undefined) updateData.studyLevel = data.studyLevel;
+    if (data.nationality !== undefined) updateData.nationality = data.nationality;
+    if (data.bloodGroup !== undefined) updateData.bloodGroup = data.bloodGroup;
+    if (data.secondaryEmail !== undefined)
+      updateData.secondaryEmail = data.secondaryEmail;
+    if (data.secondaryPhone !== undefined)
+      updateData.secondaryPhone = data.secondaryPhone;
+    if (data.bio !== undefined) updateData.bio = data.bio;
+
+    // Address
+    if (data.country !== undefined) updateData.country = data.country;
+    if (data.region !== undefined) updateData.region = data.region;
+    if (data.division !== undefined) updateData.division = data.division;
+    if (data.subDivision !== undefined) updateData.subDivision = data.subDivision;
+    if (data.district !== undefined) updateData.district = data.district;
+    if (data.subDistrict !== undefined) updateData.subDistrict = data.subDistrict;
+    if (data.city !== undefined) updateData.city = data.city;
+    if (data.village !== undefined) updateData.village = data.village;
+    if (data.street !== undefined) updateData.street = data.street;
+    if (data.postalCode !== undefined) updateData.postalCode = data.postalCode;
 
     const updatedUser = await prisma.user.update({
       where: { id },
@@ -193,6 +277,17 @@ export async function PATCH(
         status: true,
         packageTier: true,
         kycStatus: true,
+      },
+    });
+
+    // Audit log
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "USER_UPDATED",
+        entity: "User",
+        entityId: id,
+        newData: updateData as Prisma.InputJsonValue,
       },
     });
 

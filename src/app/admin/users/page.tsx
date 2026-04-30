@@ -9,14 +9,19 @@ import {
   Clock,
   Ban,
   FileCheck,
-  ChevronLeft,
-  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
-import { hasPermission, ROLE_CONFIG, type UserRole } from "@/lib/rbac";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Prisma } from "@/generated/prisma/client";
-import { UserActions, ExportUsersButton, AddUserButton } from "@/components/admin/user-actions";
+import {
+  ExportUsersButton,
+  AddUserButton,
+} from "@/components/admin/user-actions";
+import { UsersTableClient } from "@/components/admin/users-table-client";
+import {
+  ActiveFilterChips,
+  type FilterChip,
+} from "@/components/admin/active-filter-chips";
 
 interface PageProps {
   searchParams: Promise<{
@@ -25,6 +30,10 @@ interface PageProps {
     role?: string;
     kyc?: string;
     package?: string;
+    country?: string;
+    gender?: string;
+    studyLevel?: string;
+    hasReferrals?: string;
     search?: string;
   }>;
 }
@@ -32,14 +41,10 @@ interface PageProps {
 export default async function AdminUsersPage({ searchParams }: PageProps) {
   const session = await auth();
 
-  if (!session?.user) {
-    redirect("/login");
-  }
+  if (!session?.user) redirect("/login");
 
   const userRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(userRole, "users.view")) {
-    redirect("/admin");
-  }
+  if (!hasPermission(userRole, "users.view")) redirect("/admin");
 
   const params = await searchParams;
   const page = Math.max(1, parseInt(params.page || "1"));
@@ -52,19 +57,32 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
   if (params.status && params.status !== "all") {
     where.status = params.status as Prisma.EnumUserStatusFilter["equals"];
   }
-
   if (params.role && params.role !== "all") {
     where.role = params.role as Prisma.EnumUserRoleFilter["equals"];
   }
-
   if (params.kyc && params.kyc !== "all") {
     where.kycStatus = params.kyc as Prisma.EnumKYCStatusFilter["equals"];
   }
-
   if (params.package && params.package !== "all") {
     where.packageTier = params.package as Prisma.EnumPackageTierFilter["equals"];
   }
-
+  if (params.country && params.country.trim()) {
+    where.country = {
+      contains: params.country.trim(),
+      mode: "insensitive",
+    };
+  }
+  if (params.gender && params.gender !== "all") {
+    where.gender = params.gender;
+  }
+  if (params.studyLevel && params.studyLevel !== "all") {
+    where.studyLevel = params.studyLevel;
+  }
+  if (params.hasReferrals === "yes") {
+    where.referrals = { some: {} };
+  } else if (params.hasReferrals === "no") {
+    where.referrals = { none: {} };
+  }
   if (params.search) {
     where.OR = [
       { name: { contains: params.search, mode: "insensitive" } },
@@ -112,65 +130,109 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     prisma.user.count({ where: { kycStatus: "PENDING" } }),
   ]);
 
-  const totalPages = Math.ceil(totalCount / pageSize);
+  // Build base query string (without page) for client pagination
+  const baseQueryParams = new URLSearchParams();
+  if (params.status) baseQueryParams.set("status", params.status);
+  if (params.role) baseQueryParams.set("role", params.role);
+  if (params.kyc) baseQueryParams.set("kyc", params.kyc);
+  if (params.package) baseQueryParams.set("package", params.package);
+  if (params.country) baseQueryParams.set("country", params.country);
+  if (params.gender) baseQueryParams.set("gender", params.gender);
+  if (params.studyLevel) baseQueryParams.set("studyLevel", params.studyLevel);
+  if (params.hasReferrals) baseQueryParams.set("hasReferrals", params.hasReferrals);
+  if (params.search) baseQueryParams.set("search", params.search);
+  const baseQuery = baseQueryParams.toString();
 
-  // Build query string for pagination links
-  const buildQueryString = (newPage: number) => {
-    const queryParams = new URLSearchParams();
-    queryParams.set("page", newPage.toString());
-    if (params.status) queryParams.set("status", params.status);
-    if (params.role) queryParams.set("role", params.role);
-    if (params.kyc) queryParams.set("kyc", params.kyc);
-    if (params.package) queryParams.set("package", params.package);
-    if (params.search) queryParams.set("search", params.search);
-    return queryParams.toString();
-  };
+  // Build active filter chips
+  const chips: FilterChip[] = [];
+  if (params.search)
+    chips.push({ key: "search", label: "Search", value: params.search });
+  if (params.status && params.status !== "all")
+    chips.push({
+      key: "status",
+      label: "Status",
+      value: params.status.replace(/_/g, " "),
+    });
+  if (params.role && params.role !== "all")
+    chips.push({ key: "role", label: "Role", value: params.role });
+  if (params.kyc && params.kyc !== "all")
+    chips.push({ key: "kyc", label: "KYC", value: params.kyc });
+  if (params.package && params.package !== "all")
+    chips.push({ key: "package", label: "Package", value: params.package });
+  if (params.country)
+    chips.push({ key: "country", label: "Country", value: params.country });
+  if (params.gender && params.gender !== "all")
+    chips.push({ key: "gender", label: "Gender", value: params.gender });
+  if (params.studyLevel && params.studyLevel !== "all")
+    chips.push({
+      key: "studyLevel",
+      label: "Study Level",
+      value: params.studyLevel,
+    });
+  if (params.hasReferrals && params.hasReferrals !== "any")
+    chips.push({
+      key: "hasReferrals",
+      label: "Has Referrals",
+      value: params.hasReferrals === "yes" ? "Yes" : "No",
+    });
+
+  const totalUsersAll = activeCount + pendingCount + bannedCount;
+
+  const isSuperAdmin = userRole === "SUPER_ADMIN";
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Users Management</h1>
-          <p className="text-gray-400 mt-1">
+          <h1 className="text-2xl font-bold text-white">User Management</h1>
+          <p className="text-slate-400 mt-1 text-sm">
             Manage and monitor all platform users
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2 flex-wrap">
           {pendingKycCount > 0 && (
             <Link
               href="/admin/users/kyc"
-              className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-lg hover:bg-amber-500/20 transition-colors"
+              className="inline-flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 rounded-lg hover:bg-amber-500/20 transition-colors text-sm"
             >
               <FileCheck className="w-4 h-4" />
               KYC Queue ({pendingKycCount})
             </Link>
           )}
-          <ExportUsersButton queryParams={`status=${params.status || ""}&role=${params.role || ""}&kyc=${params.kyc || ""}&package=${params.package || ""}`} />
+          <ExportUsersButton
+            queryParams={`status=${params.status || ""}&role=${
+              params.role || ""
+            }&kyc=${params.kyc || ""}&package=${params.package || ""}`}
+          />
           <AddUserButton canEdit={hasPermission(userRole, "users.edit")} />
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Link
           href="/admin/users"
-          className="bg-gray-900 rounded-xl border border-gray-800 p-4 hover:border-indigo-500/50 transition-colors"
+          className="bg-slate-900 rounded-xl border border-slate-800 p-4 hover:border-indigo-500/50 transition-colors"
         >
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-500/10 rounded-lg">
               <Users className="w-5 h-5 text-indigo-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{activeCount + pendingCount + bannedCount}</p>
-              <p className="text-sm text-gray-500">Total Users</p>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {totalUsersAll.toLocaleString()}
+              </p>
+              <p className="text-sm text-slate-500">Total Users</p>
             </div>
           </div>
         </Link>
         <Link
           href="/admin/users?status=ACTIVE"
-          className={`bg-gray-900 rounded-xl border p-4 transition-colors ${
-            params.status === "ACTIVE" ? "border-emerald-500/50" : "border-gray-800 hover:border-emerald-500/50"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "ACTIVE"
+              ? "border-emerald-500/50"
+              : "border-slate-800 hover:border-emerald-500/50"
           }`}
         >
           <div className="flex items-center gap-3">
@@ -178,15 +240,19 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
               <CheckCircle className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{activeCount}</p>
-              <p className="text-sm text-gray-500">Active</p>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {activeCount.toLocaleString()}
+              </p>
+              <p className="text-sm text-slate-500">Active</p>
             </div>
           </div>
         </Link>
         <Link
           href="/admin/users?status=PENDING_VERIFICATION"
-          className={`bg-gray-900 rounded-xl border p-4 transition-colors ${
-            params.status === "PENDING_VERIFICATION" ? "border-amber-500/50" : "border-gray-800 hover:border-amber-500/50"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "PENDING_VERIFICATION"
+              ? "border-amber-500/50"
+              : "border-slate-800 hover:border-amber-500/50"
           }`}
         >
           <div className="flex items-center gap-3">
@@ -194,15 +260,19 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
               <Clock className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{pendingCount}</p>
-              <p className="text-sm text-gray-500">Pending</p>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {pendingCount.toLocaleString()}
+              </p>
+              <p className="text-sm text-slate-500">Pending</p>
             </div>
           </div>
         </Link>
         <Link
           href="/admin/users?status=BANNED"
-          className={`bg-gray-900 rounded-xl border p-4 transition-colors ${
-            params.status === "BANNED" ? "border-red-500/50" : "border-gray-800 hover:border-red-500/50"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "BANNED"
+              ? "border-red-500/50"
+              : "border-slate-800 hover:border-red-500/50"
           }`}
         >
           <div className="flex items-center gap-3">
@@ -210,30 +280,38 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
               <Ban className="w-5 h-5 text-red-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{bannedCount}</p>
-              <p className="text-sm text-gray-500">Banned</p>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {bannedCount.toLocaleString()}
+              </p>
+              <p className="text-sm text-slate-500">Banned</p>
             </div>
           </div>
         </Link>
       </div>
 
-      {/* Filters */}
-      <form className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-          <input
-            type="search"
-            name="search"
-            defaultValue={params.search}
-            placeholder="Search users by name, email, username..."
-            className="w-full pl-10 pr-4 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
-          />
-        </div>
-        <div className="flex gap-2 flex-wrap">
+      {/* Filters — 8-filter bar per spec */}
+      <form
+        method="get"
+        className="bg-slate-900 rounded-xl border border-slate-800 p-4 space-y-3"
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Search */}
+          <div className="relative col-span-1 md:col-span-2 lg:col-span-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              type="search"
+              name="search"
+              defaultValue={params.search}
+              placeholder="Username, email, ID…"
+              className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+            />
+          </div>
+
+          {/* Status */}
           <select
             name="status"
             defaultValue={params.status || "all"}
-            className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
           >
             <option value="all">All Status</option>
             <option value="ACTIVE">Active</option>
@@ -241,259 +319,125 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
             <option value="SUSPENDED">Suspended</option>
             <option value="BANNED">Banned</option>
           </select>
-          <select
-            name="role"
-            defaultValue={params.role || "all"}
-            className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
-          >
-            <option value="all">All Roles</option>
-            <option value="USER">User</option>
-            <option value="SUPER_ADMIN">Super Admin</option>
-            <option value="FINANCE_ADMIN">Finance Admin</option>
-            <option value="CONTENT_ADMIN">Content Admin</option>
-            <option value="SUPPORT_ADMIN">Support Admin</option>
-            <option value="MARKETING_ADMIN">Marketing Admin</option>
-            <option value="MODERATOR">Moderator</option>
-          </select>
+
+          {/* KYC */}
           <select
             name="kyc"
             defaultValue={params.kyc || "all"}
-            className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
           >
             <option value="all">All KYC</option>
             <option value="NOT_SUBMITTED">Not Submitted</option>
             <option value="PENDING">Pending</option>
-            <option value="APPROVED">Approved</option>
+            <option value="APPROVED">Verified</option>
             <option value="REJECTED">Rejected</option>
           </select>
+
+          {/* Package */}
           <select
             name="package"
             defaultValue={params.package || "all"}
-            className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
           >
             <option value="all">All Packages</option>
             <option value="FREE">Free</option>
-            <option value="BASIC">Basic</option>
-            <option value="STANDARD">Standard</option>
-            <option value="PREMIUM">Premium</option>
+            <option value="STARTER">Starter</option>
+            <option value="PRO">Pro</option>
+            <option value="ELITE">Elite</option>
+            <option value="VIP">VIP</option>
           </select>
+
+          {/* Country */}
+          <input
+            type="text"
+            name="country"
+            defaultValue={params.country}
+            placeholder="Country"
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+          />
+
+          {/* Gender */}
+          <select
+            name="gender"
+            defaultValue={params.gender || "all"}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+          >
+            <option value="all">All Genders</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+
+          {/* Study Level */}
+          <select
+            name="studyLevel"
+            defaultValue={params.studyLevel || "all"}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+          >
+            <option value="all">All Study Levels</option>
+            <option value="School">School</option>
+            <option value="College">College</option>
+            <option value="University">University</option>
+            <option value="Not study right now">Not Studying</option>
+          </select>
+
+          {/* Has Referrals */}
+          <select
+            name="hasReferrals"
+            defaultValue={params.hasReferrals || "any"}
+            className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+          >
+            <option value="any">Any Referrals</option>
+            <option value="yes">Has Referrals</option>
+            <option value="no">No Referrals</option>
+          </select>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-800 flex-wrap">
+          <Link
+            href="/admin/users"
+            className="text-sm text-slate-400 hover:text-white"
+          >
+            Reset all
+          </Link>
           <button
             type="submit"
-            className="p-2.5 bg-red-500 rounded-lg text-white hover:bg-red-600 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-lg text-sm text-white hover:bg-blue-700 transition-colors"
           >
-            <Filter className="w-5 h-5" />
+            <Filter className="w-4 h-4" />
+            Apply Filters
           </button>
         </div>
       </form>
 
-      {/* Users Table */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-800 bg-gray-800/50">
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                  User
-                </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                  Status
-                </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                  Role
-                </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                  KYC
-                </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                  Package
-                </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                  Balance
-                </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                  Joined
-                </th>
-                <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {allUsers.length > 0 ? (
-                allUsers.map((user) => (
-                  <tr key={user.id} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/50">
-                    <td className="py-4 px-6">
-                      <Link href={`/admin/users/${user.id}`} className="flex items-center gap-3 group">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
-                          {user.name?.charAt(0) || user.email?.charAt(0) || "U"}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-white group-hover:text-indigo-400 transition-colors">
-                            {user.name || "Unnamed"}
-                          </p>
-                          <p className="text-xs text-gray-500">{user.email}</p>
-                          {user.username && (
-                            <p className="text-xs text-gray-600">@{user.username}</p>
-                          )}
-                        </div>
-                      </Link>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.status === "ACTIVE"
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : user.status === "PENDING_VERIFICATION"
-                          ? "bg-amber-500/10 text-amber-400"
-                          : user.status === "SUSPENDED"
-                          ? "bg-orange-500/10 text-orange-400"
-                          : "bg-red-500/10 text-red-400"
-                      }`}>
-                        {user.status.replace(/_/g, " ")}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      {(() => {
-                        const roleConfig = ROLE_CONFIG[user.role as UserRole] || ROLE_CONFIG.USER;
-                        return (
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${roleConfig.bgColor} ${roleConfig.color}`}>
-                            {roleConfig.label}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.kycStatus === "APPROVED"
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : user.kycStatus === "PENDING"
-                          ? "bg-amber-500/10 text-amber-400"
-                          : user.kycStatus === "REJECTED"
-                          ? "bg-red-500/10 text-red-400"
-                          : "bg-gray-500/10 text-gray-400"
-                      }`}>
-                        {user.kycStatus.replace(/_/g, " ")}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.packageTier === "PREMIUM"
-                          ? "bg-purple-500/10 text-purple-400"
-                          : user.packageTier === "STANDARD"
-                          ? "bg-indigo-500/10 text-indigo-400"
-                          : user.packageTier === "BASIC"
-                          ? "bg-blue-500/10 text-blue-400"
-                          : "bg-gray-500/10 text-gray-400"
-                      }`}>
-                        {user.packageTier}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="text-sm">
-                        <p className="text-white">${user.cashBalance.toFixed(2)}</p>
-                        <p className="text-xs text-gray-500">{user.pointsBalance.toLocaleString()} pts</p>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6 text-sm text-gray-400">
-                      <div>
-                        <p>{formatDistanceToNow(user.createdAt, { addSuffix: true })}</p>
-                        {user.lastLoginAt && (
-                          <p className="text-xs text-gray-600">
-                            Last: {formatDistanceToNow(user.lastLoginAt, { addSuffix: true })}
-                          </p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <UserActions
-                        user={{
-                          id: user.id,
-                          name: user.name,
-                          email: user.email,
-                          status: user.status,
-                          role: user.role,
-                        }}
-                        canEdit={hasPermission(userRole, "users.edit")}
-                        canBan={hasPermission(userRole, "users.ban")}
-                      />
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={8} className="py-16 text-center text-gray-500">
-                    <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p>No users found</p>
-                    <p className="text-sm mt-1">
-                      {params.search || params.status || params.role
-                        ? "Try adjusting your filters"
-                        : "Users will appear here once they register"}
-                    </p>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      {/* Active filter chips */}
+      <ActiveFilterChips chips={chips} />
 
-        {/* Pagination */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-gray-800">
-          <p className="text-sm text-gray-500">
-            Showing {skip + 1} - {Math.min(skip + pageSize, totalCount)} of {totalCount} users
-          </p>
-          <div className="flex gap-2">
-            <Link
-              href={page > 1 ? `/admin/users?${buildQueryString(page - 1)}` : "#"}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                page > 1
-                  ? "bg-gray-800 text-white hover:bg-gray-700"
-                  : "bg-gray-800/50 text-gray-600 cursor-not-allowed"
-              }`}
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Previous
-            </Link>
-            <div className="flex items-center gap-1">
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum: number;
-                if (totalPages <= 5) {
-                  pageNum = i + 1;
-                } else if (page <= 3) {
-                  pageNum = i + 1;
-                } else if (page >= totalPages - 2) {
-                  pageNum = totalPages - 4 + i;
-                } else {
-                  pageNum = page - 2 + i;
-                }
+      {/* Users Table — client component for selection / bulk actions */}
+      <UsersTableClient
+        users={allUsers}
+        totalCount={totalCount}
+        page={page}
+        pageSize={pageSize}
+        baseQuery={baseQuery}
+        permissions={{
+          canEdit: hasPermission(userRole, "users.edit"),
+          canBan: hasPermission(userRole, "users.ban"),
+          canDelete: hasPermission(userRole, "users.delete"),
+          canImpersonate: hasPermission(userRole, "users.impersonate"),
+        }}
+      />
 
-                return (
-                  <Link
-                    key={pageNum}
-                    href={`/admin/users?${buildQueryString(pageNum)}`}
-                    className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                      pageNum === page
-                        ? "bg-red-500 text-white"
-                        : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white"
-                    }`}
-                  >
-                    {pageNum}
-                  </Link>
-                );
-              })}
-            </div>
-            <Link
-              href={page < totalPages ? `/admin/users?${buildQueryString(page + 1)}` : "#"}
-              className={`inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                page < totalPages
-                  ? "bg-gray-800 text-white hover:bg-gray-700"
-                  : "bg-gray-800/50 text-gray-600 cursor-not-allowed"
-              }`}
-            >
-              Next
-              <ChevronRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </div>
-      </div>
+      {/* Privileged-action notice for non-super-admins */}
+      {!isSuperAdmin && (
+        <p className="text-xs text-slate-500 text-center">
+          Some actions are restricted to your role. See{" "}
+          <Link href="/admin/access" className="text-slate-400 hover:text-white underline-offset-2 hover:underline">
+            Admin Access Control
+          </Link>{" "}
+          for the full permission matrix.
+        </p>
+      )}
     </div>
   );
 }

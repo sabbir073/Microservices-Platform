@@ -1,38 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   Menu,
   Bell,
   Search,
-  X,
   Shield,
   Settings,
   LogOut,
-  User,
   ChevronDown,
   LayoutDashboard,
   Users,
-  ListTodo,
   Wallet,
-  Gift,
-  GraduationCap,
-  Store,
-  Ticket,
-  BarChart3,
-  FileText,
-  CreditCard,
-  Check,
-  AlertCircle,
-  CheckCircle,
   Megaphone,
   Trophy,
   MessageSquare,
+  Ticket,
+  AlertCircle,
+  CheckCircle,
+  Check,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
+import { ADMIN_MODULES } from "@/lib/rbac";
 
 interface AdminHeaderProps {
   user: {
@@ -57,7 +49,7 @@ const NOTIFICATION_TYPE_CONFIG: Record<
   string,
   { icon: typeof Bell; color: string }
 > = {
-  SYSTEM: { icon: AlertCircle, color: "text-gray-400" },
+  SYSTEM: { icon: AlertCircle, color: "text-slate-400" },
   TASK: { icon: CheckCircle, color: "text-blue-400" },
   WALLET: { icon: Wallet, color: "text-emerald-400" },
   REFERRAL: { icon: Users, color: "text-purple-400" },
@@ -67,35 +59,45 @@ const NOTIFICATION_TYPE_CONFIG: Record<
   SOCIAL: { icon: MessageSquare, color: "text-indigo-400" },
 };
 
-const mobileNavigation = [
-  { name: "Dashboard", href: "/admin", icon: LayoutDashboard },
-  { name: "Users", href: "/admin/users", icon: Users },
-  { name: "Tasks", href: "/admin/tasks", icon: ListTodo },
-  { name: "Withdrawals", href: "/admin/withdrawals", icon: Wallet },
-  { name: "Transactions", href: "/admin/transactions", icon: CreditCard },
-  { name: "Referrals", href: "/admin/referrals", icon: Gift },
-  { name: "Courses", href: "/admin/courses", icon: GraduationCap },
-  { name: "Marketplace", href: "/admin/marketplace", icon: Store },
-  { name: "Lottery", href: "/admin/lottery", icon: Ticket },
-  { name: "Reports", href: "/admin/reports", icon: BarChart3 },
-  { name: "Audit Logs", href: "/admin/logs", icon: FileText },
-  { name: "Settings", href: "/admin/settings", icon: Settings },
-];
+// Derive page title from current pathname against the admin module list
+function usePageTitle(pathname: string): string {
+  return useMemo(() => {
+    // Exact-route titles for non-module routes
+    const overrides: Record<string, string> = {
+      "/admin/users/kyc": "KYC / Blue Badge",
+      "/admin/notifications/send": "Send Notification",
+      "/admin/referrals/settings": "Referral Settings",
+      "/admin/tasks/new": "Create Task",
+      "/admin/lottery/new": "Create Lottery",
+    };
+    if (overrides[pathname]) return overrides[pathname];
+
+    // Find longest-matching module href
+    const match = ADMIN_MODULES
+      .filter((m) => pathname === m.href || pathname.startsWith(`${m.href}/`))
+      .sort((a, b) => b.href.length - a.href.length)[0];
+
+    if (match) return match.name;
+    if (pathname.startsWith("/admin/")) return "Admin";
+    return "Admin";
+  }, [pathname]);
+}
 
 export function AdminHeader({ user }: AdminHeaderProps) {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const pathname = usePathname();
+  const pageTitle = usePageTitle(pathname);
 
-  // Fetch notifications
+  // Fetch notifications, refresh every 30 seconds
   useEffect(() => {
+    let cancelled = false;
     const fetchNotifications = async () => {
       try {
         const response = await fetch("/api/notifications?limit=5&unread=true");
-        if (response.ok) {
+        if (response.ok && !cancelled) {
           const data = await response.json();
           setNotifications(data.notifications || []);
           setUnreadCount(data.unreadCount || 0);
@@ -106,9 +108,11 @@ export function AdminHeader({ user }: AdminHeaderProps) {
     };
 
     fetchNotifications();
-    // Refresh every 30 seconds
     const interval = setInterval(fetchNotifications, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   const handleSignOut = () => {
@@ -142,317 +146,231 @@ export function AdminHeader({ user }: AdminHeaderProps) {
     return `${Math.floor(seconds / 86400)}d ago`;
   };
 
+  const triggerMobileSidebar = () => {
+    // Open mobile sidebar by dispatching an event the sidebar component listens for.
+    // Sidebar already handles its own mobile open state via its own button, but the
+    // hamburger here can also toggle it. We use a simple custom event pattern.
+    window.dispatchEvent(new CustomEvent("admin-sidebar-open"));
+  };
+
   return (
-    <>
-      <header className="sticky top-0 z-30 bg-gray-950/80 backdrop-blur-sm border-b border-gray-800">
-        <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
-          {/* Left: Mobile Menu Button & Logo (mobile only) */}
-          <div className="flex items-center gap-4 lg:hidden">
-            <button
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="p-2 -ml-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
-            >
-              <Menu className="w-6 h-6" />
-            </button>
-            <Link href="/admin" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center">
-                <Shield className="w-4 h-4 text-white" />
-              </div>
-            </Link>
-          </div>
-
-          {/* Center/Left: Search (desktop) */}
-          <div className="hidden lg:flex flex-1 max-w-md">
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <input
-                type="search"
-                placeholder="Search users, tasks..."
-                className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
-              />
+    <header className="sticky top-0 z-30 bg-slate-950/80 backdrop-blur-sm border-b border-slate-800">
+      <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8 gap-4">
+        {/* Left: Mobile Menu + Logo (mobile) | Page Title (desktop) */}
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            onClick={triggerMobileSidebar}
+            className="lg:hidden p-2 -ml-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+            aria-label="Open menu"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+          <Link
+            href="/admin"
+            className="lg:hidden flex items-center gap-2 shrink-0"
+          >
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center">
+              <Shield className="w-4 h-4 text-white" />
             </div>
-          </div>
+          </Link>
 
-          {/* Right: Actions */}
-          <div className="flex items-center gap-2 sm:gap-4">
-            {/* Admin Badge */}
-            <span className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium">
-              <Shield className="w-4 h-4" />
-              {user.role}
-            </span>
+          {/* Desktop page title */}
+          <h1 className="hidden lg:block text-lg font-semibold text-white truncate">
+            {pageTitle}
+          </h1>
+        </div>
 
-            {/* Notifications */}
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setIsNotificationOpen(!isNotificationOpen);
-                  setIsProfileOpen(false);
-                }}
-                className="relative p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
-              >
-                <Bell className="w-5 h-5" />
-                {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center px-1 text-xs font-bold text-white bg-red-500 rounded-full">
-                    {unreadCount > 9 ? "9+" : unreadCount}
-                  </span>
-                )}
-              </button>
-
-              {/* Notification Dropdown */}
-              {isNotificationOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setIsNotificationOpen(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-80 rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-                      <h3 className="text-sm font-semibold text-white">
-                        Notifications
-                      </h3>
-                      {unreadCount > 0 && (
-                        <button
-                          onClick={handleMarkAllRead}
-                          className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
-                        >
-                          <Check className="w-3 h-3" />
-                          Mark all read
-                        </button>
-                      )}
-                    </div>
-                    <div className="max-h-80 overflow-y-auto">
-                      {notifications.length === 0 ? (
-                        <div className="px-4 py-8 text-center text-gray-500">
-                          <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">No notifications</p>
-                        </div>
-                      ) : (
-                        notifications.map((notif) => {
-                          const typeConfig =
-                            NOTIFICATION_TYPE_CONFIG[notif.type] ||
-                            NOTIFICATION_TYPE_CONFIG.SYSTEM;
-                          const Icon = typeConfig.icon;
-
-                          return (
-                            <Link
-                              key={notif.id}
-                              href="/admin/notifications"
-                              onClick={() => setIsNotificationOpen(false)}
-                              className={cn(
-                                "block px-4 py-3 border-b border-gray-800 hover:bg-gray-800/50 transition-colors",
-                                !notif.isRead && "bg-red-500/5"
-                              )}
-                            >
-                              <div className="flex items-start gap-3">
-                                <div
-                                  className={cn(
-                                    "p-1.5 rounded-lg bg-gray-800",
-                                    typeConfig.color
-                                  )}
-                                >
-                                  <Icon className="w-4 h-4" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2">
-                                    <p className="text-sm font-medium text-white truncate">
-                                      {notif.title}
-                                    </p>
-                                    {!notif.isRead && (
-                                      <span className="w-2 h-2 bg-red-500 rounded-full flex-shrink-0" />
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
-                                    {notif.message}
-                                  </p>
-                                  <p className="text-xs text-gray-600 mt-1">
-                                    {formatTimeAgo(notif.createdAt)}
-                                  </p>
-                                </div>
-                              </div>
-                            </Link>
-                          );
-                        })
-                      )}
-                    </div>
-                    <Link
-                      href="/admin/notifications"
-                      onClick={() => setIsNotificationOpen(false)}
-                      className="block px-4 py-3 text-center text-sm text-red-400 hover:text-red-300 border-t border-gray-800"
-                    >
-                      View all notifications
-                    </Link>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Profile Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => {
-                  setIsProfileOpen(!isProfileOpen);
-                  setIsNotificationOpen(false);
-                }}
-                className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-white text-sm font-medium">
-                  {user.name?.charAt(0) || user.email?.charAt(0) || "A"}
-                </div>
-                <ChevronDown className="hidden sm:block w-4 h-4 text-gray-400" />
-              </button>
-
-              {/* Dropdown Menu */}
-              {isProfileOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setIsProfileOpen(false)}
-                  />
-                  <div className="absolute right-0 mt-2 w-56 rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
-                    <div className="px-4 py-3 border-b border-gray-800">
-                      <p className="text-sm font-medium text-white truncate">
-                        {user.name || "Admin"}
-                      </p>
-                      <p className="text-xs text-gray-500 truncate">
-                        {user.email}
-                      </p>
-                    </div>
-                    <div className="py-1">
-                      <Link
-                        href="/dashboard"
-                        onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800"
-                      >
-                        <LayoutDashboard className="w-4 h-4" />
-                        Back to App
-                      </Link>
-                      <Link
-                        href="/admin/settings"
-                        onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800"
-                      >
-                        <Settings className="w-4 h-4" />
-                        Settings
-                      </Link>
-                    </div>
-                    <div className="border-t border-gray-800 py-1">
-                      <button
-                        onClick={handleSignOut}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-red-400 hover:bg-gray-800"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        Sign Out
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+        {/* Center: Search */}
+        <div className="hidden md:flex flex-1 max-w-md">
+          <div className="relative w-full">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+            <input
+              type="search"
+              placeholder="Search users, tasks…"
+              className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            />
           </div>
         </div>
-      </header>
 
-      {/* Mobile Menu Overlay */}
-      {isMobileMenuOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
+        {/* Right: Actions */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* Admin Badge */}
+          <span className="hidden lg:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-medium">
+            <Shield className="w-3.5 h-3.5" />
+            {user.role}
+          </span>
 
-      {/* Mobile Menu */}
-      <div
-        className={cn(
-          "fixed inset-y-0 left-0 z-50 w-72 bg-gray-900 transform transition-transform duration-300 lg:hidden",
-          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        <div className="flex flex-col h-full">
-          {/* Header */}
-          <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
-            <Link
-              href="/admin"
-              className="flex items-center gap-2"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center">
-                <Shield className="w-4 h-4 text-white" />
-              </div>
-              <span className="text-lg font-bold text-white">
-                Admin Panel
-              </span>
-            </Link>
+          {/* Notifications */}
+          <div className="relative">
             <button
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
+              onClick={() => {
+                setIsNotificationOpen(!isNotificationOpen);
+                setIsProfileOpen(false);
+              }}
+              className="relative p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              aria-label="Notifications"
             >
-              <X className="w-5 h-5" />
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
             </button>
+
+            {/* Notification Dropdown */}
+            {isNotificationOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsNotificationOpen(false)}
+                />
+                <div className="absolute right-0 mt-2 w-80 rounded-lg bg-slate-900 border border-slate-700 shadow-xl z-50">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+                    <h3 className="text-sm font-semibold text-white">
+                      Notifications
+                    </h3>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={handleMarkAllRead}
+                        className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1"
+                      >
+                        <Check className="w-3 h-3" />
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0 ? (
+                      <div className="px-4 py-8 text-center text-slate-500">
+                        <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-sm">No notifications</p>
+                      </div>
+                    ) : (
+                      notifications.map((notif) => {
+                        const typeConfig =
+                          NOTIFICATION_TYPE_CONFIG[notif.type] ||
+                          NOTIFICATION_TYPE_CONFIG.SYSTEM;
+                        const Icon = typeConfig.icon;
+
+                        return (
+                          <Link
+                            key={notif.id}
+                            href="/admin/notifications"
+                            onClick={() => setIsNotificationOpen(false)}
+                            className={cn(
+                              "block px-4 py-3 border-b border-slate-800 hover:bg-slate-800/50 transition-colors",
+                              !notif.isRead && "bg-blue-500/5"
+                            )}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={cn(
+                                  "p-1.5 rounded-lg bg-slate-800",
+                                  typeConfig.color
+                                )}
+                              >
+                                <Icon className="w-4 h-4" />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium text-white truncate">
+                                    {notif.title}
+                                  </p>
+                                  {!notif.isRead && (
+                                    <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" />
+                                  )}
+                                </div>
+                                <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
+                                  {notif.message}
+                                </p>
+                                <p className="text-xs text-slate-600 mt-1">
+                                  {formatTimeAgo(notif.createdAt)}
+                                </p>
+                              </div>
+                            </div>
+                          </Link>
+                        );
+                      })
+                    )}
+                  </div>
+                  <Link
+                    href="/admin/notifications"
+                    onClick={() => setIsNotificationOpen(false)}
+                    className="block px-4 py-3 text-center text-sm text-blue-400 hover:text-blue-300 border-t border-slate-700"
+                  >
+                    View all notifications
+                  </Link>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Admin Info */}
-          <div className="px-4 py-4 border-b border-gray-800">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-white font-medium">
+          {/* Profile Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setIsProfileOpen(!isProfileOpen);
+                setIsNotificationOpen(false);
+              }}
+              className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-800 transition-colors"
+              aria-label="Account menu"
+            >
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-white text-sm font-medium">
                 {user.name?.charAt(0) || user.email?.charAt(0) || "A"}
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">
-                  {user.name || "Admin"}
-                </p>
-                <p className="text-xs text-red-400 truncate">{user.role}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto px-3 py-4">
-            <ul className="space-y-1">
-              {mobileNavigation.map((item) => {
-                const isActive =
-                  pathname === item.href ||
-                  (item.href !== "/admin" && pathname.startsWith(`${item.href}/`));
-                return (
-                  <li key={item.name}>
-                    <Link
-                      href={item.href}
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-red-500/10 text-red-400"
-                          : "text-gray-400 hover:text-white hover:bg-gray-800"
-                      )}
-                    >
-                      <item.icon className="w-5 h-5" />
-                      {item.name}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
-
-          {/* Bottom Actions */}
-          <div className="border-t border-gray-800 px-3 py-4 space-y-1">
-            <Link
-              href="/dashboard"
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-indigo-400 hover:bg-gray-800 transition-colors"
-            >
-              <LayoutDashboard className="w-5 h-5" />
-              Back to App
-            </Link>
-            <button
-              onClick={handleSignOut}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-gray-800 transition-colors"
-            >
-              <LogOut className="w-5 h-5" />
-              Sign Out
+              <ChevronDown className="hidden sm:block w-4 h-4 text-slate-400" />
             </button>
+
+            {/* Dropdown Menu */}
+            {isProfileOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsProfileOpen(false)}
+                />
+                <div className="absolute right-0 mt-2 w-56 rounded-lg bg-slate-900 border border-slate-700 shadow-xl z-50">
+                  <div className="px-4 py-3 border-b border-slate-700">
+                    <p className="text-sm font-medium text-white truncate">
+                      {user.name || "Admin"}
+                    </p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {user.email}
+                    </p>
+                  </div>
+                  <div className="py-1">
+                    <Link
+                      href="/dashboard"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800"
+                    >
+                      <LayoutDashboard className="w-4 h-4" />
+                      Back to App
+                    </Link>
+                    <Link
+                      href="/admin/settings"
+                      onClick={() => setIsProfileOpen(false)}
+                      className="flex items-center gap-3 px-4 py-2 text-sm text-slate-400 hover:text-white hover:bg-slate-800"
+                    >
+                      <Settings className="w-4 h-4" />
+                      Settings
+                    </Link>
+                  </div>
+                  <div className="border-t border-slate-700 py-1">
+                    <button
+                      onClick={handleSignOut}
+                      className="flex w-full items-center gap-3 px-4 py-2 text-sm text-slate-400 hover:text-red-400 hover:bg-slate-800"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Sign Out
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
-    </>
+    </header>
   );
 }

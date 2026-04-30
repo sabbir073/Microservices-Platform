@@ -2,7 +2,7 @@
 export type UserRole = "USER" | "SUPER_ADMIN" | "ADMIN" | "EDITOR" | "FINANCE_ADMIN" | "MODERATOR";
 export type UserStatus = "ACTIVE" | "SUSPENDED" | "BANNED" | "PENDING_VERIFICATION";
 export type KYCStatus = "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
-export type PackageTier = "FREE" | "BASIC" | "STANDARD" | "PREMIUM";
+export type PackageTier = "FREE" | "STARTER" | "PRO" | "ELITE" | "VIP";
 
 // Task types
 export type TaskType = "VIDEO" | "ARTICLE" | "QUIZ" | "SURVEY" | "SOCIAL" | "PROXY" | "OFFERWALL" | "CUSTOM";
