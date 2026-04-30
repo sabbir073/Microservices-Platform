@@ -7,84 +7,121 @@ import {
   Clock,
   CheckCircle,
   XCircle,
-  Eye,
-  User,
   Calendar,
   FileImage,
+  BadgeCheck,
+  Activity,
 } from "lucide-react";
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { ImageZoomGallery } from "@/components/admin/image-zoom-gallery";
+import { KycReviewActions } from "@/components/admin/kyc/kyc-review-actions";
 
 interface PageProps {
   searchParams: Promise<{
     status?: string;
+    tab?: string;
   }>;
 }
 
 export default async function KYCQueuePage({ searchParams }: PageProps) {
   const session = await auth();
-
-  if (!session?.user) {
-    redirect("/login");
-  }
+  if (!session?.user) redirect("/login");
 
   const adminRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(adminRole, "kyc.view")) {
-    redirect("/admin");
-  }
+  if (!hasPermission(adminRole, "kyc.view")) redirect("/admin");
 
   const params = await searchParams;
+  const tab = (params.tab === "appeals" ? "appeals" : "kyc") as
+    | "kyc"
+    | "appeals";
   const statusFilter = params.status || "PENDING";
 
-  // Fetch KYC documents with user info
-  const kycDocumentsRaw = await prisma.kYCDocument.findMany({
-    where: {
-      status: statusFilter as "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED",
-    },
-    orderBy: { createdAt: "asc" },
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          avatar: true,
-          createdAt: true,
-          kycStatus: true,
-          packageTier: true,
-          level: true,
-        },
-      },
-    },
-    take: 50,
-  });
+  // Stats — always fetched
+  const [
+    pendingCount,
+    approvedCount,
+    rejectedCount,
+    totalVerified,
+    totalUsers,
+  ] = await Promise.all([
+    prisma.kYCDocument.count({ where: { status: "PENDING" } }),
+    prisma.kYCDocument.count({ where: { status: "APPROVED" } }),
+    prisma.kYCDocument.count({ where: { status: "REJECTED" } }),
+    prisma.user.count({ where: { kycStatus: "APPROVED" } }),
+    prisma.user.count(),
+  ]);
 
-  // Type assertion needed due to Prisma Accelerate extension type inference issues
-  type KYCDocWithUser = typeof kycDocumentsRaw[0] & {
+  const reviewRate =
+    pendingCount + approvedCount + rejectedCount > 0
+      ? ((approvedCount + rejectedCount) /
+          (pendingCount + approvedCount + rejectedCount)) *
+        100
+      : 0;
+
+  // Fetch documents for the active tab
+  const kycDocumentsRaw =
+    tab === "kyc"
+      ? await prisma.kYCDocument.findMany({
+          where: {
+            status: statusFilter as
+              | "NOT_SUBMITTED"
+              | "PENDING"
+              | "APPROVED"
+              | "REJECTED",
+          },
+          orderBy: { createdAt: "asc" },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                avatar: true,
+                createdAt: true,
+                kycStatus: true,
+                packageTier: true,
+                level: true,
+                country: true,
+                nidNumber: true,
+                dateOfBirth: true,
+              },
+            },
+          },
+          take: 50,
+        })
+      : [];
+
+  type KYCDocWithUser = (typeof kycDocumentsRaw)[0] & {
     user: {
       id: string;
       name: string | null;
+      firstName: string | null;
+      lastName: string | null;
       email: string;
       avatar: string | null;
       createdAt: Date;
       kycStatus: string;
       packageTier: string;
       level: number;
+      country: string | null;
+      nidNumber: string | null;
+      dateOfBirth: Date | null;
     };
   };
   const kycDocuments = kycDocumentsRaw as KYCDocWithUser[];
 
-  // Fetch stats
-  const [pendingCount, approvedCount, rejectedCount] = await Promise.all([
-    prisma.kYCDocument.count({ where: { status: "PENDING" } }),
-    prisma.kYCDocument.count({ where: { status: "APPROVED" } }),
-    prisma.kYCDocument.count({ where: { status: "REJECTED" } }),
-  ]);
-
   const tabs = [
     { id: "PENDING", label: "Pending", count: pendingCount, color: "amber" },
-    { id: "APPROVED", label: "Approved", count: approvedCount, color: "emerald" },
+    {
+      id: "APPROVED",
+      label: "Approved",
+      count: approvedCount,
+      color: "emerald",
+    },
     { id: "REJECTED", label: "Rejected", count: rejectedCount, color: "red" },
   ];
 
@@ -97,209 +134,339 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
       <div className="flex items-center gap-4">
         <Link
           href="/admin/users"
-          className="p-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+          className="p-2 bg-slate-800 rounded-lg hover:bg-slate-700 transition-colors"
         >
-          <ArrowLeft className="w-5 h-5 text-gray-400" />
+          <ArrowLeft className="w-5 h-5 text-slate-400" />
         </Link>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-white">KYC Verification Queue</h1>
-          <p className="text-gray-400">
-            Review and verify user identity documents
+          <h1 className="text-2xl font-bold text-white">
+            KYC / Blue Badge Verification
+          </h1>
+          <p className="text-slate-400 text-sm">
+            Review user identity documents and verification appeals
           </p>
         </div>
-        <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-          <Clock className="w-4 h-4 text-amber-400" />
-          <span className="text-amber-400 font-medium">{pendingCount} Pending</span>
-        </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-4 border-b border-gray-800">
-        {tabs.map((tab) => (
-          <Link
-            key={tab.id}
-            href={`/admin/users/kyc?status=${tab.id}`}
-            className={`pb-4 px-2 text-sm font-medium border-b-2 transition-colors ${
-              statusFilter === tab.id
-                ? `border-${tab.color}-500 text-white`
-                : "border-transparent text-gray-400 hover:text-white"
-            }`}
-          >
-            {tab.label}
-            <span className={`ml-2 px-1.5 py-0.5 text-xs rounded ${
-              statusFilter === tab.id
-                ? `bg-${tab.color}-500/10 text-${tab.color}-400`
-                : "bg-gray-800 text-gray-500"
-            }`}>
-              {tab.count}
-            </span>
-          </Link>
-        ))}
-      </div>
-
-      {/* KYC Queue */}
-      {kycDocuments.length > 0 ? (
-        <div className="space-y-4">
-          {kycDocuments.map((doc) => (
-            <div
-              key={doc.id}
-              className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden"
-            >
-              <div className="p-6">
-                {/* Header */}
-                <div className="flex items-start justify-between mb-6">
-                  <div className="flex items-center gap-4">
-                    <Link href={`/admin/users/${doc.user.id}`}>
-                      <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
-                        {doc.user.name?.charAt(0) || doc.user.email?.charAt(0) || "U"}
-                      </div>
-                    </Link>
-                    <div>
-                      <Link
-                        href={`/admin/users/${doc.user.id}`}
-                        className="text-lg font-medium text-white hover:text-indigo-400 transition-colors"
-                      >
-                        {doc.user.name || "Unnamed"}
-                      </Link>
-                      <p className="text-sm text-gray-500">{doc.user.email}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-xs text-gray-400">Level {doc.user.level}</span>
-                        <span className="text-gray-600">|</span>
-                        <span className={`text-xs ${
-                          doc.user.packageTier === "PREMIUM" ? "text-purple-400" :
-                          doc.user.packageTier === "STANDARD" ? "text-indigo-400" :
-                          doc.user.packageTier === "BASIC" ? "text-blue-400" :
-                          "text-gray-400"
-                        }`}>{doc.user.packageTier}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm text-gray-400">Submitted</p>
-                    <p className="text-sm text-white">
-                      {formatDistanceToNow(doc.createdAt, { addSuffix: true })}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Document Info */}
-                <div className="grid md:grid-cols-2 gap-6 mb-6">
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-3">
-                      <FileImage className="w-4 h-4 text-gray-500" />
-                      <span className="text-sm text-gray-400">Document Type:</span>
-                      <span className="text-sm text-white">{doc.documentType}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-4 h-4 text-gray-500" />
-                      <span className="text-sm text-gray-400">Member Since:</span>
-                      <span className="text-sm text-white">
-                        {format(doc.user.createdAt, "MMM d, yyyy")}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Document Preview */}
-                  <div className="flex items-center gap-4">
-                    <a
-                      href={doc.documentUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-4 py-2 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
-                    >
-                      <Eye className="w-4 h-4 text-gray-400" />
-                      <span className="text-sm text-white">View Document</span>
-                    </a>
-                  </div>
-                </div>
-
-                {/* Review Status */}
-                {doc.status === "APPROVED" && (
-                  <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-emerald-400" />
-                      <span className="text-emerald-400 font-medium">Approved</span>
-                    </div>
-                    {doc.reviewedAt && (
-                      <p className="text-sm text-gray-400 mt-1">
-                        Reviewed on {format(doc.reviewedAt, "MMM d, yyyy HH:mm")}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {doc.status === "REJECTED" && (
-                  <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <XCircle className="w-5 h-5 text-red-400" />
-                      <span className="text-red-400 font-medium">Rejected</span>
-                    </div>
-                    {doc.rejectionReason && (
-                      <p className="text-sm text-gray-400 mt-1">
-                        Reason: {doc.rejectionReason}
-                      </p>
-                    )}
-                    {doc.reviewedAt && (
-                      <p className="text-sm text-gray-400 mt-1">
-                        Reviewed on {format(doc.reviewedAt, "MMM d, yyyy HH:mm")}
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Actions for Pending */}
-                {doc.status === "PENDING" && (
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-4 border-t border-gray-800">
-                    <div className="flex-1">
-                      <p className="text-sm text-gray-400 mb-2">Verification Checklist:</p>
-                      <div className="flex flex-wrap gap-3">
-                        <label className="flex items-center gap-2 text-sm text-gray-400">
-                          <input type="checkbox" className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-emerald-500" />
-                          Name matches ID
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-gray-400">
-                          <input type="checkbox" className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-emerald-500" />
-                          Photo is clear
-                        </label>
-                        <label className="flex items-center gap-2 text-sm text-gray-400">
-                          <input type="checkbox" className="w-4 h-4 rounded border-gray-600 bg-gray-800 text-emerald-500" />
-                          ID not expired
-                        </label>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      {canApprove && (
-                        <button className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors">
-                          <CheckCircle className="w-4 h-4" />
-                          Approve
-                        </button>
-                      )}
-                      {canReject && (
-                        <button className="inline-flex items-center gap-2 px-4 py-2 bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/20 transition-colors">
-                          <XCircle className="w-4 h-4" />
-                          Reject
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
+      {/* 3 Stats Cards per spec */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-blue-600/5 p-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 rounded-lg bg-blue-500/20">
+              <BadgeCheck className="w-5 h-5 text-blue-400" />
             </div>
-          ))}
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {totalVerified.toLocaleString()}
+              </p>
+              <p className="text-xs text-blue-300/80">Total Verified</p>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">
+            of {totalUsers.toLocaleString()} users
+          </p>
         </div>
-      ) : (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-16 text-center">
-          <FileCheck className="w-12 h-12 mx-auto mb-4 text-gray-600" />
+        <div className="rounded-xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/10 to-amber-500/5 p-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 rounded-lg bg-yellow-500/20">
+              <Clock className="w-5 h-5 text-yellow-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {pendingCount.toLocaleString()}
+              </p>
+              <p className="text-xs text-yellow-300/80">Pending Review</p>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">awaiting your decision</p>
+        </div>
+        <div className="rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-pink-500/5 p-5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="p-2 rounded-lg bg-purple-500/20">
+              <Activity className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {reviewRate.toFixed(0)}%
+              </p>
+              <p className="text-xs text-purple-300/80">Review Rate</p>
+            </div>
+          </div>
+          <p className="text-xs text-slate-500">
+            {(approvedCount + rejectedCount).toLocaleString()} reviewed
+          </p>
+        </div>
+      </div>
+
+      {/* Top tabs: KYC / Appeals */}
+      <div className="border-b border-slate-800 flex gap-1">
+        <Link
+          href="/admin/users/kyc?status=PENDING"
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${
+            tab === "kyc"
+              ? "border-blue-500 text-white"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
+        >
+          KYC Requests ({pendingCount})
+        </Link>
+        <Link
+          href="/admin/users/kyc?tab=appeals"
+          className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px ${
+            tab === "appeals"
+              ? "border-blue-500 text-white"
+              : "border-transparent text-slate-400 hover:text-white"
+          }`}
+        >
+          Verification Appeals
+        </Link>
+      </div>
+
+      {/* APPEALS TAB — placeholder */}
+      {tab === "appeals" && (
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-16 text-center">
+          <BadgeCheck className="w-12 h-12 mx-auto mb-4 text-slate-600" />
           <h3 className="text-lg font-medium text-white mb-2">
-            {statusFilter === "PENDING" ? "No pending verifications" : `No ${statusFilter.toLowerCase()} documents`}
+            Verification Appeals
           </h3>
-          <p className="text-gray-400">
-            {statusFilter === "PENDING"
-              ? "All KYC submissions have been reviewed!"
-              : `There are no ${statusFilter.toLowerCase()} KYC documents to show.`}
+          <p className="text-slate-400 text-sm max-w-md mx-auto">
+            Users can appeal a KYC rejection. Full appeals workflow ships in
+            Phase 4 along with the Moderation Queue. For now, rejected users
+            can re-submit a new KYC document.
           </p>
         </div>
       )}
+
+      {/* KYC TAB */}
+      {tab === "kyc" && (
+        <>
+          {/* Status sub-tabs */}
+          <div className="flex gap-3 border-b border-slate-800">
+            {tabs.map((t) => (
+              <Link
+                key={t.id}
+                href={`/admin/users/kyc?status=${t.id}`}
+                className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
+                  statusFilter === t.id
+                    ? "border-blue-500 text-white"
+                    : "border-transparent text-slate-400 hover:text-white"
+                }`}
+              >
+                {t.label}
+                <span
+                  className={`ml-2 px-1.5 py-0.5 text-xs rounded ${
+                    statusFilter === t.id
+                      ? "bg-blue-500/20 text-blue-400"
+                      : "bg-slate-800 text-slate-500"
+                  }`}
+                >
+                  {t.count}
+                </span>
+              </Link>
+            ))}
+          </div>
+
+          {/* Document list */}
+          {kycDocuments.length > 0 ? (
+            <div className="space-y-4">
+              {kycDocuments.map((doc) => {
+                const fullName =
+                  [doc.user.firstName, doc.user.lastName]
+                    .filter(Boolean)
+                    .join(" ") ||
+                  doc.user.name ||
+                  doc.user.email;
+
+                return (
+                  <div
+                    key={doc.id}
+                    className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden"
+                  >
+                    <div className="p-6">
+                      {/* Header */}
+                      <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
+                        <div className="flex items-center gap-4">
+                          <Link href={`/admin/users/${doc.user.id}`}>
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+                              {doc.user.name?.charAt(0) ||
+                                doc.user.email?.charAt(0) ||
+                                "U"}
+                            </div>
+                          </Link>
+                          <div>
+                            <Link
+                              href={`/admin/users/${doc.user.id}`}
+                              className="text-lg font-medium text-white hover:text-indigo-400 transition-colors"
+                            >
+                              {fullName}
+                            </Link>
+                            <p className="text-sm text-slate-500">
+                              {doc.user.email}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-slate-400">
+                                Lv {doc.user.level}
+                              </span>
+                              <span className="text-slate-600">|</span>
+                              <span
+                                className={`text-xs ${
+                                  doc.user.packageTier === "VIP"
+                                    ? "text-amber-400"
+                                    : doc.user.packageTier === "ELITE"
+                                    ? "text-purple-400"
+                                    : doc.user.packageTier === "PRO"
+                                    ? "text-indigo-400"
+                                    : doc.user.packageTier === "STARTER"
+                                    ? "text-blue-400"
+                                    : "text-slate-400"
+                                }`}
+                              >
+                                {doc.user.packageTier}
+                              </span>
+                              {doc.user.country && (
+                                <>
+                                  <span className="text-slate-600">|</span>
+                                  <span className="text-xs text-slate-400">
+                                    {doc.user.country}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm text-slate-400">Submitted</p>
+                          <p className="text-sm text-white">
+                            {formatDistanceToNow(doc.createdAt, {
+                              addSuffix: true,
+                            })}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Submitted Info */}
+                      <div className="grid md:grid-cols-2 gap-6 mb-6">
+                        <div className="space-y-2">
+                          <p className="text-xs uppercase tracking-wider text-slate-500 font-bold">
+                            Submitted Info
+                          </p>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <span className="text-slate-400">Document:</span>
+                            <span className="text-white">{doc.documentType}</span>
+                            {doc.user.nidNumber && (
+                              <>
+                                <span className="text-slate-400">ID #:</span>
+                                <span className="text-white font-mono text-xs">
+                                  {doc.user.nidNumber}
+                                </span>
+                              </>
+                            )}
+                            {doc.user.dateOfBirth && (
+                              <>
+                                <span className="text-slate-400">DOB:</span>
+                                <span className="text-white">
+                                  {format(doc.user.dateOfBirth, "yyyy-MM-dd")}
+                                </span>
+                              </>
+                            )}
+                            <span className="text-slate-400">Member since:</span>
+                            <span className="text-white">
+                              {format(doc.user.createdAt, "MMM d, yyyy")}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Documents — image lightbox */}
+                        <div>
+                          <p className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">
+                            Documents
+                          </p>
+                          <ImageZoomGallery
+                            images={[doc.documentUrl].filter(Boolean)}
+                            size={96}
+                          />
+                          <p className="text-xs text-slate-500 mt-1.5">
+                            <FileImage className="w-3 h-3 inline mr-1" />
+                            Click to enlarge
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Status banner for non-pending docs */}
+                      {doc.status === "APPROVED" && (
+                        <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="w-5 h-5 text-emerald-400" />
+                            <span className="text-emerald-400 font-medium">
+                              Approved
+                            </span>
+                          </div>
+                          {doc.reviewedAt && (
+                            <p className="text-sm text-slate-400 mt-1">
+                              Reviewed{" "}
+                              {format(doc.reviewedAt, "MMM d, yyyy HH:mm")}
+                            </p>
+                          )}
+                        </div>
+                      )}
+                      {doc.status === "REJECTED" && (
+                        <div className="p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <XCircle className="w-5 h-5 text-red-400" />
+                            <span className="text-red-400 font-medium">
+                              Rejected
+                            </span>
+                          </div>
+                          {doc.rejectionReason && (
+                            <p className="text-sm text-slate-400 mt-1">
+                              Reason: {doc.rejectionReason}
+                            </p>
+                          )}
+                          {doc.reviewedAt && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              Reviewed{" "}
+                              {format(doc.reviewedAt, "MMM d, yyyy HH:mm")}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Actions for pending documents */}
+                      {doc.status === "PENDING" && (
+                        <div className="pt-4 border-t border-slate-800">
+                          <KycReviewActions
+                            documentId={doc.id}
+                            userName={fullName}
+                            canApprove={canApprove}
+                            canReject={canReject}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="bg-slate-900 rounded-xl border border-slate-800 p-16 text-center">
+              <FileCheck className="w-12 h-12 mx-auto mb-4 text-slate-600" />
+              <h3 className="text-lg font-medium text-white mb-2">
+                {statusFilter === "PENDING"
+                  ? "No pending verifications"
+                  : `No ${statusFilter.toLowerCase()} documents`}
+              </h3>
+              <p className="text-slate-400 text-sm">
+                {statusFilter === "PENDING"
+                  ? "All KYC submissions have been reviewed!"
+                  : `There are no ${statusFilter.toLowerCase()} KYC documents to show.`}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Calendar import is unused — keep as decorative */}
+      <Calendar className="hidden" />
     </div>
   );
 }

@@ -66,7 +66,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
     const body = await request.json();
-    const { action, rejectionReason } = body;
+    const { action, rejectionReason, adminNote } = body;
+    // Normalize legacy/new action names
+    const normalized: "approved" | "rejected" | "revision_requested" | null =
+      action === "approve" || action === "approved"
+        ? "approved"
+        : action === "reject" || action === "rejected"
+        ? "rejected"
+        : action === "revision_requested" || action === "request_revision"
+        ? "revision_requested"
+        : null;
+    if (!normalized) {
+      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+    }
 
     // Check if submission exists
     const existingSubmission = await prisma.taskSubmission.findUnique({
@@ -88,7 +100,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (action === "approve") {
+    if (normalized === "approved") {
       if (!hasPermission(adminRole, "submissions.approve")) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
@@ -143,12 +155,23 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         existingSubmission.taskId
       );
 
+      // Audit log
+      await prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: "SUBMISSION_APPROVED",
+          entity: "TaskSubmission",
+          entityId: id,
+          newData: { adminNote: adminNote ?? null },
+        },
+      });
+
       return NextResponse.json({
         success: true,
         submission,
         message: "Submission approved successfully",
       });
-    } else if (action === "reject") {
+    } else if (normalized === "rejected") {
       if (!hasPermission(adminRole, "submissions.reject")) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
@@ -163,13 +186,81 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         },
       });
 
+      // Notify user
+      await prisma.notification.create({
+        data: {
+          userId: existingSubmission.userId,
+          type: "TASK",
+          title: "Submission rejected",
+          message: `Your submission for "${existingSubmission.task.title}" was rejected. Reason: ${
+            rejectionReason || "Not specified"
+          }${adminNote ? `\n\n${adminNote}` : ""}`,
+        },
+      });
+
+      // Audit log
+      await prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: "SUBMISSION_REJECTED",
+          entity: "TaskSubmission",
+          entityId: id,
+          newData: {
+            rejectionReason: rejectionReason ?? null,
+            adminNote: adminNote ?? null,
+          },
+        },
+      });
+
       return NextResponse.json({
         success: true,
         submission,
         message: "Submission rejected",
       });
     } else {
-      return NextResponse.json({ error: "Invalid action" }, { status: 400 });
+      // revision_requested
+      if (!hasPermission(adminRole, "submissions.reject")) {
+        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+
+      const submission = await prisma.taskSubmission.update({
+        where: { id },
+        data: {
+          status: "REVISION_REQUESTED",
+          reviewedBy: session.user.id,
+          reviewedAt: new Date(),
+          rejectionReason: adminNote || "Revision requested",
+        },
+      });
+
+      // Notify user
+      await prisma.notification.create({
+        data: {
+          userId: existingSubmission.userId,
+          type: "TASK",
+          title: "Revision requested",
+          message: `Please revise your submission for "${existingSubmission.task.title}". ${
+            adminNote ?? ""
+          }`,
+        },
+      });
+
+      // Audit log
+      await prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: "SUBMISSION_REVISION_REQUESTED",
+          entity: "TaskSubmission",
+          entityId: id,
+          newData: { adminNote: adminNote ?? null },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        submission,
+        message: "Revision requested",
+      });
     }
   } catch (error) {
     console.error("Error updating submission:", error);

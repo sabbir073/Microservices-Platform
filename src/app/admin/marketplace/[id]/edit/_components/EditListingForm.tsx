@@ -142,7 +142,7 @@ export function EditListingForm({ listing }: EditListingFormProps) {
 
         if (data.details && Array.isArray(data.details)) {
           const errorMessages = data.details
-            .map((err: any) => {
+            .map((err: { path?: string[]; message?: string }) => {
               const path = err.path?.join('.') || 'Field';
               return `${path}: ${err.message}`;
             })

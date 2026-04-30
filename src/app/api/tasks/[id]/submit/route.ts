@@ -8,6 +8,11 @@ import {
   NotificationType,
 } from "@/generated/prisma";
 import { processReferralCommissions } from "@/lib/referral-commissions";
+import {
+  compareUniqueKey,
+  type ArticleConfig,
+} from "@/lib/article-tasks";
+import type { VideoConfig } from "@/lib/video-tasks";
 
 // POST /api/tasks/:id/submit - Submit task proof
 export async function POST(
@@ -23,7 +28,13 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { submissionId, proof, proofImages, answers } = body;
+    const {
+      submissionId,
+      proof,
+      proofImages,
+      answers,
+      uniqueKey: submittedUniqueKey,
+    } = body;
 
     // Get the task
     const task = await prisma.task.findUnique({
@@ -87,12 +98,52 @@ export async function POST(
       score = Math.round((correctCount / questions.length) * 100);
     }
 
-    // Determine if task should be auto-approved
+    // ── Article task: check unique key + force PENDING (admin reviews) ──
+    let uniqueKeyMismatch = false;
+    if (task.type === "ARTICLE") {
+      const cfg = task.articleConfig as ArticleConfig | null;
+      if (cfg?.proofRequirements?.uniqueKey && cfg.uniqueKey) {
+        if (!compareUniqueKey(submittedUniqueKey, cfg.uniqueKey)) {
+          uniqueKeyMismatch = true;
+        }
+      }
+    }
+
+    // ── Video task: hard-fail on bad unique key (auto-reject) ──
+    if (task.type === "VIDEO") {
+      const cfg = task.videoConfig as VideoConfig | null;
+      if (cfg?.proofRequirements?.uniqueKey && cfg.uniqueKey) {
+        if (!compareUniqueKey(submittedUniqueKey, cfg.uniqueKey)) {
+          await prisma.taskSubmission.update({
+            where: { id: submission.id },
+            data: {
+              proof: proof || null,
+              proofImages: proofImages || [],
+              answers: answers || null,
+              status: SubmissionStatus.REJECTED,
+              reviewedAt: new Date(),
+              rejectionReason: "Incorrect verification key",
+            },
+          });
+          return NextResponse.json(
+            {
+              status: "rejected",
+              error: "Incorrect verification key",
+              message:
+                "The unique key you submitted didn't match. Please rewatch and try again.",
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    // Determine if task should be auto-approved.
+    // ARTICLE is now PENDING (admin manual review) per spec; VIDEO auto-approves.
     const shouldAutoApprove =
-      task.autoApprove ||
-      task.type === "VIDEO" ||
-      task.type === "ARTICLE" ||
-      task.type === "QUIZ";
+      !uniqueKeyMismatch &&
+      task.type !== "ARTICLE" &&
+      (task.autoApprove || task.type === "VIDEO" || task.type === "QUIZ");
 
     const newStatus = shouldAutoApprove
       ? SubmissionStatus.AUTO_APPROVED

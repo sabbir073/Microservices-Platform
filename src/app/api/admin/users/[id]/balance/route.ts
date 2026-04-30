@@ -5,7 +5,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { z } from "zod";
 
 const adjustBalanceSchema = z.object({
-  type: z.enum(["points", "cash"]),
+  type: z.enum(["points", "cash", "level", "xp"]),
   action: z.enum(["add", "deduct"]),
   amount: z.number().positive(),
   reason: z.string().optional(),
@@ -67,28 +67,43 @@ export async function POST(
           { status: 400 }
         );
       }
+      if (type === "level" && user.level - amount < 1) {
+        return NextResponse.json(
+          { error: "Level cannot go below 1" },
+          { status: 400 }
+        );
+      }
+      if (type === "xp" && user.xp < amount) {
+        return NextResponse.json(
+          { error: "Insufficient XP" },
+          { status: 400 }
+        );
+      }
     }
 
-    // Update user balance and create transaction
-    const [updatedUser] = await prisma.$transaction([
-      prisma.user.update({
-        where: { id },
-        data: {
-          pointsBalance: type === "points"
-            ? { increment: adjustmentAmount }
-            : undefined,
-          cashBalance: type === "cash"
-            ? { increment: adjustmentAmount }
-            : undefined,
-        },
-      }),
-      prisma.transaction.create({
+    // Update user balance/progression and create transaction
+    const updatedUser = await prisma.user.update({
+      where: { id },
+      data: {
+        pointsBalance:
+          type === "points" ? { increment: adjustmentAmount } : undefined,
+        cashBalance:
+          type === "cash" ? { increment: adjustmentAmount } : undefined,
+        level: type === "level" ? { increment: adjustmentAmount } : undefined,
+        xp: type === "xp" ? { increment: adjustmentAmount } : undefined,
+      },
+    });
+
+    // Only points / cash create transactions; level + xp are progression-only
+    if (type === "points" || type === "cash") {
+      await prisma.transaction.create({
         data: {
           userId: id,
           type: action === "add" ? "BONUS" : "PENALTY",
           points: type === "points" ? adjustmentAmount : 0,
           amount: type === "cash" ? adjustmentAmount : 0,
-          description: reason || `Admin ${action === "add" ? "credit" : "debit"} - ${type}`,
+          description:
+            reason || `Admin ${action === "add" ? "credit" : "debit"} - ${type}`,
           status: "COMPLETED",
           metadata: {
             adminId: session.user.id,
@@ -98,24 +113,55 @@ export async function POST(
             originalAmount: amount,
           },
         },
-      }),
-    ]);
+      });
+    }
 
-    // Create notification for the user
-    await prisma.notification.create({
+    // Audit log every adjustment
+    await prisma.auditLog.create({
       data: {
-        userId: id,
-        type: "SYSTEM",
-        title: action === "add" ? "Balance Added" : "Balance Deducted",
-        message: `${amount} ${type === "points" ? "points" : "USD"} has been ${action === "add" ? "added to" : "deducted from"} your account. ${reason ? `Reason: ${reason}` : ""}`,
+        userId: session.user.id,
+        action: `BALANCE_${action.toUpperCase()}_${type.toUpperCase()}`,
+        entity: "User",
+        entityId: id,
+        newData: {
+          type,
+          action,
+          amount,
+          reason: reason ?? null,
+        },
       },
     });
 
-    return NextResponse.json({
-      message: `Balance ${action === "add" ? "added" : "deducted"} successfully`,
-      newBalance: type === "points"
+    // Notify the user (skip noise for level/xp progression)
+    if (type === "points" || type === "cash") {
+      await prisma.notification.create({
+        data: {
+          userId: id,
+          type: "SYSTEM",
+          title: action === "add" ? "Balance Added" : "Balance Deducted",
+          message: `${amount} ${
+            type === "points" ? "points" : "USD"
+          } has been ${
+            action === "add" ? "added to" : "deducted from"
+          } your account. ${reason ? `Reason: ${reason}` : ""}`,
+        },
+      });
+    }
+
+    const newBalance =
+      type === "points"
         ? updatedUser.pointsBalance
-        : updatedUser.cashBalance,
+        : type === "cash"
+        ? updatedUser.cashBalance
+        : type === "level"
+        ? updatedUser.level
+        : updatedUser.xp;
+
+    return NextResponse.json({
+      message: `${type[0].toUpperCase()}${type.slice(1)} ${
+        action === "add" ? "added" : "deducted"
+      } successfully`,
+      newBalance,
     });
   } catch (error) {
     console.error("Error adjusting balance:", error);

@@ -4,21 +4,23 @@ import { prisma } from "@/lib/prisma";
 import {
   Shield,
   Users,
-  Crown,
-  Settings,
   UserPlus,
   ChevronLeft,
   ChevronRight,
   Search,
-  Filter,
+  Activity,
+  Key,
+  Check,
+  Minus,
 } from "lucide-react";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format } from "date-fns";
 import {
   hasPermission,
   type UserRole,
   ADMIN_ROLES,
   ROLE_CONFIG,
+  ROLE_PERMISSIONS,
 } from "@/lib/rbac";
 
 interface PageProps {
@@ -26,8 +28,122 @@ interface PageProps {
     page?: string;
     role?: string;
     search?: string;
+    view?: string;
   }>;
 }
+
+type ViewId = "admins" | "activity" | "roles";
+
+const VIEW_TABS: Array<{ id: ViewId; label: string; icon: typeof Shield }> = [
+  { id: "admins", label: "Admin Accounts", icon: Users },
+  { id: "activity", label: "Activity Log", icon: Activity },
+  { id: "roles", label: "Roles & Permissions", icon: Key },
+];
+
+const PERMISSION_CATEGORIES: Array<{ label: string; permissions: string[] }> = [
+  {
+    label: "Users & KYC",
+    permissions: [
+      "users.view",
+      "users.edit",
+      "users.ban",
+      "users.delete",
+      "users.adjust_balance",
+      "users.impersonate",
+      "kyc.view",
+      "kyc.approve",
+      "kyc.reject",
+    ],
+  },
+  {
+    label: "Content & Earning",
+    permissions: [
+      "tasks.view",
+      "tasks.create",
+      "tasks.edit",
+      "tasks.delete",
+      "submissions.view",
+      "submissions.approve",
+      "submissions.reject",
+      "boards.view",
+      "courses.view",
+      "courses.manage",
+      "quizzes.view",
+      "quizzes.manage",
+      "missions.view",
+      "missions.manage",
+      "lottery.view",
+      "lottery.manage",
+    ],
+  },
+  {
+    label: "Finance",
+    permissions: [
+      "withdrawals.view",
+      "withdrawals.process",
+      "withdrawals.approve",
+      "withdrawals.reject",
+      "payment_methods.view",
+      "payment_methods.manage",
+      "packages.view",
+      "packages.edit",
+      "referrals.view",
+      "referrals.configure",
+    ],
+  },
+  {
+    label: "Marketplace & Social",
+    permissions: [
+      "marketplace.view",
+      "marketplace.manage",
+      "marketplace.disputes",
+      "social.moderate",
+      "moderation.view",
+      "moderation.manage",
+    ],
+  },
+  {
+    label: "Marketing",
+    permissions: [
+      "campaigns.view",
+      "campaigns.manage",
+      "notifications.view",
+      "notifications.send",
+      "banners.view",
+      "banners.manage",
+      "ads.view",
+      "ads.manage",
+      "landing.view",
+      "landing.edit",
+      "ticker.view",
+      "ticker.edit",
+    ],
+  },
+  {
+    label: "System",
+    permissions: [
+      "analytics.view",
+      "analytics.export",
+      "ai.view",
+      "ai.manage",
+      "settings.view",
+      "settings.edit",
+      "admins.view",
+      "admins.manage",
+      "logs.view",
+      "fraud.view",
+      "fraud.manage",
+      "proxy.view",
+      "proxy.manage",
+      "media.view",
+      "media.manage",
+      "leaderboards.view",
+      "leaderboards.manage",
+      "offerwalls.view",
+      "offerwalls.manage",
+    ],
+  },
+];
 
 export default async function AdminAccessPage({ searchParams }: PageProps) {
   const session = await auth();
@@ -42,11 +158,49 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
   }
 
   const params = await searchParams;
+  const view: ViewId = (VIEW_TABS.find((t) => t.id === params.view)?.id ??
+    "admins") as ViewId;
   const page = Math.max(1, parseInt(params.page || "1"));
   const pageSize = 20;
   const skip = (page - 1) * pageSize;
   const roleFilter = params.role || "";
   const searchQuery = params.search || "";
+
+  // Activity log fetch (only for activity tab)
+  const activityLogs =
+    view === "activity"
+      ? await prisma.auditLog.findMany({
+          orderBy: { createdAt: "desc" },
+          take: 100,
+        })
+      : [];
+  const activityActorIds = Array.from(
+    new Set(activityLogs.map((l) => l.userId).filter((v): v is string => !!v))
+  );
+  const activityActors = activityActorIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: activityActorIds } },
+        select: { id: true, name: true, email: true, role: true },
+      })
+    : [];
+  const actorMap = new Map(activityActors.map((a) => [a.id, a]));
+
+  // Stats counts for top cards
+  // eslint-disable-next-line react-hooks/purity
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const [activeAdmins, suspendedAdmins, recentLogs] = await Promise.all([
+    prisma.user.count({
+      where: { role: { in: ADMIN_ROLES.filter((r) => r !== "USER") }, status: "ACTIVE" },
+    }),
+    prisma.user.count({
+      where: { role: { in: ADMIN_ROLES.filter((r) => r !== "USER") }, status: "SUSPENDED" },
+    }),
+    prisma.auditLog.count({
+      where: {
+        createdAt: { gte: sevenDaysAgo },
+      },
+    }),
+  ]);
 
   // Build where clause
   const where: Record<string, unknown> = {
@@ -115,19 +269,19 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
   };
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Admin Access</h1>
-          <p className="text-gray-400 mt-1">
-            Manage admin users and their permissions
+          <h1 className="text-2xl font-bold text-white">Admin Access Control</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Manage admin accounts, roles, and audit history
           </p>
         </div>
-        {canManage && (
+        {canManage && view === "admins" && (
           <Link
             href="/admin/access/invite"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
           >
             <UserPlus className="w-4 h-4" />
             Invite Admin
@@ -135,7 +289,225 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
         )}
       </div>
 
-      {/* Stats */}
+      {/* 4 Stats per spec */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-blue-500/10 rounded-lg">
+              <Users className="w-5 h-5 text-blue-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {activeAdmins + suspendedAdmins}
+              </p>
+              <p className="text-sm text-slate-500">Total Admins</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-emerald-500/10 rounded-lg">
+              <Check className="w-5 h-5 text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {activeAdmins}
+              </p>
+              <p className="text-sm text-slate-500">Active</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-red-500/10 rounded-lg">
+              <Minus className="w-5 h-5 text-red-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {suspendedAdmins}
+              </p>
+              <p className="text-sm text-slate-500">Suspended</p>
+            </div>
+          </div>
+        </div>
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-purple-500/10 rounded-lg">
+              <Activity className="w-5 h-5 text-purple-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">
+                {recentLogs}
+              </p>
+              <p className="text-sm text-slate-500">Activity (7d)</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* View tabs */}
+      <div className="border-b border-slate-800 flex gap-1">
+        {VIEW_TABS.map((t) => {
+          const Icon = t.icon;
+          return (
+            <Link
+              key={t.id}
+              href={`/admin/access${t.id === "admins" ? "" : `?view=${t.id}`}`}
+              className={`px-4 py-2.5 text-sm font-medium border-b-2 -mb-px inline-flex items-center gap-2 ${
+                view === t.id
+                  ? "border-blue-500 text-white"
+                  : "border-transparent text-slate-400 hover:text-white"
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {t.label}
+            </Link>
+          );
+        })}
+      </div>
+
+      {/* ACTIVITY TAB */}
+      {view === "activity" && (
+        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+          {activityLogs.length === 0 ? (
+            <div className="p-16 text-center">
+              <Activity className="w-12 h-12 mx-auto mb-4 text-slate-600" />
+              <h3 className="text-lg font-medium text-white mb-1">
+                No activity yet
+              </h3>
+              <p className="text-sm text-slate-400">
+                Admin actions will be logged here
+              </p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-slate-800">
+              {activityLogs.map((log) => {
+                const actor = log.userId ? actorMap.get(log.userId) : null;
+                const actorName =
+                  actor?.name ?? actor?.email ?? "system";
+                let detailsString: string | null = null;
+                if (log.newData && typeof log.newData === "object") {
+                  try {
+                    detailsString = JSON.stringify(log.newData);
+                    if (detailsString.length > 200)
+                      detailsString = detailsString.slice(0, 200) + "…";
+                  } catch {
+                    detailsString = null;
+                  }
+                }
+                return (
+                  <li key={log.id} className="px-6 py-4 hover:bg-slate-800/40">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-white">{log.action}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          by{" "}
+                          <span className="text-slate-300">{actorName}</span>{" "}
+                          on{" "}
+                          <span className="text-slate-300">{log.entity}</span>
+                          {log.entityId && (
+                            <>
+                              {" "}
+                              ·{" "}
+                              <span className="font-mono text-slate-400">
+                                {log.entityId.slice(0, 8)}
+                              </span>
+                            </>
+                          )}
+                        </p>
+                        {detailsString && (
+                          <p className="text-xs text-slate-500 mt-1 font-mono truncate">
+                            {detailsString}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-500 whitespace-nowrap shrink-0">
+                        {format(log.createdAt, "MMM d, HH:mm")}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* ROLES & PERMISSIONS TAB */}
+      {view === "roles" && (
+        <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 overflow-x-auto">
+          <h2 className="text-lg font-semibold text-white mb-1">
+            Permission Matrix
+          </h2>
+          <p className="text-sm text-slate-400 mb-4">
+            Cells with ✓ mean the role has that permission. Edit code-level
+            permissions in <code className="text-slate-300">src/lib/rbac.ts</code>.
+          </p>
+
+          {PERMISSION_CATEGORIES.map((cat) => (
+            <div key={cat.label} className="mb-6">
+              <p className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">
+                {cat.label}
+              </p>
+              <div className="overflow-x-auto rounded-lg border border-slate-800">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-800/50">
+                    <tr>
+                      <th className="text-left py-2 px-3 text-slate-400 font-medium">
+                        Permission
+                      </th>
+                      {ADMIN_ROLES.filter((r) => r !== "USER").map((r) => {
+                        const c = ROLE_CONFIG[r];
+                        return (
+                          <th
+                            key={r}
+                            className={`px-2 py-2 text-center text-xs ${c.color}`}
+                          >
+                            {c.label.replace(" Admin", "")}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800">
+                    {cat.permissions.map((perm) => (
+                      <tr key={perm} className="hover:bg-slate-800/40">
+                        <td className="py-2 px-3 font-mono text-xs text-slate-300">
+                          {perm}
+                        </td>
+                        {ADMIN_ROLES.filter((r) => r !== "USER").map((r) => {
+                          const has = ROLE_PERMISSIONS[r].includes(
+                            perm as never
+                          );
+                          return (
+                            <td
+                              key={r}
+                              className="px-2 py-2 text-center"
+                            >
+                              {has ? (
+                                <Check className="w-4 h-4 text-emerald-400 inline" />
+                              ) : (
+                                <span className="text-slate-700">—</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ADMINS TAB */}
+      {view === "admins" && (
+        <>
+
+      {/* Old role-count stats kept as quick filters */}
+
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         {ADMIN_ROLES.filter(r => r !== "USER").map((role) => {
           const config = ROLE_CONFIG[role];
@@ -342,34 +714,8 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
         )}
       </div>
 
-      {/* Permissions Overview */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Roles & Permissions Overview</h2>
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {ADMIN_ROLES.filter(r => r !== "USER").map((role) => {
-            const config = ROLE_CONFIG[role];
-            return (
-              <div
-                key={role}
-                className={`p-4 rounded-lg border ${config.bgColor} border-gray-700`}
-              >
-                <div className="flex items-center gap-2 mb-2">
-                  <Shield className={`w-4 h-4 ${config.color}`} />
-                  <span className={`font-medium ${config.color}`}>{config.label}</span>
-                </div>
-                <p className="text-xs text-gray-500">
-                  {role === "SUPER_ADMIN" && "Full access to all features and settings"}
-                  {role === "FINANCE_ADMIN" && "Manage withdrawals, packages, and financial analytics"}
-                  {role === "CONTENT_ADMIN" && "Create and manage tasks, quizzes, and content"}
-                  {role === "SUPPORT_ADMIN" && "Handle user issues, KYC, and disputes"}
-                  {role === "MARKETING_ADMIN" && "Manage notifications and view analytics"}
-                  {role === "MODERATOR" && "Review and approve task submissions"}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

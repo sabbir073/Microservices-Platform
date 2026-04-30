@@ -70,7 +70,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
     const body = await request.json();
-    const { action, transactionId, rejectionReason } = body;
+    const { action, transactionId, rejectionReason, adminNote } = body;
 
     // Check if withdrawal exists
     const existingWithdrawal = await prisma.withdrawal.findUnique({
@@ -82,34 +82,72 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Withdrawal not found" }, { status: 404 });
     }
 
-    if (existingWithdrawal.status !== "PENDING") {
-      return NextResponse.json(
-        { error: "Withdrawal has already been processed" },
-        { status: 400 }
-      );
-    }
-
+    // Status-aware action validation per admin_oo.md §5.07
+    // PENDING → PROCESSING ('approve') or REJECTED ('reject')
+    // PROCESSING → COMPLETED ('mark_paid') or REJECTED ('reject')
     if (action === "approve") {
-      // Approve the withdrawal
+      if (existingWithdrawal.status !== "PENDING") {
+        return NextResponse.json(
+          { error: "Only PENDING withdrawals can be approved" },
+          { status: 400 }
+        );
+      }
+
+      // Move to PROCESSING — admin will send payment then mark_paid
+      const withdrawal = await prisma.withdrawal.update({
+        where: { id },
+        data: {
+          status: "PROCESSING",
+          processedBy: session.user.id,
+          transactionId: transactionId || null,
+        },
+      });
+
+      await prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: "WITHDRAWAL_APPROVED",
+          entity: "Withdrawal",
+          entityId: id,
+          newData: { adminNote: adminNote ?? null, transactionId: transactionId ?? null },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        withdrawal,
+        message: "Withdrawal approved & marked as Processing",
+      });
+    } else if (action === "mark_paid" || action === "complete") {
+      if (existingWithdrawal.status !== "PROCESSING") {
+        return NextResponse.json(
+          { error: "Only PROCESSING withdrawals can be marked paid" },
+          { status: 400 }
+        );
+      }
+      if (!transactionId || !String(transactionId).trim()) {
+        return NextResponse.json(
+          { error: "Transaction reference is required to mark as paid" },
+          { status: 400 }
+        );
+      }
+
       const [withdrawal] = await prisma.$transaction([
-        // Update withdrawal status
         prisma.withdrawal.update({
           where: { id },
           data: {
             status: "COMPLETED",
             processedBy: session.user.id,
             processedAt: new Date(),
-            transactionId: transactionId || null,
+            transactionId,
           },
         }),
-        // Update user's total withdrawals
         prisma.user.update({
           where: { id: existingWithdrawal.userId },
           data: {
             totalWithdrawals: { increment: existingWithdrawal.amount },
           },
         }),
-        // Create transaction record
         prisma.transaction.create({
           data: {
             userId: existingWithdrawal.userId,
@@ -121,17 +159,45 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             reference: id,
           },
         }),
+        prisma.notification.create({
+          data: {
+            userId: existingWithdrawal.userId,
+            type: "WALLET",
+            title: "Withdrawal completed",
+            message: `Your withdrawal of $${existingWithdrawal.netAmount.toFixed(
+              2
+            )} via ${existingWithdrawal.method} has been paid. Reference: ${transactionId}`,
+          },
+        }),
       ]);
+
+      await prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: "WITHDRAWAL_PAID",
+          entity: "Withdrawal",
+          entityId: id,
+          newData: { transactionId, adminNote: adminNote ?? null },
+        },
+      });
 
       return NextResponse.json({
         success: true,
         withdrawal,
-        message: "Withdrawal approved successfully",
+        message: "Withdrawal marked as paid",
       });
     } else if (action === "reject") {
-      // Reject and refund
+      if (
+        existingWithdrawal.status !== "PENDING" &&
+        existingWithdrawal.status !== "PROCESSING"
+      ) {
+        return NextResponse.json(
+          { error: "Only PENDING or PROCESSING withdrawals can be rejected" },
+          { status: 400 }
+        );
+      }
+
       const [withdrawal] = await prisma.$transaction([
-        // Update withdrawal status
         prisma.withdrawal.update({
           where: { id },
           data: {
@@ -141,14 +207,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             rejectionReason: rejectionReason || "Rejected by admin",
           },
         }),
-        // Refund the user's cash balance
         prisma.user.update({
           where: { id: existingWithdrawal.userId },
           data: {
             cashBalance: { increment: existingWithdrawal.amount },
           },
         }),
-        // Create refund transaction record
         prisma.transaction.create({
           data: {
             userId: existingWithdrawal.userId,
@@ -156,31 +220,43 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             status: "COMPLETED",
             points: 0,
             amount: existingWithdrawal.amount,
-            description: `Withdrawal rejected: ${rejectionReason || "Rejected by admin"}`,
+            description: `Withdrawal rejected: ${
+              rejectionReason || "Rejected by admin"
+            }`,
             reference: id,
+          },
+        }),
+        prisma.notification.create({
+          data: {
+            userId: existingWithdrawal.userId,
+            type: "WALLET",
+            title: "Withdrawal rejected",
+            message: `Your withdrawal of $${existingWithdrawal.amount.toFixed(
+              2
+            )} was rejected and refunded. Reason: ${
+              rejectionReason || "Not specified"
+            }${adminNote ? `\n\n${adminNote}` : ""}`,
           },
         }),
       ]);
 
-      return NextResponse.json({
-        success: true,
-        withdrawal,
-        message: "Withdrawal rejected and refunded",
-      });
-    } else if (action === "process") {
-      // Mark as processing
-      const withdrawal = await prisma.withdrawal.update({
-        where: { id },
+      await prisma.auditLog.create({
         data: {
-          status: "PROCESSING",
-          processedBy: session.user.id,
+          userId: session.user.id,
+          action: "WITHDRAWAL_REJECTED",
+          entity: "Withdrawal",
+          entityId: id,
+          newData: {
+            rejectionReason: rejectionReason ?? null,
+            adminNote: adminNote ?? null,
+          },
         },
       });
 
       return NextResponse.json({
         success: true,
         withdrawal,
-        message: "Withdrawal marked as processing",
+        message: "Withdrawal rejected and refunded",
       });
     } else {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 });

@@ -3,12 +3,11 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import {
   ClipboardCheck,
-  Search,
   Filter,
   Clock,
   CheckCircle,
   XCircle,
-  Eye,
+  RotateCcw,
   ChevronLeft,
   ChevronRight,
   Video,
@@ -20,9 +19,9 @@ import {
   Gift,
   Sparkles,
   Star,
-  ExternalLink,
-  Image as ImageIcon,
 } from "lucide-react";
+import { SubmissionActions } from "@/components/admin/submissions/submission-actions";
+import { ImageZoomGallery } from "@/components/admin/image-zoom-gallery";
 import Link from "next/link";
 import { formatDistanceToNow, format } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -95,7 +94,14 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
   }
 
   // Fetch submissions and stats
-  const [submissionsRaw, totalCount, pendingCount, approvedCount, rejectedCount] = await Promise.all([
+  const [
+    submissionsRaw,
+    totalCount,
+    pendingCount,
+    approvedCount,
+    rejectedCount,
+    revisionsCount,
+  ] = await Promise.all([
     prisma.taskSubmission.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -126,6 +132,7 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
     prisma.taskSubmission.count({ where: { status: "PENDING" } }),
     prisma.taskSubmission.count({ where: { status: "APPROVED" } }),
     prisma.taskSubmission.count({ where: { status: "REJECTED" } }),
+    prisma.taskSubmission.count({ where: { status: "REVISION_REQUESTED" } }),
   ]);
 
   // Type assertion for Prisma Accelerate
@@ -177,26 +184,12 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Link
-          href="/admin/submissions"
-          className="bg-gray-900 rounded-xl border border-gray-800 p-4 hover:border-indigo-500/50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/10 rounded-lg">
-              <ClipboardCheck className="w-5 h-5 text-indigo-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{totalCount}</p>
-              <p className="text-sm text-gray-500">Total</p>
-            </div>
-          </div>
-        </Link>
+      {/* Stats — 4-card row per spec: Pending / Approved / Rejected / Revisions */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Link
           href="/admin/submissions?status=PENDING"
-          className={`bg-gray-900 rounded-xl border p-4 transition-colors ${
-            params.status === "PENDING" ? "border-amber-500/50" : "border-gray-800 hover:border-amber-500/50"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "PENDING" ? "border-amber-500/50" : "border-slate-800 hover:border-amber-500/50"
           }`}
         >
           <div className="flex items-center gap-3">
@@ -204,15 +197,15 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
               <Clock className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{pendingCount}</p>
-              <p className="text-sm text-gray-500">Pending</p>
+              <p className="text-2xl font-bold text-white tabular-nums">{pendingCount}</p>
+              <p className="text-sm text-slate-500">Pending</p>
             </div>
           </div>
         </Link>
         <Link
           href="/admin/submissions?status=APPROVED"
-          className={`bg-gray-900 rounded-xl border p-4 transition-colors ${
-            params.status === "APPROVED" ? "border-emerald-500/50" : "border-gray-800 hover:border-emerald-500/50"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "APPROVED" ? "border-emerald-500/50" : "border-slate-800 hover:border-emerald-500/50"
           }`}
         >
           <div className="flex items-center gap-3">
@@ -220,15 +213,15 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
               <CheckCircle className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{approvedCount}</p>
-              <p className="text-sm text-gray-500">Approved</p>
+              <p className="text-2xl font-bold text-white tabular-nums">{approvedCount}</p>
+              <p className="text-sm text-slate-500">Approved</p>
             </div>
           </div>
         </Link>
         <Link
           href="/admin/submissions?status=REJECTED"
-          className={`bg-gray-900 rounded-xl border p-4 transition-colors ${
-            params.status === "REJECTED" ? "border-red-500/50" : "border-gray-800 hover:border-red-500/50"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "REJECTED" ? "border-red-500/50" : "border-slate-800 hover:border-red-500/50"
           }`}
         >
           <div className="flex items-center gap-3">
@@ -236,8 +229,24 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
               <XCircle className="w-5 h-5 text-red-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{rejectedCount}</p>
-              <p className="text-sm text-gray-500">Rejected</p>
+              <p className="text-2xl font-bold text-white tabular-nums">{rejectedCount}</p>
+              <p className="text-sm text-slate-500">Rejected</p>
+            </div>
+          </div>
+        </Link>
+        <Link
+          href="/admin/submissions?status=REVISION_REQUESTED"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "REVISION_REQUESTED" ? "border-orange-500/50" : "border-slate-800 hover:border-orange-500/50"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-orange-500/10 rounded-lg">
+              <RotateCcw className="w-5 h-5 text-orange-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">{revisionsCount}</p>
+              <p className="text-sm text-slate-500">Revisions</p>
             </div>
           </div>
         </Link>
@@ -249,12 +258,13 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
           <select
             name="status"
             defaultValue={params.status || "all"}
-            className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
+            className="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
           >
             <option value="all">All Status</option>
             <option value="PENDING">Pending</option>
             <option value="APPROVED">Approved</option>
             <option value="REJECTED">Rejected</option>
+            <option value="REVISION_REQUESTED">Revision Requested</option>
             <option value="AUTO_APPROVED">Auto-Approved</option>
           </select>
           <select
@@ -337,25 +347,11 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
                       </div>
                     )}
 
-                    {/* Proof Images */}
+                    {/* Proof Images — click to zoom */}
                     {submission.proofImages && submission.proofImages.length > 0 && (
                       <div className="mb-3">
-                        <p className="text-xs text-gray-500 mb-1">Images:</p>
-                        <div className="flex gap-2 flex-wrap">
-                          {submission.proofImages.map((image, idx) => (
-                            <a
-                              key={idx}
-                              href={image}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="flex items-center gap-1 px-2 py-1 bg-gray-800 rounded text-xs text-gray-400 hover:text-white transition-colors"
-                            >
-                              <ImageIcon className="w-3 h-3" />
-                              Image {idx + 1}
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          ))}
-                        </div>
+                        <p className="text-xs text-gray-500 mb-1.5">Images:</p>
+                        <ImageZoomGallery images={submission.proofImages} size={64} />
                       </div>
                     )}
 
@@ -393,27 +389,24 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
                     </p>
 
                     {submission.status === "PENDING" && (
-                      <div className="flex gap-2">
-                        {canApprove && (
-                          <button className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-500 text-white text-sm rounded-lg hover:bg-emerald-600 transition-colors">
-                            <CheckCircle className="w-4 h-4" />
-                            Approve
-                          </button>
-                        )}
-                        {canReject && (
-                          <button className="inline-flex items-center gap-1 px-3 py-1.5 bg-red-500/10 text-red-400 border border-red-500/30 text-sm rounded-lg hover:bg-red-500/20 transition-colors">
-                            <XCircle className="w-4 h-4" />
-                            Reject
-                          </button>
-                        )}
-                      </div>
+                      <SubmissionActions
+                        submissionId={submission.id}
+                        taskTitle={submission.task.title}
+                        canApprove={canApprove}
+                        canReject={canReject}
+                      />
                     )}
 
-                    {submission.status === "REJECTED" && submission.rejectionReason && (
-                      <p className="text-xs text-red-400 max-w-xs text-right">
-                        Reason: {submission.rejectionReason}
-                      </p>
-                    )}
+                    {(submission.status === "REJECTED" ||
+                      submission.status === "REVISION_REQUESTED") &&
+                      submission.rejectionReason && (
+                        <p className="text-xs text-red-400 max-w-xs text-right">
+                          {submission.status === "REVISION_REQUESTED"
+                            ? "Revision: "
+                            : "Reason: "}
+                          {submission.rejectionReason}
+                        </p>
+                      )}
                   </div>
                 </div>
               </div>

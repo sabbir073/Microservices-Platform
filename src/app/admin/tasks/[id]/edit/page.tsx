@@ -3,6 +3,9 @@ import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { TaskForm } from "../../_components/TaskForm";
+import type { SocialConfig } from "@/lib/social-tasks";
+import type { ArticleConfig } from "@/lib/article-tasks";
+import type { VideoConfig } from "@/lib/video-tasks";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
@@ -49,7 +52,14 @@ export default async function EditTaskPage({ params }: PageProps) {
       </div>
 
       {/* Form */}
-      <TaskForm task={task} />
+      <TaskForm
+        task={{
+          ...task,
+          socialConfig: task.socialConfig as SocialConfig | null,
+          articleConfig: task.articleConfig as ArticleConfig | null,
+          videoConfig: task.videoConfig as VideoConfig | null,
+        }}
+      />
     </div>
   );
 }

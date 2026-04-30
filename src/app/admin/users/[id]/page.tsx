@@ -278,7 +278,21 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
             <span className="text-xs text-gray-500">Level</span>
           </div>
           <p className="text-xl font-bold text-white">{user.level}</p>
-          <p className="text-xs text-gray-500">{user.xp.toLocaleString()} XP</p>
+          <div className="flex gap-1 mt-1">
+            <AdjustBalanceButton userId={id} type="level" action="add" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="level" action="deduct" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+          </div>
+        </div>
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="w-4 h-4 text-purple-400" />
+            <span className="text-xs text-gray-500">XP</span>
+          </div>
+          <p className="text-xl font-bold text-white">{user.xp.toLocaleString()}</p>
+          <div className="flex gap-1 mt-1">
+            <AdjustBalanceButton userId={id} type="xp" action="add" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="xp" action="deduct" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+          </div>
         </div>
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -308,9 +322,10 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
             <span className="text-xs text-gray-500">Package</span>
           </div>
           <p className={`text-xl font-bold ${
-            user.packageTier === "PREMIUM" ? "text-purple-400" :
-            user.packageTier === "STANDARD" ? "text-indigo-400" :
-            user.packageTier === "BASIC" ? "text-blue-400" :
+            user.packageTier === "VIP" ? "text-amber-400" :
+            user.packageTier === "ELITE" ? "text-purple-400" :
+            user.packageTier === "PRO" ? "text-indigo-400" :
+            user.packageTier === "STARTER" ? "text-blue-400" :
             "text-gray-400"
           }`}>{user.packageTier}</p>
           {user.packageExpiresAt && (

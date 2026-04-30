@@ -32,6 +32,8 @@ interface PageProps {
     page?: string;
     status?: string;
     type?: string;
+    difficulty?: string;
+    board?: string;
     search?: string;
   }>;
 }
@@ -87,6 +89,16 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
     where.type = params.type as Prisma.EnumTaskTypeFilter["equals"];
   }
 
+  if (params.difficulty && params.difficulty !== "all") {
+    where.difficulty = params.difficulty as Prisma.EnumTaskDifficultyFilter["equals"];
+  }
+
+  if (params.board === "none") {
+    where.boardId = null;
+  } else if (params.board && params.board !== "all") {
+    where.boardId = params.board;
+  }
+
   if (params.search) {
     where.OR = [
       { title: { contains: params.search, mode: "insensitive" } },
@@ -95,7 +107,15 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
   }
 
   // Fetch tasks and stats
-  const [tasksRaw, totalCount, activeCount, pausedCount, pendingSubmissions] = await Promise.all([
+  const [
+    tasksRaw,
+    totalCount,
+    activeCount,
+    pausedCount,
+    completedCount,
+    draftCount,
+    pendingSubmissions,
+  ] = await Promise.all([
     prisma.task.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -112,6 +132,8 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
     prisma.task.count({ where }),
     prisma.task.count({ where: { status: "ACTIVE" } }),
     prisma.task.count({ where: { status: "PAUSED" } }),
+    prisma.task.count({ where: { status: "COMPLETED" } }),
+    prisma.task.count({ where: { status: "DRAFT" } }),
     prisma.taskSubmission.count({ where: { status: "PENDING" } }),
   ]);
 
@@ -128,6 +150,8 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
     queryParams.set("page", newPage.toString());
     if (params.status) queryParams.set("status", params.status);
     if (params.type) queryParams.set("type", params.type);
+    if (params.difficulty) queryParams.set("difficulty", params.difficulty);
+    if (params.board) queryParams.set("board", params.board);
     if (params.search) queryParams.set("search", params.search);
     return queryParams.toString();
   };
@@ -168,26 +192,12 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
         </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <Link
-          href="/admin/tasks"
-          className="bg-gray-900 rounded-xl border border-gray-800 p-4 hover:border-indigo-500/50 transition-colors"
-        >
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-indigo-500/10 rounded-lg">
-              <ListTodo className="w-5 h-5 text-indigo-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{totalCount}</p>
-              <p className="text-sm text-gray-500">Total Tasks</p>
-            </div>
-          </div>
-        </Link>
+      {/* Stats — 4-card row per spec (Active / Paused / Completed / Draft) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Link
           href="/admin/tasks?status=ACTIVE"
-          className={`bg-gray-900 rounded-xl border p-4 transition-colors ${
-            params.status === "ACTIVE" ? "border-emerald-500/50" : "border-gray-800 hover:border-emerald-500/50"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "ACTIVE" ? "border-emerald-500/50" : "border-slate-800 hover:border-emerald-500/50"
           }`}
         >
           <div className="flex items-center gap-3">
@@ -195,15 +205,15 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
               <CheckCircle className="w-5 h-5 text-emerald-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{activeCount}</p>
-              <p className="text-sm text-gray-500">Active</p>
+              <p className="text-2xl font-bold text-white tabular-nums">{activeCount}</p>
+              <p className="text-sm text-slate-500">Active</p>
             </div>
           </div>
         </Link>
         <Link
           href="/admin/tasks?status=PAUSED"
-          className={`bg-gray-900 rounded-xl border p-4 transition-colors ${
-            params.status === "PAUSED" ? "border-amber-500/50" : "border-gray-800 hover:border-amber-500/50"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "PAUSED" ? "border-amber-500/50" : "border-slate-800 hover:border-amber-500/50"
           }`}
         >
           <div className="flex items-center gap-3">
@@ -211,71 +221,114 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
               <Pause className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{pausedCount}</p>
-              <p className="text-sm text-gray-500">Paused</p>
+              <p className="text-2xl font-bold text-white tabular-nums">{pausedCount}</p>
+              <p className="text-sm text-slate-500">Paused</p>
             </div>
           </div>
         </Link>
         <Link
-          href="/admin/submissions?status=PENDING"
-          className="bg-gray-900 rounded-xl border border-gray-800 p-4 hover:border-amber-500/50 transition-colors"
+          href="/admin/tasks?status=COMPLETED"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "COMPLETED" ? "border-blue-500/50" : "border-slate-800 hover:border-blue-500/50"
+          }`}
         >
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-amber-500/10 rounded-lg">
-              <Clock className="w-5 h-5 text-amber-400" />
+            <div className="p-2 bg-blue-500/10 rounded-lg">
+              <ListTodo className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <p className="text-2xl font-bold text-white">{pendingSubmissions}</p>
-              <p className="text-sm text-gray-500">Pending Reviews</p>
+              <p className="text-2xl font-bold text-white tabular-nums">{completedCount}</p>
+              <p className="text-sm text-slate-500">Completed</p>
+            </div>
+          </div>
+        </Link>
+        <Link
+          href="/admin/tasks?status=DRAFT"
+          className={`bg-slate-900 rounded-xl border p-4 transition-colors ${
+            params.status === "DRAFT" ? "border-slate-500/50" : "border-slate-800 hover:border-slate-500/50"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-slate-700/40 rounded-lg">
+              <FileText className="w-5 h-5 text-slate-400" />
+            </div>
+            <div>
+              <p className="text-2xl font-bold text-white tabular-nums">{draftCount}</p>
+              <p className="text-sm text-slate-500">Draft</p>
             </div>
           </div>
         </Link>
       </div>
 
-      {/* Filters */}
-      <form className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
+      {/* Filters — 5 filters per spec: Search, Type, Status, Difficulty, Board */}
+      <form className="bg-slate-900 rounded-xl border border-slate-800 p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-2">
+        <div className="relative lg:col-span-2">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="search"
             name="search"
             defaultValue={params.search}
-            placeholder="Search tasks by title, description..."
-            className="w-full pl-10 pr-4 py-2.5 bg-gray-900 border border-gray-800 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
+            placeholder="Search title, description, tags…"
+            className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
           />
         </div>
-        <div className="flex gap-2 flex-wrap">
-          <select
-            name="status"
-            defaultValue={params.status || "all"}
-            className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
-          >
-            <option value="all">All Status</option>
-            <option value="ACTIVE">Active</option>
-            <option value="PAUSED">Paused</option>
-            <option value="COMPLETED">Completed</option>
-            <option value="EXPIRED">Expired</option>
-          </select>
-          <select
-            name="type"
-            defaultValue={params.type || "all"}
-            className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-red-500"
-          >
-            <option value="all">All Types</option>
-            <option value="VIDEO">Video</option>
-            <option value="ARTICLE">Article</option>
-            <option value="QUIZ">Quiz</option>
-            <option value="SURVEY">Survey</option>
-            <option value="SOCIAL">Social</option>
-            <option value="PROXY">Proxy</option>
-            <option value="OFFERWALL">Offerwall</option>
-            <option value="CUSTOM">Custom</option>
-          </select>
+        <select
+          name="type"
+          defaultValue={params.type || "all"}
+          className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+        >
+          <option value="all">All Types</option>
+          <option value="VIDEO">Video</option>
+          <option value="ARTICLE">Article</option>
+          <option value="QUIZ">Quiz</option>
+          <option value="SURVEY">Survey</option>
+          <option value="SOCIAL">Social</option>
+          <option value="PROXY">Proxy</option>
+          <option value="OFFERWALL">Offerwall</option>
+          <option value="CUSTOM">Custom</option>
+        </select>
+        <select
+          name="status"
+          defaultValue={params.status || "all"}
+          className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+        >
+          <option value="all">All Status</option>
+          <option value="DRAFT">Draft</option>
+          <option value="ACTIVE">Active</option>
+          <option value="PAUSED">Paused</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="EXPIRED">Expired</option>
+        </select>
+        <select
+          name="difficulty"
+          defaultValue={params.difficulty || "all"}
+          className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+        >
+          <option value="all">All Difficulties</option>
+          <option value="EASY">Easy</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="HARD">Hard</option>
+        </select>
+        <select
+          name="board"
+          defaultValue={params.board || "all"}
+          className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
+          title="Board boards module is queued for Phase 4"
+          disabled
+        >
+          <option value="all">All Boards (soon)</option>
+          <option value="none">No Board</option>
+        </select>
+        <div className="lg:col-span-6 flex items-center justify-between gap-3 pt-2 border-t border-slate-800 mt-1">
+          <Link href="/admin/tasks" className="text-sm text-slate-400 hover:text-white">
+            Reset all
+          </Link>
           <button
             type="submit"
-            className="p-2.5 bg-red-500 rounded-lg text-white hover:bg-red-600 transition-colors"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-lg text-sm text-white hover:bg-blue-700 transition-colors"
           >
-            <Filter className="w-5 h-5" />
+            <Filter className="w-4 h-4" />
+            Apply Filters
           </button>
         </div>
       </form>

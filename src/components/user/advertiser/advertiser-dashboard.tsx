@@ -1,0 +1,261 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Plus, MousePointer2, Eye, Target, Loader2 } from "lucide-react";
+import { StatCard } from "@/components/user/primitives/stat-card";
+import { ListSkeleton } from "@/components/user/primitives/skeleton";
+import { EmptyState } from "@/components/user/primitives/empty-state";
+import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
+import { toast } from "sonner";
+
+interface Campaign {
+  id: string;
+  title: string;
+  status: "ACTIVE" | "PAUSED" | "ENDED" | "DRAFT";
+  budget: number;
+  spent: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+}
+
+interface Stats {
+  campaigns: number;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+}
+
+export function AdvertiserDashboard() {
+  const [stats, setStats] = useState<Stats>({
+    campaigns: 0,
+    impressions: 0,
+    clicks: 0,
+    ctr: 0,
+  });
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [budget, setBudget] = useState(50);
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/advertiser/campaigns");
+      const d = await res.json();
+      setCampaigns(d.campaigns ?? []);
+      setStats(d.stats ?? stats);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const create = async () => {
+    if (!title.trim()) {
+      toast.error("Title required");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch("/api/advertiser/campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, description, budget }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast.success("Campaign created");
+      setCreating(false);
+      setTitle("");
+      setDescription("");
+      setBudget(50);
+      load();
+    } catch (err) {
+      toast.error("Failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <h1 className="text-xl font-bold text-white flex-1">📣 Advertiser</h1>
+        <button
+          onClick={() => setCreating(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 text-white text-xs font-semibold"
+        >
+          <Plus className="w-4 h-4" />
+          New Campaign
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <StatCard
+          label="Campaigns"
+          value={stats.campaigns}
+          icon={<Target className="w-4 h-4" />}
+          tone="blue"
+        />
+        <StatCard
+          label="Impressions"
+          value={stats.impressions}
+          icon={<Eye className="w-4 h-4" />}
+          tone="purple"
+        />
+        <StatCard
+          label="Clicks"
+          value={stats.clicks}
+          icon={<MousePointer2 className="w-4 h-4" />}
+          tone="amber"
+        />
+        <StatCard
+          label="CTR"
+          value={`${stats.ctr.toFixed(2)}%`}
+          icon={<Target className="w-4 h-4" />}
+          tone="green"
+        />
+      </div>
+
+      {loading && <ListSkeleton rows={3} />}
+
+      {!loading && campaigns.length === 0 && (
+        <EmptyState
+          icon={Target}
+          title="No campaigns yet"
+          description="Create your first campaign to advertise on EarnGPT."
+          action={{ label: "Create Campaign", onClick: () => setCreating(true) }}
+        />
+      )}
+
+      {!loading &&
+        campaigns.map((c) => {
+          const pct = (c.spent / c.budget) * 100;
+          return (
+            <div
+              key={c.id}
+              className="rounded-xl border border-gray-800 bg-gray-900 p-3"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">
+                    {c.title}
+                  </p>
+                  <span
+                    className={`inline-block mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                      c.status === "ACTIVE"
+                        ? "bg-emerald-500/10 text-emerald-400"
+                        : c.status === "PAUSED"
+                          ? "bg-amber-500/10 text-amber-400"
+                          : "bg-gray-700 text-gray-400"
+                    }`}
+                  >
+                    {c.status}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400 tabular-nums">
+                  ${c.spent.toFixed(2)} / ${c.budget.toFixed(2)}
+                </span>
+              </div>
+              <div className="mt-2 h-1 rounded-full bg-gray-800 overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
+                  style={{ width: `${Math.min(100, pct)}%` }}
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-2 text-[11px]">
+                <div>
+                  <p className="text-gray-500">Impressions</p>
+                  <p className="font-bold text-white tabular-nums">
+                    {c.impressions.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-500">Clicks</p>
+                  <p className="font-bold text-white tabular-nums">
+                    {c.clicks.toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-gray-500">CTR</p>
+                  <p className="font-bold text-white tabular-nums">
+                    {c.ctr.toFixed(2)}%
+                  </p>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+      <BottomSheet
+        open={creating}
+        onOpenChange={setCreating}
+        title="New Campaign"
+        footer={
+          <div className="flex gap-2">
+            <button
+              disabled={busy}
+              onClick={() => setCreating(false)}
+              className="flex-1 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-semibold disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              disabled={busy}
+              onClick={create}
+              className="flex-1 py-2.5 rounded-lg bg-indigo-500 text-white text-sm font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create"}
+            </button>
+          </div>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">Title *</label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">
+              Description
+            </label>
+            <textarea
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm resize-none focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1.5">
+              Budget ($)
+            </label>
+            <input
+              type="number"
+              min={5}
+              step={5}
+              value={budget}
+              onChange={(e) => setBudget(Number(e.target.value))}
+              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+        </div>
+      </BottomSheet>
+    </div>
+  );
+}

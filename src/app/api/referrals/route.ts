@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
     // Determine which level's referrals to return based on filter
     let referralsToShow;
     let referralLevel = 1;
-    let totalReferrals = level1Referrals.length + level2Referrals.length + level3Referrals.length;
+    const totalReferrals = level1Referrals.length + level2Referrals.length + level3Referrals.length;
 
     if (level === "2") {
       referralsToShow = level2Referrals;

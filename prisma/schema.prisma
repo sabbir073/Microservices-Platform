@@ -44,6 +44,7 @@ enum TaskType {
 }
 
 enum TaskStatus {
+  DRAFT
   ACTIVE
   PAUSED
   COMPLETED
@@ -55,6 +56,7 @@ enum SubmissionStatus {
   APPROVED
   REJECTED
   AUTO_APPROVED
+  REVISION_REQUESTED
 }
 
 enum TransactionType {
@@ -95,9 +97,332 @@ enum PaymentMethod {
 
 enum PackageTier {
   FREE
-  BASIC
-  STANDARD
-  PREMIUM
+  STARTER
+  PRO
+  ELITE
+  VIP
+}
+
+enum TaskDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum QuizStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum BannerLocation {
+  HOME
+  EARN_HUB
+  MARKETPLACE
+  DASHBOARD
+  ALL
+}
+
+model Banner {
+  id          String         @id @default(cuid())
+  title       String
+  subtitle    String?
+  imageUrl    String?
+  iconEmoji   String?
+  bgGradient  String?        // e.g. "from-blue-600 to-purple-600"
+  linkUrl     String?
+  location    BannerLocation @default(HOME)
+  order       Int            @default(0)
+  isActive    Boolean        @default(true)
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdById String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([location])
+  @@index([isActive])
+  @@index([order])
+}
+
+model Campaign {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?  @db.Text
+  type            String   // XP_MULTIPLIER | BONUS_POINTS | FREE_TICKETS | DISCOUNT | REFERRAL_BOOST | SEASONAL
+  value           Float    @default(1)
+  startDate       DateTime
+  endDate         DateTime
+  targetType      String   @default("ALL") // ALL | TIER | NEW_USERS | COUNTRY
+  targetValue     String?
+  budget          Float?
+  bannerImage     String?
+  termsAndConditions String? @db.Text
+  status          String   @default("SCHEDULED") // SCHEDULED | ACTIVE | PAUSED | ENDED
+  participantCount Int     @default(0)
+  rewardsDistributed Float @default(0)
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([startDate, endDate])
+}
+
+model Mission {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?  @db.Text
+  type          String   // TASK_COMPLETION | LOGIN_STREAK | REFERRAL | SPEND | EARN
+  targetValue   Int
+  pointsReward  Int      @default(0)
+  cashReward    Float    @default(0)
+  xpReward      Int      @default(0)
+  duration      String   @default("DAILY") // DAILY | WEEKLY
+  autoRefresh   Boolean  @default(true)
+  requiredLevel Int      @default(1)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([duration])
+}
+
+model AdCampaign {
+  id            String   @id @default(cuid())
+  advertiserId  String?
+  title         String
+  description   String?  @db.Text
+  budget        Float    @default(0)
+  status        String   @default("ACTIVE") // ACTIVE | PAUSED | ENDED
+  ads           Ad[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([advertiserId])
+  @@index([status])
+}
+
+model AdPlacement {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  platform  String   @default("ALL")
+  isActive  Boolean  @default(true)
+  ads       Ad[]
+  createdAt DateTime @default(now())
+}
+
+model AdNetwork {
+  id              String   @id @default(cuid())
+  name            String
+  providerKey     String   @unique
+  initScript      String?  @db.Text
+  isEnabledWeb    Boolean  @default(true)
+  isEnabledMobile Boolean  @default(true)
+  globalWeight    Int      @default(10)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Ad {
+  id          String      @id @default(cuid())
+  campaignId  String
+  campaign    AdCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  placementId String
+  placement   AdPlacement @relation(fields: [placementId], references: [id])
+  type        String      @default("LOCAL")
+  format      String      @default("BANNER")
+  contentUrl  String?
+  targetUrl   String?
+  htmlContent String?     @db.Text
+  weight      Int         @default(10)
+  status      String      @default("ACTIVE")
+  impressions Int         @default(0)
+  clicks      Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([campaignId])
+  @@index([placementId])
+  @@index([status])
+}
+
+enum FraudSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model FraudEvent {
+  id          String        @id @default(cuid())
+  userId      String?
+  eventType   String   // MULTIPLE_ACCOUNTS, VPN_DETECTED, etc.
+  severity    FraudSeverity @default(MEDIUM)
+  details     Json?
+  ipAddress   String?
+  userAgent   String?
+  status      String   @default("OPEN") // OPEN | DISMISSED | ACTED
+  resolverNote String? @db.Text
+  resolvedById String?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([severity])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ProxyServer {
+  id              String   @id @default(cuid())
+  name            String
+  host            String
+  port            Int
+  protocol        String   @default("HTTPS") // HTTP | HTTPS | SOCKS5
+  country         String?  // ISO code
+  status          String   @default("ACTIVE") // ACTIVE | INACTIVE | ERROR
+  loadPercent     Int      @default(0)
+  maxConcurrent   Int      @default(50)
+  bandwidthMbUser Int      @default(100)
+  responseTimeMs  Int?
+  lastHealthCheck DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([country])
+}
+
+model OfferwallCallback {
+  id            String   @id @default(cuid())
+  userId        String
+  offerwallId   String
+  offerId       String?
+  offerName     String?
+  transactionId String   @unique
+  payoutAmount  Float
+  userPayout    Int     // points
+  currency      String   @default("USD")
+  status        String   @default("PENDING") // PENDING | APPROVED | REJECTED | FRAUD | CHARGEBACK
+  fraudScore    Int     @default(0)
+  fraudReasons  String[]
+  ipAddress     String?
+  userAgent     String?  @db.Text
+  countryCode   String?
+  deviceType    String?
+  rawPayload    Json?
+  reviewedById  String?
+  reviewNote    String?  @db.Text
+  rejectionReason String? @db.Text
+  processedAt   DateTime?
+  creditedAt    DateTime?
+  createdAt     DateTime @default(now())
+
+  @@index([status])
+  @@index([offerwallId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model TaskBoard {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?  @db.Text
+  iconEmoji    String?
+  pointsReward Int      @default(0)
+  xpReward     Int      @default(0)
+  isActive     Boolean  @default(true)
+  order        Int      @default(0)
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([order])
+}
+
+model SocialReport {
+  id          String   @id @default(cuid())
+  contentType String   // POST | COMMENT | USER | LISTING
+  contentId   String
+  reporterId  String
+  reason      String   // SPAM | HARASSMENT | FRAUD | INAPPROPRIATE | OTHER
+  details     String?  @db.Text
+  priority    String   @default("NORMAL") // URGENT | HIGH | NORMAL
+  status      String   @default("PENDING") // PENDING | RESOLVED
+  resolution  String?  // DISMISSED | WARNED | SUSPENDED | BANNED | DELETED
+  resolverNote String? @db.Text
+  resolvedById String?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([status])
+  @@index([contentType])
+  @@index([reporterId])
+  @@index([createdAt])
+}
+
+model Quiz {
+  id              String         @id @default(cuid())
+  title           String
+  description     String?        @db.Text
+  category        String         @default("General")
+  difficulty      TaskDifficulty @default(MEDIUM)
+  status          QuizStatus     @default(DRAFT)
+  timeLimitSec    Int            @default(180)
+  passingScore    Int            @default(60)
+  pointsReward    Int            @default(50)
+  xpReward        Int            @default(25)
+  cashReward      Float          @default(0)
+  maxAttempts     Int            @default(3)
+  cooldownHours   Int            @default(24)
+  requiredLevel   Int            @default(1)
+  requiredPackage PackageTier?
+  questions       QuizQuestion[]
+  aiGenerated     Boolean        @default(false)
+  aiPrompt        String?        @db.Text
+  createdById     String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  attempts        QuizAttempt[]
+
+  @@index([status])
+  @@index([category])
+  @@index([difficulty])
+}
+
+model QuizQuestion {
+  id            String   @id @default(cuid())
+  quizId        String
+  quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  order         Int      @default(0)
+  question      String   @db.Text
+  options       String[]
+  correctIndex  Int
+  explanation   String?  @db.Text
+  pointsValue   Int      @default(10)
+
+  @@index([quizId])
+}
+
+model QuizAttempt {
+  id          String    @id @default(cuid())
+  quizId      String
+  quiz        Quiz      @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  userId      String
+  score       Int       @default(0)
+  passed      Boolean   @default(false)
+  answers     Json      // user's answers per question
+  timeTakenSec Int      @default(0)
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  @@index([quizId])
+  @@index([userId])
+  @@index([completedAt])
 }
 
 enum MarketplaceListingStatus {
@@ -138,8 +463,11 @@ model User {
   phoneVerified     DateTime?
   password          String?
   name              String?
+  firstName         String?
+  lastName          String?
   username          String?     @unique
   avatar            String?
+  coverPhoto        String?
   bio               String?
   country           String?
   timezone          String?     @default("UTC")
@@ -158,10 +486,35 @@ model User {
   kycStatus         KYCStatus   @default(NOT_SUBMITTED)
   kycSubmittedAt    DateTime?
   kycApprovedAt     DateTime?
+  isBlueVerified    Boolean     @default(false)
+  twoFactorEnabled  Boolean     @default(false)
+  twoFactorSecret   String?
   referralCode      String      @unique
   referredById      String?
   referredBy        User?       @relation("ReferralRelation", fields: [referredById], references: [id])
   referrals         User[]      @relation("ReferralRelation")
+  // Extended profile fields (admin_oo.md §5.02)
+  gender            String?
+  dateOfBirth       DateTime?
+  nidNumber         String?
+  profession        String?
+  maritalStatus     String?
+  studyLevel        String?
+  nationality       String?
+  bloodGroup        String?
+  secondaryEmail    String?
+  secondaryPhone    String?
+  // Extended address fields
+  street            String?
+  village           String?
+  city              String?
+  subDistrict       String?
+  district          String?
+  subDivision       String?
+  division          String?
+  region            String?
+  postalCode        String?
+  // Settings
   theme             String      @default("dark")
   language          String      @default("en")
   notificationsEnabled Boolean  @default(true)
@@ -257,8 +610,12 @@ model Task {
   instructionVideoUrl String?
   type            TaskType
   status          TaskStatus   @default(ACTIVE)
+  difficulty      TaskDifficulty @default(MEDIUM)
   pointsReward    Int
+  cashReward      Float        @default(0)
   xpReward        Int          @default(0)
+  isBoardOnly     Boolean      @default(false)
+  boardId         String?
   dailyLimit      Int?
   totalLimit      Int?
   completedCount  Int          @default(0)
@@ -272,6 +629,9 @@ model Task {
   socialPlatform  String?
   socialAction    String?
   socialUrl       String?
+  socialConfig    Json?      // Platform×action specific config (see lib/social-tasks.ts SocialConfig)
+  articleConfig   Json?      // Article task config (see lib/article-tasks.ts ArticleConfig)
+  videoConfig     Json?      // Video task config (see lib/video-tasks.ts VideoConfig)
   proxyInstructions String?    @db.Text
   startsAt        DateTime?
   expiresAt       DateTime?
@@ -700,6 +1060,38 @@ model Notification {
   createdAt   DateTime         @default(now())
   @@index([userId])
   @@index([isRead])
+  @@index([createdAt])
+}
+
+model Conversation {
+  id            String        @id @default(cuid())
+  user1Id       String
+  user2Id       String
+  lastMessageAt DateTime      @default(now())
+  unreadByUser1 Int           @default(0)
+  unreadByUser2 Int           @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  messages      ChatMessage[]
+
+  @@unique([user1Id, user2Id])
+  @@index([user1Id])
+  @@index([user2Id])
+  @@index([lastMessageAt])
+}
+
+model ChatMessage {
+  id              String       @id @default(cuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId        String
+  content         String       @db.Text
+  read            Boolean      @default(false)
+  readAt          DateTime?
+  createdAt       DateTime     @default(now())
+
+  @@index([conversationId])
+  @@index([senderId])
   @@index([createdAt])
 }
 

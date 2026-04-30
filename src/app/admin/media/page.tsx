@@ -11,7 +11,7 @@ export default async function MediaPage() {
   }
 
   const adminRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(adminRole, "tasks.view")) {
+  if (!hasPermission(adminRole, "media.view")) {
     redirect("/admin");
   }
 

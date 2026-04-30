@@ -18,6 +18,20 @@ import {
   LogOut,
   X,
   Shield,
+  ClipboardList,
+  Brain,
+  Send,
+  Megaphone,
+  Globe,
+  Pin,
+  Target,
+  Award,
+  Package,
+  Briefcase,
+  ArrowUpRight,
+  HelpCircle,
+  FileText,
+  Video,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -34,21 +48,54 @@ interface SidebarProps {
   };
 }
 
-const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Tasks", href: "/tasks", icon: ListTodo },
-  { name: "Wallet", href: "/wallet", icon: Wallet },
-  { name: "Referrals", href: "/referrals", icon: Users },
-  { name: "Earn", href: "/earn", icon: Gift },
-  { name: "Leaderboard", href: "/leaderboard", icon: Trophy },
-  { name: "Courses", href: "/courses", icon: GraduationCap },
-  { name: "Marketplace", href: "/marketplace", icon: Store },
-  { name: "Lottery", href: "/lottery", icon: Ticket },
-  { name: "Social", href: "/social", icon: MessageSquare },
-];
-
-const bottomNavigation = [
-  { name: "Settings", href: "/settings", icon: Settings },
+const navigationGroups = [
+  {
+    section: "Main",
+    items: [
+      { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      { name: "Tasks", href: "/tasks", icon: ListTodo },
+      { name: "Wallet", href: "/wallet", icon: Wallet },
+      { name: "Referrals", href: "/referrals", icon: Users },
+    ],
+  },
+  {
+    section: "Earn",
+    items: [
+      { name: "Earn Hub", href: "/earn", icon: Gift },
+      { name: "Manual Tasks", href: "/manual-tasks", icon: ClipboardList },
+      { name: "Article Tasks", href: "/article-tasks", icon: FileText },
+      { name: "Video Tasks", href: "/video-tasks", icon: Video },
+      { name: "Quiz Tasks", href: "/quiz-tasks", icon: Brain },
+      { name: "Social Tasks", href: "/social-tasks", icon: Send },
+      { name: "Social Posts", href: "/social-posts", icon: Megaphone },
+      { name: "Proxy Tasks", href: "/proxy-tasks", icon: Globe },
+      { name: "Board Tasks", href: "/board-tasks", icon: Pin },
+      { name: "Milestones", href: "/milestones", icon: Target },
+      { name: "Achievements", href: "/achievements", icon: Award },
+      { name: "Leaderboard", href: "/leaderboard", icon: Trophy },
+    ],
+  },
+  {
+    section: "Grow",
+    items: [
+      { name: "Courses", href: "/courses", icon: GraduationCap },
+      { name: "Marketplace", href: "/marketplace", icon: Store },
+      { name: "Lottery", href: "/lottery", icon: Ticket },
+      { name: "Social", href: "/social", icon: MessageSquare },
+      { name: "Packages", href: "/packages", icon: Package },
+      { name: "Advertiser", href: "/advertiser", icon: Briefcase },
+    ],
+  },
+  {
+    section: "Account",
+    items: [
+      { name: "Withdrawal", href: "/withdrawal", icon: ArrowUpRight },
+      { name: "My Package", href: "/my-package", icon: Package },
+      { name: "Chat", href: "/chat", icon: MessageSquare },
+      { name: "Help", href: "/help", icon: HelpCircle },
+      { name: "Settings", href: "/settings", icon: Settings },
+    ],
+  },
 ];
 
 const adminNavigation = [
@@ -94,29 +141,37 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarConten
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
-        <ul className="space-y-1">
-          {navigation.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
-            return (
-              <li key={item.name}>
-                <Link
-                  href={item.href}
-                  onClick={onNavigate}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-indigo-500/10 text-indigo-400"
-                      : "text-gray-400 hover:text-white hover:bg-gray-800"
-                  )}
-                >
-                  <item.icon className="w-5 h-5" />
-                  {item.name}
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+        {navigationGroups.map((group) => (
+          <div key={group.section}>
+            <p className="px-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+              {group.section}
+            </p>
+            <ul className="space-y-1">
+              {group.items.map((item) => {
+                const isActive =
+                  pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <li key={item.name}>
+                    <Link
+                      href={item.href}
+                      onClick={onNavigate}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-indigo-500/10 text-indigo-400"
+                          : "text-gray-400 hover:text-white hover:bg-gray-800"
+                      )}
+                    >
+                      <item.icon className="w-4 h-4" />
+                      {item.name}
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
       </nav>
 
       {/* Admin Navigation - Show for all admin roles */}
@@ -150,39 +205,15 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarConten
         </div>
       )}
 
-      {/* Bottom Navigation */}
+      {/* Sign Out Button */}
       <div className="border-t border-gray-800 px-3 py-4">
-        <ul className="space-y-1">
-          {bottomNavigation.map((item) => {
-            const isActive = pathname === item.href;
-            return (
-              <li key={item.name}>
-                <Link
-                  href={item.href}
-                  onClick={onNavigate}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                    isActive
-                      ? "bg-indigo-500/10 text-indigo-400"
-                      : "text-gray-400 hover:text-white hover:bg-gray-800"
-                  )}
-                >
-                  <item.icon className="w-5 h-5" />
-                  {item.name}
-                </Link>
-              </li>
-            );
-          })}
-          <li>
-            <button
-              onClick={onSignOut}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-gray-800 transition-colors"
-            >
-              <LogOut className="w-5 h-5" />
-              Sign Out
-            </button>
-          </li>
-        </ul>
+        <button
+          onClick={onSignOut}
+          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-gray-800 transition-colors"
+        >
+          <LogOut className="w-5 h-5" />
+          Sign Out
+        </button>
       </div>
     </>
   );
