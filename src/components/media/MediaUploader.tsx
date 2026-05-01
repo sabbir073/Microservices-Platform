@@ -288,7 +288,7 @@ export function MediaUploader({
               >
                 <div className="flex items-start gap-3">
                   {/* File Icon */}
-                  <div className="flex-shrink-0 mt-1">
+                  <div className="shrink-0 mt-1">
                     {upload.file.type.startsWith("image/") ? (
                       <ImageIcon className="w-5 h-5 text-gray-400" />
                     ) : (
@@ -302,7 +302,7 @@ export function MediaUploader({
                       <p className="text-sm font-medium text-white truncate">
                         {upload.file.name}
                       </p>
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         {getStatusIcon(upload.status)}
                         {upload.status !== "uploading" && (
                           <button

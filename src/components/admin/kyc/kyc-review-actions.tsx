@@ -205,7 +205,7 @@ export function KycReviewActions({
                   <h3 className="text-lg font-semibold text-white">
                     Reject KYC
                   </h3>
-                  <p className="text-xs text-slate-500 truncate max-w-[260px]">
+                  <p className="text-xs text-slate-500 truncate max-w-65">
                     {userName}
                   </p>
                 </div>

@@ -378,7 +378,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                           className="hover:bg-slate-800/40 transition-colors"
                         >
                           <td className="py-4 px-6">
-                            <p className="font-medium text-white truncate max-w-[260px]">
+                            <p className="font-medium text-white truncate max-w-65">
                               {listing.title}
                             </p>
                             <p className="text-xs text-slate-500">
@@ -390,7 +390,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                           <td className="py-4 px-6">
                             <Link
                               href={`/admin/users/${listing.seller.id}`}
-                              className="text-sm text-white hover:text-indigo-400 truncate max-w-[160px] block"
+                              className="text-sm text-white hover:text-indigo-400 truncate max-w-40 block"
                             >
                               {listing.seller.name || listing.seller.email}
                             </Link>
@@ -504,7 +504,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                       <td className="py-4 px-6">
                         <Link
                           href={`/admin/marketplace/${o.listingId}`}
-                          className="text-white hover:text-indigo-400 truncate max-w-[260px] block"
+                          className="text-white hover:text-indigo-400 truncate max-w-65 block"
                         >
                           {o.listingTitle}
                         </Link>
@@ -606,20 +606,20 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                     return (
                       <tr key={d.id} className="hover:bg-slate-800/40">
                         <td className="py-4 px-6">
-                          <p className="text-white truncate max-w-[200px]">
+                          <p className="text-white truncate max-w-50">
                             {d.listingTitle}
                           </p>
                           <p className="text-xs text-slate-500 font-mono">
                             #{d.id.slice(0, 8)}
                           </p>
                         </td>
-                        <td className="py-4 px-6 text-sm text-slate-300 truncate max-w-[120px]">
+                        <td className="py-4 px-6 text-sm text-slate-300 truncate max-w-30">
                           {d.buyerName}
                         </td>
-                        <td className="py-4 px-6 text-sm text-slate-300 truncate max-w-[120px]">
+                        <td className="py-4 px-6 text-sm text-slate-300 truncate max-w-30">
                           {d.sellerName}
                         </td>
-                        <td className="py-4 px-6 text-sm text-slate-400 truncate max-w-[160px]">
+                        <td className="py-4 px-6 text-sm text-slate-400 truncate max-w-40">
                           {d.reason}
                         </td>
                         <td className="py-4 px-6 text-white tabular-nums">

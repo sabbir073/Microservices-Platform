@@ -107,7 +107,7 @@ export function OfferwallCallbacksClient({
   return (
     <>
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-4 flex flex-wrap gap-3 items-center">
-        <div className="relative flex-1 min-w-[220px]">
+        <div className="relative flex-1 min-w-55">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             value={q}
@@ -196,10 +196,10 @@ export function OfferwallCallbacksClient({
                     className="hover:bg-slate-800/40 cursor-pointer"
                   >
                     <td className="py-3 px-4">
-                      <p className="text-sm text-white truncate max-w-[180px]">
+                      <p className="text-sm text-white truncate max-w-45">
                         {u?.name ?? "Unknown"}
                       </p>
-                      <p className="text-xs text-slate-500 truncate max-w-[180px]">
+                      <p className="text-xs text-slate-500 truncate max-w-45">
                         {u?.email}
                       </p>
                     </td>

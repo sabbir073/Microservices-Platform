@@ -117,7 +117,7 @@ export function MilestonesView() {
                           "h-full",
                           m.status === "COMPLETED"
                             ? "bg-emerald-500"
-                            : "bg-gradient-to-r from-indigo-500 to-purple-500"
+                            : "bg-linear-to-r from-indigo-500 to-purple-500"
                         )}
                         style={{ width: `${pct}%` }}
                       />

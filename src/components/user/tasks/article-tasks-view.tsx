@@ -427,7 +427,7 @@ export function ArticleTasksView() {
 
               {req?.uniqueKey && (
                 <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5 inline-flex items-center gap-1">
+                  <label className="flex text-xs font-medium text-gray-400 mb-1.5 items-center gap-1">
                     <KeyRound className="w-3 h-3" />
                     Unique Key <span className="text-red-400">*</span>
                   </label>

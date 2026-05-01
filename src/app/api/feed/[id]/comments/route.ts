@@ -53,6 +53,7 @@ export async function GET(
       comments: commentsList.map((c) => ({
         id: c.id,
         content: c.content,
+        parentId: c.parentId,
         createdAt: c.createdAt,
         user: userMap.get(c.userId),
         isOwner: session?.user?.id === c.userId,
@@ -87,7 +88,7 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { content } = body;
+    const { content, parentId } = body as { content?: string; parentId?: string };
 
     // Validate content
     if (!content || content.trim().length === 0) {
@@ -113,12 +114,26 @@ export async function POST(
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
 
+    // Validate parentId if provided
+    if (parentId) {
+      const parent = await prisma.comment.findUnique({
+        where: { id: parentId },
+      });
+      if (!parent || parent.postId !== id) {
+        return NextResponse.json(
+          { error: "Parent comment not found" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create comment
     const comment = await prisma.comment.create({
       data: {
         postId: id,
         userId: session.user.id,
         content: content.trim(),
+        parentId: parentId ?? null,
       },
       include: {
         user: {
@@ -142,6 +157,7 @@ export async function POST(
       comment: {
         id: comment.id,
         content: comment.content,
+        parentId: comment.parentId,
         createdAt: comment.createdAt,
         user: comment.user,
         isOwner: true,

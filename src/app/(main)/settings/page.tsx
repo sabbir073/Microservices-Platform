@@ -1,18 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import {
-  User,
-  Bell,
-  Shield,
-  CreditCard,
-  Globe,
-  Moon,
-  Smartphone,
-  Mail,
-  Key,
-  Trash2,
-  ChevronRight,
-} from "lucide-react";
+import { User, Bell, Shield, CreditCard, Globe, Moon, Smartphone, Mail, Key, ChevronRight } from "lucide-react";
 import Link from "next/link";
 
 // Settings Section Component

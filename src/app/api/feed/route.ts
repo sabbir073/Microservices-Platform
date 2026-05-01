@@ -60,6 +60,19 @@ export async function GET(request: NextRequest) {
       userLikes = new Set(likes.map((l) => l.postId));
     }
 
+    // Capture user's votes for polls
+    let userVoteMap = new Map<string, string>();
+    if (session?.user?.id) {
+      const votes = await prisma.vote.findMany({
+        where: {
+          userId: session.user.id,
+          postId: { in: posts.map((p) => p.id) },
+        },
+        select: { postId: true, optionId: true },
+      });
+      userVoteMap = new Map(votes.map((v) => [v.postId, v.optionId]));
+    }
+
     const formattedPosts = posts.map((post) => ({
       id: post.id,
       content: post.content,
@@ -69,6 +82,12 @@ export async function GET(request: NextRequest) {
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
       sharesCount: post.sharesCount,
+      pollOptions: post.pollOptions ?? null,
+      pollEndsAt: post.pollEndsAt,
+      donationGoal: post.donationGoal,
+      donationCollected: post.donationCollected,
+      groupId: post.groupId,
+      myVote: userVoteMap.get(post.id) ?? null,
       createdAt: post.createdAt,
       user: userMap.get(post.userId),
       isLiked: userLikes.has(post.id),
@@ -103,7 +122,23 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { content, images, isPublic } = body;
+    const {
+      content,
+      images,
+      isPublic,
+      pollOptions,
+      pollEndsAt,
+      donationGoal,
+      groupId,
+    } = body as {
+      content?: string;
+      images?: string[];
+      isPublic?: boolean;
+      pollOptions?: { label: string }[];
+      pollEndsAt?: string;
+      donationGoal?: number;
+      groupId?: string | null;
+    };
 
     // Validate content
     if (!content || content.trim().length === 0) {
@@ -120,6 +155,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Build poll structure if provided
+    let formattedPoll: { id: string; label: string; voteCount: number }[] | null =
+      null;
+    if (Array.isArray(pollOptions) && pollOptions.length >= 2) {
+      formattedPoll = pollOptions.slice(0, 8).map((o, i) => ({
+        id: `opt_${i}`,
+        label: String(o.label ?? "").trim().slice(0, 100),
+        voteCount: 0,
+      }));
+      if (formattedPoll.some((o) => !o.label)) {
+        return NextResponse.json(
+          { error: "Each poll option needs a label" },
+          { status: 400 }
+        );
+      }
+    }
+
+    // If posting to a group, ensure user is a member
+    if (groupId) {
+      const member = await prisma.groupMember.findUnique({
+        where: {
+          groupId_userId: { groupId, userId: session.user.id },
+        },
+      });
+      if (!member) {
+        return NextResponse.json(
+          { error: "You must be a group member to post here" },
+          { status: 403 }
+        );
+      }
+    }
+
     // Create post
     const post = await prisma.post.create({
       data: {
@@ -127,6 +194,13 @@ export async function POST(request: NextRequest) {
         content: content.trim(),
         images: images || [],
         isPublic: isPublic !== false,
+        pollOptions: formattedPoll ?? undefined,
+        pollEndsAt: pollEndsAt ? new Date(pollEndsAt) : null,
+        donationGoal:
+          typeof donationGoal === "number" && donationGoal > 0
+            ? Math.round(donationGoal)
+            : null,
+        groupId: groupId ?? null,
       },
     });
 
@@ -151,6 +225,12 @@ export async function POST(request: NextRequest) {
         likesCount: 0,
         commentsCount: 0,
         sharesCount: 0,
+        pollOptions: post.pollOptions,
+        pollEndsAt: post.pollEndsAt,
+        donationGoal: post.donationGoal,
+        donationCollected: post.donationCollected,
+        groupId: post.groupId,
+        myVote: null,
         createdAt: post.createdAt,
         user,
         isLiked: false,

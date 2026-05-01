@@ -91,7 +91,7 @@ export function BanUserModal({
             </div>
             <div>
               <h2 className="text-lg font-semibold text-white">Ban User</h2>
-              <p className="text-xs text-slate-500 truncate max-w-[260px]">
+              <p className="text-xs text-slate-500 truncate max-w-65">
                 {userName || userEmail}
               </p>
             </div>

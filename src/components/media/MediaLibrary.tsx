@@ -1,24 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import {
-  Search,
-  Grid3x3,
-  List,
-  Filter,
-  Upload,
-  Edit,
-  Trash2,
-  X,
-  Loader2,
-  Image as ImageIcon,
-  Video,
-  FileAudio,
-  FileText,
-  File,
-  Download,
-  ExternalLink,
-} from "lucide-react";
+import { Search, Grid3x3, List, Upload, Edit, Trash2, X, Loader2, Image as ImageIcon, Video, FileAudio, FileText, File, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MediaItem, MediaFilter } from "@/types/media";
 import { MediaUploader } from "./MediaUploader";
@@ -36,9 +19,16 @@ export function MediaLibrary() {
   const [selectedMedia, setSelectedMedia] = useState<MediaItem | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [editData, setEditData] = useState({ altText: "", caption: "", description: "" });
+  const [editData, setEditData] = useState({
+    altText: "",
+    caption: "",
+    description: "",
+    folder: "",
+  });
   const [isDeleting, setIsDeleting] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [folderFilter, setFolderFilter] = useState<string>(""); // "" = root, "__all__" = no filter
+  const [folders, setFolders] = useState<string[]>([]);
 
   const fetchMedia = useCallback(async (loadMore = false) => {
     setLoading(true);
@@ -46,8 +36,10 @@ export function MediaLibrary() {
       const params = new URLSearchParams({
         page: loadMore ? String(page + 1) : "1",
         limit: "20",
+        includeFolders: "true",
         ...(filterType && filterType !== "all" && { fileType: filterType }),
         ...(searchQuery && { search: searchQuery }),
+        ...(folderFilter !== "__all__" && { folder: folderFilter }),
       });
 
       const response = await fetch(`/api/media?${params}`);
@@ -62,6 +54,9 @@ export function MediaLibrary() {
           setPage(1);
         }
         setHasMore(data.hasMore);
+        if (Array.isArray(data.folders)) {
+          setFolders(data.folders);
+        }
       }
     } catch (error) {
       console.error("Error fetching media:", error);
@@ -69,11 +64,12 @@ export function MediaLibrary() {
     } finally {
       setLoading(false);
     }
-  }, [page, filterType, searchQuery]);
+  }, [page, filterType, searchQuery, folderFilter]);
 
   useEffect(() => {
     fetchMedia();
-  }, [filterType, searchQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterType, searchQuery, folderFilter]);
 
   const handleUploadComplete = useCallback((mediaItems: MediaItem[]) => {
     setMedia(prev => [...mediaItems, ...prev]);
@@ -87,6 +83,7 @@ export function MediaLibrary() {
       altText: item.altText || "",
       caption: item.caption || "",
       description: item.description || "",
+      folder: item.folder || "",
     });
     setShowEditModal(true);
   }, []);
@@ -201,6 +198,23 @@ export function MediaLibrary() {
             <option value="DOCUMENT">Documents</option>
           </select>
 
+          {/* Folder filter */}
+          <select
+            value={folderFilter}
+            onChange={(e) => setFolderFilter(e.target.value)}
+            className="px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="__all__">📁 All Folders</option>
+            <option value="">📁 Root</option>
+            {folders
+              .filter((f) => f && f !== "")
+              .map((f) => (
+                <option key={f} value={f}>
+                  📁 {f}
+                </option>
+              ))}
+          </select>
+
           {/* View Mode */}
           <div className="flex gap-1 bg-gray-800 border border-gray-700 rounded-lg p-1">
             <button
@@ -268,6 +282,7 @@ export function MediaLibrary() {
                       className="group relative aspect-square rounded-lg overflow-hidden bg-gray-800 hover:ring-2 hover:ring-indigo-500 transition-all"
                     >
                       {item.fileType === "IMAGE" ? (
+                        // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={item.cloudFrontUrl || item.s3Url}
                           alt={item.altText || item.originalFilename}
@@ -280,7 +295,7 @@ export function MediaLibrary() {
                       )}
 
                       {/* Overlay on hover */}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                         <div className="absolute bottom-0 left-0 right-0 p-3">
                           <p className="text-xs text-white truncate mb-2">{item.originalFilename}</p>
                           <div className="flex gap-1">
@@ -318,8 +333,9 @@ export function MediaLibrary() {
                       key={item.id}
                       className="flex items-center gap-4 p-4 bg-gray-800 hover:bg-gray-750 rounded-lg transition-colors"
                     >
-                      <div className="flex-shrink-0">
+                      <div className="shrink-0">
                         {item.fileType === "IMAGE" ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={item.cloudFrontUrl || item.s3Url}
                             alt={item.altText || item.originalFilename}
@@ -344,7 +360,7 @@ export function MediaLibrary() {
                         )}
                       </div>
 
-                      <div className="flex gap-2 flex-shrink-0">
+                      <div className="flex gap-2 shrink-0">
                         <button
                           onClick={() => handleEdit(item)}
                           className="p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
@@ -407,6 +423,7 @@ export function MediaLibrary() {
               {/* Preview */}
               <div className="flex items-start gap-4">
                 {selectedMedia.fileType === "IMAGE" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={selectedMedia.cloudFrontUrl || selectedMedia.s3Url}
                     alt={selectedMedia.altText || selectedMedia.originalFilename}
@@ -426,6 +443,31 @@ export function MediaLibrary() {
                     Uploaded {new Date(selectedMedia.createdAt).toLocaleDateString()}
                   </p>
                 </div>
+              </div>
+
+              {/* Folder */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Folder
+                </label>
+                <input
+                  type="text"
+                  value={editData.folder}
+                  onChange={(e) => setEditData({ ...editData, folder: e.target.value })}
+                  list="media-folder-suggestions"
+                  className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-sm"
+                  placeholder='e.g. "banners" or "2026/april" — leave blank for root'
+                />
+                <datalist id="media-folder-suggestions">
+                  {folders
+                    .filter((f) => f && f !== "")
+                    .map((f) => (
+                      <option key={f} value={f} />
+                    ))}
+                </datalist>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Use slashes for nested paths. Existing folders auto-suggest.
+                </p>
               </div>
 
               {/* Alt Text */}

@@ -260,7 +260,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create tickets and deduct points in transaction
-    const [createdTickets] = await prisma.$transaction([
+    const [_createdTickets] = await prisma.$transaction([
       prisma.lotteryTicket.createMany({
         data: tickets,
       }),

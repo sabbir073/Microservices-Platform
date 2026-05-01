@@ -1,24 +1,9 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import {
-  Shield,
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  User,
-  Settings,
-  Wallet,
-  Package,
-  Store,
-  Ticket,
-  Bell,
-  Activity,
-  Filter,
-  Calendar,
-} from "lucide-react";
+import { Shield, ChevronLeft, ChevronRight, User, Settings, Wallet, Package, Store, Ticket, Bell, Activity } from "lucide-react";
 import Link from "next/link";
-import { formatDistanceToNow, format } from "date-fns";
+import { format } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 interface PageProps {

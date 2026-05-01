@@ -11,7 +11,7 @@ const buttonVariants = cva(
     variants: {
       variant: {
         primary:
-          "bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:opacity-90 focus-visible:ring-indigo-500",
+          "bg-linear-to-r from-indigo-500 to-purple-600 text-white hover:opacity-90 focus-visible:ring-indigo-500",
         secondary:
           "bg-gray-800 text-white hover:bg-gray-700 border border-gray-700",
         outline:
@@ -22,7 +22,7 @@ const buttonVariants = cva(
           "bg-red-500 text-white hover:bg-red-600 focus-visible:ring-red-500",
         success:
           "bg-emerald-500 text-white hover:bg-emerald-600 focus-visible:ring-emerald-500",
-        gold: "bg-gradient-to-r from-amber-500 to-yellow-600 text-gray-900 hover:opacity-90 focus-visible:ring-amber-500",
+        gold: "bg-linear-to-r from-amber-500 to-yellow-600 text-gray-900 hover:opacity-90 focus-visible:ring-amber-500",
         link: "text-indigo-400 underline-offset-4 hover:underline",
       },
       size: {

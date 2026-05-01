@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { Megaphone, Share2, Upload, Loader2 } from "lucide-react";
-import { TaskCard } from "@/components/user/primitives/task-card";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";

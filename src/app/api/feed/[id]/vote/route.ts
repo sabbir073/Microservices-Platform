@@ -1,0 +1,98 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+
+const schema = z.object({
+  optionId: z.string().min(1),
+});
+
+interface PollOption {
+  id: string;
+  label: string;
+  voteCount: number;
+}
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const body = await req.json();
+  const v = schema.safeParse(body);
+  if (!v.success) {
+    return NextResponse.json(
+      { error: "Invalid input", details: v.error.issues },
+      { status: 400 }
+    );
+  }
+
+  const post = await prisma.post.findUnique({
+    where: { id },
+    select: { id: true, pollOptions: true, pollEndsAt: true },
+  });
+  if (!post || !post.pollOptions) {
+    return NextResponse.json({ error: "Poll not found" }, { status: 404 });
+  }
+  if (post.pollEndsAt && post.pollEndsAt < new Date()) {
+    return NextResponse.json({ error: "Poll has ended" }, { status: 400 });
+  }
+
+  const options = post.pollOptions as unknown as PollOption[];
+  if (!options.some((o) => o.id === v.data.optionId)) {
+    return NextResponse.json({ error: "Invalid option" }, { status: 400 });
+  }
+
+  const existing = await prisma.vote.findUnique({
+    where: {
+      postId_userId: { postId: id, userId: session.user.id },
+    },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    let updated = options.map((o) => ({ ...o }));
+    if (existing) {
+      // Decrement previous, increment new
+      updated = updated.map((o) =>
+        o.id === existing.optionId
+          ? { ...o, voteCount: Math.max(0, o.voteCount - 1) }
+          : o
+      );
+      await tx.vote.update({
+        where: { id: existing.id },
+        data: { optionId: v.data.optionId },
+      });
+    } else {
+      await tx.vote.create({
+        data: {
+          postId: id,
+          userId: session.user.id,
+          optionId: v.data.optionId,
+        },
+      });
+    }
+    updated = updated.map((o) =>
+      o.id === v.data.optionId ? { ...o, voteCount: o.voteCount + 1 } : o
+    );
+    await tx.post.update({
+      where: { id },
+      data: { pollOptions: updated },
+    });
+  });
+
+  const refreshed = await prisma.post.findUnique({
+    where: { id },
+    select: { pollOptions: true },
+  });
+
+  return NextResponse.json({
+    success: true,
+    pollOptions: refreshed?.pollOptions,
+    myVote: v.data.optionId,
+  });
+}

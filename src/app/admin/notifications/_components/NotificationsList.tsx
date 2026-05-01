@@ -2,21 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Bell,
-  Users,
-  Megaphone,
-  Wallet,
-  Trophy,
-  Ticket,
-  MessageSquare,
-  AlertCircle,
-  CheckCircle,
-  Check,
-  Trash2,
-  CheckCheck,
-  X,
-} from "lucide-react";
+import { Bell, Users, Megaphone, Wallet, Trophy, Ticket, MessageSquare, AlertCircle, CheckCircle, Check, Trash2, CheckCheck, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -133,7 +119,7 @@ const NOTIFICATION_TYPE_CONFIG: Record<
 
 export function NotificationsList({
   notifications: initialNotifications,
-  canSend,
+  canSend: _canSend,
 }: NotificationsListProps) {
   const router = useRouter();
   const [notifications, setNotifications] = useState(initialNotifications);
@@ -328,7 +314,7 @@ export function NotificationsList({
                           {notification.message}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         <span
                           className={`px-2 py-0.5 rounded text-xs ${
                             notification.isRead

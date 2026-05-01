@@ -17,7 +17,7 @@ const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID;
 const FIREBASE_WEB_API_KEY = process.env.FIREBASE_WEB_API_KEY;
 
 // Google's public key endpoint for Firebase token verification
-const GOOGLE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
+const _GOOGLE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
 
 // Token verification endpoint
 const TOKEN_VERIFY_URL = `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=`;

@@ -132,7 +132,7 @@ function AdminSidebarContent({
             collapsed && "justify-center w-full"
           )}
         >
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-linear-to-br from-red-500 to-orange-600 flex items-center justify-center shrink-0">
             <Shield className="w-4 h-4 text-white" />
           </div>
           {!collapsed && (
@@ -158,7 +158,7 @@ function AdminSidebarContent({
       {!collapsed && (
         <div className="px-4 py-4 border-b border-slate-800">
           <div className="flex items-center gap-3 px-2">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-white font-medium shrink-0">
+            <div className="w-10 h-10 rounded-full bg-linear-to-br from-red-500 to-orange-600 flex items-center justify-center text-white font-medium shrink-0">
               {user.name?.charAt(0) || user.email?.charAt(0) || "A"}
             </div>
             <div className="flex-1 min-w-0">
@@ -221,7 +221,7 @@ function AdminSidebarContent({
                         <>
                           <span className="flex-1 truncate">{module.name}</span>
                           {module.badge && (
-                            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded">
+                            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-linear-to-r from-indigo-500 to-purple-600 text-white rounded">
                               {module.badge}
                             </span>
                           )}

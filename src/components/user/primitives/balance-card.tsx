@@ -25,7 +25,7 @@ export function BalanceCard({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-2xl border border-gray-800 bg-gradient-to-br from-indigo-600/20 via-purple-600/10 to-gray-900 p-4",
+        "relative overflow-hidden rounded-2xl border border-gray-800 bg-linear-to-br from-indigo-600/20 via-purple-600/10 to-gray-900 p-4",
         className
       )}
     >
@@ -78,7 +78,7 @@ export function BalanceCard({
       {!compact && (
         <Link
           href={withdrawHref}
-          className="relative mt-3 w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 text-white text-sm font-semibold transition-opacity"
+          className="relative mt-3 w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:opacity-90 text-white text-sm font-semibold transition-opacity"
         >
           Withdraw <ArrowUpRight className="w-4 h-4" />
         </Link>

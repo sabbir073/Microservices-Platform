@@ -146,7 +146,7 @@ export function SubmissionActions({
                   <h2 className="text-lg font-semibold text-white">
                     Reject Submission
                   </h2>
-                  <p className="text-xs text-slate-500 truncate max-w-[260px]">
+                  <p className="text-xs text-slate-500 truncate max-w-65">
                     {taskTitle}
                   </p>
                 </div>

@@ -52,7 +52,7 @@ export function SoloRewardNotification({
         "animate-in slide-in-from-bottom-4 fade-in"
       )}
     >
-      <div className="rounded-2xl border border-amber-400/40 bg-gradient-to-r from-amber-500 to-yellow-600 p-3 shadow-2xl flex items-center gap-3">
+      <div className="rounded-2xl border border-amber-400/40 bg-linear-to-r from-amber-500 to-yellow-600 p-3 shadow-2xl flex items-center gap-3">
         <div className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center shrink-0">
           <Gift className="w-5 h-5 text-white" />
         </div>

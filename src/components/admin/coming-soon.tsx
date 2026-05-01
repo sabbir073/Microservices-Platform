@@ -33,7 +33,7 @@ export function AdminComingSoon({
 
       <div className="rounded-xl border border-slate-700 bg-slate-800 p-8">
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+          <div className="w-14 h-14 rounded-xl bg-linear-to-br from-amber-500/20 to-orange-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
             {icon ?? <Construction className="w-7 h-7" />}
           </div>
           <div>

@@ -2,28 +2,14 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { isAdmin, type UserRole } from "@/lib/rbac";
-import {
-  Users,
-  Activity,
-  DollarSign,
-  GitBranch,
-  Clock,
-  TrendingUp,
-  CalendarDays,
-  ListTodo,
-  ClipboardCheck,
-  Wallet,
-  CheckCircle,
-} from "lucide-react";
+import { Users, Activity, DollarSign, GitBranch, Clock, TrendingUp, CalendarDays, ListTodo, ClipboardCheck, Wallet, CheckCircle } from "lucide-react";
 import { StatCard } from "@/components/admin/stat-card";
 import { UserGrowthChart } from "@/components/admin/user-growth-chart";
+import { RevenueTrendChart } from "@/components/admin/revenue-trend-chart";
 import { PlatformStats } from "@/components/admin/platform-stats";
 import { PendingActions } from "@/components/admin/pending-actions";
 import { PlatformOverview } from "@/components/admin/platform-overview";
-import {
-  RecentActivityFeed,
-  type ActivityLogEntry,
-} from "@/components/admin/recent-activity-feed";
+import { RecentActivityFeed, type ActivityLogEntry } from "@/components/admin/recent-activity-feed";
 import { format, startOfDay, subDays, startOfMonth } from "date-fns";
 
 // Auto-revalidate every 30 seconds (matches PROTOTYPE_ADMIN.md §38 spec)
@@ -48,6 +34,25 @@ function buildGrowthSeries(
   return series.map(({ label, count }) => ({ label, count }));
 }
 
+// Build the 30-day revenue dataset (oldest first)
+function buildRevenueSeries(
+  subs: Array<{ createdAt: Date; amount: number }>,
+  days = 30
+): Array<{ label: string; revenue: number }> {
+  const today = startOfDay(new Date());
+  const series: Array<{ label: string; revenue: number; date: Date }> = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = subDays(today, i);
+    series.push({ label: format(d, "MMM d"), revenue: 0, date: d });
+  }
+  for (const s of subs) {
+    const dayMs = startOfDay(s.createdAt).getTime();
+    const slot = series.find((x) => x.date.getTime() === dayMs);
+    if (slot) slot.revenue += Number(s.amount ?? 0);
+  }
+  return series.map(({ label, revenue }) => ({ label, revenue }));
+}
+
 export default async function AdminDashboardPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
@@ -59,6 +64,7 @@ export default async function AdminDashboardPage() {
   const todayStart = startOfDay(now);
   const monthStart = startOfMonth(now);
   const sevenDaysAgo = subDays(todayStart, 7);
+  const thirtyDaysAgo = subDays(todayStart, 30);
 
   const [
     totalUsers,
@@ -96,7 +102,8 @@ export default async function AdminDashboardPage() {
     verifiedKycCount,
 
     auditLogs,
-    auditLogActorIds,
+    _auditLogActorIds,
+    last30DaysRevenue,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { createdAt: { gte: todayStart } } }),
@@ -163,6 +170,10 @@ export default async function AdminDashboardPage() {
     }),
     // Pre-fetch admin user names — done in next step using already-fetched logs
     Promise.resolve([] as string[]),
+    prisma.subscription.findMany({
+      where: { createdAt: { gte: thirtyDaysAgo }, isActive: true },
+      select: { createdAt: true, amount: true },
+    }),
   ]);
 
   // Resolve admin/user names for the audit log entries
@@ -207,7 +218,8 @@ export default async function AdminDashboardPage() {
   const monthRevenue = monthRevenueAgg._sum.amount ?? 0;
   const totalRevenue = totalRevenueAgg._sum.amount ?? 0;
   const totalReferralEarnings = referralEarningsAgg._sum.amount ?? 0;
-  const _ = activeSubscriptions; // currently unused but we may surface later
+  // activeSubscriptions captured above for future surfacing — no use today.
+  void activeSubscriptions;
 
   // Platform Stats — % rates (capped 0–100)
   const totalSubmissionsAttempted =
@@ -236,9 +248,10 @@ export default async function AdminDashboardPage() {
     totalUsers > 0 ? (verifiedKycCount / totalUsers) * 100 : 0;
 
   const growthSeries = buildGrowthSeries(last7DaysUsers);
+  const revenueSeries = buildRevenueSeries(last30DaysRevenue);
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto">
+    <div className="space-y-6 max-w-400 mx-auto">
       {/* Stats row 1 — 5 cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatCard
@@ -336,7 +349,7 @@ export default async function AdminDashboardPage() {
         />
       </div>
 
-      {/* Charts row — 2/3 + 1/3 */}
+      {/* Charts row 1 — User growth (2/3) + Platform stats (1/3) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         <div className="lg:col-span-2">
           <UserGrowthChart data={growthSeries} />
@@ -353,6 +366,10 @@ export default async function AdminDashboardPage() {
           />
         </div>
       </div>
+
+      {/* Charts row 2 — 30-day revenue trend */}
+      <RevenueTrendChart data={revenueSeries} />
+
 
       {/* Detailed stats — Task Performance + Platform Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">

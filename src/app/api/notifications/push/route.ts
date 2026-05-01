@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { playerId, platform } = body;
+    const { playerId, platform: _platform } = body;
 
     if (!playerId) {
       return NextResponse.json(

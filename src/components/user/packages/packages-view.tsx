@@ -172,7 +172,7 @@ export function PackagesView({
                 <div className="flex items-start gap-3">
                   <div
                     className={cn(
-                      "w-10 h-10 rounded-xl bg-gradient-to-br text-white flex items-center justify-center shrink-0",
+                      "w-10 h-10 rounded-xl bg-linear-to-br text-white flex items-center justify-center shrink-0",
                       TIER_GRADIENT[p.tier]
                     )}
                   >
@@ -371,7 +371,7 @@ export function PackagesView({
             <button
               disabled={busy || insufficientCash || insufficientPts}
               onClick={purchase}
-              className="flex-1 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50"
+              className="flex-1 py-3 rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 text-white font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50"
             >
               {busy ? (
                 <Loader2 className="w-4 h-4 animate-spin" />

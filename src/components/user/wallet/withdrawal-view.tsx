@@ -91,7 +91,7 @@ export function WithdrawalView({
         💸 Withdraw
       </h1>
 
-      <div className="rounded-2xl border border-gray-800 bg-gradient-to-br from-emerald-600/15 to-gray-900 p-4">
+      <div className="rounded-2xl border border-gray-800 bg-linear-to-br from-emerald-600/15 to-gray-900 p-4">
         <p className="text-[10px] uppercase tracking-wider font-bold text-gray-400">
           Available Cash
         </p>
@@ -253,7 +253,7 @@ export function WithdrawalView({
           <button
             disabled={!valid || busy}
             onClick={submit}
-            className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:opacity-90 text-white font-bold text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 hover:opacity-90 text-white font-bold text-sm inline-flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {busy ? (
               <Loader2 className="w-4 h-4 animate-spin" />

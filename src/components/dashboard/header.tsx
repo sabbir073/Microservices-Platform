@@ -2,30 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  Menu,
-  Bell,
-  Search,
-  Wallet,
-  X,
-  Sparkles,
-  Settings,
-  LogOut,
-  User,
-  ChevronDown,
-  LayoutDashboard,
-  ListTodo,
-  Users,
-  Gift,
-  Trophy,
-  GraduationCap,
-  Store,
-  Ticket,
-  MessageSquare,
-  FileText,
-  Check,
-} from "lucide-react";
+import { Menu, Bell, Search, Wallet, X, Sparkles, Settings, LogOut, User, ChevronDown, LayoutDashboard, ListTodo, Users, Gift, Trophy, GraduationCap, Store, Ticket, MessageSquare, FileText, Check } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
@@ -72,7 +49,6 @@ export function Header({ user }: HeaderProps) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
   const pathname = usePathname();
-  const router = useRouter();
 
   // Fetch notifications and wallet balance
   useEffect(() => {
@@ -145,7 +121,7 @@ export function Header({ user }: HeaderProps) {
               <Menu className="w-6 h-6" />
             </button>
             <Link href="/dashboard" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
             </Link>
@@ -196,7 +172,7 @@ export function Header({ user }: HeaderProps) {
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center px-1 text-xs font-bold text-white bg-red-500 rounded-full">
+                  <span className="absolute top-1 right-1 min-w-4 h-4 flex items-center justify-center px-1 text-xs font-bold text-white bg-red-500 rounded-full">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
@@ -243,7 +219,7 @@ export function Header({ user }: HeaderProps) {
                           >
                             <div className="flex items-start gap-3">
                               {!notif.isRead && (
-                                <span className="w-2 h-2 mt-1.5 bg-indigo-500 rounded-full flex-shrink-0" />
+                                <span className="w-2 h-2 mt-1.5 bg-indigo-500 rounded-full shrink-0" />
                               )}
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium text-white truncate">
@@ -282,7 +258,7 @@ export function Header({ user }: HeaderProps) {
                 }}
                 className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+                <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
                   {user.name?.charAt(0) || user.email?.charAt(0) || "U"}
                 </div>
                 <ChevronDown className="hidden sm:block w-4 h-4 text-gray-400" />
@@ -370,10 +346,10 @@ export function Header({ user }: HeaderProps) {
               className="flex items-center gap-2"
               onClick={() => setIsMobileMenuOpen(false)}
             >
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
-              <span className="text-lg font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+              <span className="text-lg font-bold bg-linear-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
                 EarnGPT
               </span>
             </Link>
@@ -388,7 +364,7 @@ export function Header({ user }: HeaderProps) {
           {/* User Info */}
           <div className="px-4 py-4 border-b border-gray-800">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+              <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
                 {user.name?.charAt(0) || user.email?.charAt(0) || "U"}
               </div>
               <div className="flex-1 min-w-0">

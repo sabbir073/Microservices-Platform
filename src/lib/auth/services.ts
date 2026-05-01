@@ -76,18 +76,23 @@ export async function registerUser({
   });
 
   // Send verification email (skip if SMTP not configured)
+  let emailSent = false;
   try {
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
       await sendVerificationEmail(email, verificationToken, name);
+      emailSent = true;
     } else {
-      console.warn("SMTP not configured - skipping verification email");
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+      console.warn(
+        `[auth] SMTP not configured — verification link: ${appUrl}/verify-email?token=${verificationToken}`
+      );
     }
   } catch (error) {
     console.error("Failed to send verification email:", error);
     // Don't fail registration if email fails
   }
 
-  return { user, verificationToken };
+  return { user, verificationToken, emailSent };
 }
 
 export async function verifyEmail(token: string) {
@@ -176,17 +181,22 @@ export async function resendVerificationEmail(email: string) {
   });
 
   // Send verification email (skip if SMTP not configured)
+  let emailSent = false;
   try {
     if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASSWORD) {
       await sendVerificationEmail(email, verificationToken, user.name || "User");
+      emailSent = true;
     } else {
-      console.warn("SMTP not configured - skipping verification email");
+      const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+      console.warn(
+        `[auth] SMTP not configured — verification link: ${appUrl}/verify-email?token=${verificationToken}`
+      );
     }
   } catch (error) {
     console.error("Failed to send verification email:", error);
   }
 
-  return { success: true };
+  return { success: true, verificationToken, emailSent };
 }
 
 export async function requestPasswordReset(email: string) {

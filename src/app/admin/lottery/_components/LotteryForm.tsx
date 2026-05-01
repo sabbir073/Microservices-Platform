@@ -302,7 +302,7 @@ export function LotteryForm({ lottery }: LotteryFormProps) {
               key={index}
               className="flex items-center gap-4 p-4 bg-gray-800/50 rounded-lg"
             >
-              <div className="w-10 h-10 flex-shrink-0 flex items-center justify-center bg-amber-500/10 rounded-lg">
+              <div className="w-10 h-10 shrink-0 flex items-center justify-center bg-amber-500/10 rounded-lg">
                 <span className="text-lg font-bold text-amber-400">#{prize.position}</span>
               </div>
 

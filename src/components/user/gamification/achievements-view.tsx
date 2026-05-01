@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Award, Lock } from "lucide-react";
+import { Lock } from "lucide-react";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +51,7 @@ export function AchievementsView() {
               className={cn(
                 "relative aspect-square rounded-xl border flex flex-col items-center justify-center gap-1 p-2 transition-colors",
                 b.unlocked
-                  ? "border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-orange-500/5"
+                  ? "border-amber-500/30 bg-linear-to-br from-amber-500/10 to-orange-500/5"
                   : "border-gray-800 bg-gray-900 opacity-60"
               )}
             >
@@ -80,7 +80,7 @@ export function AchievementsView() {
 
       {active && (
         <div
-          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-100 bg-black/80 flex items-center justify-center p-4"
           onClick={() => setActive(null)}
         >
           <div

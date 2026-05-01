@@ -245,7 +245,7 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
               User Information
             </h2>
             <div className="flex items-start gap-4 mb-6">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+              <div className="w-16 h-16 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
                 {withdrawal.user.name?.charAt(0) || withdrawal.user.email.charAt(0)}
               </div>
               <div className="flex-1">

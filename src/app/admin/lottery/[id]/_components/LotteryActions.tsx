@@ -2,16 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Play,
-  Pause,
-  XCircle,
-  Trophy,
-  AlertTriangle,
-  Loader2,
-  AlertCircle,
-  CheckCircle,
-} from "lucide-react";
+import { Play, XCircle, Trophy, AlertTriangle, Loader2, AlertCircle, CheckCircle } from "lucide-react";
 
 interface LotteryActionsProps {
   lotteryId: string;

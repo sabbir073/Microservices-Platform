@@ -2,9 +2,25 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Loader2 } from "lucide-react";
+import { X, Loader2, Eye, EyeOff, Copy, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+
+// Generate a 12-char password with at least 1 lower / upper / digit / symbol
+function generateRandomPassword(length = 12): string {
+  const lower = "abcdefghijkmnpqrstuvwxyz"; // ambiguous chars (l, o) removed
+  const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const digits = "23456789"; // ambiguous (0, 1) removed
+  const symbols = "!@#$%^&*?";
+  const all = lower + upper + digits + symbols;
+  const pick = (s: string) => s[Math.floor(Math.random() * s.length)];
+  // Guarantee one of each class up front, then fill the rest randomly
+  const required = [pick(lower), pick(upper), pick(digits), pick(symbols)];
+  const rest = Array.from({ length: Math.max(0, length - required.length) }, () => pick(all));
+  return [...required, ...rest]
+    .sort(() => Math.random() - 0.5)
+    .join("");
+}
 
 export interface EditUserData {
   id: string;
@@ -50,17 +66,18 @@ export interface EditUserData {
   postalCode: string | null;
 }
 
-interface EditUserModalProps {
+interface UserEditFormProps {
   user: EditUserData;
-  open: boolean;
-  onClose: () => void;
   isSuperAdmin: boolean;
+  /** Called when admin clicks Cancel or after successful Save. Defaults to router.back(). */
+  onDone?: () => void;
 }
 
-type Tab = "account" | "balance" | "personal" | "address";
+type Tab = "account" | "verify" | "balance" | "personal" | "address";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "account", label: "Account" },
+  { id: "verify", label: "🔑 Verify & Password" },
   { id: "balance", label: "Balance & Tier" },
   { id: "personal", label: "Personal Info" },
   { id: "address", label: "Address" },
@@ -84,15 +101,22 @@ const PROFESSIONS = [
   "Other",
 ];
 
-export function EditUserModal({
+export function UserEditForm({
   user,
-  open,
-  onClose,
   isSuperAdmin,
-}: EditUserModalProps) {
+  onDone,
+}: UserEditFormProps) {
   const router = useRouter();
+  const handleDone = () => {
+    if (onDone) {
+      onDone();
+    } else {
+      router.back();
+    }
+  };
   const [tab, setTab] = useState<Tab>("account");
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Form state — initialized from user, all fields strings (or "" / undefined)
   const [form, setForm] = useState({
@@ -139,8 +163,6 @@ export function EditUserModal({
     street: user.street ?? "",
     postalCode: user.postalCode ?? "",
   });
-
-  if (!open) return null;
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
@@ -241,8 +263,8 @@ export function EditUserModal({
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
       toast.success("User updated successfully");
-      onClose();
       router.refresh();
+      handleDone();
     } catch (err) {
       toast.error("Failed to update user", {
         description: err instanceof Error ? err.message : String(err),
@@ -253,26 +275,38 @@ export function EditUserModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-3xl mx-4 max-h-[92vh] flex flex-col">
-        {/* Sticky header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700 shrink-0">
-          <div>
-            <h2 className="text-lg font-semibold text-white">Edit User</h2>
-            <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
-          </div>
+    <div className="bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-800">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
-            onClick={onClose}
-            className="p-2 hover:bg-slate-700 rounded-lg transition-colors"
-            aria-label="Close"
+            onClick={handleDone}
+            className="p-1.5 hover:bg-slate-800 rounded-lg transition-colors shrink-0"
+            aria-label="Back"
+            title="Back"
           >
             <X className="w-5 h-5 text-slate-400" />
           </button>
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-white truncate">Edit User</h2>
+            <p className="text-xs text-slate-500 truncate">{user.email}</p>
+          </div>
         </div>
+        <span
+          className={cn(
+            "px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold shrink-0",
+            user.role === "SUPER_ADMIN" && "bg-amber-500/15 text-amber-400",
+            user.role === "ADMIN" && "bg-purple-500/15 text-purple-400",
+            user.role === "USER" && "bg-slate-700 text-slate-300"
+          )}
+        >
+          {user.role}
+        </span>
+      </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 px-4 pt-3 border-b border-slate-700 overflow-x-auto shrink-0">
+      {/* Tabs */}
+      <div className="flex gap-1 px-4 pt-3 border-b border-slate-800 overflow-x-auto">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -335,15 +369,34 @@ export function EditUserModal({
                   className={fieldCls}
                 />
               </Field>
-              <Field label="Password (leave empty to keep current)" hint="Min 6 chars">
-                <input
-                  type="password"
-                  value={form.password}
-                  onChange={(e) => set("password", e.target.value)}
-                  className={fieldCls}
-                  minLength={6}
-                  placeholder="••••••"
-                />
+              <Field
+                label="Password (leave empty to keep current)"
+                hint="Min 6 chars — saved only when filled"
+              >
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={form.password}
+                    onChange={(e) => set("password", e.target.value)}
+                    className={cn(fieldCls, "pr-10 font-mono")}
+                    minLength={6}
+                    placeholder="Enter a new password to reset it"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-slate-500 hover:text-white transition-colors"
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </Field>
               <Field label="Phone">
                 <input
@@ -383,6 +436,233 @@ export function EditUserModal({
                   </select>
                 </Field>
               </div>
+            </div>
+          )}
+
+          {tab === "verify" && (
+            <div className="space-y-5">
+              {/* Section 1 — Reset Password */}
+              <section className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4 space-y-3">
+                <header className="flex items-start gap-2">
+                  <div className="w-9 h-9 rounded-lg bg-blue-500/15 text-blue-300 flex items-center justify-center shrink-0">
+                    🔑
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-bold text-white">Reset Password</h3>
+                    <p className="text-xs text-blue-200/80">
+                      Set a new password for this user. Updates on Save Changes.
+                    </p>
+                  </div>
+                </header>
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={form.password}
+                    onChange={(e) => set("password", e.target.value)}
+                    className={cn(fieldCls, "pr-24 font-mono")}
+                    minLength={6}
+                    placeholder="Type a new password or click Generate"
+                    autoComplete="new-password"
+                  />
+                  <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    {form.password && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(form.password);
+                            toast.success("Password copied");
+                          } catch {
+                            toast.error("Couldn't copy");
+                          }
+                        }}
+                        title="Copy"
+                        className="p-1.5 text-slate-400 hover:text-white"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      title={showPassword ? "Hide" : "Show"}
+                      className="p-1.5 text-slate-400 hover:text-white"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      set("password", generateRandomPassword());
+                      setShowPassword(true);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-lg"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Generate random
+                  </button>
+                  {form.password && (
+                    <button
+                      type="button"
+                      onClick={() => set("password", "")}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-lg"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Tell the user securely — they can change it after login at <code>/update-password</code>.
+                </p>
+              </section>
+
+              {/* Section 2 — KYC Approval */}
+              <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 space-y-3">
+                <header className="flex items-start gap-2">
+                  <div className="w-9 h-9 rounded-lg bg-emerald-500/15 text-emerald-300 flex items-center justify-center shrink-0">
+                    🪪
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-bold text-white">KYC Verification</h3>
+                    <p className="text-xs text-emerald-200/80">
+                      Approve or reject the user&apos;s identity verification.
+                    </p>
+                  </div>
+                  <span
+                    className={cn(
+                      "px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold",
+                      form.kycStatus === "APPROVED" && "bg-emerald-500/20 text-emerald-300",
+                      form.kycStatus === "PENDING" && "bg-amber-500/20 text-amber-300",
+                      form.kycStatus === "REJECTED" && "bg-red-500/20 text-red-300",
+                      form.kycStatus === "NOT_SUBMITTED" && "bg-slate-700 text-slate-300"
+                    )}
+                  >
+                    {form.kycStatus.replace("_", " ")}
+                  </span>
+                </header>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => set("kycStatus", "APPROVED")}
+                    className={cn(
+                      "py-2 rounded-lg text-xs font-bold border transition-colors",
+                      form.kycStatus === "APPROVED"
+                        ? "bg-emerald-500 text-white border-emerald-500"
+                        : "bg-emerald-500/10 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20"
+                    )}
+                  >
+                    ✓ Approve
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => set("kycStatus", "PENDING")}
+                    className={cn(
+                      "py-2 rounded-lg text-xs font-bold border transition-colors",
+                      form.kycStatus === "PENDING"
+                        ? "bg-amber-500 text-white border-amber-500"
+                        : "bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20"
+                    )}
+                  >
+                    ⏱ Pending
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => set("kycStatus", "REJECTED")}
+                    className={cn(
+                      "py-2 rounded-lg text-xs font-bold border transition-colors",
+                      form.kycStatus === "REJECTED"
+                        ? "bg-red-500 text-white border-red-500"
+                        : "bg-red-500/10 text-red-300 border-red-500/30 hover:bg-red-500/20"
+                    )}
+                  >
+                    ✗ Reject
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => set("kycStatus", "NOT_SUBMITTED")}
+                    className={cn(
+                      "py-2 rounded-lg text-xs font-bold border transition-colors",
+                      form.kycStatus === "NOT_SUBMITTED"
+                        ? "bg-slate-600 text-white border-slate-600"
+                        : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+                    )}
+                  >
+                    Reset
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Approving KYC unlocks higher withdrawal limits and lets you tick the 🔵 Blue Badge below.
+                </p>
+              </section>
+
+              {/* Section 3 — Blue Verified */}
+              <section
+                className={cn(
+                  "rounded-xl border p-4 space-y-3",
+                  form.isBlueVerified
+                    ? "border-sky-500/40 bg-sky-500/10"
+                    : "border-slate-700 bg-slate-900/50"
+                )}
+              >
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.isBlueVerified}
+                    onChange={(e) => set("isBlueVerified", e.target.checked)}
+                    className="w-5 h-5 rounded bg-slate-800 border-slate-600 text-sky-500 focus:ring-sky-500"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white inline-flex items-center gap-1.5">
+                      🔵 Blue Badge Verified
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      Shows the blue checkmark next to the user&apos;s name across the platform.
+                    </p>
+                  </div>
+                </label>
+                {form.kycStatus === "APPROVED" && !form.isBlueVerified && (
+                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2.5 text-[11px] text-amber-200">
+                    💡 This user has approved KYC — typically Blue Verified is enabled too.
+                  </div>
+                )}
+                {form.isBlueVerified && form.kycStatus !== "APPROVED" && (
+                  <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2.5 text-[11px] text-amber-200">
+                    ⚠️ Blue Verified is on but KYC is not approved. Approve KYC above for consistency.
+                  </div>
+                )}
+              </section>
+
+              {/* Section 4 — Quick References */}
+              <section className="rounded-xl border border-slate-700 bg-slate-900/50 p-4">
+                <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-2">
+                  Reference
+                </h3>
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                  <div className="flex items-center gap-2">
+                    <dt className="text-slate-500 shrink-0">User ID:</dt>
+                    <dd className="text-slate-300 font-mono truncate">{user.id}</dd>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <dt className="text-slate-500 shrink-0">Email:</dt>
+                    <dd className="text-slate-300 truncate">{user.email}</dd>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <dt className="text-slate-500 shrink-0">Role:</dt>
+                    <dd className="text-slate-300">{user.role}</dd>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <dt className="text-slate-500 shrink-0">Status:</dt>
+                    <dd className="text-slate-300">{user.status}</dd>
+                  </div>
+                </dl>
+              </section>
             </div>
           )}
 
@@ -697,11 +977,11 @@ export function EditUserModal({
         </form>
 
         {/* Sticky footer */}
-        <div className="flex gap-3 px-6 py-4 border-t border-slate-700 shrink-0">
+        <div className="flex gap-3 px-6 py-4 border-t border-slate-800 sticky bottom-0 bg-slate-900">
           <button
             type="button"
-            onClick={onClose}
-            className="flex-1 px-4 py-2.5 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition-colors"
+            onClick={handleDone}
+            className="flex-1 px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors"
             disabled={submitting}
           >
             Cancel
@@ -717,7 +997,6 @@ export function EditUserModal({
           </button>
         </div>
       </div>
-    </div>
   );
 }
 

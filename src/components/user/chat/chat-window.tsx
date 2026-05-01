@@ -108,7 +108,7 @@ export function ChatWindow({ conversationId, currentUserId }: ChatWindowProps) {
               className="w-9 h-9 rounded-full bg-gray-800 object-cover"
             />
           ) : (
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+            <div className="w-9 h-9 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
               {other.name?.[0]?.toUpperCase() ?? "?"}
             </div>
           )}
@@ -161,7 +161,7 @@ export function ChatWindow({ conversationId, currentUserId }: ChatWindowProps) {
                         : "bg-gray-800 text-white rounded-bl-md"
                     )}
                   >
-                    <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                    <p className="whitespace-pre-wrap wrap-break-word">{m.content}</p>
                     <div className="flex items-center justify-end gap-0.5 mt-0.5">
                       <span
                         className={cn(

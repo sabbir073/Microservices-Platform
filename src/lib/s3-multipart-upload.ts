@@ -21,8 +21,13 @@ import type { UploadConfig, UploadResult, UploadOptions } from "@/types/media";
 // S3 multipart minimum part size (5MB minimum, except last part)
 export const S3_PART_SIZE = 5 * 1024 * 1024;
 
-// Threshold for multipart upload (1MB - use multipart for files > 1MB)
-export const MULTIPART_THRESHOLD = 1 * 1024 * 1024;
+// Threshold for multipart upload (4MB).
+// Files at-or-under this go through the server-side direct-upload route
+// (/api/media/upload) which streams to S3 server-side and isn't subject to
+// bucket CORS. Vercel serverless body limit is 4.5MB, so 4MB is a safe ceiling.
+// Files above this require S3 bucket CORS to expose the ETag header — see
+// docs/s3-setup.md.
+export const MULTIPART_THRESHOLD = 4 * 1024 * 1024;
 
 /**
  * Upload a file using S3 multipart upload
@@ -104,12 +109,24 @@ async function uploadDirect(
           resolve({ success: false, error: "Invalid response from server" });
         }
       } else {
-        resolve({ success: false, error: `HTTP ${xhr.status}: ${xhr.statusText}` });
+        // Try to surface the server's error message (e.g. "Forbidden — Admin access required")
+        let serverMessage = xhr.statusText || `HTTP ${xhr.status}`;
+        try {
+          const body = JSON.parse(xhr.responseText);
+          if (body?.error) serverMessage = body.error;
+        } catch {
+          if (xhr.responseText) serverMessage = xhr.responseText.slice(0, 200);
+        }
+        resolve({ success: false, error: `${serverMessage} (HTTP ${xhr.status})` });
       }
     };
 
     xhr.onerror = () => {
-      resolve({ success: false, error: "Network error during upload" });
+      resolve({
+        success: false,
+        error:
+          "Network error during upload. Check your connection and that you're signed in.",
+      });
     };
 
     xhr.open("POST", endpoint);

@@ -1,21 +1,8 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import {
-  Users,
-  DollarSign,
-  TrendingUp,
-  Search,
-  Filter,
-  ChevronLeft,
-  ChevronRight,
-  Crown,
-  Gift,
-  Settings,
-  Eye,
-} from "lucide-react";
+import { Users, DollarSign, TrendingUp, ChevronLeft, ChevronRight, Crown, Gift, Settings, Eye, Download } from "lucide-react";
 import Link from "next/link";
-import { formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
 interface PageProps {
@@ -109,15 +96,24 @@ export default async function AdminReferralsPage({ searchParams }: PageProps) {
             Manage referral levels and commission rates
           </p>
         </div>
-        {canEdit && (
-          <Link
-            href="/admin/referrals/settings"
+        <div className="flex items-center gap-2">
+          <a
+            href="/api/admin/referrals/export"
             className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
           >
-            <Settings className="w-4 h-4" />
-            Commission Settings
-          </Link>
-        )}
+            <Download className="w-4 h-4" />
+            CSV Export
+          </a>
+          {canEdit && (
+            <Link
+              href="/admin/referrals/settings"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+              Commission Settings
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Stats */}
@@ -267,7 +263,7 @@ export default async function AdminReferralsPage({ searchParams }: PageProps) {
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+                        <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
                           {user.name?.charAt(0) || user.email.charAt(0)}
                         </div>
                         <div>

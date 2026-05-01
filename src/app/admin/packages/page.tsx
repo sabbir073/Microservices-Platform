@@ -1,20 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import {
-  Package,
-  Crown,
-  Star,
-  Sparkles,
-  Users,
-  DollarSign,
-  Edit,
-  CheckCircle,
-  XCircle,
-  TrendingUp,
-  Clock,
-  Gift,
-} from "lucide-react";
+import { Package, Crown, Star, Sparkles, Users, DollarSign, Edit, CheckCircle, TrendingUp, Clock, Gift } from "lucide-react";
 import Link from "next/link";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 
@@ -38,8 +25,8 @@ export default async function AdminPackagesPage() {
     redirect("/admin");
   }
 
-  // Fetch packages and subscriber stats
-  const [packagesRaw, subscriberStats] = await Promise.all([
+  // Fetch packages, subscriber stats, and recent paid subscriptions
+  const [packagesRaw, subscriberStats, recentSubsRaw] = await Promise.all([
     prisma.package.findMany({
       orderBy: { order: "asc" },
     }),
@@ -47,7 +34,23 @@ export default async function AdminPackagesPage() {
       by: ["packageTier"],
       _count: { id: true },
     }),
+    prisma.subscription.findMany({
+      where: { packageTier: { not: "FREE" } },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }),
   ]);
+
+  // Resolve user details for the recent subscriptions (separate query to keep
+  // the main groupBy fast and avoid Prisma Accelerate include type quirks).
+  const subUserIds = [...new Set(recentSubsRaw.map((s) => s.userId))];
+  const subUsers = subUserIds.length
+    ? await prisma.user.findMany({
+        where: { id: { in: subUserIds } },
+        select: { id: true, name: true, email: true, avatar: true },
+      })
+    : [];
+  const userById = new Map(subUsers.map((u) => [u.id, u]));
 
   // Type assertion for Prisma Accelerate
   const packages = packagesRaw as typeof packagesRaw;
@@ -248,7 +251,7 @@ export default async function AdminPackagesPage() {
                   <ul className="space-y-2">
                     {pkg.features.map((feature, index) => (
                       <li key={index} className="flex items-start gap-2">
-                        <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5 flex-shrink-0" />
+                        <CheckCircle className="w-4 h-4 text-emerald-400 mt-0.5 shrink-0" />
                         <span className="text-sm text-gray-300">{feature}</span>
                       </li>
                     ))}
@@ -280,21 +283,79 @@ export default async function AdminPackagesPage() {
         })}
       </div>
 
-      {/* Pending Payments Section */}
+      {/* Recent Subscriptions */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-white">Pending Payment Verifications</h2>
-          <Link
-            href="/admin/packages/payments"
-            className="text-sm text-indigo-400 hover:text-indigo-300"
-          >
-            View All
-          </Link>
+          <h2 className="text-lg font-semibold text-white">Recent Subscriptions</h2>
+          <span className="text-xs text-gray-500">Latest {recentSubsRaw.length} of paid plans</span>
         </div>
-        <div className="text-center py-8">
-          <Clock className="w-12 h-12 mx-auto mb-4 text-gray-600" />
-          <p className="text-gray-400">Payment verification queue coming soon</p>
-        </div>
+        {recentSubsRaw.length === 0 ? (
+          <div className="text-center py-8">
+            <Clock className="w-12 h-12 mx-auto mb-4 text-gray-600" />
+            <p className="text-gray-400">No paid subscriptions yet.</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Once users upgrade from FREE, the most recent activations will land here.
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-wider text-gray-500 border-b border-gray-800">
+                  <th className="text-left py-2 pr-3">User</th>
+                  <th className="text-left py-2 pr-3">Tier</th>
+                  <th className="text-left py-2 pr-3">Method</th>
+                  <th className="text-right py-2 pr-3">Amount</th>
+                  <th className="text-right py-2 pr-3">Status</th>
+                  <th className="text-right py-2">Activated</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {recentSubsRaw.map((s) => {
+                  const u = userById.get(s.userId);
+                  const tone = tierConfig[s.packageTier] ?? tierConfig.FREE;
+                  return (
+                    <tr key={s.id} className="hover:bg-gray-800/40">
+                      <td className="py-2 pr-3">
+                        <Link
+                          href={`/admin/users/${s.userId}`}
+                          className="text-white hover:text-indigo-400 transition-colors"
+                        >
+                          {u?.name || u?.email || s.userId.slice(0, 8)}
+                        </Link>
+                      </td>
+                      <td className="py-2 pr-3">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${tone.bgColor} ${tone.color}`}>
+                          {s.packageTier}
+                        </span>
+                      </td>
+                      <td className="py-2 pr-3 text-gray-400 text-xs">
+                        {s.paymentMethod ?? "—"}
+                      </td>
+                      <td className="py-2 pr-3 text-right text-amber-400 font-bold tabular-nums">
+                        ${s.amount.toFixed(2)}
+                      </td>
+                      <td className="py-2 pr-3 text-right">
+                        <span
+                          className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            s.isActive
+                              ? "bg-emerald-500/15 text-emerald-400"
+                              : "bg-gray-700 text-gray-300"
+                          }`}
+                        >
+                          {s.isActive ? "Active" : "Expired"}
+                        </span>
+                      </td>
+                      <td className="py-2 text-right text-gray-500 text-xs tabular-nums">
+                        {s.createdAt.toLocaleDateString()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

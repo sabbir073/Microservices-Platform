@@ -126,7 +126,8 @@ const fieldImageUrl: SocialField = {
   placeholder: "Image users should attach to their post",
 };
 
-const fieldNotes: SocialField = {
+// Reserved: optional notes field that platforms can opt into.
+const _fieldNotes: SocialField = {
   key: "notes",
   label: "Notes (optional)",
   type: "textarea",
@@ -442,7 +443,7 @@ export const SOCIAL_PLATFORMS: SocialPlatform[] = [
     label: "Instagram",
     emoji: "📷",
     brandColor:
-      "bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 text-white",
+      "bg-linear-to-br from-purple-500 via-pink-500 to-orange-400 text-white",
     websiteUrl: "https://www.instagram.com",
     actions: [
       {

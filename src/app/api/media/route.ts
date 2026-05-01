@@ -25,6 +25,8 @@ export async function GET(request: NextRequest) {
     const uploadedBy = searchParams.get("uploadedBy");
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
+    const folder = searchParams.get("folder"); // "" = root, null = all folders
+    const includeFolders = searchParams.get("includeFolders") === "true";
 
     const where: Record<string, unknown> = {};
 
@@ -44,6 +46,10 @@ export async function GET(request: NextRequest) {
       where.uploadedById = uploadedBy;
     }
 
+    if (folder !== null) {
+      where.folder = folder;
+    }
+
     if (dateFrom || dateTo) {
       where.createdAt = {
         ...(dateFrom && { gte: new Date(dateFrom) }),
@@ -51,7 +57,7 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    const [items, total] = await Promise.all([
+    const [items, total, folderRows] = await Promise.all([
       prisma.media.findMany({
         where,
         orderBy: { createdAt: "desc" },
@@ -69,7 +75,18 @@ export async function GET(request: NextRequest) {
         },
       }),
       prisma.media.count({ where }),
+      includeFolders
+        ? prisma.media.findMany({
+            distinct: ["folder"],
+            select: { folder: true },
+            orderBy: { folder: "asc" },
+          })
+        : Promise.resolve([] as Array<{ folder: string }>),
     ]);
+
+    const folders = includeFolders
+      ? folderRows.map((r) => r.folder).filter((f) => typeof f === "string")
+      : undefined;
 
     return NextResponse.json({
       items,
@@ -77,6 +94,7 @@ export async function GET(request: NextRequest) {
       hasMore: page * limit < total,
       page,
       limit,
+      ...(folders ? { folders } : {}),
     });
   } catch (error) {
     console.error("Error fetching media:", error);

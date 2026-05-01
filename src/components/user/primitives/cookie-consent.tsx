@@ -86,7 +86,7 @@ export function CookieConsent() {
 
       {showModal && (
         <div
-          className="fixed inset-0 z-[60] bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-60 bg-black/80 flex items-center justify-center p-4"
           onClick={() => setShowModal(false)}
         >
           <div

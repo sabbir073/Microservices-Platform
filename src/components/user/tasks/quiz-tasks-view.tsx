@@ -62,7 +62,7 @@ export function QuizTasksView() {
               className="text-left rounded-2xl border border-gray-800 bg-gray-900 p-4 hover:border-indigo-500/40 transition-colors"
             >
               <div className="flex items-start gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl">
+                <div className="w-12 h-12 rounded-xl bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-2xl">
                   📚
                 </div>
                 <div className="flex-1 min-w-0">

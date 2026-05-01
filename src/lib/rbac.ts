@@ -378,7 +378,7 @@ export const ADMIN_MODULES: AdminModule[] = [
     name: "Social Feed",
     href: "/admin/social-moderation",
     icon: "MessageSquare",
-    permissions: ["social.moderate"],
+    permissions: ["social.moderate", "moderation.view"],
     category: "PLATFORM",
   },
   {
@@ -399,6 +399,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     name: "Daily Missions",
     href: "/admin/missions",
     icon: "Target",
+    permissions: ["missions.view"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Daily Task Missions",
+    href: "/admin/daily-missions",
+    icon: "ListChecks",
     permissions: ["missions.view"],
     category: "PLATFORM",
   },
@@ -437,13 +444,6 @@ export const ADMIN_MODULES: AdminModule[] = [
     href: "/admin/proxy",
     icon: "Globe",
     permissions: ["proxy.view"],
-    category: "SECURITY",
-  },
-  {
-    name: "Moderation",
-    href: "/admin/moderation",
-    icon: "Flag",
-    permissions: ["moderation.view"],
     category: "SECURITY",
   },
   {

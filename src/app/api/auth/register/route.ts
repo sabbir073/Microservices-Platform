@@ -22,11 +22,24 @@ export async function POST(request: NextRequest) {
 
     const result = await registerUser(validatedData);
 
+    // Dev fallback: when SMTP isn't configured we surface the verification link
+    // so the developer/tester can finish the flow without a real inbox.
+    const isDev = process.env.NODE_ENV !== "production";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const devVerifyUrl =
+      isDev && !result.emailSent
+        ? `${appUrl}/verify-email?token=${result.verificationToken}`
+        : null;
+
     return NextResponse.json(
       {
         success: true,
-        message: "Registration successful! Please check your email to verify your account.",
+        message: result.emailSent
+          ? "Registration successful! Please check your email to verify your account."
+          : "Registration successful. Email delivery is not configured on this server — use the verification link below to activate the account.",
         userId: result.user.id,
+        emailSent: result.emailSent,
+        ...(devVerifyUrl ? { devVerifyUrl } : {}),
       },
       { status: 201 }
     );

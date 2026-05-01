@@ -68,7 +68,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const { id } = await params;
     const body = await request.json();
-    const { altText, caption, description } = body;
+    const { altText, caption, description, folder } = body;
 
     const existingMedia = await prisma.media.findUnique({
       where: { id },
@@ -78,12 +78,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Media not found" }, { status: 404 });
     }
 
+    // Sanitize folder: trim, strip leading/trailing slashes, max length
+    let folderClean: string | undefined;
+    if (folder !== undefined) {
+      folderClean = String(folder)
+        .trim()
+        .replace(/^\/+|\/+$/g, "")
+        .slice(0, 200);
+    }
+
     const mediaItem = await prisma.media.update({
       where: { id },
       data: {
         ...(altText !== undefined && { altText }),
         ...(caption !== undefined && { caption }),
         ...(description !== undefined && { description }),
+        ...(folderClean !== undefined && { folder: folderClean }),
       },
       include: {
         uploadedBy: {

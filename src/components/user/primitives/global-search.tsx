@@ -106,9 +106,9 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] bg-gray-950 flex flex-col">
+    <div className="fixed inset-0 z-90 bg-gray-950 flex flex-col">
       <div className="sticky top-0 bg-gray-900/95 backdrop-blur-lg border-b border-gray-800 px-4 py-3">
-        <div className="max-w-[768px] mx-auto flex items-center gap-2">
+        <div className="max-w-3xl mx-auto flex items-center gap-2">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
             <input
@@ -137,7 +137,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
             Cancel
           </button>
         </div>
-        <div className="max-w-[768px] mx-auto flex items-center gap-1 mt-3 -mb-1 overflow-x-auto scrollbar-none">
+        <div className="max-w-3xl mx-auto flex items-center gap-1 mt-3 -mb-1 overflow-x-auto scrollbar-none">
           {TABS.map((t) => (
             <button
               key={t}
@@ -155,7 +155,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto max-w-[768px] mx-auto w-full px-4 py-4">
+      <div className="flex-1 overflow-y-auto max-w-3xl mx-auto w-full px-4 py-4">
         {!query && recent.length > 0 && (
           <div>
             <p className="text-[10px] uppercase tracking-wider font-bold text-gray-500 mb-2">

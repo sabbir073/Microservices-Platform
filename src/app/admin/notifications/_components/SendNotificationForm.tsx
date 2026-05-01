@@ -807,7 +807,7 @@ export function SendNotificationForm() {
                         disabled={selectedUsers.some((u) => u.id === user.id)}
                         className="w-full p-3 text-left hover:bg-slate-800/50 transition-colors flex items-center gap-3 disabled:opacity-50"
                       >
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+                        <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
                           {user.name?.charAt(0) || user.email.charAt(0)}
                         </div>
                         <div className="flex-1 min-w-0">

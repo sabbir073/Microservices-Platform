@@ -102,7 +102,7 @@ export function QuizPlayer({ quizId, onClose }: QuizPlayerProps) {
   const lowTime = timeLeft < 60;
 
   return (
-    <div className="fixed inset-0 z-[100] bg-gray-950 overflow-y-auto">
+    <div className="fixed inset-0 z-100 bg-gray-950 overflow-y-auto">
       {state === "loading" && (
         <div className="min-h-screen flex flex-col items-center justify-center text-white">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-400 mb-3" />
@@ -131,7 +131,7 @@ export function QuizPlayer({ quizId, onClose }: QuizPlayerProps) {
       {state === "active" && cur && (
         <>
           <div className="sticky top-0 z-10 bg-gray-900 border-b border-gray-800 px-4 py-3">
-            <div className="max-w-[768px] mx-auto flex items-center gap-3">
+            <div className="max-w-3xl mx-auto flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-gray-400 truncate">
                   {meta?.title ?? "Quiz"}
@@ -160,15 +160,15 @@ export function QuizPlayer({ quizId, onClose }: QuizPlayerProps) {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="max-w-[768px] mx-auto mt-2 h-1 rounded-full bg-gray-800 overflow-hidden">
+            <div className="max-w-3xl mx-auto mt-2 h-1 rounded-full bg-gray-800 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-[width]"
+                className="h-full bg-linear-to-r from-indigo-500 to-purple-500 transition-[width]"
                 style={{ width: `${((idx + 1) / questions.length) * 100}%` }}
               />
             </div>
           </div>
 
-          <div className="max-w-[768px] mx-auto px-4 py-6">
+          <div className="max-w-3xl mx-auto px-4 py-6">
             <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
               <p className="text-base font-semibold text-white mb-4">
                 {cur.prompt}

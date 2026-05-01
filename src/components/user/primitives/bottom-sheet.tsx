@@ -29,7 +29,7 @@ export function BottomSheet({
         <Drawer.Overlay className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40" />
         <Drawer.Content
           className={cn(
-            "fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-[768px] flex flex-col rounded-t-2xl bg-gray-900 border-t border-gray-800 outline-none",
+            "fixed bottom-0 left-0 right-0 z-50 mx-auto max-w-3xl flex flex-col rounded-t-2xl bg-gray-900 border-t border-gray-800 outline-none",
             className
           )}
         >

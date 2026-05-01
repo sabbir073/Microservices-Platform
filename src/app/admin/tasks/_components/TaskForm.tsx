@@ -2,42 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Video,
-  FileText,
-  HelpCircle,
-  ClipboardList,
-  Share2,
-  Globe,
-  Gift,
-  Sparkles,
-  Save,
-  X,
-  Plus,
-  Trash2,
-  AlertCircle,
-  Loader2,
-  Image as ImageIcon,
-} from "lucide-react";
+import { Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Save, X, Plus, Trash2, AlertCircle, Loader2, Image as ImageIcon } from "lucide-react";
 import { MediaSelector } from "@/components/media/MediaSelector";
 import type { MediaItem } from "@/types/media";
 import { SocialTaskBuilder } from "./SocialTaskBuilder";
 import { ArticleTaskBuilder } from "./ArticleTaskBuilder";
 import { VideoTaskBuilder } from "./VideoTaskBuilder";
-import {
-  emptySocialConfig,
-  type SocialConfig,
-} from "@/lib/social-tasks";
-import {
-  emptyArticleConfig,
-  validateArticleConfig,
-  type ArticleConfig,
-} from "@/lib/article-tasks";
-import {
-  emptyVideoConfig,
-  validateVideoConfig,
-  type VideoConfig,
-} from "@/lib/video-tasks";
+import { emptySocialConfig, type SocialConfig } from "@/lib/social-tasks";
+import { emptyArticleConfig, validateArticleConfig, type ArticleConfig } from "@/lib/article-tasks";
+import { emptyVideoConfig, validateVideoConfig, type VideoConfig } from "@/lib/video-tasks";
 
 // Task types with icons and colors
 const taskTypes = [
@@ -59,44 +32,8 @@ const packageTiers = [
   { id: "VIP", label: "VIP" },
 ];
 
-const socialPlatforms = [
-  "Twitter/X",
-  "Facebook",
-  "Instagram",
-  "YouTube",
-  "TikTok",
-  "LinkedIn",
-  "Pinterest",
-  "Discord",
-  "Telegram",
-  "Reddit",
-  "Threads",
-  "Quora",
-  "Medium",
-  "Mind",
-  "SoundCloud",
-  "Amazon",
-  "Spotify",
-  "Deezer",
-  "Google",
-];
-
-const socialActions = [
-  "Follow",
-  "Like",
-  "Comment",
-  "Share",
-  "Subscribe",
-  "Join Group",
-  "Watch",
-  "Retweet",
-  "Save",
-  "Upvote",
-  "Post",
-  "Music Play",
-  "Connect",
-  "Pin",
-];
+// Note: social platform / action lists now live in src/lib/social-tasks.ts
+// (SOCIAL_PLATFORMS) and are sourced via the SocialTaskBuilder component.
 
 const countries = [
   { code: "ALL", name: "All Countries" },
@@ -498,6 +435,7 @@ export function TaskForm({ task }: TaskFormProps) {
               <div className="space-y-3">
                 {formData.thumbnailUrl ? (
                   <div className="relative inline-block">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={formData.thumbnailUrl}
                       alt="Thumbnail"
@@ -697,6 +635,7 @@ export function TaskForm({ task }: TaskFormProps) {
                   <div className="flex items-center gap-3">
                     {q.imageUrl ? (
                       <div className="relative">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={q.imageUrl}
                           alt={`Question ${qIndex + 1} image`}
@@ -870,6 +809,27 @@ export function TaskForm({ task }: TaskFormProps) {
             />
           </div>
         </div>
+
+        {/* Visibility preview — surfaces the filter rules so admin notices unintended restrictions */}
+        <div className="rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-3 text-xs text-indigo-200">
+          <p className="font-bold uppercase tracking-wider text-indigo-300 mb-1">
+            👁 Who will see this task
+          </p>
+          <p>
+            Users at <strong>level {formData.minLevel}+</strong> on the{" "}
+            <strong>{formData.requiredPackage}</strong> tier or higher
+            {formData.countries.length > 0
+              ? <> from <strong>{formData.countries.join(", ")}</strong></>
+              : <> from <strong>any country</strong></>}
+            {formData.expiresAt
+              ? <> until <strong>{new Date(formData.expiresAt).toLocaleDateString()}</strong>.</>
+              : <>.</>}
+            {" "}
+            <span className="text-indigo-300/80">
+              (Status must be ACTIVE — drafts/paused tasks stay hidden.)
+            </span>
+          </p>
+        </div>
       </div>
 
       {/* Limits */}
@@ -961,7 +921,7 @@ export function TaskForm({ task }: TaskFormProps) {
           <div className="space-y-3">
             {instructionSteps.map((step, index) => (
               <div key={index} className="flex items-center gap-3">
-                <span className="w-8 h-8 flex-shrink-0 flex items-center justify-center bg-gray-800 rounded-lg text-sm text-gray-400">
+                <span className="w-8 h-8 shrink-0 flex items-center justify-center bg-gray-800 rounded-lg text-sm text-gray-400">
                   {index + 1}
                 </span>
                 <input

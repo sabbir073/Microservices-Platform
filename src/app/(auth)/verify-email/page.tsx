@@ -20,11 +20,14 @@ function VerifyEmailContent() {
   const [resendEmail, setResendEmail] = useState(email || "");
   const [resendLoading, setResendLoading] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
+  const [devVerifyUrl, setDevVerifyUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (token) {
       verifyEmail();
     }
+    // verifyEmail is stable for a given `token`; intentional fire-once-per-token.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   const verifyEmail = async () => {
@@ -72,6 +75,7 @@ function VerifyEmailContent() {
       }
 
       setResendSuccess(true);
+      if (result.devVerifyUrl) setDevVerifyUrl(result.devVerifyUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to resend email");
     } finally {
@@ -167,10 +171,10 @@ function VerifyEmailContent() {
         {/* Logo & Header */}
         <div className="text-center space-y-2">
           <Link href="/" className="inline-flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
               <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <span className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+            <span className="text-2xl font-bold bg-linear-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
               EarnGPT
             </span>
           </Link>
@@ -184,8 +188,20 @@ function VerifyEmailContent() {
 
         {/* Success Message */}
         {resendSuccess && (
-          <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm">
-            Verification email sent! Please check your inbox.
+          <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-sm space-y-2">
+            <p>
+              {devVerifyUrl
+                ? "Email delivery is not configured on this server. Click the link below to verify."
+                : "Verification email sent! Please check your inbox."}
+            </p>
+            {devVerifyUrl && (
+              <a
+                href={devVerifyUrl}
+                className="inline-block px-3 py-1.5 rounded-md bg-emerald-500 text-white font-semibold hover:bg-emerald-600 break-all"
+              >
+                Verify now →
+              </a>
+            )}
           </div>
         )}
 

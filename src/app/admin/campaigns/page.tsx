@@ -2,9 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { Megaphone, Plus, Calendar, Target, DollarSign } from "lucide-react";
-import Link from "next/link";
-import { format } from "date-fns";
+import { Megaphone, Calendar, Target, DollarSign } from "lucide-react";
 import { CampaignsClient } from "@/components/admin/campaigns/campaigns-client";
 
 export default async function CampaignsAdminPage() {

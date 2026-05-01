@@ -1,29 +1,11 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import {
-  ClipboardCheck,
-  Filter,
-  Clock,
-  CheckCircle,
-  XCircle,
-  RotateCcw,
-  ChevronLeft,
-  ChevronRight,
-  Video,
-  FileText,
-  HelpCircle,
-  ClipboardList,
-  Share2,
-  Globe,
-  Gift,
-  Sparkles,
-  Star,
-} from "lucide-react";
+import { ClipboardCheck, Filter, Clock, CheckCircle, XCircle, RotateCcw, ChevronLeft, ChevronRight, Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Star } from "lucide-react";
 import { SubmissionActions } from "@/components/admin/submissions/submission-actions";
 import { ImageZoomGallery } from "@/components/admin/image-zoom-gallery";
 import Link from "next/link";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Prisma } from "@/generated/prisma/client";
 
@@ -305,9 +287,9 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
               >
                 <div className="flex flex-col lg:flex-row lg:items-start gap-4">
                   {/* User Info */}
-                  <div className="flex items-start gap-3 flex-shrink-0 w-full lg:w-64">
+                  <div className="flex items-start gap-3 shrink-0 w-full lg:w-64">
                     <Link href={`/admin/users/${submission.user.id}`}>
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
                         {submission.user.name?.charAt(0) || submission.user.email?.charAt(0) || "U"}
                       </div>
                     </Link>
@@ -373,7 +355,7 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
                   </div>
 
                   {/* Status & Actions */}
-                  <div className="flex flex-col items-end gap-3 flex-shrink-0">
+                  <div className="flex flex-col items-end gap-3 shrink-0">
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                       submission.status === "APPROVED" || submission.status === "AUTO_APPROVED"
                         ? "bg-emerald-500/10 text-emerald-400"
