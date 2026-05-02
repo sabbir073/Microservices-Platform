@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { awardSocialEarning } from "@/lib/social-earning";
+import { extractMentionUsernames, resolveMentionedUsers } from "@/lib/mentions";
 
 // GET /api/feed/:id/comments - Get post comments
 export async function GET(
@@ -152,6 +154,46 @@ export async function POST(
       where: { id },
       data: { commentsCount: { increment: 1 } },
     });
+
+    // Social earning — comment author awards the post owner
+    await awardSocialEarning({
+      recipientUserId: post.userId,
+      action: "COMMENT_RECEIVED",
+      postId: id,
+      sourceUserId: session.user.id,
+    });
+
+    // Mentions in this comment
+    const usernames = extractMentionUsernames(content);
+    if (usernames.length > 0) {
+      const mentionedUsers = await resolveMentionedUsers(usernames);
+      // Don't notify/earn if user mentions themselves or the post owner (post owner already got COMMENT_RECEIVED)
+      const filtered = mentionedUsers.filter(
+        (m) => m.id !== session.user!.id
+      );
+      if (filtered.length > 0) {
+        await Promise.all(
+          filtered.map((m) =>
+            prisma.mention.create({
+              data: {
+                commentId: comment.id,
+                postId: id,
+                mentionedUserId: m.id,
+                mentionedById: session.user!.id,
+              },
+            })
+          )
+        );
+        for (const m of filtered) {
+          await awardSocialEarning({
+            recipientUserId: m.id,
+            action: "MENTION_RECEIVED",
+            postId: id,
+            sourceUserId: session.user!.id,
+          });
+        }
+      }
+    }
 
     return NextResponse.json({
       comment: {

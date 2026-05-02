@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { awardSocialEarning } from "@/lib/social-earning";
 import { z } from "zod";
 
 const schema = z.object({
@@ -87,8 +88,18 @@ export async function POST(
 
   const refreshed = await prisma.post.findUnique({
     where: { id },
-    select: { pollOptions: true },
+    select: { pollOptions: true, userId: true },
   });
+
+  // Social earning — only on FIRST vote per user (not when changing vote)
+  if (!existing && refreshed) {
+    await awardSocialEarning({
+      recipientUserId: refreshed.userId,
+      action: "VOTE_RECEIVED",
+      postId: id,
+      sourceUserId: session.user.id,
+    });
+  }
 
   return NextResponse.json({
     success: true,

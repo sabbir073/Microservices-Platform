@@ -633,6 +633,14 @@ model User {
   dailyMissionClaims  DailyMissionClaim[]
   dailyReferralClaims DailyReferralClaim[]
   socialAccounts      SocialAccount[]
+  // Native social graph
+  followers          Follow[]    @relation("Followers")
+  following          Follow[]    @relation("Following")
+  followersCount     Int         @default(0)
+  followingCount     Int         @default(0)
+  postViews          PostView[]
+  mentionsReceived   Mention[]   @relation("Mentioned")
+  mentionsMade       Mention[]   @relation("MentionedBy")
   @@index([email])
   @@index([referralCode])
   @@index([referredById])
@@ -1094,6 +1102,8 @@ model Post {
   likesCount  Int       @default(0)
   commentsCount Int     @default(0)
   sharesCount Int       @default(0)
+  viewsCount  Int       @default(0)
+  socialEarnings Int    @default(0)
   pollOptions Json?     // [{ id, label, voteCount }]
   pollEndsAt  DateTime?
   donationGoal      Int?
@@ -1106,9 +1116,51 @@ model Post {
   likes       Like[]
   votes       Vote[]
   donations   Donation[]
+  views       PostView[]
+  mentions    Mention[]
   @@index([userId])
   @@index([createdAt])
   @@index([groupId])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  follower    User     @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+model PostView {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  viewedAt  DateTime @default(now())
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+}
+
+model Mention {
+  id              String   @id @default(cuid())
+  postId          String?
+  post            Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  commentId       String?
+  comment         Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  mentionedUserId String
+  mentionedUser   User     @relation("Mentioned", fields: [mentionedUserId], references: [id], onDelete: Cascade)
+  mentionedById   String
+  mentionedBy     User     @relation("MentionedBy", fields: [mentionedById], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  @@index([mentionedUserId])
+  @@index([postId])
+  @@index([commentId])
 }
 
 model Vote {
@@ -1207,6 +1259,7 @@ model Comment {
   parentId    String?
   parent      Comment? @relation("CommentReplies", fields: [parentId], references: [id])
   replies     Comment[] @relation("CommentReplies")
+  mentions    Mention[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   @@index([postId])

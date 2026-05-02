@@ -521,6 +521,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     category: "SYSTEM",
   },
   {
+    name: "Social Earning",
+    href: "/admin/settings/social-earning",
+    icon: "Sparkles",
+    permissions: ["settings.view"],
+    category: "SYSTEM",
+  },
+  {
     name: "Admin Control",
     href: "/admin/access",
     icon: "Shield",

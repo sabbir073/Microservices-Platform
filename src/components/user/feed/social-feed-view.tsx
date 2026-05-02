@@ -20,6 +20,8 @@ import {
   Users,
   Compass,
   Sparkles,
+  BarChart3,
+  CheckCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -36,6 +38,7 @@ import {
 import { ShareModal } from "@/components/user/primitives/share-modal";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { PostAnalyticsPanel } from "@/components/user/feed/post-analytics-panel";
 
 interface SessionUser {
   id: string;
@@ -57,6 +60,7 @@ interface FeedPost {
   likesCount: number;
   commentsCount: number;
   sharesCount: number;
+  viewsCount?: number;
   pollOptions?: PollOption[] | null;
   pollEndsAt?: string | null;
   donationGoal?: number | null;
@@ -67,12 +71,15 @@ interface FeedPost {
   user?: {
     id: string;
     name: string | null;
+    username?: string | null;
     avatar: string | null;
     level: number;
     packageTier: string;
+    isBlueVerified?: boolean;
   };
   isLiked: boolean;
   isOwner: boolean;
+  isFollowingAuthor?: boolean;
 }
 
 interface FeedComment {
@@ -695,8 +702,73 @@ function FeedPostCard({
 }) {
   const [showComments, setShowComments] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [showAnalytics, setShowAnalytics] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
+  const articleRef = useRef<HTMLElement>(null);
+  const viewFiredRef = useRef(false);
   const initial = (post.user?.name ?? "U").charAt(0).toUpperCase();
+
+  // View tracking — fire once when the post is ≥50% visible for ≥2s
+  useEffect(() => {
+    if (post.isOwner) return; // never count own views
+    if (viewFiredRef.current) return;
+    const el = articleRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting && e.intersectionRatio >= 0.5) {
+            if (timer) continue;
+            timer = setTimeout(() => {
+              if (viewFiredRef.current) return;
+              viewFiredRef.current = true;
+              fetch(`/api/feed/${post.id}/view`, { method: "POST" })
+                .then((r) => (r.ok ? r.json() : null))
+                .then((d) => {
+                  if (d?.counted && typeof d.viewsCount === "number") {
+                    onUpdated({ viewsCount: d.viewsCount });
+                  }
+                })
+                .catch(() => {})
+                .finally(() => observer.disconnect());
+            }, 2000);
+          } else {
+            if (timer) {
+              clearTimeout(timer);
+              timer = null;
+            }
+          }
+        }
+      },
+      { threshold: [0, 0.5, 1] }
+    );
+    observer.observe(el);
+    return () => {
+      if (timer) clearTimeout(timer);
+      observer.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [post.id, post.isOwner]);
+
+  const toggleFollowAuthor = async () => {
+    if (!post.user?.id || followBusy) return;
+    setFollowBusy(true);
+    const wasFollowing = !!post.isFollowingAuthor;
+    onUpdated({ isFollowingAuthor: !wasFollowing });
+    try {
+      const r = await fetch(`/api/users/${post.user.id}/follow`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
+      onUpdated({ isFollowingAuthor: !!d.following });
+    } catch {
+      onUpdated({ isFollowingAuthor: wasFollowing });
+      toast.error("Couldn't update follow");
+    } finally {
+      setFollowBusy(false);
+    }
+  };
 
   const toggleLike = async () => {
     if (busy) return;
@@ -728,28 +800,76 @@ function FeedPostCard({
   };
 
   return (
-    <article className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
+    <article
+      ref={articleRef}
+      className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden"
+    >
       <div className="p-4">
         {/* Header */}
         <div className="flex items-start gap-3">
-          <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium shrink-0">
-            {initial}
-          </div>
+          <Link
+            href={post.user ? `/u/${post.user.id}` : "#"}
+            className="shrink-0"
+          >
+            <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium overflow-hidden">
+              {post.user?.avatar ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={post.user.avatar}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                initial
+              )}
+            </div>
+          </Link>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white">
-              {post.user?.name ?? "Anonymous"}
+            <div className="inline-flex items-center gap-1.5">
+              <Link
+                href={post.user ? `/u/${post.user.id}` : "#"}
+                className="text-sm font-semibold text-white hover:text-indigo-400 transition-colors"
+              >
+                {post.user?.name ?? "Anonymous"}
+              </Link>
+              {post.user?.isBlueVerified && (
+                <CheckCircle
+                  className="w-3.5 h-3.5 text-blue-400 fill-blue-500/30"
+                  aria-label="Verified"
+                />
+              )}
               {post.user && post.user.level >= 10 && (
-                <span className="ml-1.5 text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-bold">
+                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-bold">
                   Lvl {post.user.level}
                 </span>
               )}
-            </p>
+            </div>
             <p className="text-[11px] text-gray-500">
               {formatDistanceToNow(new Date(post.createdAt), {
                 addSuffix: true,
               })}
             </p>
           </div>
+          {!post.isOwner && post.user && (
+            <button
+              onClick={toggleFollowAuthor}
+              disabled={followBusy}
+              className={cn(
+                "px-3 py-1 rounded-lg text-xs font-bold transition-colors disabled:opacity-50",
+                post.isFollowingAuthor
+                  ? "bg-gray-800 text-white border border-gray-700"
+                  : "bg-indigo-500 hover:bg-indigo-600 text-white"
+              )}
+            >
+              {followBusy ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : post.isFollowingAuthor ? (
+                "Following"
+              ) : (
+                "Follow"
+              )}
+            </button>
+          )}
           {post.isOwner && (
             <button className="p-1.5 text-gray-500 hover:text-white">
               <MoreHorizontal className="w-4 h-4" />
@@ -760,7 +880,7 @@ function FeedPostCard({
         {/* Content */}
         {post.content && (
           <p className="text-[15px] text-gray-200 leading-relaxed whitespace-pre-wrap mt-3">
-            {post.content}
+            <RenderedContent content={post.content} />
           </p>
         )}
       </div>
@@ -863,12 +983,26 @@ function FeedPostCard({
           </button>
         )}
         {post.isPinned && (
-          <span className="inline-flex items-center gap-1.5 text-xs text-amber-400 font-bold ml-auto">
+          <span className="inline-flex items-center gap-1.5 text-xs text-amber-400 font-bold">
             <Megaphone className="w-3.5 h-3.5" />
             Boosted
           </span>
         )}
+        {post.isOwner && (
+          <button
+            onClick={() => setShowAnalytics((v) => !v)}
+            className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-indigo-400 ml-auto"
+            title="View analytics"
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span className="tabular-nums text-xs">{post.viewsCount ?? 0}</span>
+          </button>
+        )}
       </div>
+
+      {showAnalytics && post.isOwner && (
+        <PostAnalyticsPanel postId={post.id} />
+      )}
 
       {showComments && (
         <CommentsSection postId={post.id} currentUserId={currentUserId} onCommentAdded={() => onUpdated({ commentsCount: post.commentsCount + 1 })} />
@@ -883,6 +1017,76 @@ function FeedPostCard({
       />
     </article>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RenderedContent — splits text by @mentions and turns them into Links to /u/<id>
+// ─────────────────────────────────────────────────────────────────────────────
+function RenderedContent({ content }: { content: string }) {
+  const [mentionMap, setMentionMap] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const usernames = Array.from(content.matchAll(/@([a-zA-Z0-9_]{2,30})/g)).map(
+      (m) => m[1].toLowerCase()
+    );
+    const unique = Array.from(new Set(usernames));
+    if (unique.length === 0) return;
+    let cancel = false;
+    Promise.all(
+      unique.map((u) =>
+        fetch(`/api/users/search?q=${encodeURIComponent(u)}&limit=1`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => {
+            const hit = d?.users?.[0];
+            return hit && hit.username?.toLowerCase() === u
+              ? { username: u, id: hit.id }
+              : null;
+          })
+          .catch(() => null)
+      )
+    ).then((rows) => {
+      if (cancel) return;
+      const map: Record<string, string> = {};
+      for (const r of rows) {
+        if (r) map[r.username] = r.id;
+      }
+      if (Object.keys(map).length > 0) setMentionMap(map);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [content]);
+
+  // Split content
+  const parts: React.ReactNode[] = [];
+  let lastIdx = 0;
+  let key = 0;
+  for (const m of content.matchAll(/@([a-zA-Z0-9_]{2,30})/g)) {
+    const start = m.index ?? 0;
+    const username = m[1];
+    if (start > lastIdx) {
+      parts.push(<span key={key++}>{content.slice(lastIdx, start)}</span>);
+    }
+    const userId = mentionMap[username.toLowerCase()];
+    if (userId) {
+      parts.push(
+        <Link
+          key={key++}
+          href={`/u/${userId}`}
+          className="text-indigo-400 hover:text-indigo-300 hover:underline font-semibold"
+        >
+          @{username}
+        </Link>
+      );
+    } else {
+      parts.push(<span key={key++}>@{username}</span>);
+    }
+    lastIdx = start + m[0].length;
+  }
+  if (lastIdx < content.length) {
+    parts.push(<span key={key++}>{content.slice(lastIdx)}</span>);
+  }
+  return <>{parts}</>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { awardSocialEarning } from "@/lib/social-earning";
+import { extractMentionUsernames, resolveMentionedUsers } from "@/lib/mentions";
 
 // GET /api/feed - Get feed posts
 export async function GET(request: NextRequest) {
@@ -40,15 +42,18 @@ export async function GET(request: NextRequest) {
       select: {
         id: true,
         name: true,
+        username: true,
         avatar: true,
         level: true,
         packageTier: true,
+        isBlueVerified: true,
       },
     });
     const userMap = new Map(users.map((u) => [u.id, u]));
 
     // Check if current user has liked each post
     let userLikes: Set<string> = new Set();
+    let followingSet: Set<string> = new Set();
     if (session?.user?.id) {
       const likes = await prisma.like.findMany({
         where: {
@@ -58,6 +63,18 @@ export async function GET(request: NextRequest) {
         select: { postId: true },
       });
       userLikes = new Set(likes.map((l) => l.postId));
+
+      // Which post-authors does the viewer already follow?
+      if (userIds.length > 0) {
+        const follows = await prisma.follow.findMany({
+          where: {
+            followerId: session.user.id,
+            followingId: { in: userIds },
+          },
+          select: { followingId: true },
+        });
+        followingSet = new Set(follows.map((f) => f.followingId));
+      }
     }
 
     // Capture user's votes for polls
@@ -82,6 +99,7 @@ export async function GET(request: NextRequest) {
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
       sharesCount: post.sharesCount,
+      viewsCount: post.viewsCount,
       pollOptions: post.pollOptions ?? null,
       pollEndsAt: post.pollEndsAt,
       donationGoal: post.donationGoal,
@@ -92,6 +110,7 @@ export async function GET(request: NextRequest) {
       user: userMap.get(post.userId),
       isLiked: userLikes.has(post.id),
       isOwner: session?.user?.id === post.userId,
+      isFollowingAuthor: followingSet.has(post.userId),
     }));
 
     return NextResponse.json({
@@ -204,15 +223,52 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Social earning — author gets daily post-create bonus (capped 1×/day via reference)
+    await awardSocialEarning({
+      recipientUserId: session.user.id,
+      action: "POST_CREATE",
+      postId: post.id,
+    });
+
+    // Mentions in the post body
+    const usernames = extractMentionUsernames(post.content);
+    if (usernames.length > 0) {
+      const mentionedUsers = await resolveMentionedUsers(usernames);
+      const filtered = mentionedUsers.filter((m) => m.id !== session.user!.id);
+      if (filtered.length > 0) {
+        await Promise.all(
+          filtered.map((m) =>
+            prisma.mention.create({
+              data: {
+                postId: post.id,
+                mentionedUserId: m.id,
+                mentionedById: session.user!.id,
+              },
+            })
+          )
+        );
+        for (const m of filtered) {
+          await awardSocialEarning({
+            recipientUserId: m.id,
+            action: "MENTION_RECEIVED",
+            postId: post.id,
+            sourceUserId: session.user!.id,
+          });
+        }
+      }
+    }
+
     // Get user info
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
         id: true,
         name: true,
+        username: true,
         avatar: true,
         level: true,
         packageTier: true,
+        isBlueVerified: true,
       },
     });
 
@@ -225,6 +281,8 @@ export async function POST(request: NextRequest) {
         likesCount: 0,
         commentsCount: 0,
         sharesCount: 0,
+        viewsCount: 0,
+        isFollowingAuthor: false,
         pollOptions: post.pollOptions,
         pollEndsAt: post.pollEndsAt,
         donationGoal: post.donationGoal,

@@ -64,6 +64,8 @@ const PROFILE_FIELDS = {
   privacyStats: true,
   privacyEarnings: true,
   privacyLocation: true,
+  followersCount: true,
+  followingCount: true,
   createdAt: true,
 } as const;
 
@@ -86,6 +88,7 @@ export async function GET() {
             taskSubmissions: true,
             transactions: true,
             socialAccounts: true,
+            posts: true,
           },
         },
       },
@@ -95,7 +98,7 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    type CountRel = { _count: { referrals: number; taskSubmissions: number; transactions: number; socialAccounts: number } };
+    type CountRel = { _count: { referrals: number; taskSubmissions: number; transactions: number; socialAccounts: number; posts: number } };
     const u = user as typeof user & CountRel;
 
     const pkg = await prisma.package.findUnique({
@@ -207,6 +210,9 @@ export async function GET() {
         referralsCount: u._count.referrals,
         achievementsCount,
         socialAccountsCount: u._count.socialAccounts,
+        postsCount: u._count.posts,
+        followersCount: u.followersCount,
+        followingCount: u.followingCount,
       },
       package: {
         tier: u.packageTier,

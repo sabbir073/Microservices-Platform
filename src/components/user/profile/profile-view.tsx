@@ -19,7 +19,6 @@ import {
   Circle,
   Edit3,
   Sparkles,
-  Coins,
   Users,
   Crown,
   Tag,
@@ -124,6 +123,9 @@ interface ProfileResponse {
     referralsCount: number;
     achievementsCount: number;
     socialAccountsCount: number;
+    postsCount: number;
+    followersCount: number;
+    followingCount: number;
   };
   package: {
     tier: string;
@@ -466,10 +468,10 @@ export function ProfileView() {
 
       {/* Stats row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile icon={<Coins className="w-4 h-4" />} label="Points" value={stats.pointsBalance.toLocaleString()} tone="amber" />
-        <StatTile icon={<Sparkles className="w-4 h-4" />} label="Cash" value={`$${stats.cashBalance.toFixed(2)}`} tone="emerald" />
-        <StatTile icon={<Users className="w-4 h-4" />} label="Referrals" value={stats.referralsCount.toLocaleString()} tone="purple" />
-        <StatTile icon={<Trophy className="w-4 h-4" />} label="Level" value={`Lv ${stats.level}`} tone="indigo" />
+        <StatTile icon={<Edit3 className="w-4 h-4" />} label="Posts" value={stats.postsCount.toLocaleString()} tone="indigo" />
+        <StatTile icon={<Users className="w-4 h-4" />} label="Followers" value={stats.followersCount.toLocaleString()} tone="purple" />
+        <StatTile icon={<Plus className="w-4 h-4" />} label="Following" value={stats.followingCount.toLocaleString()} tone="emerald" />
+        <StatTile icon={<Trophy className="w-4 h-4" />} label="Level" value={`Lv ${stats.level}`} tone="amber" />
       </div>
 
       {/* Profile completion ring */}
