@@ -53,7 +53,7 @@ export function BannerSlider({
             s.bgGradient ?? FALLBACK_GRADIENTS[i % FALLBACK_GRADIENTS.length];
           const cls = cn(
             "absolute inset-0 transition-opacity duration-700 flex items-center px-5",
-            "bg-gradient-to-br",
+            "bg-linear-to-br",
             grad,
             i === active ? "opacity-100" : "opacity-0 pointer-events-none"
           );

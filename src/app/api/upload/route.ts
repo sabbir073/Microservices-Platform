@@ -1,12 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import {
-  isS3Configured,
-  getUploadUrl,
-  generateFileKey,
-  uploadFile,
-  getPublicUrl,
-} from "@/lib/s3";
+import { isS3Configured, getUploadUrl, generateFileKey, uploadFile, getPublicUrl } from "@/lib/s3";
 
 // Maximum file size for direct upload (5MB)
 const MAX_DIRECT_UPLOAD_SIZE = 5 * 1024 * 1024;
@@ -33,7 +27,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { fileName, fileType, fileSize, folder = "uploads" } = body;
+    const { fileName, fileType, fileSize: _fileSize, folder = "uploads" } = body;
 
     if (!fileName || !fileType) {
       return NextResponse.json(

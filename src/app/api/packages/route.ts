@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { packageTier, billingPeriod, paymentMethod, transactionId, paymentScreenshot } = body;
+    const { packageTier, billingPeriod, paymentMethod, transactionId, paymentScreenshot: _paymentScreenshot } = body;
 
     // Validate required fields
     if (!packageTier || !paymentMethod || !transactionId) {

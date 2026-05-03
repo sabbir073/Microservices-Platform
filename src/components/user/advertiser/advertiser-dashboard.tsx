@@ -170,7 +170,7 @@ export function AdvertiserDashboard() {
               </div>
               <div className="mt-2 h-1 rounded-full bg-gray-800 overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
+                  className="h-full bg-linear-to-r from-indigo-500 to-purple-500"
                   style={{ width: `${Math.min(100, pct)}%` }}
                 />
               </div>

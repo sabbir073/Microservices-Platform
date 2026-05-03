@@ -1,9 +1,9 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Layout } from "lucide-react";
-import { LandingCmsForm } from "@/components/admin/landing/landing-cms-form";
+import { LandingEditor } from "@/components/admin/landing/landing-editor";
+import { getLandingContent } from "@/lib/landing-content-server";
 
 export default async function LandingPageEditor() {
   const session = await auth();
@@ -12,25 +12,21 @@ export default async function LandingPageEditor() {
   if (!hasPermission(adminRole, "landing.view")) redirect("/admin");
 
   const canEdit = hasPermission(adminRole, "landing.edit");
-
-  const rows = await prisma.systemSetting.findMany({
-    where: { category: "landing" },
-  });
-  const initial: Record<string, unknown> = {};
-  for (const r of rows) initial[r.key.replace("lp_", "")] = r.value;
+  const content = await getLandingContent();
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
           <Layout className="w-6 h-6 text-blue-400" />
           Landing Page Editor (CMS)
         </h1>
         <p className="text-slate-400 text-sm mt-1">
-          Edit hero content and the live earnings calculator settings.
+          Edit every section of the public landing page. Changes go live on next
+          page load.
         </p>
       </div>
-      <LandingCmsForm initial={initial} canEdit={canEdit} />
+      <LandingEditor initial={content} canEdit={canEdit} />
     </div>
   );
 }

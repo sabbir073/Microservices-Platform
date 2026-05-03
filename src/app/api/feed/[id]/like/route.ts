@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { awardSocialEarning } from "@/lib/social-earning";
 
 // POST /api/feed/:id/like - Like a post
 export async function POST(
@@ -59,6 +60,14 @@ export async function POST(
     // Get updated count
     const likesCount = await prisma.like.count({
       where: { postId: id },
+    });
+
+    // Social earning hook — owner gets points for receiving a like
+    await awardSocialEarning({
+      recipientUserId: post.userId,
+      action: "LIKE_RECEIVED",
+      postId: id,
+      sourceUserId: session.user.id,
     });
 
     return NextResponse.json({

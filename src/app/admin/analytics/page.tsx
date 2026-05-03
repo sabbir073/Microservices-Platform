@@ -1,19 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import {
-  BarChart3,
-  Users,
-  DollarSign,
-  TrendingUp,
-  Activity,
-  Calendar,
-  Download,
-  ArrowUpRight,
-  ArrowDownRight,
-  FileText,
-  FileSpreadsheet,
-} from "lucide-react";
+import { Users, DollarSign, TrendingUp, Activity, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import Link from "next/link";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -79,8 +67,8 @@ export default async function AdminAnalyticsPage({ searchParams }: PageProps) {
     previousCompletedTasks,
     totalWithdrawals,
     previousWithdrawals,
-    totalEarnings,
-    previousEarnings,
+    _totalEarnings,
+    _previousEarnings,
     activeUsers,
     previousActiveUsers,
   ] = await Promise.all([

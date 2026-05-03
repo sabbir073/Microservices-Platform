@@ -1,19 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import {
-  ArrowLeft,
-  Store,
-  User,
-  Calendar,
-  Eye,
-  ShoppingCart,
-  DollarSign,
-  Tag,
-  FileText,
-  Image as ImageIcon,
-  AlertTriangle,
-} from "lucide-react";
+import { ArrowLeft, Calendar, Eye, ShoppingCart, DollarSign, Tag, FileText, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow, format } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -147,6 +135,7 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
                     key={index}
                     className="aspect-square bg-gray-800 rounded-lg overflow-hidden"
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={image}
                       alt={`Image ${index + 1}`}
@@ -192,7 +181,7 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
                     className="p-4 bg-gray-800/50 rounded-lg flex items-center justify-between"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
                         {purchase.buyer.name?.charAt(0) || purchase.buyer.email.charAt(0)}
                       </div>
                       <div>
@@ -301,7 +290,7 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
           <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
             <h2 className="text-lg font-semibold text-white mb-4">Seller</h2>
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+              <div className="w-12 h-12 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
                 {typedListing.seller.name?.charAt(0) || typedListing.seller.email.charAt(0)}
               </div>
               <div>

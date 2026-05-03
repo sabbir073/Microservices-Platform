@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { Trophy, Medal, Crown, Users } from "lucide-react";
+import { Trophy, Medal, Crown } from "lucide-react";
 
 export default async function LeaderboardPage() {
   const session = await auth();
@@ -35,7 +35,7 @@ export default async function LeaderboardPage() {
           { rank: 3, color: "from-amber-600 to-orange-700", icon: Medal },
         ].map((item, i) => (
           <div key={i} className={`bg-gray-900 rounded-xl border border-gray-800 p-6 text-center ${i === 1 ? "-mt-4" : "mt-4"}`}>
-            <div className={`w-16 h-16 mx-auto rounded-full bg-gradient-to-br ${item.color} flex items-center justify-center mb-4`}>
+            <div className={`w-16 h-16 mx-auto rounded-full bg-linear-to-br ${item.color} flex items-center justify-center mb-4`}>
               <item.icon className="w-8 h-8 text-white" />
             </div>
             <p className="text-2xl font-bold text-white">#{item.rank}</p>

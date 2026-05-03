@@ -157,7 +157,7 @@ export function ReferralSettingsForm({ levels, isNew }: ReferralSettingsFormProp
               key={level.id}
               className="flex items-center gap-4 p-4 bg-gray-800/50 rounded-lg"
             >
-              <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center bg-indigo-500/10 rounded-xl">
+              <div className="w-12 h-12 shrink-0 flex items-center justify-center bg-indigo-500/10 rounded-xl">
                 <span className="text-lg font-bold text-indigo-400">L{level.level}</span>
               </div>
 

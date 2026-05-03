@@ -13,6 +13,7 @@ export interface MediaItem {
   altText?: string;
   caption?: string;
   description?: string;
+  folder?: string;
   width?: number;
   height?: number;
   duration?: number; // for videos/audio in seconds

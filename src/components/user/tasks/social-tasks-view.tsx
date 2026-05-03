@@ -465,7 +465,7 @@ export function SocialTasksView() {
                           Copy
                         </button>
                       </div>
-                      <p className="text-xs text-gray-200 whitespace-pre-wrap break-words">
+                      <p className="text-xs text-gray-200 whitespace-pre-wrap wrap-break-word">
                         {v}
                       </p>
                     </div>

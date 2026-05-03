@@ -23,6 +23,7 @@ interface Offerwall {
   secretKey: string | null;
   callbackUrl: string | null;
   isActive: boolean;
+  config?: Record<string, unknown> | null;
 }
 
 interface Props {
@@ -149,6 +150,29 @@ export function OfferwallsClient({ initial, canManage }: Props) {
                     {o.callbackUrl ?? "auto-generated"}
                   </span>
                 </p>
+                <div className="flex items-center gap-3 mt-1">
+                  {(() => {
+                    const cfg = (o.config ?? {}) as {
+                      testMode?: boolean;
+                      rewardMultiplier?: number;
+                    };
+                    return (
+                      <>
+                        {cfg.testMode && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[10px] uppercase tracking-wider font-bold">
+                            Test mode
+                          </span>
+                        )}
+                        <span className="text-slate-400">
+                          Multiplier:{" "}
+                          <span className="text-slate-200 font-mono">
+                            {(cfg.rewardMultiplier ?? 1).toFixed(2)}×
+                          </span>
+                        </span>
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
               {canManage && (
                 <div className="mt-3 flex gap-2">
@@ -208,12 +232,18 @@ function ProviderModal({
   const isEdit = !!provider;
   const [showApiKey, setShowApiKey] = useState(false);
   const [showSecret, setShowSecret] = useState(false);
+  const cfg = (provider?.config ?? {}) as {
+    testMode?: boolean;
+    rewardMultiplier?: number;
+  };
   const [form, setForm] = useState({
     provider: provider?.provider ?? KNOWN_PROVIDERS[0],
     apiKey: provider?.apiKey ?? "",
     secretKey: provider?.secretKey ?? "",
     callbackUrl: provider?.callbackUrl ?? "",
     isActive: provider?.isActive ?? false,
+    testMode: cfg.testMode ?? false,
+    rewardMultiplier: cfg.rewardMultiplier ?? 1,
   });
 
   const autoCallback =
@@ -229,10 +259,17 @@ function ProviderModal({
     setBusy(true);
     try {
       const body = {
-        ...form,
+        provider: form.provider,
+        isActive: form.isActive,
         callbackUrl: form.callbackUrl.trim() || null,
         apiKey: form.apiKey.trim() || null,
         secretKey: form.secretKey.trim() || null,
+        config: {
+          testMode: form.testMode,
+          rewardMultiplier: Number.isFinite(form.rewardMultiplier)
+            ? form.rewardMultiplier
+            : 1,
+        },
       };
       const res = await fetch(
         isEdit
@@ -392,6 +429,45 @@ function ProviderModal({
               <span className="font-mono text-slate-400">{autoCallback}</span>
             </p>
           </Field>
+          <Field label="Reward Multiplier">
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                step="0.05"
+                min={0}
+                max={10}
+                value={form.rewardMultiplier}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    rewardMultiplier: parseFloat(e.target.value) || 0,
+                  })
+                }
+                className={inp + " max-w-32 tabular-nums"}
+              />
+              <span className="text-xs text-slate-400">×</span>
+              <span className="text-[11px] text-slate-500">
+                Applied to all credited rewards from this provider (1 = no change).
+              </span>
+            </div>
+          </Field>
+
+          <label className="flex items-center gap-3 px-4 py-3 rounded-lg bg-slate-950/50 border border-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.testMode}
+              onChange={(e) => setForm({ ...form, testMode: e.target.checked })}
+              className="rounded bg-slate-800 border-slate-600 text-amber-500"
+            />
+            <div className="flex-1">
+              <p className="text-sm text-white">Test mode</p>
+              <p className="text-xs text-slate-500">
+                Postbacks log to audit but no points are credited. Use during
+                provider integration QA.
+              </p>
+            </div>
+          </label>
+
           <label className="flex items-center gap-3 px-4 py-3 rounded-lg bg-slate-950/50 border border-slate-700 cursor-pointer">
             <input
               type="checkbox"

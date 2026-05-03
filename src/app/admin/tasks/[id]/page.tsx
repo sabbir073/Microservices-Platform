@@ -228,7 +228,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
                   <div className="space-y-3">
                     {instructionSteps.map((step, index) => (
                       <div key={index} className="flex items-start gap-3">
-                        <span className="w-6 h-6 flex-shrink-0 flex items-center justify-center bg-indigo-500/10 rounded-full text-xs text-indigo-400">
+                        <span className="w-6 h-6 shrink-0 flex items-center justify-center bg-indigo-500/10 rounded-full text-xs text-indigo-400">
                           {index + 1}
                         </span>
                         <p className="text-gray-400">{step}</p>
@@ -332,7 +332,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
                     className="flex items-center justify-between p-4 bg-gray-800/50 rounded-lg"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
                         {submission.user.name?.charAt(0) || submission.user.email.charAt(0)}
                       </div>
                       <div>

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { TaskStatus, PackageTier } from "@/generated/prisma";
+import { PackageTier } from "@/generated/prisma";
 
-// Package tier order for comparison
-const PACKAGE_ORDER: Record<PackageTier, number> = {
+// Package tier order for comparison (reserved for tier-gated task access)
+const _PACKAGE_ORDER: Record<PackageTier, number> = {
   FREE: 0,
   STARTER: 1,
   PRO: 2,

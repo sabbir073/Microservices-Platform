@@ -37,7 +37,7 @@ export default async function SubscriptionsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {plans.map((plan, i) => (
+        {plans.map((plan) => (
           <div
             key={plan.name}
             className={`relative bg-gray-900 rounded-xl border p-6 ${

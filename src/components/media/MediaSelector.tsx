@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X, Search, Grid3x3, List, Filter, CheckCircle, Loader2, Image as ImageIcon, Video, FileAudio, FileText, File } from "lucide-react";
+import { X, Search, Grid3x3, List, CheckCircle, Loader2, Image as ImageIcon, Video, FileAudio, FileText, File } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MediaItem, MediaFilter } from "@/types/media";
 import { MediaUploader } from "./MediaUploader";
@@ -73,6 +73,8 @@ export function MediaSelector({
     if (isOpen && activeTab === "library") {
       fetchMedia();
     }
+    // fetchMedia depends on the same vars listed below; safe to omit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, activeTab, filterType, searchQuery]);
 
   const handleSelectMedia = useCallback((item: MediaItem) => {
@@ -159,7 +161,7 @@ export function MediaSelector({
 
   const modalContent = (
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-9999 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onMouseDown={(e) => {
         // Only close if clicking directly on the backdrop (not on modal content)
         if (e.target === e.currentTarget) {
@@ -313,6 +315,7 @@ export function MediaSelector({
                             }`}
                           >
                             {item.fileType === "IMAGE" ? (
+                              // eslint-disable-next-line @next/next/no-img-element
                               <img
                                 src={item.cloudFrontUrl || item.s3Url}
                                 alt={item.altText || item.originalFilename}
@@ -330,7 +333,7 @@ export function MediaSelector({
                               </div>
                             )}
 
-                            <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                               <div className="absolute bottom-0 left-0 right-0 p-2">
                                 <p className="text-xs text-white truncate">{item.originalFilename}</p>
                               </div>
@@ -346,8 +349,9 @@ export function MediaSelector({
                               isSelected ? "bg-indigo-500/20 border-2 border-indigo-500" : "bg-gray-800 hover:bg-gray-700"
                             }`}
                           >
-                            <div className="flex-shrink-0">
+                            <div className="shrink-0">
                               {item.fileType === "IMAGE" ? (
+                                // eslint-disable-next-line @next/next/no-img-element
                                 <img
                                   src={item.cloudFrontUrl || item.s3Url}
                                   alt={item.altText || item.originalFilename}
@@ -368,7 +372,7 @@ export function MediaSelector({
                             </div>
 
                             {isSelected && (
-                              <CheckCircle className="w-5 h-5 text-indigo-400 flex-shrink-0" />
+                              <CheckCircle className="w-5 h-5 text-indigo-400 shrink-0" />
                             )}
                           </div>
                         );

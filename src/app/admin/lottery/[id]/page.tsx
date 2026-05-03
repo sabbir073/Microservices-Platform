@@ -203,7 +203,7 @@ export default async function LotteryDetailPage({ params }: PageProps) {
                       className="flex items-center justify-between p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center text-white font-medium">
+                        <div className="w-10 h-10 rounded-full bg-linear-to-br from-emerald-500 to-green-600 flex items-center justify-center text-white font-medium">
                           {ticket.user.name?.charAt(0) || ticket.user.email.charAt(0)}
                         </div>
                         <div>

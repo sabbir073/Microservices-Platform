@@ -214,28 +214,28 @@ export default async function DashboardPage() {
             description="Earn points by completing tasks"
             href="/tasks"
             icon={CheckCircle}
-            color="bg-gradient-to-br from-indigo-500 to-purple-600"
+            color="bg-linear-to-br from-indigo-500 to-purple-600"
           />
           <QuickActionCard
             title="Invite Friends"
             description="Earn commissions from referrals"
             href="/referrals"
             icon={Users}
-            color="bg-gradient-to-br from-amber-500 to-orange-600"
+            color="bg-linear-to-br from-amber-500 to-orange-600"
           />
           <QuickActionCard
             title="Daily Bonus"
             description="Claim your daily rewards"
             href="/earn"
             icon={Gift}
-            color="bg-gradient-to-br from-emerald-500 to-teal-600"
+            color="bg-linear-to-br from-emerald-500 to-teal-600"
           />
           <QuickActionCard
             title="Leaderboard"
             description="See top earners this week"
             href="/leaderboard"
             icon={Trophy}
-            color="bg-gradient-to-br from-pink-500 to-rose-600"
+            color="bg-linear-to-br from-pink-500 to-rose-600"
           />
         </div>
       </div>
@@ -274,7 +274,7 @@ export default async function DashboardPage() {
             </h3>
             <div className="flex items-center justify-center">
               <div className="text-center">
-                <div className="w-20 h-20 rounded-full bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center mx-auto mb-3">
+                <div className="w-20 h-20 rounded-full bg-linear-to-br from-amber-500 to-orange-600 flex items-center justify-center mx-auto mb-3">
                   <span className="text-3xl font-bold text-white">{streak}</span>
                 </div>
                 <p className="text-gray-400 text-sm">days</p>
@@ -300,7 +300,7 @@ export default async function DashboardPage() {
               </div>
               <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden">
                 <div
-                  className="h-full bg-gradient-to-r from-indigo-500 to-purple-600 rounded-full"
+                  className="h-full bg-linear-to-r from-indigo-500 to-purple-600 rounded-full"
                   style={{ width: `${xpProgress}%` }}
                 />
               </div>

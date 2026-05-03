@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { User, PackageTier } from "@/types";
+import type { User } from "@/types";
 
 interface UserState {
   user: User | null;

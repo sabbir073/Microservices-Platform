@@ -1,22 +1,9 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import {
-  Ticket,
-  Plus,
-  Calendar,
-  DollarSign,
-  Users,
-  Trophy,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  CheckCircle,
-  XCircle,
-  Play,
-} from "lucide-react";
+import { Ticket, Plus, Calendar, DollarSign, Users, Trophy, ChevronLeft, ChevronRight, Clock, CheckCircle, XCircle, Play } from "lucide-react";
 import Link from "next/link";
-import { format, formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
 import { hasPermission, hasAnyPermission, type UserRole } from "@/lib/rbac";
 
 interface PageProps {
@@ -81,7 +68,7 @@ export default async function AdminLotteryPage({ searchParams }: PageProps) {
   const typedLotteries = lotteries as LotteryWithCount[];
 
   // Get stats
-  const [totalLotteries, activeLotteries, totalTicketsSold, totalPrizePool] = await Promise.all([
+  const [totalLotteries, activeLotteries, totalTicketsSold, _totalPrizePool] = await Promise.all([
     prisma.lottery.count(),
     prisma.lottery.count({ where: { status: "ACTIVE" } }),
     prisma.lotteryTicket.count(),

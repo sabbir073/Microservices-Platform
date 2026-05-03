@@ -206,9 +206,9 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
   );
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+    <div className="fixed inset-0 z-100 bg-black flex flex-col">
       {/* Top bar */}
-      <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-4 py-3 bg-gradient-to-b from-black/80 to-transparent">
+      <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-4 py-3 bg-linear-to-b from-black/80 to-transparent">
         <div className="flex-1 min-w-0">
           <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">
             Video Task
@@ -302,7 +302,7 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
       </div>
 
       {/* Bottom HUD */}
-      <div className="absolute bottom-0 inset-x-0 z-20 bg-gradient-to-t from-black via-black/90 to-transparent px-4 pt-6 pb-4 space-y-3">
+      <div className="absolute bottom-0 inset-x-0 z-20 bg-linear-to-t from-black via-black/90 to-transparent px-4 pt-6 pb-4 space-y-3">
         {phase === "watch" && (
           <>
             <div className="flex items-center justify-between text-sm">
@@ -316,7 +316,7 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
             </div>
             <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 transition-[width] duration-300"
+                className="h-full bg-linear-to-r from-indigo-500 to-purple-500 transition-[width] duration-300"
                 style={{ width: `${watchPct}%` }}
               />
             </div>

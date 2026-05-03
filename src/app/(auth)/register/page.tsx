@@ -17,6 +17,8 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [devVerifyUrl, setDevVerifyUrl] = useState<string | null>(null);
+  const [emailSent, setEmailSent] = useState(true);
 
   const referralCode = searchParams.get("ref") || "";
 
@@ -55,6 +57,8 @@ export default function RegisterPage() {
       }
 
       setSuccess(true);
+      setEmailSent(result.emailSent !== false);
+      if (result.devVerifyUrl) setDevVerifyUrl(result.devVerifyUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -71,13 +75,37 @@ export default function RegisterPage() {
           </div>
           <div className="space-y-2">
             <h1 className="text-2xl font-bold text-white">
-              Check your email
+              {emailSent ? "Check your email" : "Account created"}
             </h1>
             <p className="text-gray-400">
-              We&apos;ve sent a verification link to your email address. Please click the link to verify your account.
+              {emailSent
+                ? "We've sent a verification link to your email address. Please click the link to verify your account."
+                : "Email delivery is not configured on this server. Use the link below to verify the account."}
             </p>
           </div>
-          <div className="pt-4">
+          {devVerifyUrl && (
+            <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-left space-y-2">
+              <p className="text-emerald-300 text-sm font-semibold">
+                Dev verification link
+              </p>
+              <a
+                href={devVerifyUrl}
+                className="inline-block text-xs text-emerald-300 break-all underline hover:text-emerald-200"
+              >
+                {devVerifyUrl}
+              </a>
+            </div>
+          )}
+          <div className="pt-4 space-y-2">
+            {devVerifyUrl && (
+              <Button
+                variant="primary"
+                onClick={() => router.push(devVerifyUrl)}
+                fullWidth
+              >
+                Verify now →
+              </Button>
+            )}
             <Button
               variant="secondary"
               onClick={() => router.push("/login")}
@@ -97,10 +125,10 @@ export default function RegisterPage() {
         {/* Logo & Header */}
         <div className="text-center space-y-2">
           <Link href="/" className="inline-flex items-center gap-2 mb-4">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
               <Sparkles className="w-6 h-6 text-white" />
             </div>
-            <span className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+            <span className="text-2xl font-bold bg-linear-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
               EarnGPT
             </span>
           </Link>

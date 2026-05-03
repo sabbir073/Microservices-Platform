@@ -207,7 +207,7 @@ export function UsersTableClient({
                           href={`/admin/users/${u.id}`}
                           className="flex items-center gap-3 group"
                         >
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
                             {u.name?.charAt(0) ||
                               u.email?.charAt(0) ||
                               "U"}
@@ -216,7 +216,7 @@ export function UsersTableClient({
                             <p className="text-sm font-medium text-white group-hover:text-indigo-400 transition-colors">
                               {u.name || "Unnamed"}
                             </p>
-                            <p className="text-xs text-slate-500 truncate max-w-[200px]">
+                            <p className="text-xs text-slate-500 truncate max-w-50">
                               {u.email}
                             </p>
                             {u.username && (

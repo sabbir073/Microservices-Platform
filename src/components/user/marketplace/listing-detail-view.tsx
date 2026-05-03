@@ -1,7 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
-import { ShoppingCart, Eye, MessageCircle, Flag, Loader2 } from "lucide-react";
+import {
+  ShoppingCart,
+  ShoppingBag,
+  Eye,
+  MessageCircle,
+  Flag,
+  Loader2,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
 import { ImageZoomModal } from "@/components/user/primitives/image-zoom-modal";
 import { ShareModal } from "@/components/user/primitives/share-modal";
 import { ReportContent } from "@/components/user/primitives/report-content";
@@ -33,10 +42,37 @@ interface ListingDetailViewProps {
 }
 
 export function ListingDetailView({ listing, isOwner }: ListingDetailViewProps) {
+  const router = useRouter();
   const [zoom, setZoom] = useState<number | null>(null);
   const [showShare, setShowShare] = useState(false);
   const [showReport, setShowReport] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
+
+  const addToCart = async () => {
+    setAddingToCart(true);
+    try {
+      const res = await fetch("/api/cart", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listingId: listing.id, quantity: 1 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      toast.success("Added to cart", {
+        action: {
+          label: "View cart",
+          onClick: () => router.push("/marketplace/cart"),
+        },
+      });
+    } catch (err) {
+      toast.error("Couldn't add to cart", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setAddingToCart(false);
+    }
+  };
 
   const buy = async () => {
     setBusy(true);
@@ -110,7 +146,7 @@ export function ListingDetailView({ listing, isOwner }: ListingDetailViewProps) 
               className="w-10 h-10 rounded-full bg-gray-800 object-cover"
             />
           ) : (
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold">
+            <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold">
               {listing.seller.name?.[0]?.toUpperCase() ?? "?"}
             </div>
           )}
@@ -174,25 +210,40 @@ export function ListingDetailView({ listing, isOwner }: ListingDetailViewProps) 
             </p>
           </div>
           {isOwner ? (
-            <a
-              href={`/marketplace/${listing.id}/edit`}
+            <Link
+              href="/marketplace/my"
               className="px-5 py-2.5 rounded-xl bg-gray-800 text-white text-sm font-bold"
             >
-              Edit Listing
-            </a>
+              Manage Listings
+            </Link>
           ) : (
-            <button
-              onClick={buy}
-              disabled={busy}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
-            >
-              {busy ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <ShoppingCart className="w-4 h-4" />
-              )}
-              Buy Now
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={addToCart}
+                disabled={addingToCart || busy}
+                className="px-3 py-2.5 rounded-xl bg-gray-800 hover:bg-gray-700 text-white text-sm font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
+                aria-label="Add to cart"
+              >
+                {addingToCart ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ShoppingBag className="w-4 h-4" />
+                )}
+                <span className="hidden sm:inline">Add to Cart</span>
+              </button>
+              <button
+                onClick={buy}
+                disabled={busy || addingToCart}
+                className="px-5 py-2.5 rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 text-white text-sm font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {busy ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <ShoppingCart className="w-4 h-4" />
+                )}
+                Buy Now
+              </button>
+            </div>
           )}
         </div>
       </div>

@@ -141,10 +141,13 @@ export default function NotificationsPage() {
   useEffect(() => {
     setCurrentPage(1);
     fetchNotifications(1);
+    // fetchNotifications is intentionally not in deps — it would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedFilter, showUnreadOnly]);
 
   useEffect(() => {
     fetchNotifications(currentPage);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
 
   const handleMarkAsRead = async (notificationIds: string[]) => {
@@ -373,7 +376,7 @@ export default function NotificationsPage() {
                   {/* Icon */}
                   <div
                     className={cn(
-                      "p-2 rounded-lg flex-shrink-0",
+                      "p-2 rounded-lg shrink-0",
                       typeConfig.bgColor
                     )}
                   >
@@ -389,7 +392,7 @@ export default function NotificationsPage() {
                             {notification.title}
                           </h3>
                           {!notification.isRead && (
-                            <span className="w-2 h-2 bg-indigo-500 rounded-full flex-shrink-0" />
+                            <span className="w-2 h-2 bg-indigo-500 rounded-full shrink-0" />
                           )}
                         </div>
                         <p className="text-sm text-gray-400">
@@ -410,7 +413,7 @@ export default function NotificationsPage() {
                       </div>
 
                       {/* Actions */}
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         {!notification.isRead && (
                           <button
                             onClick={() => handleMarkAsRead([notification.id])}

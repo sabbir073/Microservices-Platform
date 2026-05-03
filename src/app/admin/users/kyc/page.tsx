@@ -17,6 +17,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { ImageZoomGallery } from "@/components/admin/image-zoom-gallery";
 import { KycReviewActions } from "@/components/admin/kyc/kyc-review-actions";
+import { KycAppealsList } from "@/components/admin/users/kyc-appeals-list";
 
 interface PageProps {
   searchParams: Promise<{
@@ -150,7 +151,7 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
 
       {/* 3 Stats Cards per spec */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        <div className="rounded-xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-blue-600/5 p-5">
+        <div className="rounded-xl border border-blue-500/30 bg-linear-to-br from-blue-500/10 to-blue-600/5 p-5">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-blue-500/20">
               <BadgeCheck className="w-5 h-5 text-blue-400" />
@@ -166,7 +167,7 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
             of {totalUsers.toLocaleString()} users
           </p>
         </div>
-        <div className="rounded-xl border border-yellow-500/30 bg-gradient-to-br from-yellow-500/10 to-amber-500/5 p-5">
+        <div className="rounded-xl border border-yellow-500/30 bg-linear-to-br from-yellow-500/10 to-amber-500/5 p-5">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-yellow-500/20">
               <Clock className="w-5 h-5 text-yellow-400" />
@@ -180,7 +181,7 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
           </div>
           <p className="text-xs text-slate-500">awaiting your decision</p>
         </div>
-        <div className="rounded-xl border border-purple-500/30 bg-gradient-to-br from-purple-500/10 to-pink-500/5 p-5">
+        <div className="rounded-xl border border-purple-500/30 bg-linear-to-br from-purple-500/10 to-pink-500/5 p-5">
           <div className="flex items-center gap-3 mb-2">
             <div className="p-2 rounded-lg bg-purple-500/20">
               <Activity className="w-5 h-5 text-purple-400" />
@@ -222,19 +223,14 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
         </Link>
       </div>
 
-      {/* APPEALS TAB — placeholder */}
+      {/* APPEALS TAB */}
       {tab === "appeals" && (
-        <div className="bg-slate-900 rounded-xl border border-slate-800 p-16 text-center">
-          <BadgeCheck className="w-12 h-12 mx-auto mb-4 text-slate-600" />
-          <h3 className="text-lg font-medium text-white mb-2">
-            Verification Appeals
-          </h3>
-          <p className="text-slate-400 text-sm max-w-md mx-auto">
-            Users can appeal a KYC rejection. Full appeals workflow ships in
-            Phase 4 along with the Moderation Queue. For now, rejected users
-            can re-submit a new KYC document.
-          </p>
-        </div>
+        <KycAppealsList
+          canReview={
+            hasPermission(adminRole, "kyc.approve") ||
+            hasPermission(adminRole, "kyc.reject")
+          }
+        />
       )}
 
       {/* KYC TAB */}
@@ -287,7 +283,7 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
                       <div className="flex items-start justify-between mb-6 gap-4 flex-wrap">
                         <div className="flex items-center gap-4">
                           <Link href={`/admin/users/${doc.user.id}`}>
-                            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+                            <div className="w-12 h-12 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
                               {doc.user.name?.charAt(0) ||
                                 doc.user.email?.charAt(0) ||
                                 "U"}

@@ -189,6 +189,76 @@ model Mission {
   @@index([duration])
 }
 
+// Daily Task Mission — admin-defined per-package mission template that bundles
+// several "complete N tasks of type X" buckets. Users see today's mission for
+// their tier, work through every bucket, then claim the final reward.
+model DailyMissionTemplate {
+  id                      String      @id @default(cuid())
+  name                    String
+  description             String?     @db.Text
+  packageTier             PackageTier @default(FREE)
+  requiredLevel           Int         @default(1)
+  completionXpReward      Int         @default(0)
+  completionPointsReward  Int         @default(0)
+  isActive                Boolean     @default(true)
+  autoRefresh             Boolean     @default(true)
+  linkReferralBonus       Boolean     @default(false)
+  order                   Int         @default(0)
+  createdById             String?
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+
+  items   DailyMissionItem[]
+  claims  DailyMissionClaim[]
+
+  @@index([packageTier])
+  @@index([isActive])
+}
+
+model DailyMissionItem {
+  id                String               @id @default(cuid())
+  missionId         String
+  mission           DailyMissionTemplate @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  taskType          String               // ARTICLE | VIDEO | QUIZ | SURVEY | SOCIAL | PROXY | OFFERWALL | BOARD | MANUAL | CUSTOM
+  description       String?              @db.Text
+  targetCount       Int                  @default(1)
+  xpPerComplete     Int                  @default(0)
+  pointsPerComplete Int                  @default(0)
+  duration          Int?                 // minutes (display-only)
+  requiredLevel     Int?
+  order             Int                  @default(0)
+
+  @@index([missionId])
+}
+
+model DailyMissionClaim {
+  id          String                @id @default(cuid())
+  userId      String
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  missionId   String
+  mission     DailyMissionTemplate  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  date        String                // YYYY-MM-DD (UTC)
+  streak      Int                   @default(1)
+  claimedAt   DateTime              @default(now())
+
+  @@unique([userId, missionId, date])
+  @@index([userId, date])
+  @@index([missionId])
+}
+
+model DailyReferralClaim {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      String   // YYYY-MM-DD (UTC)
+  amount    Float
+  points    Int
+  claimedAt DateTime @default(now())
+
+  @@unique([userId, date])
+  @@index([userId])
+}
+
 model AdCampaign {
   id            String   @id @default(cuid())
   advertiserId  String?
@@ -514,18 +584,28 @@ model User {
   division          String?
   region            String?
   postalCode        String?
+  // Profile tags (Early Adopter / Crypto / Trader / Pro / etc.) — max 3 picked from a fixed set
+  tags              String[]    @default([])
   // Settings
   theme             String      @default("dark")
+  themeAccent       String?     @default("indigo")
   language          String      @default("en")
   notificationsEnabled Boolean  @default(true)
   emailNotifications Boolean    @default(true)
   pushNotifications  Boolean    @default(true)
+  // Privacy visibility ("PUBLIC" | "FRIENDS" | "PRIVATE") — defaults match spec
+  privacyAvatar     String      @default("PUBLIC")
+  privacyBio        String      @default("PUBLIC")
+  privacyStats      String      @default("PUBLIC")
+  privacyEarnings   String      @default("PRIVATE")
+  privacyLocation   String      @default("FRIENDS")
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
   lastLoginAt       DateTime?
   accounts          Account[]
   sessions          Session[]
   kycDocuments      KYCDocument[]
+  kycAppeals        KYCAppeal[]
   taskSubmissions   TaskSubmission[]
   transactions      Transaction[]
   withdrawals       Withdrawal[]
@@ -544,6 +624,23 @@ model User {
   pointGifts        PointGift[]         @relation("PointGiftSender")
   receivedGifts     PointGift[]         @relation("PointGiftReceiver")
   mediaUploads      Media[]
+  cartItems         CartItem[]
+  votes             Vote[]
+  donations         Donation[]
+  ownedGroups       Group[]            @relation("GroupOwner")
+  groupMemberships  GroupMember[]
+  groupJoinRequests GroupJoinRequest[]
+  dailyMissionClaims  DailyMissionClaim[]
+  dailyReferralClaims DailyReferralClaim[]
+  socialAccounts      SocialAccount[]
+  // Native social graph
+  followers          Follow[]    @relation("Followers")
+  following          Follow[]    @relation("Following")
+  followersCount     Int         @default(0)
+  followingCount     Int         @default(0)
+  postViews          PostView[]
+  mentionsReceived   Mention[]   @relation("Mentioned")
+  mentionsMade       Mention[]   @relation("MentionedBy")
   @@index([email])
   @@index([referralCode])
   @@index([referredById])
@@ -566,6 +663,24 @@ model Account {
   session_state     String?
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+// Connected social account — one row per (user × platform)
+model SocialAccount {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform       String   // TWITTER | FACEBOOK | INSTAGRAM | YOUTUBE | TIKTOK | LINKEDIN | TELEGRAM | DISCORD
+  username       String
+  url            String?
+  followers      Int      @default(0)
+  following      Int      @default(0)
+  postsCount     Int      @default(0)
+  verified       Boolean  @default(false)
+  connectedAt    DateTime @default(now())
+  lastSyncedAt   DateTime?
+  @@unique([userId, platform])
   @@index([userId])
 }
 
@@ -598,8 +713,35 @@ model KYCDocument {
   reviewedAt  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  appeals     KYCAppeal[]
   @@index([userId])
   @@index([status])
+}
+
+enum KYCAppealStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model KYCAppeal {
+  id             String          @id @default(cuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kycDocumentId  String
+  kycDocument    KYCDocument     @relation(fields: [kycDocumentId], references: [id], onDelete: Cascade)
+  reason         String          @db.Text
+  evidence       String[]
+  status         KYCAppealStatus @default(PENDING)
+  adminNote      String?         @db.Text
+  reviewedById   String?
+  reviewedAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  @@index([userId])
+  @@index([kycDocumentId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model Task {
@@ -822,6 +964,7 @@ model MarketplaceListing {
   updatedAt       DateTime                 @updatedAt
   expiresAt       DateTime?
   purchases       MarketplacePurchase[]
+  cartItems       CartItem[]
   @@index([sellerId])
   @@index([status])
   @@index([category])
@@ -841,6 +984,19 @@ model MarketplacePurchase {
   disputes    MarketplaceDispute[]
   @@index([listingId])
   @@index([buyerId])
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  quantity  Int      @default(1)
+  addedAt   DateTime @default(now())
+
+  @@unique([userId, listingId])
+  @@index([userId])
 }
 
 model Course {
@@ -946,12 +1102,151 @@ model Post {
   likesCount  Int       @default(0)
   commentsCount Int     @default(0)
   sharesCount Int       @default(0)
+  viewsCount  Int       @default(0)
+  socialEarnings Int    @default(0)
+  pollOptions Json?     // [{ id, label, voteCount }]
+  pollEndsAt  DateTime?
+  donationGoal      Int?
+  donationCollected Int       @default(0)
+  groupId           String?
+  group             Group?    @relation(fields: [groupId], references: [id])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   comments    Comment[]
   likes       Like[]
+  votes       Vote[]
+  donations   Donation[]
+  views       PostView[]
+  mentions    Mention[]
   @@index([userId])
   @@index([createdAt])
+  @@index([groupId])
+}
+
+model Follow {
+  id          String   @id @default(cuid())
+  followerId  String
+  follower    User     @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+  followingId String
+  following   User     @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  @@unique([followerId, followingId])
+  @@index([followerId])
+  @@index([followingId])
+}
+
+model PostView {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  viewedAt  DateTime @default(now())
+  @@unique([postId, userId])
+  @@index([postId])
+  @@index([userId])
+}
+
+model Mention {
+  id              String   @id @default(cuid())
+  postId          String?
+  post            Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  commentId       String?
+  comment         Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  mentionedUserId String
+  mentionedUser   User     @relation("Mentioned", fields: [mentionedUserId], references: [id], onDelete: Cascade)
+  mentionedById   String
+  mentionedBy     User     @relation("MentionedBy", fields: [mentionedById], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+  @@index([mentionedUserId])
+  @@index([postId])
+  @@index([commentId])
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  optionId  String
+  createdAt DateTime @default(now())
+  @@unique([postId, userId])
+  @@index([postId])
+}
+
+model Donation {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  donorId   String
+  donor     User     @relation(fields: [donorId], references: [id])
+  points    Int
+  createdAt DateTime @default(now())
+  @@index([postId])
+  @@index([donorId])
+}
+
+model Group {
+  id          String   @id @default(cuid())
+  name        String
+  description String?  @db.Text
+  type        GroupType @default(PUBLIC)
+  avatarUrl   String?
+  bannerUrl   String?
+  ownerId     String
+  owner       User     @relation("GroupOwner", fields: [ownerId], references: [id])
+  memberCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  members     GroupMember[]
+  joinRequests GroupJoinRequest[]
+  posts       Post[]
+  @@index([ownerId])
+  @@index([type])
+}
+
+model GroupMember {
+  id       String   @id @default(cuid())
+  groupId  String
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id])
+  role     GroupRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+  @@unique([groupId, userId])
+  @@index([userId])
+}
+
+model GroupJoinRequest {
+  id        String   @id @default(cuid())
+  groupId   String
+  group     Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  status    JoinRequestStatus @default(PENDING)
+  createdAt DateTime @default(now())
+  decidedAt DateTime?
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+enum GroupType {
+  PUBLIC
+  PRIVATE
+}
+
+enum GroupRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum JoinRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 model Comment {
@@ -964,6 +1259,7 @@ model Comment {
   parentId    String?
   parent      Comment? @relation("CommentReplies", fields: [parentId], references: [id])
   replies     Comment[] @relation("CommentReplies")
+  mentions    Mention[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   @@index([postId])
@@ -1221,6 +1517,7 @@ model Media {
   altText           String?
   caption           String?       @db.Text
   description       String?       @db.Text
+  folder            String        @default("")  // Optional path-style folder, e.g. "banners" or "2026/april"
   width             Int?          // Image/video width in pixels
   height            Int?          // Image/video height in pixels
   duration          Int?          // Video/audio duration in seconds
@@ -1231,6 +1528,7 @@ model Media {
 
   @@index([uploadedById])
   @@index([fileType])
+  @@index([folder])
   @@index([createdAt])
   @@index([s3Key])
 }

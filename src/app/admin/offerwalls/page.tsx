@@ -13,9 +13,21 @@ export default async function OfferwallsAdminPage() {
   if (!hasPermission(adminRole, "offerwalls.view")) redirect("/admin");
 
   const canManage = hasPermission(adminRole, "offerwalls.manage");
-  const offerwalls = await prisma.offerwallConfig.findMany({
+  const offerwallsRaw = await prisma.offerwallConfig.findMany({
     orderBy: { provider: "asc" },
   });
+  const offerwalls = offerwallsRaw.map((o) => ({
+    id: o.id,
+    provider: o.provider,
+    apiKey: o.apiKey,
+    secretKey: o.secretKey,
+    callbackUrl: o.callbackUrl,
+    isActive: o.isActive,
+    config:
+      o.config && typeof o.config === "object" && !Array.isArray(o.config)
+        ? (o.config as Record<string, unknown>)
+        : null,
+  }));
 
   const callbackCount = await prisma.offerwallCallback.count();
 

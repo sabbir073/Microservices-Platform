@@ -2,14 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Plus,
-  X,
-  Loader2,
-  Package,
-  Image as ImageIcon,
-  Trash2,
-} from "lucide-react";
+import { Plus, X, Package, Image as ImageIcon, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
@@ -297,6 +290,7 @@ export function CreateListingButton({ canManage }: CreateListingButtonProps) {
                             key={index}
                             className="flex items-center gap-2 p-2 bg-gray-800 border border-gray-700 rounded-lg"
                           >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={img}
                               alt={`Preview ${index + 1}`}

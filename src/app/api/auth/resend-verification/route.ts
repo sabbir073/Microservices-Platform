@@ -11,11 +11,22 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email } = resendSchema.parse(body);
 
-    await resendVerificationEmail(email);
+    const result = await resendVerificationEmail(email);
+
+    const isDev = process.env.NODE_ENV !== "production";
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
+    const devVerifyUrl =
+      isDev && !result.emailSent
+        ? `${appUrl}/verify-email?token=${result.verificationToken}`
+        : null;
 
     return NextResponse.json({
       success: true,
-      message: "Verification email sent! Please check your inbox.",
+      emailSent: result.emailSent,
+      message: result.emailSent
+        ? "Verification email sent! Please check your inbox."
+        : "Email delivery isn't configured on this server — use the link below to verify.",
+      ...(devVerifyUrl ? { devVerifyUrl } : {}),
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

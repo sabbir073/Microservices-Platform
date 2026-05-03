@@ -11,6 +11,8 @@ import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { Toaster } from "sonner";
+import { CookieConsent } from "@/components/user/primitives/cookie-consent";
+import { PushPermissionPrompt } from "@/components/user/primitives/push-permission-prompt";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -72,6 +74,8 @@ export default function RootLayout({
       <body className="font-sans antialiased">
         <ThemeProvider defaultTheme="dark" storageKey="earngpt-theme">
           {children}
+          <CookieConsent />
+          <PushPermissionPrompt />
           <Toaster
             position="top-right"
             theme="dark"

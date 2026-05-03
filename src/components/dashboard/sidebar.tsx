@@ -54,6 +54,7 @@ const navigationGroups = [
     items: [
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { name: "Tasks", href: "/tasks", icon: ListTodo },
+      { name: "Daily Mission", href: "/daily-mission", icon: Target },
       { name: "Wallet", href: "/wallet", icon: Wallet },
       { name: "Referrals", href: "/referrals", icon: Users },
     ],
@@ -116,10 +117,10 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarConten
       {/* Logo */}
       <div className="flex h-16 shrink-0 items-center px-6 border-b border-gray-800">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
-          <span className="text-lg font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+          <span className="text-lg font-bold bg-linear-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
             EarnGPT
           </span>
         </Link>
@@ -128,7 +129,7 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarConten
       {/* User Info */}
       <div className="px-4 py-4 border-b border-gray-800">
         <div className="flex items-center gap-3 px-2">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+          <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
             {user.name?.charAt(0) || user.email?.charAt(0) || "U"}
           </div>
           <div className="flex-1 min-w-0">

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Globe, CheckCircle, XCircle } from "lucide-react";
 import { ProxyClient } from "@/components/admin/proxy/proxy-client";
+import { ProxyMonitor } from "@/components/admin/proxy/proxy-monitor";
 
 export default async function ProxyAdminPage() {
   const session = await auth();
@@ -53,6 +54,8 @@ export default async function ProxyAdminPage() {
       </div>
 
       <ProxyClient initial={servers} canManage={canManage} />
+
+      <ProxyMonitor canManage={canManage} />
     </div>
   );
 }

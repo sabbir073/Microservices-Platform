@@ -2,17 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Save,
-  X,
-  Loader2,
-  Package,
-  Image as ImageIcon,
-  Trash2,
-  Plus,
-  ArrowLeft,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Save, X, Loader2, Package, Image as ImageIcon, Trash2, Plus, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
 
@@ -300,6 +290,7 @@ export function EditListingForm({ listing }: EditListingFormProps) {
                     key={index}
                     className="flex items-center gap-2 p-2 bg-gray-800 border border-gray-700 rounded-lg"
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={img}
                       alt={`Preview ${index + 1}`}

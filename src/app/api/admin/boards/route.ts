@@ -1,0 +1,75 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { hasPermission, type UserRole } from "@/lib/rbac";
+import { z } from "zod";
+
+const createSchema = z.object({
+  title: z.string().min(2).max(120),
+  description: z.string().max(500).nullable().optional(),
+  iconEmoji: z.string().max(8).nullable().optional(),
+  pointsReward: z.number().int().min(0).default(0),
+  xpReward: z.number().int().min(0).default(0),
+  isActive: z.boolean().default(true),
+  order: z.number().int().default(0),
+});
+
+export async function GET() {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const role = session.user.role as UserRole | undefined;
+  if (!hasPermission(role, "boards.view")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const boards = await prisma.taskBoard.findMany({
+    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+  });
+
+  const ids = boards.map((b) => b.id);
+  const taskCounts = await Promise.all(
+    ids.map((id) => prisma.task.count({ where: { boardId: id } }))
+  );
+
+  return NextResponse.json({
+    boards: boards.map((b, i) => ({ ...b, taskCount: taskCounts[i] ?? 0 })),
+  });
+}
+
+export async function POST(req: NextRequest) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const role = session.user.role as UserRole | undefined;
+  if (!hasPermission(role, "boards.manage")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await req.json();
+  const v = createSchema.safeParse(body);
+  if (!v.success) {
+    return NextResponse.json(
+      { error: "Invalid input", details: v.error.issues },
+      { status: 400 }
+    );
+  }
+
+  const board = await prisma.taskBoard.create({
+    data: { ...v.data, createdById: session.user.id },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: session.user.id,
+      action: "BOARD_CREATED",
+      entity: "TaskBoard",
+      entityId: board.id,
+      newData: { title: board.title, pointsReward: board.pointsReward },
+    },
+  });
+
+  return NextResponse.json({ board }, { status: 201 });
+}

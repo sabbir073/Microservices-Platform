@@ -97,7 +97,7 @@ export function SoloRewardWidget({
       >
         <div
           className={cn(
-            "px-4 py-2.5 bg-gradient-to-r flex items-center gap-2 text-white",
+            "px-4 py-2.5 bg-linear-to-r flex items-center gap-2 text-white",
             meta.tone
           )}
         >
@@ -126,7 +126,7 @@ export function SoloRewardWidget({
                     </div>
                     <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
                       <div
-                        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
+                        className="h-full bg-linear-to-r from-indigo-500 to-purple-500"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -167,7 +167,7 @@ export function SoloRewardWidget({
               )}
               <button
                 onClick={() => setShowModal(true)}
-                className="w-full py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 text-gray-900 font-bold text-sm hover:opacity-90"
+                className="w-full py-2.5 rounded-lg bg-linear-to-r from-amber-500 to-yellow-500 text-gray-900 font-bold text-sm hover:opacity-90"
               >
                 🎁 CLAIM REWARD
               </button>
@@ -197,9 +197,9 @@ export function SoloRewardWidget({
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-100 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-gray-900 rounded-2xl border border-gray-800 w-full max-w-sm p-6 text-center">
-            <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-amber-500 to-yellow-600 flex items-center justify-center mb-3">
+            <div className="w-16 h-16 mx-auto rounded-full bg-linear-to-br from-amber-500 to-yellow-600 flex items-center justify-center mb-3">
               <Gift className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-lg font-bold text-white mb-1">Claim Reward</h2>
@@ -217,7 +217,7 @@ export function SoloRewardWidget({
               <button
                 disabled={claiming}
                 onClick={claim}
-                className="flex-1 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-500 text-gray-900 text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-lg bg-linear-to-r from-amber-500 to-yellow-500 text-gray-900 text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {claiming ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

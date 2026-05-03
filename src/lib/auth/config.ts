@@ -14,7 +14,8 @@ const ADMIN_ROLES = [
   "MODERATOR",
 ] as const;
 
-const loginSchema = z.object({
+// Reserved: schema for credentials validation when `authorize` is wired up.
+const _loginSchema = z.object({
   email: z.string().email("Invalid email address"),
   password: z.string().min(6, "Password must be at least 6 characters"),
 });

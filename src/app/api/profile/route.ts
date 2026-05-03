@@ -2,6 +2,72 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { KYCStatus } from "@/generated/prisma";
+import { calculateProfileCompletion } from "@/lib/profile-completion";
+
+const PROFILE_FIELDS = {
+  id: true,
+  name: true,
+  username: true,
+  email: true,
+  avatar: true,
+  coverPhoto: true,
+  bio: true,
+  phone: true,
+  country: true,
+  language: true,
+  timezone: true,
+  level: true,
+  xp: true,
+  pointsBalance: true,
+  cashBalance: true,
+  totalEarnings: true,
+  packageTier: true,
+  packageExpiresAt: true,
+  referralCode: true,
+  kycStatus: true,
+  emailVerified: true,
+  phoneVerified: true,
+  isBlueVerified: true,
+  twoFactorEnabled: true,
+  notificationsEnabled: true,
+  emailNotifications: true,
+  pushNotifications: true,
+  // Extended profile
+  firstName: true,
+  lastName: true,
+  gender: true,
+  dateOfBirth: true,
+  nidNumber: true,
+  profession: true,
+  maritalStatus: true,
+  studyLevel: true,
+  nationality: true,
+  bloodGroup: true,
+  secondaryEmail: true,
+  secondaryPhone: true,
+  // Address
+  street: true,
+  village: true,
+  city: true,
+  subDistrict: true,
+  district: true,
+  subDivision: true,
+  division: true,
+  region: true,
+  postalCode: true,
+  // Settings
+  theme: true,
+  themeAccent: true,
+  tags: true,
+  privacyAvatar: true,
+  privacyBio: true,
+  privacyStats: true,
+  privacyEarnings: true,
+  privacyLocation: true,
+  followersCount: true,
+  followingCount: true,
+  createdAt: true,
+} as const;
 
 // GET /api/profile - Get user's full profile
 export async function GET() {
@@ -15,33 +81,14 @@ export async function GET() {
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
-        id: true,
-        name: true,
-        email: true,
-        avatar: true,
-        phone: true,
-        country: true,
-        language: true,
-        timezone: true,
-        level: true,
-        xp: true,
-        pointsBalance: true,
-        totalEarnings: true,
-        packageTier: true,
-        packageExpiresAt: true,
-        referralCode: true,
-        kycStatus: true,
-        emailVerified: true,
-        phoneVerified: true,
-        notificationsEnabled: true,
-        emailNotifications: true,
-        pushNotifications: true,
-        createdAt: true,
+        ...PROFILE_FIELDS,
         _count: {
           select: {
             referrals: true,
             taskSubmissions: true,
             transactions: true,
+            socialAccounts: true,
+            posts: true,
           },
         },
       },
@@ -51,22 +98,21 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Get user's package info
+    type CountRel = { _count: { referrals: number; taskSubmissions: number; transactions: number; socialAccounts: number; posts: number } };
+    const u = user as typeof user & CountRel;
+
     const pkg = await prisma.package.findUnique({
-      where: { tier: user.packageTier },
+      where: { tier: u.packageTier },
     });
 
-    // Calculate XP needed for next level
-    const xpForNextLevel = calculateXpForLevel(user.level + 1);
-    const xpProgress = user.xp - calculateXpForLevel(user.level);
-    const xpNeeded = xpForNextLevel - calculateXpForLevel(user.level);
+    const xpForNextLevel = calculateXpForLevel(u.level + 1);
+    const xpProgress = u.xp - calculateXpForLevel(u.level);
+    const xpNeeded = Math.max(1, xpForNextLevel - calculateXpForLevel(u.level));
 
-    // Get achievements count
     const achievementsCount = await prisma.userAchievement.count({
       where: { userId: session.user.id },
     });
 
-    // Get recent activity summary
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -85,58 +131,145 @@ export async function GET() {
       xpEarned: todaySubmissions.reduce((sum, s) => sum + (s.xpEarned || 0), 0),
     };
 
+    const socialAccounts = await prisma.socialAccount.findMany({
+      where: { userId: session.user.id },
+      orderBy: { connectedAt: "asc" },
+    });
+
+    const completion = calculateProfileCompletion({
+      avatar: u.avatar,
+      coverPhoto: u.coverPhoto,
+      firstName: u.firstName,
+      lastName: u.lastName,
+      bio: u.bio,
+      gender: u.gender,
+      dateOfBirth: u.dateOfBirth,
+      nidNumber: u.nidNumber,
+      emailVerified: u.emailVerified,
+      phone: u.phone,
+      phoneVerified: u.phoneVerified,
+      country: u.country,
+      city: u.city,
+      street: u.street,
+      postalCode: u.postalCode,
+      kycStatus: u.kycStatus,
+      tags: u.tags,
+      socialAccountsCount: u._count.socialAccounts,
+    });
+
     return NextResponse.json({
       profile: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        avatar: user.avatar,
-        phone: user.phone,
-        country: user.country,
-        language: user.language || "en",
-        timezone: user.timezone || "UTC",
-        createdAt: user.createdAt,
+        id: u.id,
+        name: u.name,
+        username: u.username,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        email: u.email,
+        avatar: u.avatar,
+        coverPhoto: u.coverPhoto,
+        bio: u.bio,
+        phone: u.phone,
+        secondaryEmail: u.secondaryEmail,
+        secondaryPhone: u.secondaryPhone,
+        gender: u.gender,
+        dateOfBirth: u.dateOfBirth,
+        nidNumber: u.nidNumber,
+        profession: u.profession,
+        maritalStatus: u.maritalStatus,
+        studyLevel: u.studyLevel,
+        nationality: u.nationality,
+        bloodGroup: u.bloodGroup,
+        country: u.country,
+        language: u.language || "en",
+        timezone: u.timezone || "UTC",
+        tags: u.tags ?? [],
+        createdAt: u.createdAt,
+      },
+      address: {
+        street: u.street,
+        village: u.village,
+        city: u.city,
+        subDistrict: u.subDistrict,
+        district: u.district,
+        subDivision: u.subDivision,
+        division: u.division,
+        region: u.region,
+        postalCode: u.postalCode,
+        country: u.country,
       },
       stats: {
-        level: user.level,
-        xp: user.xp,
+        level: u.level,
+        xp: u.xp,
         xpProgress,
         xpNeeded,
         xpPercentage: Math.round((xpProgress / xpNeeded) * 100),
-        pointsBalance: user.pointsBalance,
-        cashBalance: user.pointsBalance / 1000,
-        totalEarnings: user.totalEarnings,
-        tasksCompleted: user._count.taskSubmissions,
-        referralsCount: user._count.referrals,
+        pointsBalance: u.pointsBalance,
+        cashBalance: u.cashBalance,
+        totalEarnings: u.totalEarnings,
+        tasksCompleted: u._count.taskSubmissions,
+        referralsCount: u._count.referrals,
         achievementsCount,
+        socialAccountsCount: u._count.socialAccounts,
+        postsCount: u._count.posts,
+        followersCount: u.followersCount,
+        followingCount: u.followingCount,
       },
       package: {
-        tier: user.packageTier,
-        name: pkg?.name || user.packageTier,
-        expiresAt: user.packageExpiresAt,
+        tier: u.packageTier,
+        name: pkg?.name || u.packageTier,
+        expiresAt: u.packageExpiresAt,
         features: pkg?.features || [],
         dailyTaskLimit: pkg?.dailyTaskLimit || 10,
       },
       referral: {
-        code: user.referralCode,
-        link: `${process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.com"}/register?ref=${user.referralCode}`,
+        code: u.referralCode,
+        link: `${process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.com"}/register?ref=${u.referralCode}`,
       },
       verification: {
-        kycStatus: user.kycStatus,
-        isEmailVerified: !!user.emailVerified,
-        isPhoneVerified: !!user.phoneVerified,
+        kycStatus: u.kycStatus,
+        isBlueVerified: u.isBlueVerified,
+        isEmailVerified: !!u.emailVerified,
+        isPhoneVerified: !!u.phoneVerified,
+        twoFactorEnabled: u.twoFactorEnabled,
         isFullyVerified:
-          user.kycStatus === KYCStatus.APPROVED &&
-          !!user.emailVerified &&
-          !!user.phoneVerified,
+          u.kycStatus === KYCStatus.APPROVED &&
+          !!u.emailVerified &&
+          !!u.phoneVerified,
       },
       preferences: {
+        theme: u.theme,
+        themeAccent: u.themeAccent ?? "indigo",
         notifications: {
-          enabled: user.notificationsEnabled,
-          email: user.emailNotifications,
-          push: user.pushNotifications,
+          enabled: u.notificationsEnabled,
+          email: u.emailNotifications,
+          push: u.pushNotifications,
+        },
+        privacy: {
+          avatar: u.privacyAvatar,
+          bio: u.privacyBio,
+          stats: u.privacyStats,
+          earnings: u.privacyEarnings,
+          location: u.privacyLocation,
         },
       },
+      socialAccounts: socialAccounts.map((s) => ({
+        id: s.id,
+        platform: s.platform,
+        username: s.username,
+        url: s.url,
+        followers: s.followers,
+        following: s.following,
+        postsCount: s.postsCount,
+        verified: s.verified,
+        connectedAt: s.connectedAt,
+      })),
+      completion,
+      todayStats: {
+        tasksCompleted: todayStats.count,
+        pointsEarned: todayStats.pointsEarned,
+        xpEarned: todayStats.xpEarned,
+      },
+      // legacy alias kept for back-compat
       todayActivity: {
         tasksCompleted: todayStats.count,
         pointsEarned: todayStats.pointsEarned,
@@ -145,14 +278,38 @@ export async function GET() {
     });
   } catch (error) {
     console.error("Error fetching profile:", error);
+    const isDev = process.env.NODE_ENV !== "production";
     return NextResponse.json(
-      { error: "Failed to fetch profile" },
+      {
+        error: "Failed to fetch profile",
+        ...(isDev && error instanceof Error
+          ? { detail: error.message, stack: error.stack?.split("\n").slice(0, 6).join("\n") }
+          : {}),
+        hint:
+          "If you just changed prisma/schema.prisma, restart the dev server " +
+          "(`npm run dev`) so the regenerated Prisma client is loaded. Also confirm " +
+          "`npx prisma db push` printed 'in sync'.",
+      },
       { status: 500 }
     );
   }
 }
 
-// PATCH /api/profile - Update user profile
+const ALLOWED_PRIVACY = new Set(["PUBLIC", "FRIENDS", "PRIVATE"]);
+const ALLOWED_TAGS = new Set([
+  "EARLY_ADOPTER",
+  "VERIFIED",
+  "CRYPTO",
+  "TRADER",
+  "GAMER",
+  "INFLUENCER",
+  "WHALE",
+  "PRO",
+  "ELITE",
+  "CREATOR",
+]);
+
+// PATCH /api/profile - Update user profile (covers all editable fields)
 export async function PATCH(request: NextRequest) {
   try {
     const session = await auth();
@@ -162,112 +319,137 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const {
-      name,
-      avatar,
-      phone,
-      country,
-      language,
-      timezone,
-    } = body;
-
-    // Build update data with only allowed fields
     const updateData: Record<string, unknown> = {};
 
-    if (name !== undefined) {
-      if (!name || name.length < 2 || name.length > 50) {
-        return NextResponse.json(
-          { error: "Name must be 2-50 characters" },
-          { status: 400 }
-        );
+    // Basic
+    if (body.name !== undefined) {
+      const name = String(body.name).trim();
+      if (name.length < 2 || name.length > 50) {
+        return NextResponse.json({ error: "Name must be 2-50 characters" }, { status: 400 });
       }
       updateData.name = name;
     }
-
-    if (avatar !== undefined) {
-      updateData.avatar = avatar;
-    }
-
-    if (phone !== undefined) {
-      // Phone validation - basic format check
-      if (phone && !/^\+?[\d\s-]{10,15}$/.test(phone)) {
-        return NextResponse.json(
-          { error: "Invalid phone number format" },
-          { status: 400 }
-        );
+    for (const f of [
+      "firstName",
+      "lastName",
+      "username",
+      "bio",
+      "gender",
+      "profession",
+      "maritalStatus",
+      "studyLevel",
+      "nationality",
+      "bloodGroup",
+      "secondaryEmail",
+      "secondaryPhone",
+      "nidNumber",
+    ] as const) {
+      if (body[f] !== undefined) {
+        const val = body[f] === null ? null : String(body[f]).trim();
+        if (typeof val === "string" && val.length > 200) {
+          return NextResponse.json({ error: `${f} too long` }, { status: 400 });
+        }
+        updateData[f] = val || null;
       }
-      updateData.phone = phone;
-      updateData.phoneVerified = null; // Reset verification when phone changes
+    }
+    if (body.dateOfBirth !== undefined) {
+      updateData.dateOfBirth = body.dateOfBirth ? new Date(body.dateOfBirth) : null;
     }
 
-    if (country !== undefined) {
-      updateData.country = country;
+    // Photos
+    if (body.avatar !== undefined) updateData.avatar = body.avatar || null;
+    if (body.coverPhoto !== undefined) updateData.coverPhoto = body.coverPhoto || null;
+
+    // Phone (basic format check)
+    if (body.phone !== undefined) {
+      const phone = body.phone === null ? null : String(body.phone).trim();
+      if (phone && !/^\+?[\d\s-]{8,20}$/.test(phone)) {
+        return NextResponse.json({ error: "Invalid phone number format" }, { status: 400 });
+      }
+      updateData.phone = phone || null;
+      updateData.phoneVerified = null; // reset on change
     }
 
-    if (language !== undefined) {
+    // Address
+    for (const f of [
+      "street",
+      "village",
+      "city",
+      "subDistrict",
+      "district",
+      "subDivision",
+      "division",
+      "region",
+      "postalCode",
+      "country",
+    ] as const) {
+      if (body[f] !== undefined) {
+        updateData[f] = body[f] === null ? null : String(body[f]).trim() || null;
+      }
+    }
+
+    // Settings
+    if (body.language !== undefined) {
       const validLanguages = ["en", "bn", "hi", "ar", "es", "fr", "de", "zh"];
-      if (!validLanguages.includes(language)) {
-        return NextResponse.json(
-          { error: "Invalid language code" },
-          { status: 400 }
-        );
+      if (!validLanguages.includes(body.language)) {
+        return NextResponse.json({ error: "Invalid language code" }, { status: 400 });
       }
-      updateData.language = language;
+      updateData.language = body.language;
+    }
+    if (body.timezone !== undefined) updateData.timezone = body.timezone;
+    if (body.theme !== undefined) {
+      if (!["dark", "light", "system"].includes(body.theme)) {
+        return NextResponse.json({ error: "Invalid theme" }, { status: 400 });
+      }
+      updateData.theme = body.theme;
+    }
+    if (body.themeAccent !== undefined) {
+      if (!["indigo", "purple", "emerald", "amber", "blue", "rose"].includes(body.themeAccent)) {
+        return NextResponse.json({ error: "Invalid accent color" }, { status: 400 });
+      }
+      updateData.themeAccent = body.themeAccent;
     }
 
-    if (timezone !== undefined) {
-      updateData.timezone = timezone;
+    // Tags
+    if (body.tags !== undefined) {
+      if (!Array.isArray(body.tags)) {
+        return NextResponse.json({ error: "tags must be an array" }, { status: 400 });
+      }
+      const cleaned = body.tags
+        .map((t: unknown) => String(t).toUpperCase())
+        .filter((t: string) => ALLOWED_TAGS.has(t))
+        .slice(0, 3);
+      updateData.tags = cleaned;
     }
 
-    // Handle notification preferences update
-    if (body.notificationsEnabled !== undefined) {
-      updateData.notificationsEnabled = body.notificationsEnabled;
+    // Privacy
+    for (const f of ["privacyAvatar", "privacyBio", "privacyStats", "privacyEarnings", "privacyLocation"] as const) {
+      if (body[f] !== undefined) {
+        const v = String(body[f]).toUpperCase();
+        if (!ALLOWED_PRIVACY.has(v)) {
+          return NextResponse.json({ error: `Invalid value for ${f}` }, { status: 400 });
+        }
+        updateData[f] = v;
+      }
     }
-    if (body.emailNotifications !== undefined) {
-      updateData.emailNotifications = body.emailNotifications;
-    }
-    if (body.pushNotifications !== undefined) {
-      updateData.pushNotifications = body.pushNotifications;
-    }
+
+    // Notification prefs
+    if (body.notificationsEnabled !== undefined) updateData.notificationsEnabled = !!body.notificationsEnabled;
+    if (body.emailNotifications !== undefined) updateData.emailNotifications = !!body.emailNotifications;
+    if (body.pushNotifications !== undefined) updateData.pushNotifications = !!body.pushNotifications;
 
     if (Object.keys(updateData).length === 0) {
-      return NextResponse.json(
-        { error: "No valid fields to update" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "No valid fields to update" }, { status: 400 });
     }
 
-    // Update user
-    const updatedUser = await prisma.user.update({
+    await prisma.user.update({
       where: { id: session.user.id },
       data: updateData,
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        avatar: true,
-        phone: true,
-        country: true,
-        language: true,
-        timezone: true,
-        phoneVerified: true,
-        notificationsEnabled: true,
-        emailNotifications: true,
-        pushNotifications: true,
-      },
     });
 
     return NextResponse.json({
       message: "Profile updated successfully",
-      profile: {
-        ...updatedUser,
-        isPhoneVerified: !!updatedUser.phoneVerified,
-        notifications: {
-          enabled: updatedUser.notificationsEnabled,
-          email: updatedUser.emailNotifications,
-          push: updatedUser.pushNotifications,
-        },
-      },
+      updated: Object.keys(updateData),
     });
   } catch (error) {
     console.error("Error updating profile:", error);
@@ -278,7 +460,6 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-// Helper function to calculate XP needed for a level
 function calculateXpForLevel(level: number): number {
   if (level <= 1) return 0;
   if (level === 2) return 100;
@@ -291,7 +472,5 @@ function calculateXpForLevel(level: number): number {
   if (level === 9) return 11000;
   if (level === 10) return 16000;
   if (level === 11) return 22000;
-
-  // After level 11, each level requires 10000 more XP
   return 22000 + (level - 11) * 10000;
 }

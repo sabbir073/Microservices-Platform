@@ -169,7 +169,7 @@ export function AdminHeader({ user }: AdminHeaderProps) {
             href="/admin"
             className="lg:hidden flex items-center gap-2 shrink-0"
           >
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-linear-to-br from-red-500 to-orange-600 flex items-center justify-center">
               <Shield className="w-4 h-4 text-white" />
             </div>
           </Link>
@@ -212,7 +212,7 @@ export function AdminHeader({ user }: AdminHeaderProps) {
             >
               <Bell className="w-5 h-5" />
               {unreadCount > 0 && (
-                <span className="absolute top-1 right-1 min-w-[16px] h-4 flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full">
+                <span className="absolute top-1 right-1 min-w-4 h-4 flex items-center justify-center px-1 text-[10px] font-bold text-white bg-red-500 rounded-full">
                   {unreadCount > 9 ? "9+" : unreadCount}
                 </span>
               )}
@@ -278,7 +278,7 @@ export function AdminHeader({ user }: AdminHeaderProps) {
                                     {notif.title}
                                   </p>
                                   {!notif.isRead && (
-                                    <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0" />
+                                    <span className="w-2 h-2 bg-blue-500 rounded-full shrink-0" />
                                   )}
                                 </div>
                                 <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
@@ -316,7 +316,7 @@ export function AdminHeader({ user }: AdminHeaderProps) {
               className="flex items-center gap-2 p-1 rounded-lg hover:bg-slate-800 transition-colors"
               aria-label="Account menu"
             >
-              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-red-500 to-orange-600 flex items-center justify-center text-white text-sm font-medium">
+              <div className="w-8 h-8 rounded-full bg-linear-to-br from-red-500 to-orange-600 flex items-center justify-center text-white text-sm font-medium">
                 {user.name?.charAt(0) || user.email?.charAt(0) || "A"}
               </div>
               <ChevronDown className="hidden sm:block w-4 h-4 text-slate-400" />

@@ -2,7 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Search, Filter, Plus, ShoppingBag, Package, ListChecks } from "lucide-react";
+import {
+  Search,
+  Plus,
+  ShoppingBag,
+  Package,
+  ListChecks,
+  ShoppingCart,
+} from "lucide-react";
 import { ListingCard } from "@/components/user/primitives/listing-card";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
@@ -44,6 +51,14 @@ export function MarketplaceView() {
   const [category, setCategory] = useState("ALL");
   const [listings, setListings] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cartCount, setCartCount] = useState(0);
+
+  useEffect(() => {
+    fetch("/api/cart")
+      .then((r) => (r.ok ? r.json() : { summary: { itemCount: 0 } }))
+      .then((d) => setCartCount(d.summary?.itemCount ?? 0))
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +81,18 @@ export function MarketplaceView() {
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <h1 className="text-xl font-bold text-white flex-1">🛒 Marketplace</h1>
+        <Link
+          href="/marketplace/cart"
+          className="relative p-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700"
+          aria-label="Cart"
+        >
+          <ShoppingCart className="w-4 h-4" />
+          {cartCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+              {cartCount > 99 ? "99+" : cartCount}
+            </span>
+          )}
+        </Link>
         <Link
           href="/marketplace/my"
           className="p-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700"

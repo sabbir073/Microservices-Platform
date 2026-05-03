@@ -49,7 +49,7 @@ export function ListingCard({
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-gray-800 to-gray-900 flex items-center justify-center text-gray-600 text-sm">
+          <div className="w-full h-full bg-linear-to-br from-gray-800 to-gray-900 flex items-center justify-center text-gray-600 text-sm">
             No image
           </div>
         )}

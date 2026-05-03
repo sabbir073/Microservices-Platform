@@ -213,7 +213,7 @@ export function QuizForm({ canUseAI }: QuizFormProps) {
     <div className="space-y-6">
       {/* AI Generate banner */}
       {canUseAI && (
-        <div className="rounded-xl border border-purple-500/30 bg-gradient-to-r from-purple-500/10 to-pink-500/10 p-4 flex items-center justify-between gap-4 flex-wrap">
+        <div className="rounded-xl border border-purple-500/30 bg-linear-to-r from-purple-500/10 to-pink-500/10 p-4 flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h3 className="text-base font-semibold text-white flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-400" />

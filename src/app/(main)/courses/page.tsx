@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { GraduationCap, Clock, Star, Play } from "lucide-react";
+import { GraduationCap } from "lucide-react";
 
 export default async function CoursesPage() {
   const session = await auth();

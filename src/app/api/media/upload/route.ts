@@ -2,17 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import {
-  uploadFile,
-  generateFileKey,
-  getBucketName,
-  isS3Configured,
-  getMediaUrl,
-  getMediaFileType,
-  generateMediaFilename,
-  getMediaS3KeyPath,
-  validateMediaFile,
-} from "@/lib/s3";
+import { uploadFile, isS3Configured, getMediaUrl, getMediaFileType, generateMediaFilename, getMediaS3KeyPath, validateMediaFile } from "@/lib/s3";
 
 // POST /api/media/upload - Upload media file (for small files < 1MB)
 export async function POST(request: NextRequest) {

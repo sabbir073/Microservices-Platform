@@ -250,7 +250,7 @@ export default async function QuizzesAdminPage({ searchParams }: PageProps) {
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-2">
                           <div>
-                            <p className="font-medium text-white truncate max-w-[280px]">
+                            <p className="font-medium text-white truncate max-w-70">
                               {q.title}
                             </p>
                             <p className="text-xs text-slate-500">

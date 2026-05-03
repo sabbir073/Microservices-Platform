@@ -1,8 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Trash2, Edit, Loader2, Image as ImageIcon, Save } from "lucide-react";
+import {
+  Plus,
+  X,
+  Trash2,
+  Edit,
+  Loader2,
+  Image as ImageIcon,
+  Save,
+  ChevronUp,
+  ChevronDown,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -39,6 +49,58 @@ export function BannersClient({ initial, canManage }: Props) {
   const router = useRouter();
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Banner | null>(null);
+  // Local copy enables optimistic reorder
+  const [banners, setBanners] = useState<Banner[]>(
+    () => [...initial].sort((a, b) => a.order - b.order)
+  );
+  const [movingId, setMovingId] = useState<string | null>(null);
+
+  // Re-sync if server data changes (after router.refresh)
+  useEffect(() => {
+    setBanners([...initial].sort((a, b) => a.order - b.order));
+  }, [initial]);
+
+  const move = async (id: string, direction: -1 | 1) => {
+    const idx = banners.findIndex((b) => b.id === id);
+    if (idx < 0) return;
+    const swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= banners.length) return;
+    setMovingId(id);
+
+    const a = banners[idx];
+    const b = banners[swapIdx];
+    // Optimistic local swap (also swap their order numbers so UI sort stays stable)
+    const next = [...banners];
+    next[idx] = { ...b, order: a.order };
+    next[swapIdx] = { ...a, order: b.order };
+    next.sort((x, y) => x.order - y.order);
+    setBanners(next);
+
+    try {
+      // Persist both orders in parallel
+      const [r1, r2] = await Promise.all([
+        fetch(`/api/admin/banners/${a.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order: b.order }),
+        }),
+        fetch(`/api/admin/banners/${b.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order: a.order }),
+        }),
+      ]);
+      if (!r1.ok || !r2.ok) throw new Error("Failed");
+      toast.success(direction === -1 ? "Moved up" : "Moved down");
+      router.refresh();
+    } catch {
+      // Revert
+      setBanners([...initial].sort((x, y) => x.order - y.order));
+      toast.error("Couldn't reorder");
+    } finally {
+      setMovingId(null);
+    }
+  };
 
   const toggleActive = async (id: string, isActive: boolean) => {
     try {
@@ -81,7 +143,7 @@ export function BannersClient({ initial, canManage }: Props) {
         </div>
       )}
 
-      {initial.length === 0 ? (
+      {banners.length === 0 ? (
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-16 text-center">
           <ImageIcon className="w-12 h-12 mx-auto mb-4 text-slate-600" />
           <h3 className="text-lg font-medium text-white mb-1">No banners yet</h3>
@@ -91,14 +153,14 @@ export function BannersClient({ initial, canManage }: Props) {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {initial.map((b) => (
+          {banners.map((b, idx) => (
             <div
               key={b.id}
               className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden"
             >
               <div
                 className={cn(
-                  "p-6 bg-gradient-to-r",
+                  "p-6 bg-linear-to-r",
                   b.bgGradient ?? "from-slate-700 to-slate-800"
                 )}
               >
@@ -132,7 +194,29 @@ export function BannersClient({ initial, canManage }: Props) {
                     </span>
                   </div>
                   {canManage && (
-                    <div className="flex gap-1">
+                    <div className="flex gap-1 items-center">
+                      <button
+                        onClick={() => move(b.id, -1)}
+                        disabled={idx === 0 || movingId !== null}
+                        className="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move up"
+                      >
+                        {movingId === b.id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => move(b.id, 1)}
+                        disabled={
+                          idx === banners.length - 1 || movingId !== null
+                        }
+                        className="p-1.5 rounded hover:bg-slate-700 text-slate-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+                        title="Move down"
+                      >
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </button>
                       <button
                         onClick={() => toggleActive(b.id, !b.isActive)}
                         className="px-2 py-1 rounded text-xs font-medium hover:bg-slate-700 text-slate-300"
@@ -306,7 +390,7 @@ function EditBannerModal({
                   type="button"
                   onClick={() => setForm({ ...form, bgGradient: g })}
                   className={cn(
-                    "h-10 rounded-lg bg-gradient-to-r",
+                    "h-10 rounded-lg bg-linear-to-r",
                     g,
                     form.bgGradient === g
                       ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-800"
@@ -495,7 +579,7 @@ function CreateBannerModal({
                   type="button"
                   onClick={() => setForm({ ...form, bgGradient: g })}
                   className={cn(
-                    "h-10 rounded-lg bg-gradient-to-r",
+                    "h-10 rounded-lg bg-linear-to-r",
                     g,
                     form.bgGradient === g
                       ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-800"

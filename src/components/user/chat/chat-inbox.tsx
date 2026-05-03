@@ -33,7 +33,7 @@ interface ChatInboxProps {
   userId: string;
 }
 
-export function ChatInbox({ userId }: ChatInboxProps) {
+export function ChatInbox({ userId: _userId }: ChatInboxProps) {
   const [search, setSearch] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,7 +92,7 @@ export function ChatInbox({ userId }: ChatInboxProps) {
                   className="w-11 h-11 rounded-full bg-gray-800 object-cover"
                 />
               ) : (
-                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold">
+                <div className="w-11 h-11 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold">
                   {c.otherUser.name?.[0]?.toUpperCase() ?? "?"}
                 </div>
               )}

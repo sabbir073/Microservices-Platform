@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircle, Play, Loader2, BookOpen, Trophy, Lock } from "lucide-react";
+import { CheckCircle, Play, Loader2, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -118,7 +118,7 @@ export function CoursePlayer({ course }: CoursePlayerProps) {
 
       <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
         <div
-          className="h-full bg-gradient-to-r from-emerald-500 to-cyan-500 transition-[width]"
+          className="h-full bg-linear-to-r from-emerald-500 to-cyan-500 transition-[width]"
           style={{ width: `${pct}%` }}
         />
       </div>
@@ -205,7 +205,7 @@ export function CoursePlayer({ course }: CoursePlayerProps) {
       </div>
 
       {showComplete && (
-        <div className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-100 bg-black/80 flex items-center justify-center p-4">
           <div className="rounded-2xl bg-gray-900 border border-gray-800 p-6 max-w-sm w-full text-center">
             <Trophy className="w-12 h-12 text-amber-400 mx-auto mb-3" />
             <h2 className="text-xl font-bold text-white">Course Complete!</h2>

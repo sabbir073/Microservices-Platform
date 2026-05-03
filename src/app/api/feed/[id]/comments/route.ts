@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { awardSocialEarning } from "@/lib/social-earning";
+import { extractMentionUsernames, resolveMentionedUsers } from "@/lib/mentions";
 
 // GET /api/feed/:id/comments - Get post comments
 export async function GET(
@@ -53,6 +55,7 @@ export async function GET(
       comments: commentsList.map((c) => ({
         id: c.id,
         content: c.content,
+        parentId: c.parentId,
         createdAt: c.createdAt,
         user: userMap.get(c.userId),
         isOwner: session?.user?.id === c.userId,
@@ -87,7 +90,7 @@ export async function POST(
 
     const { id } = await params;
     const body = await request.json();
-    const { content } = body;
+    const { content, parentId } = body as { content?: string; parentId?: string };
 
     // Validate content
     if (!content || content.trim().length === 0) {
@@ -113,12 +116,26 @@ export async function POST(
       return NextResponse.json({ error: "Post not found" }, { status: 404 });
     }
 
+    // Validate parentId if provided
+    if (parentId) {
+      const parent = await prisma.comment.findUnique({
+        where: { id: parentId },
+      });
+      if (!parent || parent.postId !== id) {
+        return NextResponse.json(
+          { error: "Parent comment not found" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create comment
     const comment = await prisma.comment.create({
       data: {
         postId: id,
         userId: session.user.id,
         content: content.trim(),
+        parentId: parentId ?? null,
       },
       include: {
         user: {
@@ -138,10 +155,51 @@ export async function POST(
       data: { commentsCount: { increment: 1 } },
     });
 
+    // Social earning — comment author awards the post owner
+    await awardSocialEarning({
+      recipientUserId: post.userId,
+      action: "COMMENT_RECEIVED",
+      postId: id,
+      sourceUserId: session.user.id,
+    });
+
+    // Mentions in this comment
+    const usernames = extractMentionUsernames(content);
+    if (usernames.length > 0) {
+      const mentionedUsers = await resolveMentionedUsers(usernames);
+      // Don't notify/earn if user mentions themselves or the post owner (post owner already got COMMENT_RECEIVED)
+      const filtered = mentionedUsers.filter(
+        (m) => m.id !== session.user!.id
+      );
+      if (filtered.length > 0) {
+        await Promise.all(
+          filtered.map((m) =>
+            prisma.mention.create({
+              data: {
+                commentId: comment.id,
+                postId: id,
+                mentionedUserId: m.id,
+                mentionedById: session.user!.id,
+              },
+            })
+          )
+        );
+        for (const m of filtered) {
+          await awardSocialEarning({
+            recipientUserId: m.id,
+            action: "MENTION_RECEIVED",
+            postId: id,
+            sourceUserId: session.user!.id,
+          });
+        }
+      }
+    }
+
     return NextResponse.json({
       comment: {
         id: comment.id,
         content: comment.content,
+        parentId: comment.parentId,
         createdAt: comment.createdAt,
         user: comment.user,
         isOwner: true,

@@ -195,7 +195,7 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
                 {courses.map((c) => (
                   <tr key={c.id} className="hover:bg-slate-800/40">
                     <td className="py-4 px-6">
-                      <p className="font-medium text-white truncate max-w-[280px]">
+                      <p className="font-medium text-white truncate max-w-70">
                         {c.title}
                       </p>
                       <p className="text-xs text-slate-500">

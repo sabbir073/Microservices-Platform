@@ -1,104 +1,87 @@
 "use client";
 
-import { UserPlus, ListTodo, Wallet, ArrowRight } from "lucide-react";
-import Link from "next/link";
+import {
+  UserPlus,
+  ListTodo,
+  Coins,
+  Wallet,
+  CheckCircle,
+  Send,
+  Sparkles,
+  type LucideIcon,
+} from "lucide-react";
+import type { HowItWorksContent } from "@/lib/landing-content";
+import { DEFAULT_LANDING_CONTENT } from "@/lib/landing-content";
 
-const steps = [
-  {
-    icon: UserPlus,
-    step: "01",
-    title: "Create Account",
-    description: "Sign up for free in just 30 seconds. Use a referral code to get bonus points!",
-    gradient: "from-indigo-500 to-indigo-600",
-  },
-  {
-    icon: ListTodo,
-    step: "02",
-    title: "Complete Tasks",
-    description: "Watch videos, complete surveys, invite friends, and do simple tasks daily.",
-    gradient: "from-purple-500 to-purple-600",
-  },
-  {
-    icon: Wallet,
-    step: "03",
-    title: "Withdraw Earnings",
-    description: "Convert points to cash and withdraw to bKash, Nagad, Binance, or PayPal.",
-    gradient: "from-green-500 to-emerald-500",
-  },
-];
+const ICONS: Record<string, LucideIcon> = {
+  UserPlus,
+  ListTodo,
+  Coins,
+  Wallet,
+  CheckCircle,
+  Send,
+  Sparkles,
+};
 
-export function HowItWorks() {
+type Props = Partial<HowItWorksContent>;
+
+export function HowItWorks(props: Props) {
+  const v: HowItWorksContent = {
+    ...DEFAULT_LANDING_CONTENT.how_it_works,
+    ...props,
+  };
+
   return (
-    <section id="how-it-works" className="py-20 sm:py-28 bg-gray-900">
+    <section id="how-it-works" className="py-20 sm:py-28">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
         <div className="text-center mb-16">
-          <span className="inline-block px-4 py-1.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-400 text-sm font-medium mb-4">
-            How It Works
+          <span className="inline-block px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-purple-400 text-xs font-semibold uppercase tracking-wider mb-4">
+            {v.badge}
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white mb-4">
-            Start Earning in{" "}
-            <span className="bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-              3 Easy Steps
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-white mb-4">
+            {v.heading_line1}{" "}
+            <span className="bg-linear-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+              {v.heading_line2}
             </span>
           </h2>
-          <p className="text-gray-400 max-w-2xl mx-auto text-lg">
-            Getting started is quick and simple. Follow these steps and start earning today.
-          </p>
+          <p className="text-slate-400 max-w-2xl mx-auto text-lg">{v.subheading}</p>
         </div>
 
-        {/* Steps */}
         <div className="relative">
-          {/* Connection Line - Desktop */}
-          <div className="absolute top-24 left-0 right-0 h-0.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-green-500 hidden lg:block" />
+          <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-linear-to-r from-blue-500/50 via-purple-500/50 to-pink-500/50 hidden lg:block -translate-y-1/2 pointer-events-none" />
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-12">
-            {steps.map((step, i) => (
-              <div key={i} className="relative">
-                {/* Card */}
-                <div className="relative p-8 rounded-2xl bg-gray-800/50 border border-gray-700 text-center">
-                  {/* Step Number Badge */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8 relative">
+            {v.steps.map((step, i) => {
+              const Icon = ICONS[step.iconKey] ?? Sparkles;
+              return (
+                <div
+                  key={i}
+                  className="relative p-6 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl hover:bg-white/10 hover:scale-105 transition-all duration-300 text-center"
+                >
                   <div className="absolute -top-4 left-1/2 -translate-x-1/2">
                     <span
-                      className={`inline-flex items-center justify-center w-8 h-8 rounded-full bg-gradient-to-r ${step.gradient} text-white text-sm font-bold`}
+                      className={`inline-flex items-center justify-center w-10 h-10 rounded-full bg-linear-to-r ${step.gradient} text-white text-sm font-extrabold shadow-lg`}
                     >
-                      {step.step}
+                      {step.step_number}
                     </span>
                   </div>
 
-                  {/* Icon */}
                   <div
-                    className={`w-20 h-20 mx-auto rounded-2xl bg-gradient-to-br ${step.gradient} flex items-center justify-center mb-6`}
+                    className={`w-16 h-16 mx-auto mt-4 rounded-2xl bg-linear-to-br ${step.gradient} flex items-center justify-center mb-4 shadow-lg`}
                   >
-                    <step.icon className="w-10 h-10 text-white" />
+                    <Icon className="w-8 h-8 text-white" />
                   </div>
 
-                  {/* Content */}
-                  <h3 className="text-xl font-bold text-white mb-3">{step.title}</h3>
-                  <p className="text-gray-400 leading-relaxed">{step.description}</p>
+                  <h3 className="text-lg font-bold text-white mb-2">
+                    {step.title}
+                  </h3>
+                  <p className="text-sm text-slate-400 leading-relaxed">
+                    {step.description}
+                  </p>
                 </div>
-
-                {/* Arrow - Mobile */}
-                {i < steps.length - 1 && (
-                  <div className="flex justify-center my-4 lg:hidden">
-                    <ArrowRight className="w-6 h-6 text-gray-600 rotate-90" />
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
-
-        {/* Bottom CTA */}
-        <div className="text-center mt-16">
-          <p className="text-gray-400 mb-4">Ready to start your earning journey?</p>
-          <Link
-            href="/register"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-semibold rounded-xl hover:opacity-90 transition-opacity"
-          >
-            Join 50,000+ Earners
-            <ArrowRight className="w-5 h-5" />
-          </Link>
         </div>
       </div>
     </section>

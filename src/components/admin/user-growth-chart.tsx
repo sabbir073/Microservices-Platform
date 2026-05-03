@@ -1,20 +1,27 @@
+"use client";
+
+import {
+  Area,
+  AreaChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from "recharts";
+
 interface UserGrowthChartProps {
   /** Array of [day-label, count] tuples, oldest first. */
   data: Array<{ label: string; count: number }>;
   title?: string;
 }
 
-/**
- * Lightweight inline-SVG bar chart for the dashboard.
- * Avoids adding the recharts dependency in Phase 1.
- * (Phase 5 swaps this for the real recharts version.)
- */
 export function UserGrowthChart({
   data,
   title = "User Growth (Last 7 Days)",
 }: UserGrowthChartProps) {
-  const max = Math.max(1, ...data.map((d) => d.count));
   const totalNew = data.reduce((acc, d) => acc + d.count, 0);
+  const peak = Math.max(0, ...data.map((d) => d.count));
 
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 h-full">
@@ -23,6 +30,7 @@ export function UserGrowthChart({
           <h3 className="text-sm font-semibold text-white">{title}</h3>
           <p className="text-xs text-slate-400 mt-0.5">
             +{totalNew.toLocaleString()} new sign-ups
+            {peak > 0 && ` · peak ${peak}/day`}
           </p>
         </div>
         <div className="hidden sm:flex items-center gap-1 text-xs">
@@ -33,29 +41,61 @@ export function UserGrowthChart({
         </div>
       </div>
 
-      <div className="flex items-end gap-2 h-40 pt-4">
-        {data.map((d, i) => {
-          const heightPct = max > 0 ? (d.count / max) * 100 : 0;
-          return (
-            <div key={i} className="flex-1 flex flex-col items-center gap-2">
-              <div className="relative w-full flex-1 flex items-end">
-                <div
-                  className="w-full rounded-t-md bg-gradient-to-t from-blue-600 to-purple-500 transition-[height] duration-500"
-                  style={{ height: `${Math.max(2, heightPct)}%` }}
-                  title={`${d.count} users`}
-                />
-                {d.count > 0 && (
-                  <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[10px] font-medium text-slate-300">
-                    {d.count}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] text-slate-500 font-medium">
-                {d.label}
-              </span>
-            </div>
-          );
-        })}
+      <div className="h-44">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart
+            data={data}
+            margin={{ top: 8, right: 4, left: 0, bottom: 0 }}
+          >
+            <defs>
+              <linearGradient id="userGrowthFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#a855f7" stopOpacity={0.5} />
+                <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.05} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid
+              vertical={false}
+              stroke="#1e293b"
+              strokeDasharray="3 3"
+            />
+            <XAxis
+              dataKey="label"
+              stroke="#475569"
+              tick={{ fontSize: 11, fill: "#94a3b8" }}
+              axisLine={false}
+              tickLine={false}
+            />
+            <YAxis
+              stroke="#475569"
+              tick={{ fontSize: 11, fill: "#94a3b8" }}
+              axisLine={false}
+              tickLine={false}
+              width={28}
+              allowDecimals={false}
+            />
+            <Tooltip
+              cursor={{ fill: "#1e293b", opacity: 0.4 }}
+              contentStyle={{
+                backgroundColor: "#0f172a",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                fontSize: 12,
+              }}
+              labelStyle={{ color: "#cbd5e1", fontWeight: 600 }}
+              itemStyle={{ color: "#a78bfa" }}
+              formatter={(v) => [`${Number(v ?? 0)} sign-ups`, "Users"]}
+            />
+            <Area
+              type="monotone"
+              dataKey="count"
+              stroke="#a855f7"
+              strokeWidth={2}
+              fill="url(#userGrowthFill)"
+              dot={{ r: 3, fill: "#a855f7", strokeWidth: 0 }}
+              activeDot={{ r: 5, fill: "#c084fc", strokeWidth: 2, stroke: "#0f172a" }}
+            />
+          </AreaChart>
+        </ResponsiveContainer>
       </div>
     </div>
   );

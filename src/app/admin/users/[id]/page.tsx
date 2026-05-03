@@ -184,11 +184,6 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
           userName={user.name}
           userEmail={user.email}
           userStatus={user.status}
-          userRole={user.role}
-          userPhone={user.phone}
-          userCountry={user.country}
-          userPackageTier={user.packageTier}
-          userUsername={user.username}
           canEdit={hasPermission(adminRole, "users.edit")}
           canBan={hasPermission(adminRole, "users.ban")}
           canDelete={hasPermission(adminRole, "users.delete")}
@@ -201,7 +196,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
         <div className="flex flex-col md:flex-row gap-6">
           {/* Avatar and Basic Info */}
           <div className="flex items-start gap-4">
-            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+            <div className="w-20 h-20 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
               {user.name?.charAt(0) || user.email?.charAt(0) || "U"}
             </div>
             <div>
@@ -574,7 +569,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
                   <tr key={referral.id} className="border-b border-gray-800 last:border-0">
                     <td className="py-4 px-6">
                       <Link href={`/admin/users/${referral.id}`} className="flex items-center gap-3 hover:text-indigo-400 transition-colors">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+                        <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
                           {referral.name?.charAt(0) || referral.email?.charAt(0) || "U"}
                         </div>
                         <div>

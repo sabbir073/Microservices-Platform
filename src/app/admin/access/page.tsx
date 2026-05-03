@@ -603,7 +603,7 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
                     <tr key={admin.id} className="hover:bg-gray-800/50 transition-colors">
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
+                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
                             {admin.name?.charAt(0) || admin.email.charAt(0)}
                           </div>
                           <div>

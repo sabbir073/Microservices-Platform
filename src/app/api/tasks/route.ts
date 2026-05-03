@@ -60,25 +60,37 @@ export async function GET(request: NextRequest) {
 
     const completedTaskIdsToday = userSubmissionsToday.map((s) => s.taskId);
 
-    // Build task query
+    // Build task query — use AND-only structure so each constraint composes correctly.
+    const andClauses: Array<Record<string, unknown>> = [
+      // Not expired
+      { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
+      // Already started
+      { OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }] },
+      // User must meet minimum level
+      { minLevel: { lte: user.level } },
+      // User must have required package tier
+      {
+        requiredPackage: {
+          in: Object.entries(PACKAGE_ORDER)
+            .filter(([, order]) => order <= PACKAGE_ORDER[user.packageTier])
+            .map(([tier]) => tier as PackageTier),
+        },
+      },
+    ];
+
+    // Country filter — task must allow this user's country (or be global).
+    if (user.country) {
+      andClauses.push({
+        OR: [
+          { countries: { isEmpty: true } },
+          { countries: { has: user.country } },
+        ],
+      });
+    }
+
     const where: Record<string, unknown> = {
       status: TaskStatus.ACTIVE,
-      // Check if task hasn't expired
-      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-      // Check if task has started
-      AND: [
-        { OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }] },
-        // User must meet minimum level
-        { minLevel: { lte: user.level } },
-        // User must have required package tier
-        {
-          requiredPackage: {
-            in: Object.entries(PACKAGE_ORDER)
-              .filter(([, order]) => order <= PACKAGE_ORDER[user.packageTier])
-              .map(([tier]) => tier as PackageTier),
-          },
-        },
-      ],
+      AND: andClauses,
     };
 
     // Filter by type if specified
@@ -91,15 +103,6 @@ export async function GET(request: NextRequest) {
       where.categories = {
         some: { name: category },
       };
-    }
-
-    // Country filter - if task has countries restriction, user must be in one of them
-    // If task has empty countries array, it's available globally
-    if (user.country) {
-      where.OR = [
-        { countries: { isEmpty: true } },
-        { countries: { has: user.country } },
-      ];
     }
 
     // Fetch tasks
