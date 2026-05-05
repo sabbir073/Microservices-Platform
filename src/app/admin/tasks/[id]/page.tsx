@@ -151,14 +151,25 @@ export default async function TaskDetailPage({ params }: PageProps) {
         </div>
 
         {/* Actions */}
-        <TaskDetailActions
-          taskId={task.id}
-          taskTitle={task.title}
-          taskStatus={task.status}
-          canEdit={canEdit}
-          canDelete={canDelete}
-          canCreate={canCreate}
-        />
+        <div className="flex items-center gap-2 flex-wrap">
+          {task.type === "SURVEY" && (
+            <Link
+              href={`/admin/tasks/${task.id}/responses`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-lg"
+            >
+              <ClipboardList className="w-4 h-4" />
+              View Responses
+            </Link>
+          )}
+          <TaskDetailActions
+            taskId={task.id}
+            taskTitle={task.title}
+            taskStatus={task.status}
+            canEdit={canEdit}
+            canDelete={canDelete}
+            canCreate={canCreate}
+          />
+        </div>
       </div>
 
       {/* Stats */}

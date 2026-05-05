@@ -225,7 +225,8 @@ export async function POST(request: NextRequest) {
 
     // Social earning — author gets daily post-create bonus (capped 1×/day via reference)
     await awardSocialEarning({
-      recipientUserId: session.user.id,
+      postOwnerUserId: session.user.id,
+      actorUserId: session.user.id,
       action: "POST_CREATE",
       postId: post.id,
     });
@@ -249,10 +250,10 @@ export async function POST(request: NextRequest) {
         );
         for (const m of filtered) {
           await awardSocialEarning({
-            recipientUserId: m.id,
+            postOwnerUserId: m.id,
+            actorUserId: session.user!.id,
             action: "MENTION_RECEIVED",
             postId: post.id,
-            sourceUserId: session.user!.id,
           });
         }
       }

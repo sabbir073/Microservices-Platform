@@ -57,12 +57,12 @@ export async function POST(
     throw err;
   }
 
-  // Award the post owner
+  // Award the post owner (and optionally the viewer if actor side enabled)
   await awardSocialEarning({
-    recipientUserId: post.userId,
+    postOwnerUserId: post.userId,
+    actorUserId: viewerId,
     action: "VIEW_RECEIVED",
     postId: id,
-    sourceUserId: viewerId,
   });
 
   const updated = await prisma.post.findUnique({

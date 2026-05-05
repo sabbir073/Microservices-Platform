@@ -1,9 +1,11 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { ClipboardCheck, Filter, Clock, CheckCircle, XCircle, RotateCcw, ChevronLeft, ChevronRight, Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Star } from "lucide-react";
+import { ClipboardCheck, Filter, Clock, CheckCircle, XCircle, RotateCcw, ChevronLeft, ChevronRight, Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Star, Layers, ChevronDown } from "lucide-react";
 import { SubmissionActions } from "@/components/admin/submissions/submission-actions";
-import { ImageZoomGallery } from "@/components/admin/image-zoom-gallery";
+import { SubmissionProofPanel } from "@/components/admin/submissions/proof-panels";
+import { DurationCard } from "@/components/admin/submissions/duration-card";
+import type { VideoConfig } from "@/lib/video-tasks";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
@@ -15,6 +17,7 @@ interface PageProps {
     status?: string;
     type?: string;
     taskId?: string;
+    board?: string;
   }>;
 }
 
@@ -60,22 +63,33 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
 
   // Build where clause based on filters
   const where: Prisma.TaskSubmissionWhereInput = {};
+  const taskWhere: Prisma.TaskWhereInput = {};
 
   if (params.status && params.status !== "all") {
     where.status = params.status as Prisma.EnumSubmissionStatusFilter["equals"];
   }
 
   if (params.type && params.type !== "all") {
-    where.task = {
-      type: params.type as Prisma.EnumTaskTypeFilter["equals"],
-    };
+    taskWhere.type = params.type as Prisma.EnumTaskTypeFilter["equals"];
+  }
+
+  if (params.board && params.board !== "all") {
+    if (params.board === "none") {
+      taskWhere.boardId = null;
+    } else {
+      taskWhere.boardId = params.board;
+    }
+  }
+
+  if (Object.keys(taskWhere).length > 0) {
+    where.task = taskWhere;
   }
 
   if (params.taskId) {
     where.taskId = params.taskId;
   }
 
-  // Fetch submissions and stats
+  // Fetch submissions, stats, and active boards (for the filter dropdown)
   const [
     submissionsRaw,
     totalCount,
@@ -83,6 +97,7 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
     approvedCount,
     rejectedCount,
     revisionsCount,
+    boards,
   ] = await Promise.all([
     prisma.taskSubmission.findMany({
       where,
@@ -106,6 +121,18 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
             type: true,
             pointsReward: true,
             xpReward: true,
+            duration: true,
+            videoConfig: true,
+            articleConfig: true,
+            surveyConfig: true,
+            socialConfig: true,
+            questions: true,
+            contentUrl: true,
+            proxyInstructions: true,
+            socialPlatform: true,
+            socialAction: true,
+            socialUrl: true,
+            boardId: true,
           },
         },
       },
@@ -115,10 +142,15 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
     prisma.taskSubmission.count({ where: { status: "APPROVED" } }),
     prisma.taskSubmission.count({ where: { status: "REJECTED" } }),
     prisma.taskSubmission.count({ where: { status: "REVISION_REQUESTED" } }),
+    prisma.taskBoard.findMany({
+      where: { isActive: true },
+      select: { id: true, title: true, iconEmoji: true },
+      orderBy: { order: "asc" },
+    }),
   ]);
 
   // Type assertion for Prisma Accelerate
-  type SubmissionWithRelations = typeof submissionsRaw[0] & {
+  type SubmissionRow = typeof submissionsRaw[0] & {
     user: {
       id: string;
       name: string | null;
@@ -132,9 +164,47 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
       type: string;
       pointsReward: number;
       xpReward: number;
+      duration: number | null;
+      videoConfig: unknown;
+      articleConfig: unknown;
+      surveyConfig: unknown;
+      socialConfig: unknown;
+      questions: unknown;
+      contentUrl: string | null;
+      proxyInstructions: string | null;
+      socialPlatform: string | null;
+      socialAction: string | null;
+      socialUrl: string | null;
+      boardId: string | null;
     };
   };
-  const submissions = submissionsRaw as SubmissionWithRelations[];
+  const submissionsRows = submissionsRaw as SubmissionRow[];
+
+  // Look up board titles in a separate query — using a relation `include` on
+  // a newly-added relation isn't picked up by the dev server's cached Prisma
+  // client until restart, so we keep this as a side query (same pattern used
+  // in src/app/api/tasks/boards/route.ts for the unlockBoard relation).
+  const submissionBoardIds = Array.from(
+    new Set(
+      submissionsRows
+        .map((s) => s.task.boardId)
+        .filter((id): id is string => !!id)
+    )
+  );
+  const submissionBoards = submissionBoardIds.length
+    ? await prisma.taskBoard.findMany({
+        where: { id: { in: submissionBoardIds } },
+        select: { id: true, title: true, iconEmoji: true },
+      })
+    : [];
+  const boardLookup = new Map(submissionBoards.map((b) => [b.id, b]));
+  const submissions = submissionsRows.map((s) => ({
+    ...s,
+    task: {
+      ...s.task,
+      board: s.task.boardId ? boardLookup.get(s.task.boardId) ?? null : null,
+    },
+  }));
 
   const totalPages = Math.ceil(totalCount / pageSize);
 
@@ -144,6 +214,7 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
     if (params.status) queryParams.set("status", params.status);
     if (params.type) queryParams.set("type", params.type);
     if (params.taskId) queryParams.set("taskId", params.taskId);
+    if (params.board) queryParams.set("board", params.board);
     return queryParams.toString();
   };
 
@@ -264,6 +335,20 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
             <option value="OFFERWALL">Offerwall</option>
             <option value="CUSTOM">Custom</option>
           </select>
+          <select
+            name="board"
+            defaultValue={params.board || "all"}
+            className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-purple-500"
+          >
+            <option value="all">All Boards</option>
+            <option value="none">Standalone tasks only</option>
+            {boards.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.iconEmoji ? `${b.iconEmoji} ` : "🎯 "}
+                {b.title}
+              </option>
+            ))}
+          </select>
           <button
             type="submit"
             className="p-2.5 bg-red-500 rounded-lg text-white hover:bg-red-600 transition-colors"
@@ -307,7 +392,7 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
 
                   {/* Task & Submission Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2">
+                    <div className="flex items-center gap-2 mb-2 flex-wrap">
                       <div className={`p-1.5 rounded-lg ${colorClass}`}>
                         <Icon className="w-4 h-4" />
                       </div>
@@ -317,25 +402,66 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
                       >
                         {submission.task.title}
                       </Link>
+                      {submission.task.board && (
+                        <Link
+                          href={`/admin/submissions?board=${submission.task.boardId}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-purple-500/10 border border-purple-500/30 text-purple-300 hover:bg-purple-500/20 transition-colors"
+                          title="Filter by this board"
+                        >
+                          <Layers className="w-3 h-3" />
+                          {submission.task.board.iconEmoji || "🎯"}{" "}
+                          {submission.task.board.title}
+                        </Link>
+                      )}
+                      {(() => {
+                        const cfg = submission.task.videoConfig as VideoConfig | null;
+                        const reqSec =
+                          submission.task.type === "VIDEO"
+                            ? cfg?.watchSeconds ?? submission.task.duration ?? 0
+                            : submission.task.duration ?? 0;
+                        if (
+                          reqSec > 0 &&
+                          ["VIDEO", "ARTICLE", "PROXY"].includes(
+                            submission.task.type
+                          )
+                        ) {
+                          return (
+                            <DurationCard
+                              startedAt={submission.createdAt}
+                              submittedAt={submission.updatedAt}
+                              requiredSeconds={reqSec}
+                              compact
+                            />
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
 
-                    {/* Proof */}
-                    {submission.proof && (
-                      <div className="mb-3">
-                        <p className="text-xs text-gray-500 mb-1">Proof submitted:</p>
-                        <p className="text-sm text-gray-300 bg-gray-800/50 rounded-lg p-3">
-                          {submission.proof}
-                        </p>
+                    {/* Type-specific proof — collapsible per row */}
+                    <details className="group mb-3 [&_summary::-webkit-details-marker]:hidden" open>
+                      <summary className="cursor-pointer list-none inline-flex items-center gap-1.5 px-2 py-1 -ml-2 rounded-md hover:bg-gray-800 text-xs font-semibold text-gray-400 hover:text-white transition-colors select-none">
+                        <ChevronDown className="w-3.5 h-3.5 transition-transform group-open:rotate-0 -rotate-90" />
+                        Proof &amp; details
+                      </summary>
+                      <div className="mt-2 pl-2 border-l-2 border-gray-800">
+                        <SubmissionProofPanel
+                          submission={{
+                            id: submission.id,
+                            status: submission.status,
+                            proof: submission.proof,
+                            proofImages: submission.proofImages,
+                            answers: submission.answers,
+                            metadata: submission.metadata,
+                            score: submission.score,
+                            rejectionReason: submission.rejectionReason,
+                            createdAt: submission.createdAt,
+                            updatedAt: submission.updatedAt,
+                          }}
+                          task={submission.task}
+                        />
                       </div>
-                    )}
-
-                    {/* Proof Images — click to zoom */}
-                    {submission.proofImages && submission.proofImages.length > 0 && (
-                      <div className="mb-3">
-                        <p className="text-xs text-gray-500 mb-1.5">Images:</p>
-                        <ImageZoomGallery images={submission.proofImages} size={64} />
-                      </div>
-                    )}
+                    </details>
 
                     {/* Rewards */}
                     <div className="flex items-center gap-4 text-sm">
@@ -350,6 +476,11 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
                           <span className="text-white">{submission.task.xpReward}</span>
                           <span className="text-gray-500">XP</span>
                         </div>
+                      )}
+                      {submission.task.boardId && (
+                        <span className="text-xs text-purple-400/80 italic">
+                          (bundled — paid on board claim)
+                        </span>
                       )}
                     </div>
                   </div>

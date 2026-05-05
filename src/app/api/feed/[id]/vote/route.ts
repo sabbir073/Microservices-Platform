@@ -94,10 +94,10 @@ export async function POST(
   // Social earning — only on FIRST vote per user (not when changing vote)
   if (!existing && refreshed) {
     await awardSocialEarning({
-      recipientUserId: refreshed.userId,
+      postOwnerUserId: refreshed.userId,
+      actorUserId: session.user.id,
       action: "VOTE_RECEIVED",
       postId: id,
-      sourceUserId: session.user.id,
     });
   }
 

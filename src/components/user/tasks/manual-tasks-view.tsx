@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ClipboardList, Upload, Loader2 } from "lucide-react";
+import { ClipboardList, Upload, Loader2, Video as VideoIcon } from "lucide-react";
 import { TaskCard } from "@/components/user/primitives/task-card";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
+import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,8 @@ interface ManualTask {
   difficulty?: string;
   thumbnailUrl?: string | null;
   duration?: number | null;
+  instructions?: string | null;
+  instructionVideoUrl?: string | null;
 }
 
 interface Submission {
@@ -234,6 +237,49 @@ export function ManualTasksView() {
         }
       >
         <div className="space-y-3">
+          {submitting?.description && (
+            <div className="rounded-lg bg-gray-950 border border-gray-800 p-3">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">
+                About this task
+              </p>
+              <p className="text-sm text-gray-300 whitespace-pre-wrap">
+                {submitting.description}
+              </p>
+            </div>
+          )}
+
+          {submitting?.instructions && (
+            <div className="rounded-lg bg-gray-950 border border-gray-800 p-3">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">
+                Steps
+              </p>
+              <ol className="space-y-1 text-sm text-gray-300 list-decimal pl-4">
+                {submitting.instructions
+                  .split("\n")
+                  .map((s) => s.trim())
+                  .filter(Boolean)
+                  .map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+              </ol>
+            </div>
+          )}
+
+          {submitting?.instructionVideoUrl && (
+            <div className="space-y-2">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold inline-flex items-center gap-1.5">
+                <VideoIcon className="w-3 h-3" />
+                Instruction video
+              </p>
+              <div className="max-w-2xl mx-auto">
+                <InlineVideoEmbed
+                  url={submitting.instructionVideoUrl}
+                  title={`Instruction video — ${submitting.title}`}
+                />
+              </div>
+            </div>
+          )}
+
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5">
               Proof URL or screenshot link *

@@ -4,14 +4,29 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { z } from "zod";
 
+const BOARD_CATEGORIES = [
+  "Marketing",
+  "Development",
+  "Design",
+  "Sales",
+  "Learning",
+  "Other",
+] as const;
+
 const createSchema = z.object({
   title: z.string().min(2).max(120),
   description: z.string().max(500).nullable().optional(),
   iconEmoji: z.string().max(8).nullable().optional(),
+  imageUrl: z.string().max(500).nullable().optional(),
+  category: z.enum(BOARD_CATEGORIES).nullable().optional(),
+  // ISO datetime string; null = no deadline
+  expiresAt: z.string().datetime().nullable().optional(),
   pointsReward: z.number().int().min(0).default(0),
   xpReward: z.number().int().min(0).default(0),
   isActive: z.boolean().default(true),
   order: z.number().int().default(0),
+  // Optional prerequisite board id; null = no prerequisite
+  unlockBoardId: z.string().cuid().nullable().optional(),
 });
 
 export async function GET() {
@@ -57,8 +72,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Validate prerequisite board exists when provided
+  if (v.data.unlockBoardId) {
+    const prereq = await prisma.taskBoard.findUnique({
+      where: { id: v.data.unlockBoardId },
+      select: { id: true },
+    });
+    if (!prereq) {
+      return NextResponse.json(
+        { error: "Prerequisite board not found" },
+        { status: 400 }
+      );
+    }
+  }
+
   const board = await prisma.taskBoard.create({
-    data: { ...v.data, createdById: session.user.id },
+    data: {
+      ...v.data,
+      expiresAt: v.data.expiresAt ? new Date(v.data.expiresAt) : null,
+      createdById: session.user.id,
+    },
   });
 
   await prisma.auditLog.create({

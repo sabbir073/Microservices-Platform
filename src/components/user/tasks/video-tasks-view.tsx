@@ -1,17 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Video as VideoIcon } from "lucide-react";
 import { TaskCard } from "@/components/user/primitives/task-card";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { format } from "date-fns";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { VideoConfig } from "@/lib/video-tasks";
 import { formatDuration } from "@/lib/video-tasks";
-import { VideoTaskPlayer } from "./video-task-player";
 
 type Tab = "available" | "submitted" | "approved" | "rejected";
 
@@ -48,12 +47,11 @@ const TAB_TO_STATUS: Record<Tab, string[]> = {
 };
 
 export function VideoTasksView() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("available");
   const [tasks, setTasks] = useState<VideoTask[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<VideoTask | null>(null);
-  const [submissionId, setSubmissionId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -80,30 +78,6 @@ export function VideoTasksView() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
-
-  const startTask = async (t: VideoTask) => {
-    if (!t.videoConfig?.videoUrl && !t.contentUrl) {
-      toast.error("This video task has no video URL configured");
-      return;
-    }
-    try {
-      const res = await fetch(`/api/tasks/${t.id}/start`, { method: "POST" });
-      if (!res.ok) throw new Error(await res.text());
-      const d = await res.json();
-      setSubmissionId(d.submission?.id ?? null);
-      setActive(t);
-    } catch (err) {
-      toast.error("Couldn't start task", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
-    }
-  };
-
-  const onClosePlayer = (didSubmit: boolean) => {
-    setActive(null);
-    setSubmissionId(null);
-    if (didSubmit) load();
-  };
 
   return (
     <div className="space-y-6">
@@ -161,7 +135,7 @@ export function VideoTasksView() {
               }
               thumbnail={t.thumbnailUrl ?? undefined}
               actionLabel="Watch & Earn"
-              onAction={() => startTask(t)}
+              onAction={() => router.push(`/video-tasks/${t.id}`)}
             />
           );
         })}
@@ -221,14 +195,6 @@ export function VideoTasksView() {
             </div>
           ))}
         </div>
-      )}
-
-      {active && submissionId && (
-        <VideoTaskPlayer
-          task={active}
-          submissionId={submissionId}
-          onClose={onClosePlayer}
-        />
       )}
     </div>
   );

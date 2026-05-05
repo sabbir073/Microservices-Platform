@@ -16,16 +16,25 @@ const ACTIONS = [
   "mention_received",
 ] as const;
 
+const sideSchema = z.object({
+  enabled: z.boolean(),
+  points: z.number().min(0).max(10000),
+  xp: z.number().min(0).max(10000),
+});
+
 const schema = z.object({
   enabled: z.boolean(),
   daily_cap_per_user: z.number().int().min(0).max(100000),
+  daily_xp_cap_per_user: z.number().int().min(0).max(100000),
   cap_per_post: z.number().int().min(0).max(100000),
   min_account_age_hours: z.number().int().min(0).max(720),
+  count_toward_daily_missions: z.boolean(),
+  mission_distinct_post: z.boolean(),
   activities: z.record(
     z.enum(ACTIONS),
     z.object({
-      enabled: z.boolean(),
-      points: z.number().min(0).max(10000),
+      recipient: sideSchema,
+      actor: sideSchema,
     })
   ),
 });
@@ -51,15 +60,30 @@ export async function GET() {
     enabled: (map.get("social_earning.enabled") as boolean) ?? true,
     daily_cap_per_user:
       (map.get("social_earning.daily_cap_per_user") as number) ?? 500,
+    daily_xp_cap_per_user:
+      (map.get("social_earning.daily_xp_cap_per_user") as number) ?? 1000,
     cap_per_post: (map.get("social_earning.cap_per_post") as number) ?? 100,
     min_account_age_hours:
       (map.get("social_earning.min_account_age_hours") as number) ?? 24,
+    count_toward_daily_missions:
+      (map.get("social_earning.count_toward_daily_missions") as boolean) ?? true,
+    mission_distinct_post:
+      (map.get("social_earning.mission_distinct_post") as boolean) ?? true,
     activities: Object.fromEntries(
       ACTIONS.map((a) => [
         a,
         {
-          enabled: (map.get(`social_earning.${a}_enabled`) as boolean) ?? true,
-          points: (map.get(`social_earning.${a}_points`) as number) ?? 0,
+          recipient: {
+            enabled: (map.get(`social_earning.${a}_enabled`) as boolean) ?? true,
+            points: (map.get(`social_earning.${a}_points`) as number) ?? 0,
+            xp: (map.get(`social_earning.${a}_recipient_xp`) as number) ?? 0,
+          },
+          actor: {
+            enabled:
+              (map.get(`social_earning.${a}_actor_enabled`) as boolean) ?? false,
+            points: (map.get(`social_earning.${a}_actor_points`) as number) ?? 0,
+            xp: (map.get(`social_earning.${a}_actor_xp`) as number) ?? 0,
+          },
         },
       ])
     ),
@@ -91,14 +115,21 @@ export async function POST(req: NextRequest) {
   const writes: Array<[string, unknown]> = [
     ["social_earning.enabled", cfg.enabled],
     ["social_earning.daily_cap_per_user", cfg.daily_cap_per_user],
+    ["social_earning.daily_xp_cap_per_user", cfg.daily_xp_cap_per_user],
     ["social_earning.cap_per_post", cfg.cap_per_post],
     ["social_earning.min_account_age_hours", cfg.min_account_age_hours],
+    ["social_earning.count_toward_daily_missions", cfg.count_toward_daily_missions],
+    ["social_earning.mission_distinct_post", cfg.mission_distinct_post],
   ];
   for (const a of ACTIONS) {
     const row = cfg.activities[a];
     if (!row) continue;
-    writes.push([`social_earning.${a}_enabled`, row.enabled]);
-    writes.push([`social_earning.${a}_points`, row.points]);
+    writes.push([`social_earning.${a}_enabled`, row.recipient.enabled]);
+    writes.push([`social_earning.${a}_points`, row.recipient.points]);
+    writes.push([`social_earning.${a}_recipient_xp`, row.recipient.xp]);
+    writes.push([`social_earning.${a}_actor_enabled`, row.actor.enabled]);
+    writes.push([`social_earning.${a}_actor_points`, row.actor.points]);
+    writes.push([`social_earning.${a}_actor_xp`, row.actor.xp]);
   }
 
   await Promise.all(

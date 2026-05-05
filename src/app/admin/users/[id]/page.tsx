@@ -22,6 +22,7 @@ import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import { hasPermission, ROLE_CONFIG, type UserRole } from "@/lib/rbac";
 import { UserDetailActions, AdjustBalanceButton } from "@/components/admin/user-detail-actions";
+import { DisplayBoostPanel } from "@/components/admin/users/display-boost-panel";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -103,6 +104,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
             taskSubmissions: true,
             transactions: true,
             withdrawals: true,
+            posts: true,
           },
         },
       },
@@ -350,6 +352,31 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
           <p className="text-xs text-gray-500">Code: {user.referralCode}</p>
         </div>
       </div>
+
+      {/* Display Boost panel + Bulk follow link */}
+      {hasPermission(adminRole, "users.edit") && (
+        <div className="space-y-4">
+          <DisplayBoostPanel
+            userId={id}
+            realFollowers={user.followersCount}
+            realFollowing={user.followingCount}
+            realPosts={counts._count.posts}
+            initialBoost={{
+              followers: user.displayFollowersBoost,
+              following: user.displayFollowingBoost,
+              posts: user.displayPostsBoost,
+            }}
+            canEdit={hasPermission(adminRole, "users.edit")}
+          />
+          <Link
+            href={`/admin/users/${id}/boost-followers`}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-500/10 hover:bg-purple-500/20 text-purple-300 border border-purple-500/30 text-sm font-bold rounded-lg"
+          >
+            <Users className="w-4 h-4" />
+            Bulk add followers (filter-based)
+          </Link>
+        </div>
+      )}
 
       {/* Referrer Info */}
       {user.referredById && (

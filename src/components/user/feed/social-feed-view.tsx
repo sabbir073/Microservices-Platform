@@ -1014,6 +1014,24 @@ function FeedPostCard({
         url={`${typeof window !== "undefined" ? window.location.origin : ""}/social/${post.id}`}
         title={post.user?.name ? `Post by ${post.user.name}` : "EarnGPT post"}
         text={post.content.slice(0, 200)}
+        onShare={async (channel) => {
+          try {
+            const r = await fetch(`/api/feed/${post.id}/share`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ channel }),
+            });
+            if (!r.ok) return;
+            const d = (await r.json().catch(() => ({}))) as {
+              sharesCount?: number;
+            };
+            if (typeof d.sharesCount === "number") {
+              onUpdated({ sharesCount: d.sharesCount });
+            }
+          } catch {
+            /* network failure — sharing already happened browser-side */
+          }
+        }}
       />
     </article>
   );

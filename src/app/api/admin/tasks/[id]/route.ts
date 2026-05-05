@@ -108,12 +108,28 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       socialConfig,
       articleConfig,
       videoConfig,
+      surveyConfig,
       proxyInstructions,
       startsAt,
       expiresAt,
       cooldownMinutes,
       autoApprove,
+      boardId,
     } = body;
+
+    // Validate boardId references an existing active board, if provided
+    if (boardId) {
+      const board = await prisma.taskBoard.findUnique({
+        where: { id: boardId },
+        select: { id: true, isActive: true },
+      });
+      if (!board || !board.isActive) {
+        return NextResponse.json(
+          { error: "Selected Task Board not found or inactive" },
+          { status: 400 }
+        );
+      }
+    }
 
     // Update the task
     const task = await prisma.task.update({
@@ -148,11 +164,29 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         videoConfig: videoConfig
           ? JSON.parse(JSON.stringify(videoConfig))
           : null,
+        surveyConfig: surveyConfig
+          ? JSON.parse(JSON.stringify(surveyConfig))
+          : null,
         proxyInstructions: proxyInstructions || null,
         startsAt: startsAt ? new Date(startsAt) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         cooldownMinutes: parseInt(cooldownMinutes?.toString() || "0"),
         autoApprove: autoApprove || false,
+        boardId: boardId || null,
+        // Surveys: always manual review, once-per-user. These overrides win.
+        ...(type === "SURVEY"
+          ? { autoApprove: false, dailyLimit: 1, totalLimit: 1 }
+          : {}),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "TASK_UPDATED",
+        entity: "Task",
+        entityId: task.id,
+        newData: { type, title, pointsReward: task.pointsReward },
       },
     });
 

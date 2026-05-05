@@ -13,24 +13,59 @@ export async function GET() {
     orderBy: [{ order: "asc" }, { createdAt: "desc" }],
   });
 
-  // Count tasks per board + active participants (rough)
   const boardIds = boards.map((b) => b.id);
-  const taskCounts = await Promise.all(
-    boardIds.map((id) =>
-      prisma.task.count({ where: { boardId: id, status: "ACTIVE" } })
-    )
+  const unlockIds = Array.from(
+    new Set(boards.map((b) => b.unlockBoardId).filter(Boolean) as string[])
   );
 
+  const [taskCounts, participantCounts, userClaims, unlockBoards] =
+    await Promise.all([
+      Promise.all(
+        boardIds.map((id) =>
+          prisma.task.count({ where: { boardId: id, status: "ACTIVE" } })
+        )
+      ),
+      Promise.all(
+        boardIds.map((id) =>
+          prisma.boardClaim.count({ where: { boardId: id } })
+        )
+      ),
+      prisma.boardClaim.findMany({
+        where: { userId: session.user.id, boardId: { in: boardIds } },
+        select: { boardId: true },
+      }),
+      unlockIds.length
+        ? prisma.taskBoard.findMany({
+            where: { id: { in: unlockIds } },
+            select: { id: true, title: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+  const claimedSet = new Set(userClaims.map((c) => c.boardId));
+  const unlockById = new Map(unlockBoards.map((b) => [b.id, b]));
+
   return NextResponse.json({
-    boards: boards.map((b, i) => ({
-      id: b.id,
-      name: b.title,
-      description: b.description,
-      thumbnailUrl: null,
-      taskCount: taskCounts[i] ?? 0,
-      totalRewardPts: b.pointsReward,
-      participants: 0,
-      expiresAt: undefined,
-    })),
+    boards: boards.map((b, i) => {
+      const lockedBy =
+        b.unlockBoardId && !claimedSet.has(b.unlockBoardId)
+          ? unlockById.get(b.unlockBoardId) ?? null
+          : null;
+      return {
+        id: b.id,
+        name: b.title,
+        description: b.description,
+        iconEmoji: b.iconEmoji,
+        thumbnailUrl: b.imageUrl,
+        category: b.category,
+        taskCount: taskCounts[i] ?? 0,
+        totalRewardPts: b.pointsReward,
+        xpReward: b.xpReward,
+        participants: participantCounts[i] ?? 0,
+        expiresAt: b.expiresAt ? b.expiresAt.toISOString() : null,
+        claimed: claimedSet.has(b.id),
+        lockedBy,
+      };
+    }),
   });
 }

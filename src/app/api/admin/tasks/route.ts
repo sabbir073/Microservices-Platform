@@ -42,11 +42,13 @@ export async function POST(request: NextRequest) {
       socialConfig,
       articleConfig,
       videoConfig,
+      surveyConfig,
       proxyInstructions,
       startsAt,
       expiresAt,
       cooldownMinutes,
       autoApprove,
+      boardId,
     } = body;
 
     // Validate required fields
@@ -61,6 +63,20 @@ export async function POST(request: NextRequest) {
     const validTypes = ["VIDEO", "ARTICLE", "QUIZ", "SURVEY", "SOCIAL", "PROXY", "OFFERWALL", "CUSTOM"];
     if (!validTypes.includes(type)) {
       return NextResponse.json({ error: "Invalid task type" }, { status: 400 });
+    }
+
+    // Validate boardId references an existing active board, if provided
+    if (boardId) {
+      const board = await prisma.taskBoard.findUnique({
+        where: { id: boardId },
+        select: { id: true, isActive: true },
+      });
+      if (!board || !board.isActive) {
+        return NextResponse.json(
+          { error: "Selected Task Board not found or inactive" },
+          { status: 400 }
+        );
+      }
     }
 
     // Create the task
@@ -95,12 +111,30 @@ export async function POST(request: NextRequest) {
         videoConfig: videoConfig
           ? JSON.parse(JSON.stringify(videoConfig))
           : null,
+        surveyConfig: surveyConfig
+          ? JSON.parse(JSON.stringify(surveyConfig))
+          : null,
         proxyInstructions: proxyInstructions || null,
         startsAt: startsAt ? new Date(startsAt) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         cooldownMinutes: parseInt(cooldownMinutes?.toString() || "0"),
         autoApprove: autoApprove || false,
+        boardId: boardId || null,
         createdById: session.user.id,
+        // Surveys: always manual review, once-per-user. These overrides win.
+        ...(type === "SURVEY"
+          ? { autoApprove: false, dailyLimit: 1, totalLimit: 1 }
+          : {}),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "TASK_CREATED",
+        entity: "Task",
+        entityId: task.id,
+        newData: { type, title, pointsReward: task.pointsReward },
       },
     });
 

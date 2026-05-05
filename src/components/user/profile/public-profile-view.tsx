@@ -7,17 +7,28 @@ import {
   Calendar,
   MapPin,
   CheckCircle,
-  Users,
   UserPlus,
   UserCheck,
   Coins,
-  Trophy,
-  MessageSquare,
   Crown,
   Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  SocialStatsGroup,
+  LifetimeStatsGroup,
+} from "@/components/user/profile/profile-stat-groups";
+
+interface LifetimeStats {
+  totalEarnedPoints: number | null;
+  totalEarnedUsd: number | null;
+  tasksCompleted: number;
+  rank: number;
+  totalXp: number;
+  level: number;
+  team: number;
+}
 
 interface ProfileResp {
   user: {
@@ -36,6 +47,7 @@ interface ProfileResp {
     postsCount: number | null;
     followersCount: number | null;
     followingCount: number | null;
+    lifetime: LifetimeStats | null;
   };
   viewer: {
     isMe: boolean;
@@ -251,22 +263,22 @@ export function PublicProfileView({ userId, viewerId }: Props) {
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {statsHidden ? (
-          <div className="col-span-2 sm:col-span-4 rounded-xl bg-gray-900 border border-gray-800 p-4 text-center text-xs text-gray-500 inline-flex items-center justify-center gap-2">
-            <Lock className="w-4 h-4" />
-            This user&apos;s stats are private.
-          </div>
-        ) : (
-          <>
-            <StatTile icon={<MessageSquare className="w-4 h-4" />} label="Posts" value={user.postsCount?.toLocaleString() ?? "0"} tone="indigo" />
-            <StatTile icon={<Users className="w-4 h-4" />} label="Followers" value={user.followersCount?.toLocaleString() ?? "0"} tone="purple" />
-            <StatTile icon={<UserPlus className="w-4 h-4" />} label="Following" value={user.followingCount?.toLocaleString() ?? "0"} tone="emerald" />
-            <StatTile icon={<Trophy className="w-4 h-4" />} label="Level" value={`Lv ${user.level}`} tone="amber" />
-          </>
-        )}
-      </div>
+      {/* Stats — Social group + Lifetime panel, both privacy-gated */}
+      {statsHidden ? (
+        <div className="rounded-xl bg-gray-900 border border-gray-800 p-4 text-center text-xs text-gray-500 inline-flex items-center justify-center gap-2 w-full">
+          <Lock className="w-4 h-4" />
+          This user&apos;s stats are private.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <SocialStatsGroup
+            posts={user.postsCount}
+            followers={user.followersCount}
+            following={user.followingCount}
+          />
+          {user.lifetime && <LifetimeStatsGroup stats={user.lifetime} />}
+        </div>
+      )}
 
       {/* Tab nav */}
       <nav className="flex gap-1 border-b border-gray-800">
@@ -300,34 +312,6 @@ export function PublicProfileView({ userId, viewerId }: Props) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
-
-function StatTile({
-  icon,
-  label,
-  value,
-  tone,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  tone: "indigo" | "amber" | "emerald" | "purple";
-}) {
-  const tones = {
-    indigo: "text-indigo-400 bg-indigo-500/10",
-    amber: "text-amber-400 bg-amber-500/10",
-    emerald: "text-emerald-400 bg-emerald-500/10",
-    purple: "text-purple-400 bg-purple-500/10",
-  } as const;
-  return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 flex items-center gap-3">
-      <div className={cn("p-2 rounded-lg", tones[tone])}>{icon}</div>
-      <div>
-        <p className="text-xs text-gray-500">{label}</p>
-        <p className="text-base font-bold text-white tabular-nums">{value}</p>
-      </div>
-    </div>
-  );
-}
 
 interface ApiPost {
   id: string;

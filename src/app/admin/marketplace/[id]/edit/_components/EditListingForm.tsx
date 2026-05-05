@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Save, X, Loader2, Package, Image as ImageIcon, Trash2, Plus, ArrowLeft } from "lucide-react";
+import { Save, X, Loader2, Package, Image as ImageIcon, Trash2, Plus, ArrowLeft, Upload } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { MediaSelector } from "@/components/media/MediaSelector";
+import type { MediaItem } from "@/types/media";
 
 interface Listing {
   id: string;
@@ -45,6 +47,18 @@ export function EditListingForm({ listing }: EditListingFormProps) {
   });
   const [imageUrl, setImageUrl] = useState("");
   const [fileUrl, setFileUrl] = useState("");
+  const [mediaPickerOpen, setMediaPickerOpen] = useState(false);
+
+  const handleMediaPick = (media: MediaItem | MediaItem[]) => {
+    const items = Array.isArray(media) ? media : [media];
+    const urls = items
+      .map((m) => m.cloudFrontUrl || m.s3Url)
+      .filter((u): u is string => !!u && !formData.images.includes(u));
+    if (urls.length) {
+      setFormData((prev) => ({ ...prev, images: [...prev.images, ...urls] }));
+    }
+    setMediaPickerOpen(false);
+  };
 
   const handleAddImage = () => {
     if (imageUrl.trim() && !formData.images.includes(imageUrl.trim())) {
@@ -258,9 +272,17 @@ export function EditListingForm({ listing }: EditListingFormProps) {
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-2">
             <ImageIcon className="w-4 h-4 inline mr-1" />
-            Images (URLs)
+            Images
           </label>
           <div className="space-y-2">
+            <button
+              type="button"
+              onClick={() => setMediaPickerOpen(true)}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors text-sm font-semibold"
+            >
+              <Upload className="w-4 h-4" />
+              Upload / Pick from Library
+            </button>
             <div className="flex gap-2">
               <input
                 type="url"
@@ -273,7 +295,7 @@ export function EditListingForm({ listing }: EditListingFormProps) {
                   }
                 }}
                 className="flex-1 px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="https://example.com/image.jpg"
+                placeholder="…or paste an image URL"
               />
               <button
                 type="button"
@@ -402,6 +424,15 @@ export function EditListingForm({ listing }: EditListingFormProps) {
           </button>
         </div>
       </form>
+
+      <MediaSelector
+        isOpen={mediaPickerOpen}
+        onClose={() => setMediaPickerOpen(false)}
+        onSelect={handleMediaPick}
+        multiple
+        fileType="IMAGE"
+        title="Select Listing Images"
+      />
     </div>
   );
 }

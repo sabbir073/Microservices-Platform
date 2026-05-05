@@ -1,24 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  FileText,
-  ExternalLink,
-  Upload,
-  Loader2,
-  KeyRound,
-  Hash,
-  Video as VideoIcon,
-} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { FileText } from "lucide-react";
 import { TaskCard } from "@/components/user/primitives/task-card";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
-import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
 import { format } from "date-fns";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import type { ArticleConfig } from "@/lib/article-tasks";
 
 type Tab = "available" | "pending" | "approved" | "rejected";
 
@@ -31,9 +21,6 @@ interface ArticleTask {
   difficulty?: string;
   thumbnailUrl?: string | null;
   duration?: number | null;
-  instructions?: string | null;
-  instructionVideoUrl?: string | null;
-  articleConfig?: ArticleConfig | null;
 }
 
 interface Submission {
@@ -54,16 +41,11 @@ const TAB_TO_STATUS: Record<Tab, string[]> = {
 };
 
 export function ArticleTasksView() {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("available");
   const [tasks, setTasks] = useState<ArticleTask[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [active, setActive] = useState<ArticleTask | null>(null);
-  const [proofUrl, setProofUrl] = useState("");
-  const [screenshotUrl, setScreenshotUrl] = useState("");
-  const [uniqueKey, setUniqueKey] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [submissionId, setSubmissionId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -90,74 +72,6 @@ export function ArticleTasksView() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
-
-  const startTask = async (t: ArticleTask) => {
-    // Create a new submission first so server can validate elapsed time
-    try {
-      const res = await fetch(`/api/tasks/${t.id}/start`, { method: "POST" });
-      if (!res.ok) throw new Error(await res.text());
-      const d = await res.json();
-      setSubmissionId(d.submission?.id ?? null);
-      setActive(t);
-      setProofUrl("");
-      setScreenshotUrl("");
-      setUniqueKey("");
-    } catch (err) {
-      toast.error("Couldn't start task", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
-    }
-  };
-
-  const submit = async () => {
-    if (!active || !submissionId) return;
-    const cfg = active.articleConfig;
-    const req = cfg?.proofRequirements;
-    if (req?.url && !proofUrl.trim()) {
-      toast.error("Proof URL is required");
-      return;
-    }
-    if (req?.screenshot && !screenshotUrl.trim()) {
-      toast.error("Screenshot URL is required");
-      return;
-    }
-    if (req?.uniqueKey && !uniqueKey.trim()) {
-      toast.error("Unique key is required");
-      return;
-    }
-    setBusy(true);
-    try {
-      const proofImages = screenshotUrl ? [screenshotUrl] : [];
-      const res = await fetch(`/api/tasks/${active.id}/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          submissionId,
-          proof: proofUrl,
-          proofImages,
-          uniqueKey,
-        }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? `HTTP ${res.status}`);
-      }
-      toast.success("Submitted! Pending admin review.", {
-        description: `You'll get ${active.pointsReward} pts when approved.`,
-      });
-      setActive(null);
-      load();
-    } catch (err) {
-      toast.error("Failed", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const cfg = active?.articleConfig;
-  const req = cfg?.proofRequirements;
 
   return (
     <div className="space-y-6">
@@ -206,7 +120,7 @@ export function ArticleTasksView() {
             durationMin={t.duration ?? undefined}
             thumbnail={t.thumbnailUrl ?? undefined}
             actionLabel="Read & Submit"
-            onAction={() => startTask(t)}
+            onAction={() => router.push(`/article-tasks/${t.id}`)}
           />
         ))}
 
@@ -268,186 +182,6 @@ export function ArticleTasksView() {
           ))}
         </div>
       )}
-
-      <BottomSheet
-        open={!!active}
-        onOpenChange={(o) => !o && setActive(null)}
-        title={active?.title ?? "Article Task"}
-        description="Read the linked articles, then submit your proof."
-        footer={
-          <div className="flex gap-2">
-            <button
-              disabled={busy}
-              onClick={() => setActive(null)}
-              className="flex-1 py-2.5 rounded-lg bg-gray-800 text-white text-sm font-semibold disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              disabled={busy}
-              onClick={submit}
-              className="flex-1 py-2.5 rounded-lg bg-indigo-500 text-white text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
-            >
-              {busy ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Upload className="w-4 h-4" />
-              )}
-              Submit for Review
-            </button>
-          </div>
-        }
-      >
-        {active && (
-          <div className="space-y-4">
-            {/* Description */}
-            {active.description && (
-              <div className="rounded-lg bg-gray-950 border border-gray-800 p-3">
-                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">
-                  About
-                </p>
-                <p className="text-sm text-gray-300">{active.description}</p>
-              </div>
-            )}
-
-            {/* Instructions */}
-            {active.instructions && (
-              <div className="rounded-lg bg-gray-950 border border-gray-800 p-3">
-                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">
-                  Steps
-                </p>
-                <ol className="space-y-1 text-sm text-gray-300 list-decimal pl-4">
-                  {active.instructions
-                    .split("\n")
-                    .filter(Boolean)
-                    .map((step, i) => (
-                      <li key={i}>{step}</li>
-                    ))}
-                </ol>
-              </div>
-            )}
-
-            {active.instructionVideoUrl && (
-              <a
-                href={active.instructionVideoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 underline"
-              >
-                <VideoIcon className="w-3.5 h-3.5" />
-                Watch instruction video
-              </a>
-            )}
-
-            {/* Article links */}
-            {cfg && cfg.links.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
-                  Article Links
-                </p>
-                <div className="space-y-1.5">
-                  {cfg.links.map((link, i) => (
-                    <a
-                      key={i}
-                      href={link.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-950 border border-gray-800 hover:border-indigo-500/40 transition-colors"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-white truncate">
-                          {link.label || `Link ${i + 1}`}
-                        </p>
-                        <p className="text-[10px] text-gray-500 font-mono truncate">
-                          {link.url}
-                        </p>
-                      </div>
-                    </a>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Keywords */}
-            {cfg && cfg.keywords.length > 0 && (
-              <div>
-                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1.5 inline-flex items-center gap-1">
-                  <Hash className="w-3 h-3" />
-                  Keywords
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {cfg.keywords.map((k) => (
-                    <span
-                      key={k}
-                      className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[11px] font-medium border border-amber-500/30"
-                    >
-                      {k}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Proof submission */}
-            <div className="space-y-3 pt-2 border-t border-gray-800">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
-                Submit your proof
-              </p>
-
-              {req?.url && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5">
-                    Proof URL <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="url"
-                    value={proofUrl}
-                    onChange={(e) => setProofUrl(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              )}
-
-              {req?.screenshot && (
-                <div>
-                  <label className="block text-xs font-medium text-gray-400 mb-1.5">
-                    Screenshot URL <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="url"
-                    value={screenshotUrl}
-                    onChange={(e) => setScreenshotUrl(e.target.value)}
-                    placeholder="https://... (upload to imgur, etc.)"
-                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              )}
-
-              {req?.uniqueKey && (
-                <div>
-                  <label className="flex text-xs font-medium text-gray-400 mb-1.5 items-center gap-1">
-                    <KeyRound className="w-3 h-3" />
-                    Unique Key <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    value={uniqueKey}
-                    onChange={(e) => setUniqueKey(e.target.value)}
-                    placeholder="Enter the key you found"
-                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-amber-500 font-mono"
-                  />
-                  {cfg?.uniqueKeyHint && (
-                    <p className="text-[11px] text-amber-400/80 mt-1">
-                      💡 {cfg.uniqueKeyHint}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </BottomSheet>
     </div>
   );
 }

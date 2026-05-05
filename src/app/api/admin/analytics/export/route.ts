@@ -3,6 +3,16 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { subDays, startOfDay, endOfDay, format } from "date-fns";
+import {
+  type SurveyConfig,
+  type SurveyAnswers,
+  type SurveyQuestion,
+  formatAnswerForDisplay,
+} from "@/lib/survey-tasks";
+
+function csvEscape(s: string): string {
+  return `"${(s ?? "").replace(/"/g, '""')}"`;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -41,8 +51,87 @@ export async function GET(request: NextRequest) {
     }
 
     let csvContent = "";
+    let exportFilename: string | null = null;
 
-    if (reportType === "users") {
+    if (reportType === "survey-responses") {
+      const taskId = searchParams.get("taskId");
+      if (!taskId) {
+        return NextResponse.json(
+          { error: "taskId is required for survey-responses export" },
+          { status: 400 }
+        );
+      }
+      const task = await prisma.task.findUnique({
+        where: { id: taskId },
+        select: { id: true, title: true, type: true, surveyConfig: true },
+      });
+      if (!task) {
+        return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      }
+      if (task.type !== "SURVEY") {
+        return NextResponse.json(
+          { error: "Not a survey task" },
+          { status: 400 }
+        );
+      }
+      const cfg = task.surveyConfig as SurveyConfig | null;
+      const questions: SurveyQuestion[] = Array.isArray(cfg?.questions)
+        ? [...(cfg!.questions as SurveyQuestion[])].sort(
+            (a, b) => a.order - b.order
+          )
+        : [];
+
+      const submissions = await prisma.taskSubmission.findMany({
+        where: { taskId },
+        include: {
+          user: { select: { id: true, email: true, name: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      type SubWithUser = (typeof submissions)[0] & {
+        user: { id: string; email: string; name: string | null };
+      };
+      const rows = submissions as SubWithUser[];
+
+      const baseHeaders = [
+        "Submission ID",
+        "User ID",
+        "User Name",
+        "Email",
+        "Submitted At",
+        "Status",
+        "Reviewed At",
+        "Points Earned",
+        "XP Earned",
+      ];
+      const questionHeaders = questions.map((q) => q.prompt);
+      csvContent =
+        [...baseHeaders, ...questionHeaders].map(csvEscape).join(",") + "\n";
+
+      csvContent += rows
+        .map((s) => {
+          const a = (s.answers ?? null) as SurveyAnswers | null;
+          const cells: string[] = [
+            s.id,
+            s.user.id,
+            s.user.name ?? "",
+            s.user.email,
+            format(s.createdAt, "yyyy-MM-dd HH:mm:ss"),
+            s.status,
+            s.reviewedAt ? format(s.reviewedAt, "yyyy-MM-dd HH:mm:ss") : "",
+            String(s.pointsEarned ?? 0),
+            String(s.xpEarned ?? 0),
+            ...questions.map((q) =>
+              a ? formatAnswerForDisplay(q, a[q.id]) : ""
+            ),
+          ];
+          return cells.map(csvEscape).join(",");
+        })
+        .join("\n");
+
+      exportFilename = `earngpt-survey-${taskId}-responses-${format(now, "yyyy-MM-dd")}.csv`;
+    } else if (reportType === "users") {
       // User analytics export
       const users = await prisma.user.findMany({
         where: { createdAt: { gte: startDate } },
@@ -196,7 +285,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Return CSV file
-    const filename = `earngpt-${reportType}-report-${format(now, "yyyy-MM-dd")}.csv`;
+    const filename =
+      exportFilename ??
+      `earngpt-${reportType}-report-${format(now, "yyyy-MM-dd")}.csv`;
 
     return new NextResponse(csvContent, {
       status: 200,

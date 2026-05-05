@@ -55,10 +55,17 @@ export async function GET(request: NextRequest) {
         createdAt: { gte: todayStart },
         status: { in: ["APPROVED", "AUTO_APPROVED", "PENDING"] },
       },
-      select: { taskId: true },
+      select: { taskId: true, status: true },
     });
 
-    const completedTaskIdsToday = userSubmissionsToday.map((s) => s.taskId);
+    // Per-task counts (consume daily slot) and pending-set (in-flight,
+    // user can resume regardless of limit).
+    const userTodayCounts = new Map<string, number>();
+    const pendingTaskIds = new Set<string>();
+    for (const s of userSubmissionsToday) {
+      userTodayCounts.set(s.taskId, (userTodayCounts.get(s.taskId) ?? 0) + 1);
+      if (s.status === "PENDING") pendingTaskIds.add(s.taskId);
+    }
 
     // Build task query — use AND-only structure so each constraint composes correctly.
     const andClauses: Array<Record<string, unknown>> = [
@@ -151,17 +158,24 @@ export async function GET(request: NextRequest) {
 
     // Process tasks to add eligibility and status info
     const processedTasks = tasks.map((task) => {
-      // Check if user has already completed this task today
-      const completedToday = completedTaskIdsToday.includes(task.id);
+      const todayCount = userTodayCounts.get(task.id) ?? 0;
+      const hasPending = pendingTaskIds.has(task.id);
+      const dailyLimit = task.dailyLimit ?? 1;
+      const dailyLimitReached = todayCount >= dailyLimit;
 
-      // Check if task has reached total limit
+      // Total limit (across all users)
       const reachedTotalLimit =
         task.totalLimit && task.completedCount >= task.totalLimit;
 
-      // Check if user can do this task
-      const canStart = !completedToday && !reachedTotalLimit;
+      // User can start a fresh attempt if they haven't hit the daily/total
+      // limit. If they have an in-flight PENDING they can always resume.
+      const canStart =
+        hasPending || (!dailyLimitReached && !reachedTotalLimit);
 
-      // Calculate remaining slots
+      // Back-compat boolean — legacy clients use it as "blocked".
+      const completedToday = !canStart;
+
+      const remainingToday = Math.max(0, dailyLimit - todayCount);
       const remainingSlots = task.totalLimit
         ? task.totalLimit - task.completedCount
         : null;
@@ -175,6 +189,10 @@ export async function GET(request: NextRequest) {
         xpReward: task.xpReward,
         thumbnailUrl: task.thumbnailUrl,
         duration: task.duration,
+        instructions: task.instructions,
+        instructionVideoUrl: task.instructionVideoUrl,
+        contentUrl: task.contentUrl,
+        videoConfig: task.videoConfig,
         minLevel: task.minLevel,
         requiredPackage: task.requiredPackage,
         categories: taskCategoryMap.get(task.id) || [],
@@ -184,11 +202,17 @@ export async function GET(request: NextRequest) {
         expiresAt: task.expiresAt,
         completedCount: submissionCountMap.get(task.id) || 0,
         remainingSlots,
+        // v3: explicit per-user limit info
+        dailyLimit,
+        remainingToday,
+        hasPending,
+        dailyLimitReached,
+        totalLimitReached: !!reachedTotalLimit,
         canStart,
         completedToday,
         reason: !canStart
-          ? completedToday
-            ? "Already completed today"
+          ? dailyLimitReached
+            ? "Daily limit reached"
             : reachedTotalLimit
               ? "Task limit reached"
               : null
@@ -196,8 +220,14 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    // Hide maxed-out tasks from the user-facing list. Tasks where the user
+    // has hit their daily limit (and has no in-flight pending) are removed
+    // — they should reappear tomorrow. History tabs (pending/approved/
+    // rejected) are powered by /api/submissions and aren't affected.
+    const visibleTasks = processedTasks.filter((t) => t.canStart);
+
     return NextResponse.json({
-      tasks: processedTasks,
+      tasks: visibleTasks,
       pagination: {
         page,
         limit,

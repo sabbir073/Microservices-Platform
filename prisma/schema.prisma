@@ -402,16 +402,51 @@ model TaskBoard {
   title        String
   description  String?  @db.Text
   iconEmoji    String?
+  imageUrl     String?
+  // "Marketing" | "Development" | "Design" | "Sales" | "Learning" | "Other"
+  category     String?
+  // null = no deadline
+  expiresAt    DateTime?
   pointsReward Int      @default(0)
   xpReward     Int      @default(0)
   isActive     Boolean  @default(true)
   order        Int      @default(0)
+  // Optional prerequisite board — user must claim this board first to unlock.
+  unlockBoardId String?
+  unlockBoard   TaskBoard?  @relation("BoardUnlockChain", fields: [unlockBoardId], references: [id], onDelete: SetNull)
+  unlocks       TaskBoard[] @relation("BoardUnlockChain")
   createdById  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  tasks   Task[]
+  claims  BoardClaim[]
+
   @@index([isActive])
   @@index([order])
+  @@index([category])
+  @@index([unlockBoardId])
+}
+
+// Per-user record of a Task Board reward claim. One row per (user, board);
+// uniqueness enforced at the DB level so re-claims are impossible regardless
+// of races. Created inside the same transaction as the EARNING transaction
+// so the two stay consistent.
+model BoardClaim {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  boardId       String
+  board         TaskBoard @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  pointsEarned  Int       @default(0)
+  xpEarned      Int       @default(0)
+  taskCount     Int       @default(0)
+  claimedAt     DateTime  @default(now())
+  transactionId String?
+
+  @@unique([userId, boardId])
+  @@index([boardId, claimedAt])
+  @@index([userId])
 }
 
 model SocialReport {
@@ -636,9 +671,19 @@ model User {
   // Native social graph
   followers          Follow[]    @relation("Followers")
   following          Follow[]    @relation("Following")
+  followerBoostBatches FollowerBoostBatch[] @relation("FollowerBoostTarget")
   followersCount     Int         @default(0)
   followingCount     Int         @default(0)
+  // Admin-set vanity offsets. Display = max(0, real + boost).
+  // Can be negative (admin can lower the visible count).
+  displayFollowersBoost Int       @default(0)
+  displayFollowingBoost Int       @default(0)
+  displayPostsBoost     Int       @default(0)
   postViews          PostView[]
+  postShares         PostShare[]
+  socialActions      SocialActionLog[]
+  boardClaims        BoardClaim[]
+  articleKeys        ArticleTaskKey[]
   mentionsReceived   Mention[]   @relation("Mentioned")
   mentionsMade       Mention[]   @relation("MentionedBy")
   @@index([email])
@@ -758,6 +803,7 @@ model Task {
   xpReward        Int          @default(0)
   isBoardOnly     Boolean      @default(false)
   boardId         String?
+  board           TaskBoard?   @relation(fields: [boardId], references: [id], onDelete: SetNull)
   dailyLimit      Int?
   totalLimit      Int?
   completedCount  Int          @default(0)
@@ -774,6 +820,7 @@ model Task {
   socialConfig    Json?      // Platform×action specific config (see lib/social-tasks.ts SocialConfig)
   articleConfig   Json?      // Article task config (see lib/article-tasks.ts ArticleConfig)
   videoConfig     Json?      // Video task config (see lib/video-tasks.ts VideoConfig)
+  surveyConfig    Json?      // Survey task config (see lib/survey-tasks.ts SurveyConfig)
   proxyInstructions String?    @db.Text
   startsAt        DateTime?
   expiresAt       DateTime?
@@ -784,6 +831,8 @@ model Task {
   createdById     String?
   submissions     TaskSubmission[]
   categories      TaskCategory[]
+  // Article-task key-pool relations (only used when articleConfig.useKeyPool=true)
+  articleKeys     ArticleTaskKey[]
   @@index([status])
   @@index([type])
   @@index([requiredPackage])
@@ -818,12 +867,59 @@ model TaskSubmission {
   rejectionReason String?
   pointsEarned  Int?
   xpEarned      Int?
+  // Type-specific proof bag — used by SOCIAL ({ socialUsername, socialGeneratedContent }),
+  // forward-flexible for future task types.
+  metadata      Json?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+  // Article key-pool relations (only populated for ARTICLE tasks with useKeyPool=true)
+  articleKey    ArticleTaskKey?
+  pageProgress  ArticleTaskPageProgress[]
   @@unique([taskId, userId, createdAt])
   @@index([userId])
   @@index([taskId])
   @@index([status])
+}
+
+// Pool of one-time-use unique keys for an ARTICLE task. Keys are claimed
+// atomically by the cross-domain embed flow on the final article page; once
+// claimed, the row is locked to the user + submission.
+model ArticleTaskKey {
+  id              String          @id @default(cuid())
+  taskId          String
+  task            Task            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  keyValue        String
+  // Unclaimed when null. Set atomically when the user clicks "Generate Key"
+  // on the final article page.
+  claimedByUserId String?
+  claimedByUser   User?           @relation(fields: [claimedByUserId], references: [id], onDelete: SetNull)
+  claimedAt       DateTime?
+  // Set when the user actually submits the key back to /api/tasks/:id/submit.
+  submissionId    String?         @unique
+  submission      TaskSubmission? @relation(fields: [submissionId], references: [id], onDelete: SetNull)
+  createdAt       DateTime        @default(now())
+
+  @@unique([taskId, keyValue])
+  @@index([taskId, claimedByUserId])
+  @@index([claimedByUserId])
+}
+
+// Per-page popup completion progress. The embed script POSTs each completed
+// popup; we increment the row. Page is "done" when popupsCompleted >=
+// articleConfig.pages[pageIndex].popupCount.
+model ArticleTaskPageProgress {
+  id              String         @id @default(cuid())
+  submissionId    String
+  submission      TaskSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  pageIndex       Int
+  popupsCompleted Int            @default(0)
+  pageCompleted   Boolean        @default(false)
+  completedAt     DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([submissionId, pageIndex])
+  @@index([submissionId])
 }
 
 model Transaction {
@@ -1117,6 +1213,7 @@ model Post {
   votes       Vote[]
   donations   Donation[]
   views       PostView[]
+  shares      PostShare[]
   mentions    Mention[]
   @@index([userId])
   @@index([createdAt])
@@ -1130,9 +1227,40 @@ model Follow {
   followingId String
   following   User     @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
+  // When this follow was created by an admin's bulk-boost operation. Null
+  // means the follow is organic (real user-initiated).
+  boostBatchId String?
+  boostBatch   FollowerBoostBatch? @relation(fields: [boostBatchId], references: [id], onDelete: SetNull)
   @@unique([followerId, followingId])
   @@index([followerId])
   @@index([followingId])
+  @@index([boostBatchId])
+}
+
+// Records each admin "bulk-add followers" operation. Used for audit and
+// one-click undo (delete all Follow rows tagged with this batch id).
+model FollowerBoostBatch {
+  id             String   @id @default(cuid())
+  targetUserId   String
+  target         User     @relation("FollowerBoostTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  criteria       Json                              // saved filter snapshot
+  mode           String                            // "ALL" or "RANDOM"
+  requestedCount Int                               // sample size requested
+  addedCount     Int      @default(0)              // actually-created Follow rows
+  // The user ids that this batch added as followers. Persisted independently
+  // of Follow rows so that a revert (which deletes the Follow rows) still
+  // remembers who was added — those users are then permanently excluded
+  // from future boost runs for the same target.
+  sourceUserIds  String[] @default([])
+  notifyTarget   Boolean  @default(false)          // if true, target got 1 combined notification
+  performedBy    String?                           // admin user id
+  status         String   @default("APPLIED")      // APPLIED | REVERTED
+  revertedAt     DateTime?
+  revertedBy     String?
+  createdAt      DateTime @default(now())
+  follows        Follow[]
+  @@index([targetUserId, createdAt])
+  @@index([status])
 }
 
 model PostView {
@@ -1185,6 +1313,31 @@ model Donation {
   createdAt DateTime @default(now())
   @@index([postId])
   @@index([donorId])
+}
+
+model PostShare {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   String?
+  createdAt DateTime @default(now())
+  @@unique([postId, userId])
+  @@index([userId, createdAt])
+  @@index([postId])
+}
+
+model SocialActionLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  postId    String?
+  dateKey   String
+  createdAt DateTime @default(now())
+  @@index([userId, dateKey, action])
+  @@index([postId])
 }
 
 model Group {
@@ -1389,6 +1542,50 @@ model ChatMessage {
   @@index([conversationId])
   @@index([senderId])
   @@index([createdAt])
+}
+
+// Reference data backing the cascading address dropdowns. Seeded once and
+// editable by admin. User profile address fields stay as flat string columns
+// — these tables only drive the dropdown UI; they don't replace the User
+// fields.
+model Country {
+  id            String     @id @default(cuid())
+  iso2          String     @unique
+  iso3          String?    @unique
+  name          String     @unique
+  phoneCode     String?
+  flag          String?
+  currency      String?
+  isActive      Boolean    @default(true)
+  // Which dropdown levels render for this country, in user-facing order.
+  // E.g. BD = ["DIVISION","DISTRICT","SUB_DISTRICT","CITY"], US = ["STATE","CITY"].
+  // Empty = no DB-backed dropdowns; all address fields fall back to free text.
+  enabledLevels String[]   @default([])
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  locations     Location[]
+  @@index([isActive, name])
+}
+
+model Location {
+  id          String     @id @default(cuid())
+  countryId   String
+  country     Country    @relation(fields: [countryId], references: [id], onDelete: Cascade)
+  parentId    String?
+  parent      Location?  @relation("LocationHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children    Location[] @relation("LocationHierarchy")
+  name        String
+  // STATE | REGION | DIVISION | SUB_DIVISION | DISTRICT | SUB_DISTRICT | CITY | VILLAGE
+  type        String
+  postalCode  String?
+  metadata    Json?
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  @@unique([countryId, parentId, name, type])
+  @@index([countryId, type, isActive])
+  @@index([parentId, type, isActive])
+  @@index([name])
 }
 
 model SystemSetting {

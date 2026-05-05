@@ -528,6 +528,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     category: "SYSTEM",
   },
   {
+    name: "Locations",
+    href: "/admin/locations",
+    icon: "Globe",
+    permissions: ["settings.view"],
+    category: "SYSTEM",
+  },
+  {
     name: "Admin Control",
     href: "/admin/access",
     icon: "Shield",

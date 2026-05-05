@@ -18,6 +18,37 @@ export async function GET(
     return NextResponse.json({ error: "Board not found" }, { status: 404 });
   }
 
+  // Compute lock state: locked if a prerequisite exists and the user hasn't
+  // claimed it (checking both BoardClaim and legacy Transaction.reference).
+  let lockedBy: { id: string; title: string } | null = null;
+  if (board.unlockBoardId) {
+    const [prereqClaim, legacyPrereq, prereqBoard] = await Promise.all([
+      prisma.boardClaim.findUnique({
+        where: {
+          userId_boardId: {
+            userId: session.user.id,
+            boardId: board.unlockBoardId,
+          },
+        },
+        select: { id: true },
+      }),
+      prisma.transaction.findFirst({
+        where: {
+          userId: session.user.id,
+          reference: `board_claim_${board.unlockBoardId}`,
+        },
+        select: { id: true },
+      }),
+      prisma.taskBoard.findUnique({
+        where: { id: board.unlockBoardId },
+        select: { id: true, title: true },
+      }),
+    ]);
+    if (!prereqClaim && !legacyPrereq && prereqBoard) {
+      lockedBy = prereqBoard;
+    }
+  }
+
   const tasks = await prisma.task.findMany({
     where: { boardId: id, status: TaskStatus.ACTIVE },
     orderBy: { createdAt: "asc" },
@@ -66,14 +97,25 @@ export async function GET(
   const doneCount = enriched.filter((t) => t.userStatus === "DONE").length;
   const allDone = enriched.length > 0 && doneCount === enriched.length;
 
-  // Was the board reward already claimed?
-  const claim = await prisma.transaction.findFirst({
-    where: {
-      userId: session.user.id,
-      reference: `board_claim_${board.id}`,
-    },
-    select: { id: true, createdAt: true },
-  });
+  // BoardClaim is canonical going forward; legacy Transaction.reference rows
+  // (pre-BoardClaim) still count so older claims show as already claimed.
+  const [boardClaim, legacyTxn] = await Promise.all([
+    prisma.boardClaim.findUnique({
+      where: { userId_boardId: { userId: session.user.id, boardId: board.id } },
+      select: { claimedAt: true },
+    }),
+    prisma.transaction.findFirst({
+      where: {
+        userId: session.user.id,
+        reference: `board_claim_${board.id}`,
+      },
+      select: { createdAt: true },
+    }),
+  ]);
+  const claimedAt =
+    boardClaim?.claimedAt ?? legacyTxn?.createdAt ?? null;
+
+  const isExpired = !!board.expiresAt && board.expiresAt.getTime() < Date.now();
 
   return NextResponse.json({
     board: {
@@ -81,8 +123,13 @@ export async function GET(
       title: board.title,
       description: board.description,
       iconEmoji: board.iconEmoji,
+      imageUrl: board.imageUrl,
+      category: board.category,
+      expiresAt: board.expiresAt ? board.expiresAt.toISOString() : null,
       pointsReward: board.pointsReward,
       xpReward: board.xpReward,
+      isExpired,
+      lockedBy,
     },
     tasks: enriched,
     progress: {
@@ -90,6 +137,6 @@ export async function GET(
       total: enriched.length,
       allDone,
     },
-    claimedAt: claim?.createdAt ?? null,
+    claimedAt: claimedAt ? claimedAt.toISOString() : null,
   });
 }
