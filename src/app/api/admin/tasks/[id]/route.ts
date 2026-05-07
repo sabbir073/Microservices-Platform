@@ -96,7 +96,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       dailyLimit,
       totalLimit,
       minLevel,
-      requiredPackage,
+      requiredAccessLevel,
       countries,
       contentUrl,
       thumbnailUrl,
@@ -146,7 +146,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         dailyLimit: dailyLimit ? parseInt(dailyLimit.toString()) : null,
         totalLimit: totalLimit ? parseInt(totalLimit.toString()) : null,
         minLevel: parseInt(minLevel?.toString() || "1"),
-        requiredPackage: requiredPackage || "FREE",
+        requiredAccessLevel:
+          typeof requiredAccessLevel === "number"
+            ? requiredAccessLevel
+            : parseInt(String(requiredAccessLevel ?? 0)) || 0,
         countries: countries || [],
         contentUrl: contentUrl || null,
         thumbnailUrl: thumbnailUrl || null,

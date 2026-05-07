@@ -131,9 +131,7 @@ export async function POST(request: NextRequest) {
       const users = await prisma.user.findMany({
         where: {
           status: "ACTIVE",
-          packageTier: {
-            in: packageFilter as ("FREE" | "STARTER" | "PRO" | "ELITE" | "VIP")[],
-          },
+          package: { slug: { in: packageFilter as string[] } },
         },
         select: { id: true },
       });
@@ -143,9 +141,7 @@ export async function POST(request: NextRequest) {
     } else if (target === "segment") {
       const where: Prisma.UserWhereInput = { status: "ACTIVE" };
       if (packages && packages.length > 0) {
-        where.packageTier = {
-          in: packages as ("FREE" | "STARTER" | "PRO" | "ELITE" | "VIP")[],
-        };
+        where.package = { slug: { in: packages as string[] } };
       }
       if (typeof minLevel === "number" && minLevel > 0) {
         where.level = { ...(where.level as object), gte: minLevel };

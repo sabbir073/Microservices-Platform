@@ -45,7 +45,7 @@ export async function POST(
         dailyLimit: originalTask.dailyLimit,
         totalLimit: originalTask.totalLimit,
         minLevel: originalTask.minLevel,
-        requiredPackage: originalTask.requiredPackage,
+        requiredAccessLevel: originalTask.requiredAccessLevel,
         countries: originalTask.countries,
         contentUrl: originalTask.contentUrl,
         thumbnailUrl: originalTask.thumbnailUrl,

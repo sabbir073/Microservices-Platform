@@ -22,7 +22,7 @@ const PROFILE_FIELDS = {
   pointsBalance: true,
   cashBalance: true,
   totalEarnings: true,
-  packageTier: true,
+  package: { select: { id: true, slug: true, name: true, features: true, dailyTaskLimit: true } },
   packageExpiresAt: true,
   referralCode: true,
   kycStatus: true,
@@ -105,9 +105,7 @@ export async function GET() {
     type CountRel = { _count: { referrals: number; taskSubmissions: number; transactions: number; socialAccounts: number; posts: number } };
     const u = user as typeof user & CountRel;
 
-    const pkg = await prisma.package.findUnique({
-      where: { tier: u.packageTier },
-    });
+    const pkg = u.package;
 
     const xpForNextLevel = calculateXpForLevel(u.level + 1);
     const xpProgress = u.xp - calculateXpForLevel(u.level);
@@ -229,8 +227,8 @@ export async function GET() {
         },
       },
       package: {
-        tier: u.packageTier,
-        name: pkg?.name || u.packageTier,
+        tier: pkg?.slug ?? "default",
+        name: pkg?.name ?? "Free",
         expiresAt: u.packageExpiresAt,
         features: pkg?.features || [],
         dailyTaskLimit: pkg?.dailyTaskLimit || 10,

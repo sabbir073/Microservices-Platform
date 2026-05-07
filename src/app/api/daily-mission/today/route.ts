@@ -19,19 +19,30 @@ export async function GET() {
 
   const me = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, level: true, packageTier: true },
+    select: {
+      id: true,
+      level: true,
+      package: { select: { accessLevel: true } },
+    },
   });
   if (!me) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  const accessLevel = me.package?.accessLevel ?? 0;
+
+  // Pick the highest-accessLevel mission template the user qualifies for.
   const missionRaw = await prisma.dailyMissionTemplate.findFirst({
     where: {
-      packageTier: me.packageTier,
+      requiredAccessLevel: { lte: accessLevel },
       isActive: true,
       requiredLevel: { lte: me.level },
     },
-    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+    orderBy: [
+      { requiredAccessLevel: "desc" },
+      { order: "asc" },
+      { createdAt: "desc" },
+    ],
     include: { items: { orderBy: { order: "asc" } } },
   });
 
@@ -117,7 +128,7 @@ export async function GET() {
       id: mission.id,
       name: mission.name,
       description: mission.description,
-      packageTier: mission.packageTier,
+      requiredAccessLevel: mission.requiredAccessLevel,
       requiredLevel: mission.requiredLevel,
       completionXpReward: mission.completionXpReward,
       completionPointsReward: mission.completionPointsReward,

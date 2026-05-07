@@ -6,6 +6,7 @@ import {
   TransactionStatus,
   NotificationType,
 } from "@/generated/prisma";
+import { getEffectivePackage } from "@/lib/packages";
 
 // Daily reward configuration (points per streak day)
 const DAILY_REWARDS = [
@@ -163,16 +164,9 @@ export async function POST() {
     const reward = DAILY_REWARDS[rewardDay - 1];
     newStreak++;
 
-    // Apply package multiplier if applicable
-    const userWithTier = await prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: { packageTier: true },
-    });
-
-    const pkg = userWithTier?.packageTier ? await prisma.package.findUnique({
-      where: { tier: userWithTier.packageTier },
-    }) : null;
-    const xpMultiplier = pkg?.xpMultiplier || 1;
+    // Apply plan xp multiplier — handles expiry + isDefault fallback.
+    const userPackage = await getEffectivePackage(session.user.id);
+    const xpMultiplier = userPackage?.xpMultiplier ?? 1;
 
     const pointsEarned = reward.points;
     const xpEarned = Math.round(reward.xp * xpMultiplier);

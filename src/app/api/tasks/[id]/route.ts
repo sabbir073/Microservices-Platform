@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { PackageTier } from "@/generated/prisma";
-
-// Package tier order for comparison (reserved for tier-gated task access)
-const _PACKAGE_ORDER: Record<PackageTier, number> = {
-  FREE: 0,
-  STARTER: 1,
-  PRO: 2,
-  ELITE: 3,
-  VIP: 4,
-};
 
 // GET /api/tasks/:id - Get single task details
 export async function GET(

@@ -18,6 +18,7 @@ export async function GET() {
     where: { referrals: { some: {} } },
     orderBy: { referrals: { _count: "desc" } },
     take: 1000,
+    include: { package: { select: { slug: true, name: true } } },
   });
 
   const ids = referrers.map((u) => u.id);
@@ -55,7 +56,10 @@ export async function GET() {
     return /[,"\n]/.test(v) ? `"${v}"` : v;
   };
 
-  const rows = referrers.map((u, i) =>
+  type UserWithPkg = (typeof referrers)[number] & {
+    package: { slug: string; name: string } | null;
+  };
+  const rows = (referrers as unknown as UserWithPkg[]).map((u, i) =>
     [
       i + 1,
       escape(u.id),
@@ -64,7 +68,7 @@ export async function GET() {
       escape(u.referralCode),
       counts[i] ?? 0,
       (earningsMap.get(u.id) ?? 0).toFixed(2),
-      escape(u.packageTier),
+      escape(u.package?.name ?? ""),
       escape(u.country),
       u.createdAt.toISOString(),
     ].join(",")

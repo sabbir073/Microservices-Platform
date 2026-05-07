@@ -3,10 +3,16 @@ import { unstable_cache } from "next/cache";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import type { PackageTier } from "@/generated/prisma/client";
 
 interface CountedValue {
   value: string;
+  count: number;
+}
+
+interface PlanCount {
+  id: string;
+  slug: string;
+  name: string;
   count: number;
 }
 
@@ -14,7 +20,7 @@ interface FilterOptions {
   countries: CountedValue[];
   cities: CountedValue[];
   genderCounts: { male: number; female: number; other: number };
-  packageTierCounts: Record<PackageTier, number>;
+  packageTierCounts: PlanCount[];
   blueVerifiedCounts: { yes: number; no: number };
   totalActiveUsers: number;
 }
@@ -22,10 +28,6 @@ interface FilterOptions {
 /**
  * Pre-aggregate distinct dropdown values from the active-user pool. Cached
  * for 60s — the values change slowly and the form can tolerate 1-min staleness.
- *
- * Cache is keyed only on `"boost-followers:filter-options"` (no per-target
- * key) because the option list itself is target-agnostic — exclusion of a
- * specific target's existing followers happens at preview time, not here.
  */
 const computeFilterOptions = unstable_cache(
   async (): Promise<FilterOptions> => {
@@ -40,11 +42,8 @@ const computeFilterOptions = unstable_cache(
       maleCount,
       femaleCount,
       otherCount,
-      tierFREE,
-      tierSTARTER,
-      tierPRO,
-      tierELITE,
-      tierVIP,
+      planGroupsRaw,
+      plans,
       blueYes,
       blueNo,
       total,
@@ -78,11 +77,15 @@ const computeFilterOptions = unstable_cache(
           gender: { not: null, notIn: ["male", "Male", "MALE", "female", "Female", "FEMALE"] },
         },
       }),
-      prisma.user.count({ where: { ...baseWhere, packageTier: "FREE" } }),
-      prisma.user.count({ where: { ...baseWhere, packageTier: "STARTER" } }),
-      prisma.user.count({ where: { ...baseWhere, packageTier: "PRO" } }),
-      prisma.user.count({ where: { ...baseWhere, packageTier: "ELITE" } }),
-      prisma.user.count({ where: { ...baseWhere, packageTier: "VIP" } }),
+      prisma.user.groupBy({
+        by: ["packageId"],
+        where: baseWhere,
+        _count: { id: true },
+      }),
+      prisma.package.findMany({
+        select: { id: true, slug: true, name: true, order: true },
+        orderBy: [{ order: "asc" }, { accessLevel: "asc" }],
+      }),
       prisma.user.count({ where: { ...baseWhere, isBlueVerified: true } }),
       prisma.user.count({ where: { ...baseWhere, isBlueVerified: false } }),
       prisma.user.count({ where: baseWhere }),
@@ -90,6 +93,11 @@ const computeFilterOptions = unstable_cache(
 
     const countryGroups = countryGroupsRaw as CountryGroup[];
     const cityGroups = cityGroupsRaw as CityGroup[];
+    type PlanGroup = { packageId: string | null; _count: { id: number } };
+    const planCountMap = new Map<string, number>();
+    for (const g of planGroupsRaw as PlanGroup[]) {
+      if (g.packageId) planCountMap.set(g.packageId, g._count.id);
+    }
 
     return {
       countries: countryGroups
@@ -109,13 +117,12 @@ const computeFilterOptions = unstable_cache(
         female: femaleCount,
         other: otherCount,
       },
-      packageTierCounts: {
-        FREE: tierFREE,
-        STARTER: tierSTARTER,
-        PRO: tierPRO,
-        ELITE: tierELITE,
-        VIP: tierVIP,
-      },
+      packageTierCounts: plans.map((p) => ({
+        id: p.id,
+        slug: p.slug,
+        name: p.name,
+        count: planCountMap.get(p.id) ?? 0,
+      })),
       blueVerifiedCounts: { yes: blueYes, no: blueNo },
       totalActiveUsers: total,
     };

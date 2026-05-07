@@ -6,6 +6,7 @@ import {
   TransactionStatus,
   NotificationType,
 } from "@/generated/prisma/client";
+import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
 
 function utcDateKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
@@ -22,11 +23,17 @@ export async function GET() {
 
   const me = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, packageTier: true },
+    select: { id: true },
   });
   if (!me) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+
+  const userPackage = await getEffectivePackage(userId);
+  const accessLevel = userPackage?.accessLevel ?? 0;
+  // Daily claim is L1 commission, so plan must unlock at least L1.
+  const commissionLevels = userPackage?.referralCommissionLevels ?? 0;
+  const canEarnReferralCommission = commissionLevels >= 1;
 
   const today = utcDateKey();
   const existing = await prisma.dailyReferralClaim.findUnique({
@@ -38,20 +45,22 @@ export async function GET() {
     where: { referredById: userId },
   });
 
-  // Per-referral bonus from package (fallback to default)
-  const pkg = await prisma.package.findUnique({
-    where: { tier: me.packageTier },
-    select: { referralBonus: true },
-  });
-  const perReferral = pkg?.referralBonus && pkg.referralBonus > 0
-    ? pkg.referralBonus
-    : DEFAULT_DAILY_PER_REFERRAL;
+  // Per-referral bonus from the user's plan; default 5 if 0/null. Plan that
+  // doesn't unlock L1 earns nothing regardless of bonus value.
+  const perReferral =
+    canEarnReferralCommission &&
+    userPackage?.dailyReferralPoints &&
+    userPackage.dailyReferralPoints > 0
+      ? userPackage.dailyReferralPoints
+      : canEarnReferralCommission
+        ? DEFAULT_DAILY_PER_REFERRAL
+        : 0;
   const points = Math.round(perReferral * referralCount);
 
-  // Mission gating
+  // Mission gating — use the highest-level mission template the user qualifies for.
   const mission = await prisma.dailyMissionTemplate.findFirst({
     where: {
-      packageTier: me.packageTier,
+      requiredAccessLevel: { lte: accessLevel },
       isActive: true,
       linkReferralBonus: true,
     },
@@ -96,10 +105,28 @@ export async function POST() {
 
   const me = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, packageTier: true },
+    select: { id: true },
   });
   if (!me) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  const userPackage = await getEffectivePackage(userId);
+  const accessLevel = userPackage?.accessLevel ?? 0;
+
+  if (!packageHasFeature(userPackage, "referrals")) {
+    return NextResponse.json(
+      { error: "Referral rewards are disabled for your plan" },
+      { status: 403 }
+    );
+  }
+
+  // Plan must unlock at least L1 commission for the daily claim to count.
+  if ((userPackage?.referralCommissionLevels ?? 0) < 1) {
+    return NextResponse.json(
+      { error: "Your plan does not earn referral commissions. Upgrade to start earning." },
+      { status: 403 }
+    );
   }
 
   const today = utcDateKey();
@@ -127,7 +154,7 @@ export async function POST() {
   // Mission gate
   const mission = await prisma.dailyMissionTemplate.findFirst({
     where: {
-      packageTier: me.packageTier,
+      requiredAccessLevel: { lte: accessLevel },
       isActive: true,
       linkReferralBonus: true,
     },
@@ -154,13 +181,10 @@ export async function POST() {
     }
   }
 
-  const pkg = await prisma.package.findUnique({
-    where: { tier: me.packageTier },
-    select: { referralBonus: true },
-  });
-  const perReferral = pkg?.referralBonus && pkg.referralBonus > 0
-    ? pkg.referralBonus
-    : DEFAULT_DAILY_PER_REFERRAL;
+  const perReferral =
+    userPackage?.dailyReferralPoints && userPackage.dailyReferralPoints > 0
+      ? userPackage.dailyReferralPoints
+      : DEFAULT_DAILY_PER_REFERRAL;
   const points = Math.round(perReferral * referralCount);
   const cashAmount = points / 1000;
 

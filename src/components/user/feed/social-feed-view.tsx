@@ -44,6 +44,9 @@ interface SessionUser {
   id: string;
   name: string | null;
   avatar: string | null;
+  /** Role of the viewer. Used to surface admin-only UI affordances
+   *  (announcement toggle, promote/un-promote menu, force-delete). */
+  role?: string | null;
 }
 
 interface PollOption {
@@ -57,6 +60,10 @@ interface FeedPost {
   content: string;
   images: string[];
   isPinned: boolean;
+  isAnnouncement?: boolean;
+  isPromoted?: boolean;
+  promotedUntil?: string | null;
+  promotedNote?: string | null;
   likesCount: number;
   commentsCount: number;
   sharesCount: number;
@@ -76,6 +83,7 @@ interface FeedPost {
     level: number;
     packageTier: string;
     isBlueVerified?: boolean;
+    role?: string | null;
   };
   isLiked: boolean;
   isOwner: boolean;
@@ -234,6 +242,10 @@ function FeedTab({
     setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   };
 
+  const handlePostDeleted = (id: string) => {
+    setPosts((prev) => prev.filter((p) => p.id !== id));
+  };
+
   return (
     <div className="space-y-4">
       {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
@@ -294,7 +306,9 @@ function FeedTab({
               key={post.id}
               post={post}
               currentUserId={user.id}
+              currentUserRole={user.role ?? null}
               onUpdated={(patch) => handlePostUpdated(post.id, patch)}
+              onDeleted={() => handlePostDeleted(post.id)}
             />
           ))}
         </div>
@@ -325,6 +339,12 @@ function CreatePostComposer({
   const [pollDuration, setPollDuration] = useState<24 | 48 | 72>(24);
   const [donationGoal, setDonationGoal] = useState<number>(1000);
   const [busy, setBusy] = useState(false);
+  const [postAsAnnouncement, setPostAsAnnouncement] = useState(false);
+
+  // Only admin-ish roles see the announcement toggle. We don't enforce
+  // here — the server gates `social.post`.
+  const canAnnounce =
+    !!user.role && user.role !== "USER" && user.role !== "user";
 
   const reset = () => {
     setContent("");
@@ -335,6 +355,7 @@ function CreatePostComposer({
     setDonationGoal(1000);
     setExpanded(false);
     setMode("text");
+    setPostAsAnnouncement(false);
   };
 
   const addImage = () => {
@@ -370,7 +391,13 @@ function CreatePostComposer({
         mode === "poll"
           ? pollOptions.map((o) => o.trim()).filter(Boolean).slice(0, 8)
           : null;
-      const res = await fetch("/api/feed", {
+      // Announcements use the dedicated admin endpoint so the server
+      // gate is explicit. Everything else goes through the regular path.
+      const endpoint =
+        canAnnounce && postAsAnnouncement
+          ? "/api/admin/feed/announce"
+          : "/api/feed";
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -395,7 +422,9 @@ function CreatePostComposer({
       const data = await res.json();
       onCreated(data.post);
       reset();
-      toast.success("Posted!");
+      toast.success(
+        canAnnounce && postAsAnnouncement ? "Announcement posted!" : "Posted!"
+      );
     } catch (err) {
       toast.error("Failed to post", {
         description: err instanceof Error ? err.message : "Try again",
@@ -551,6 +580,25 @@ function CreatePostComposer({
         />
       )}
 
+      {canAnnounce && (
+        <label className="flex items-center gap-2 cursor-pointer rounded-lg border border-cyan-500/30 bg-cyan-500/5 px-3 py-2">
+          <input
+            type="checkbox"
+            checked={postAsAnnouncement}
+            onChange={(e) => setPostAsAnnouncement(e.target.checked)}
+            disabled={busy}
+            className="rounded bg-gray-800 border-gray-600 text-cyan-500 focus:ring-cyan-500"
+          />
+          <Megaphone className="w-3.5 h-3.5 text-cyan-300" />
+          <span className="text-xs font-semibold text-cyan-200">
+            Post as Official Announcement
+          </span>
+          <span className="text-[10px] text-cyan-400/70 ml-auto">
+            Pinned to top • OFFICIAL badge
+          </span>
+        </label>
+      )}
+
       <div className="flex items-center justify-between pt-2 border-t border-gray-800">
         <span className="text-[11px] text-gray-500 tabular-nums">
           {content.length}/2000
@@ -558,14 +606,27 @@ function CreatePostComposer({
         <button
           onClick={submit}
           disabled={busy || (mode === "text" && !content.trim())}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-linear-to-r from-indigo-500 to-purple-600 text-white text-sm font-bold rounded-lg hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+          className={cn(
+            "inline-flex items-center gap-1.5 px-4 py-2 text-white text-sm font-bold rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-opacity hover:opacity-90",
+            canAnnounce && postAsAnnouncement
+              ? "bg-linear-to-r from-cyan-500 to-blue-600"
+              : "bg-linear-to-r from-indigo-500 to-purple-600"
+          )}
         >
           {busy ? (
             <Loader2 className="w-4 h-4 animate-spin" />
+          ) : canAnnounce && postAsAnnouncement ? (
+            <Megaphone className="w-4 h-4" />
           ) : (
             <Send className="w-4 h-4" />
           )}
-          {mode === "poll" ? "Post Poll" : mode === "donation" ? "Start Fundraiser" : "Post"}
+          {canAnnounce && postAsAnnouncement
+            ? "Post Announcement"
+            : mode === "poll"
+              ? "Post Poll"
+              : mode === "donation"
+                ? "Start Fundraiser"
+                : "Post"}
         </button>
       </div>
     </div>
@@ -694,20 +755,99 @@ function DonationComposer({
 function FeedPostCard({
   post,
   currentUserId,
+  currentUserRole,
   onUpdated,
+  onDeleted,
 }: {
   post: FeedPost;
   currentUserId: string;
+  currentUserRole: string | null;
   onUpdated: (patch: Partial<FeedPost>) => void;
+  onDeleted: () => void;
 }) {
   const [showComments, setShowComments] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [promoteOpen, setPromoteOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const viewFiredRef = useRef(false);
   const initial = (post.user?.name ?? "U").charAt(0).toUpperCase();
+  const isAdmin =
+    !!currentUserRole &&
+    currentUserRole !== "USER" &&
+    currentUserRole !== "user";
+
+  const promotionActive =
+    !!post.isPromoted &&
+    (post.promotedUntil == null ||
+      new Date(post.promotedUntil).getTime() > Date.now());
+
+  // Close the action menu on outside-click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
+
+  const toggleAnnounce = async () => {
+    if (busy) return;
+    setBusy(true);
+    setMenuOpen(false);
+    const next = !post.isAnnouncement;
+    try {
+      const res = await fetch(`/api/admin/feed/${post.id}/announce`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isAnnouncement: next }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      onUpdated({ isAnnouncement: next });
+      toast.success(next ? "Marked as announcement" : "Announcement removed");
+    } catch (err) {
+      toast.error("Couldn't update", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const forceDelete = async () => {
+    if (busy) return;
+    if (
+      !window.confirm(
+        "Force-delete this post? This action is logged and cannot be undone."
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setMenuOpen(false);
+    try {
+      const res = await fetch(`/api/admin/feed/${post.id}`, {
+        method: "DELETE",
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      onDeleted();
+      toast.success("Post deleted");
+    } catch (err) {
+      setBusy(false);
+      toast.error("Couldn't delete", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    }
+  };
 
   // View tracking — fire once when the post is ≥50% visible for ≥2s
   useEffect(() => {
@@ -802,8 +942,34 @@ function FeedPostCard({
   return (
     <article
       ref={articleRef}
-      className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden"
+      className={cn(
+        "relative rounded-xl border bg-gray-900 overflow-hidden",
+        post.isAnnouncement
+          ? "border-cyan-500/40 ring-1 ring-cyan-500/20"
+          : promotionActive
+            ? "border-amber-500/40"
+            : "border-gray-800"
+      )}
     >
+      {/* Top-right badge (OFFICIAL > PROMOTED, mutually exclusive in render). */}
+      {(post.isAnnouncement || promotionActive) && (
+        <div className="absolute top-3 right-3 z-10">
+          {post.isAnnouncement ? (
+            <span className="inline-flex items-center gap-1 rounded-md bg-cyan-500 text-gray-950 px-2 py-0.5 text-[10px] font-extrabold tracking-wider uppercase shadow-md">
+              <Megaphone className="w-3 h-3" />
+              Official
+            </span>
+          ) : (
+            <span
+              className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-gray-950 px-2 py-0.5 text-[10px] font-extrabold tracking-wider uppercase shadow-md"
+              title={post.promotedNote ? `Promoted by ${post.promotedNote}` : "Promoted"}
+            >
+              <Sparkles className="w-3 h-3" />
+              Promoted
+            </span>
+          )}
+        </div>
+      )}
       <div className="p-4">
         {/* Header */}
         <div className="flex items-start gap-3">
@@ -870,10 +1036,54 @@ function FeedPostCard({
               )}
             </button>
           )}
-          {post.isOwner && (
-            <button className="p-1.5 text-gray-500 hover:text-white">
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
+          {(post.isOwner || isAdmin) && (
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setMenuOpen((v) => !v)}
+                className="p-1.5 text-gray-500 hover:text-white"
+                aria-label="Post actions"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 mt-1 w-52 rounded-lg border border-gray-700 bg-gray-950 shadow-xl z-20 overflow-hidden">
+                  {isAdmin && (
+                    <>
+                      <button
+                        onClick={toggleAnnounce}
+                        disabled={busy}
+                        className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-gray-900 inline-flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <Megaphone className="w-3.5 h-3.5 text-cyan-400" />
+                        {post.isAnnouncement
+                          ? "Remove Announcement"
+                          : "Mark as Announcement"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setPromoteOpen(true);
+                        }}
+                        disabled={busy}
+                        className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-gray-900 inline-flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        {promotionActive ? "Edit Promotion" : "Promote Post"}
+                      </button>
+                      <div className="border-t border-gray-800" />
+                      <button
+                        onClick={forceDelete}
+                        disabled={busy}
+                        className="w-full text-left px-3 py-2 text-xs text-red-300 hover:bg-red-500/10 inline-flex items-center gap-2 disabled:opacity-50"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        Force Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -1033,7 +1243,185 @@ function FeedPostCard({
           }
         }}
       />
+
+      {isAdmin && promoteOpen && (
+        <PromoteModal
+          post={post}
+          onClose={() => setPromoteOpen(false)}
+          onSaved={(patch) => {
+            onUpdated(patch);
+            setPromoteOpen(false);
+          }}
+        />
+      )}
     </article>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PromoteModal — lets an admin toggle PROMOTED, set an expiry, and tag a sponsor.
+// ─────────────────────────────────────────────────────────────────────────────
+function PromoteModal({
+  post,
+  onClose,
+  onSaved,
+}: {
+  post: FeedPost;
+  onClose: () => void;
+  onSaved: (patch: Partial<FeedPost>) => void;
+}) {
+  const initialUntil = post.promotedUntil
+    ? new Date(post.promotedUntil)
+    : null;
+  const [enabled, setEnabled] = useState(!!post.isPromoted);
+  const [duration, setDuration] = useState<"1d" | "7d" | "30d" | "forever">(
+    initialUntil ? "7d" : "forever"
+  );
+  const [note, setNote] = useState(post.promotedNote ?? "");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async () => {
+    setBusy(true);
+    try {
+      let until: string | null = null;
+      if (enabled && duration !== "forever") {
+        const days = duration === "1d" ? 1 : duration === "7d" ? 7 : 30;
+        until = new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+      }
+      const res = await fetch(`/api/admin/feed/${post.id}/promote`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          isPromoted: enabled,
+          until,
+          note: enabled ? note.trim() || null : null,
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      onSaved({
+        isPromoted: !!d.isPromoted,
+        promotedUntil: d.promotedUntil ?? null,
+        promotedNote: d.promotedNote ?? null,
+      });
+      toast.success(enabled ? "Post promoted" : "Promotion removed");
+    } catch (err) {
+      toast.error("Couldn't update promotion", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-2xl border border-amber-500/40 bg-gray-950 shadow-2xl p-5 space-y-4"
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-base font-bold text-white inline-flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              Promote Post
+            </p>
+            <p className="text-[11px] text-gray-500 mt-0.5">
+              Promoted posts get a PROMOTED badge and are interleaved through the feed.
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 text-gray-500 hover:text-white"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <label className="flex items-center gap-2 cursor-pointer rounded-lg border border-gray-800 bg-gray-900 px-3 py-2">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => setEnabled(e.target.checked)}
+            className="rounded bg-gray-800 border-gray-600 text-amber-500 focus:ring-amber-500"
+          />
+          <span className="text-sm font-semibold text-white">
+            Show PROMOTED badge
+          </span>
+        </label>
+
+        {enabled && (
+          <>
+            <div>
+              <p className="text-[11px] uppercase tracking-wider text-gray-500 font-bold mb-1.5">
+                Duration
+              </p>
+              <div className="grid grid-cols-4 gap-1.5">
+                {(["1d", "7d", "30d", "forever"] as const).map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setDuration(d)}
+                    type="button"
+                    className={cn(
+                      "px-2 py-1.5 rounded-md text-xs font-bold border",
+                      duration === d
+                        ? "bg-amber-500 border-amber-500 text-gray-950"
+                        : "bg-gray-900 border-gray-800 text-gray-400 hover:text-white"
+                    )}
+                  >
+                    {d === "forever" ? "Forever" : d.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[11px] uppercase tracking-wider text-gray-500 font-bold block mb-1.5">
+                Sponsor / Note (optional)
+              </label>
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                maxLength={120}
+                placeholder='e.g. "NordVPN", "Coinbase"'
+                className="w-full bg-gray-900 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-amber-500"
+              />
+              <p className="text-[10px] text-gray-500 mt-1">
+                Shown as a tooltip on the PROMOTED badge.
+              </p>
+            </div>
+          </>
+        )}
+
+        <div className="flex justify-end gap-2 pt-2">
+          <button
+            onClick={onClose}
+            disabled={busy}
+            type="button"
+            className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-sm font-semibold disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={submit}
+            disabled={busy}
+            type="button"
+            className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {busy ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            {enabled ? "Save promotion" : "Remove promotion"}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1220,7 +1608,9 @@ function CommentsSection({
             <p className="text-[10px] text-gray-500">
               {formatDistanceToNow(new Date(c.createdAt), { addSuffix: true })}
             </p>
-            {depth === 0 && (
+            {/* Allow replies up to depth 2 — produces a tree of root → reply → reply-to-reply.
+                Past that, deeper replies still render but the Reply button hides so threads stay readable. */}
+            {depth < 2 && (
               <button
                 onClick={() => {
                   setReplyTo(c);

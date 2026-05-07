@@ -302,13 +302,24 @@ export async function POST(
 
     // If auto-approved AND not a board task, award points and update user
     if (shouldAutoApprove && !isBoardTask) {
+      // Apply per-plan task reward multiplier
+      const userPlan = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { package: { select: { taskRewardMultiplier: true } } },
+      });
+      const multiplier =
+        (userPlan as unknown as { package: { taskRewardMultiplier: number } | null })?.package
+          ?.taskRewardMultiplier ?? 1;
+      const effectivePoints = Math.round(task.pointsReward * multiplier);
+      const effectiveXp = Math.round(task.xpReward * multiplier);
+
       // Update user points and XP
       const user = await prisma.user.update({
         where: { id: session.user.id },
         data: {
-          pointsBalance: { increment: task.pointsReward },
-          xp: { increment: task.xpReward },
-          totalEarnings: { increment: task.pointsReward / 1000 }, // Convert to cash equivalent
+          pointsBalance: { increment: effectivePoints },
+          xp: { increment: effectiveXp },
+          totalEarnings: { increment: effectivePoints / 1000 },
         },
       });
 
@@ -318,14 +329,15 @@ export async function POST(
           userId: session.user.id,
           type: TransactionType.EARNING,
           status: TransactionStatus.COMPLETED,
-          points: task.pointsReward,
-          amount: task.pointsReward / 1000,
+          points: effectivePoints,
+          amount: effectivePoints / 1000,
           description: `Completed task: ${task.title}`,
           reference: `task_${task.id}_${submission.id}`,
           metadata: {
             taskId: task.id,
             taskType: task.type,
             submissionId: submission.id,
+            multiplier,
           },
         },
       });
@@ -339,7 +351,7 @@ export async function POST(
       });
 
       // Check for level up
-      const newLevel = calculateLevel(user.xp + task.xpReward);
+      const newLevel = calculateLevel(user.xp + effectiveXp);
       if (newLevel > user.level) {
         await prisma.user.update({
           where: { id: session.user.id },
@@ -364,27 +376,27 @@ export async function POST(
           userId: session.user.id,
           type: NotificationType.TASK,
           title: "Task Completed!",
-          message: `You earned ${task.pointsReward} points from "${task.title}"`,
+          message: `You earned ${effectivePoints} points from "${task.title}"`,
           data: {
             taskId: task.id,
-            points: task.pointsReward,
-            xp: task.xpReward,
+            points: effectivePoints,
+            xp: effectiveXp,
           },
         },
       });
 
-      // Process referral commissions
-      await processReferralCommissions(session.user.id, task.pointsReward, task.id);
+      // Process referral commissions on the effective (multiplied) reward.
+      await processReferralCommissions(session.user.id, effectivePoints, task.id);
 
       return NextResponse.json({
         submission: updatedSubmission,
         status: "approved",
         message: "Task completed successfully!",
         rewards: {
-          points: task.pointsReward,
-          xp: task.xpReward,
+          points: effectivePoints,
+          xp: effectiveXp,
         },
-        newBalance: user.pointsBalance + task.pointsReward,
+        newBalance: user.pointsBalance + effectivePoints,
         score,
       });
     }

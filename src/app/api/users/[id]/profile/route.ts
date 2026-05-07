@@ -29,7 +29,7 @@ export async function GET(
       xp: true,
       totalEarnings: true,
       isBlueVerified: true,
-      packageTier: true,
+      package: { select: { slug: true, name: true } },
       status: true,
       privacyAvatar: true,
       privacyBio: true,
@@ -138,7 +138,7 @@ export async function GET(
       tags: u.tags,
       level: u.level,
       isBlueVerified: u.isBlueVerified,
-      packageTier: u.packageTier,
+      packageTier: u.package?.slug ?? "default",
       createdAt: u.createdAt,
       // Stats — gated by privacyStats. Display = max(0, real + admin boost).
       postsCount: statsVisible

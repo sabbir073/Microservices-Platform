@@ -82,7 +82,10 @@ export function buildWhere(
     });
   }
   if (f.packageTier) {
-    andClauses.push({ packageTier: f.packageTier });
+    // packageTier is now treated as a Plan slug (e.g. "pro-monthly") to
+    // preserve the public API of this filter without changing the
+    // call sites. Resolves to a relation-based filter on Package.slug.
+    andClauses.push({ package: { slug: f.packageTier } });
   }
   if (typeof f.isBlueVerified === "boolean") {
     andClauses.push({ isBlueVerified: f.isBlueVerified });

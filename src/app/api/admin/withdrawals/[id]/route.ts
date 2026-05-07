@@ -33,7 +33,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             avatar: true,
             level: true,
             kycStatus: true,
-            packageTier: true,
+            package: { select: { slug: true, name: true } },
             cashBalance: true,
             totalWithdrawals: true,
           },

@@ -102,7 +102,7 @@ export default async function AdminWithdrawalsPage({ searchParams }: PageProps) 
             avatar: true,
             level: true,
             kycStatus: true,
-            packageTier: true,
+            package: { select: { slug: true, name: true } },
             createdAt: true,
           },
         },
@@ -143,7 +143,7 @@ export default async function AdminWithdrawalsPage({ searchParams }: PageProps) 
       avatar: string | null;
       level: number;
       kycStatus: string;
-      packageTier: string;
+      package: { slug: string; name: string } | null;
       createdAt: Date;
     };
   };
@@ -358,7 +358,7 @@ export default async function AdminWithdrawalsPage({ searchParams }: PageProps) 
                   const risk = assessWithdrawalRisk({
                     amount: withdrawal.amount,
                     userKycStatus: withdrawal.user.kycStatus,
-                    userPackageTier: withdrawal.user.packageTier,
+                    userPackageTier: withdrawal.user.package?.slug ?? "default",
                     accountAgeDays: differenceInDays(
                       new Date(),
                       withdrawal.user.createdAt

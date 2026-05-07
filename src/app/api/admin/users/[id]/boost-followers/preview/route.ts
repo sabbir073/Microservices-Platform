@@ -79,7 +79,7 @@ export async function POST(
         country: true,
         city: true,
         gender: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
         level: true,
       },
       take: 10,

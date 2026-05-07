@@ -16,7 +16,7 @@ export default async function EarnPage() {
       level: true,
       xp: true,
       pointsBalance: true,
-      packageTier: true,
+      package: { select: { slug: true, name: true } },
     },
   });
 
@@ -31,7 +31,7 @@ export default async function EarnPage() {
         level: user.level,
         xp: user.xp,
         pointsBalance: user.pointsBalance,
-        packageTier: user.packageTier,
+        packageTier: user.package?.slug ?? "default",
       }}
     />
   );

@@ -21,7 +21,7 @@ export default async function WalletPage() {
           pointsBalance: true,
           cashBalance: true,
           totalEarnings: true,
-          packageTier: true,
+          package: { select: { slug: true, name: true } },
         },
       }),
       prisma.transaction.findMany({
@@ -102,7 +102,7 @@ export default async function WalletPage() {
       cashBalance={Number(user.cashBalance)}
       totalEarnings={Number(user.totalEarnings)}
       totalWithdrawn={totalWithdrawn}
-      packageTier={user.packageTier}
+      packageTier={user.package?.slug ?? "default"}
       transactions={txList}
       referralStats={stats}
       pendingWithdrawals={pendingWithdrawalsCount}

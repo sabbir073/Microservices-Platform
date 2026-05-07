@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { NotificationType, PackageTier } from "@/generated/prisma";
+import { NotificationType } from "@/generated/prisma";
+import { defaultPackage } from "@/lib/packages";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     const subscription = await prisma.subscription.findUnique({
       where: { id },
+      include: { package: true },
     });
 
     if (!subscription) {
@@ -35,7 +37,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Get user info
     const user = await prisma.user.findUnique({
       where: { id: subscription.userId },
       select: {
@@ -43,14 +44,9 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
         name: true,
         email: true,
         avatar: true,
-        packageTier: true,
+        package: { select: { id: true, slug: true, name: true } },
         packageExpiresAt: true,
       },
-    });
-
-    // Get package info
-    const pkg = await prisma.package.findUnique({
-      where: { tier: subscription.packageTier },
     });
 
     return NextResponse.json({
@@ -61,12 +57,13 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
           name: user?.name || "Unknown",
           email: user?.email || "",
           avatar: user?.avatar,
-          currentPackage: user?.packageTier,
+          currentPackage: user?.package?.name ?? null,
           packageExpiresAt: user?.packageExpiresAt,
         },
         package: {
-          tier: subscription.packageTier,
-          name: pkg?.name || subscription.packageTier,
+          id: subscription.package?.id,
+          slug: subscription.package?.slug,
+          name: subscription.package?.name || "—",
           price: subscription.amount,
         },
         amount: subscription.amount,
@@ -114,9 +111,9 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Get subscription
     const subscription = await prisma.subscription.findUnique({
       where: { id },
+      include: { package: true },
     });
 
     if (!subscription) {
@@ -133,17 +130,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Get package info
-    const pkg = await prisma.package.findUnique({
-      where: { tier: subscription.packageTier },
-    });
+    const pkg = subscription.package;
+    const planLabel = pkg?.name ?? "—";
 
     if (action === "approve") {
-      // Approve subscription - activate it and update user's package
       const startDate = new Date();
       const endDate = new Date();
 
-      // Calculate end date based on the period
       const monthsDiff = Math.round(
         (subscription.endDate.getTime() - subscription.startDate.getTime()) /
           (1000 * 60 * 60 * 24 * 30)
@@ -155,9 +148,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         endDate.setMonth(endDate.getMonth() + 1);
       }
 
-      // Update in transaction
       await prisma.$transaction([
-        // Activate subscription
         prisma.subscription.update({
           where: { id },
           data: {
@@ -166,29 +157,26 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             endDate,
           },
         }),
-        // Update user's package
         prisma.user.update({
           where: { id: subscription.userId },
           data: {
-            packageTier: subscription.packageTier as PackageTier,
+            packageId: subscription.packageId,
             packageExpiresAt: endDate,
           },
         }),
-        // Create notification for user
         prisma.notification.create({
           data: {
             userId: subscription.userId,
             type: NotificationType.SYSTEM,
             title: "Package Activated!",
-            message: `Your ${pkg?.name || subscription.packageTier} package has been activated. Enjoy your premium benefits until ${endDate.toLocaleDateString()}.`,
+            message: `Your ${planLabel} package has been activated. Enjoy your premium benefits until ${endDate.toLocaleDateString()}.`,
             data: {
               subscriptionId: subscription.id,
-              packageTier: subscription.packageTier,
+              packageId: subscription.packageId,
               expiresAt: endDate.toISOString(),
             },
           },
         }),
-        // Create audit log
         prisma.auditLog.create({
           data: {
             userId: session.user.id,
@@ -197,7 +185,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             entityId: subscription.id,
             newData: {
               userId: subscription.userId,
-              packageTier: subscription.packageTier,
+              packageId: subscription.packageId,
               amount: subscription.amount,
               transactionId: subscription.transactionId,
             },
@@ -210,14 +198,13 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         message: "Subscription approved successfully",
         subscription: {
           id: subscription.id,
-          packageTier: subscription.packageTier,
+          packageId: subscription.packageId,
           startDate,
           endDate,
           status: "ACTIVE",
         },
       });
     } else {
-      // Reject subscription
       if (!rejectionReason) {
         return NextResponse.json(
           { error: "Rejection reason is required" },
@@ -226,25 +213,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       }
 
       await prisma.$transaction([
-        // Delete the subscription
         prisma.subscription.delete({
           where: { id },
         }),
-        // Create notification for user
         prisma.notification.create({
           data: {
             userId: subscription.userId,
             type: NotificationType.SYSTEM,
             title: "Subscription Request Rejected",
-            message: `Your subscription request for ${pkg?.name || subscription.packageTier} package has been rejected. Reason: ${rejectionReason}`,
+            message: `Your subscription request for ${planLabel} package has been rejected. Reason: ${rejectionReason}`,
             data: {
               subscriptionId: subscription.id,
-              packageTier: subscription.packageTier,
+              packageId: subscription.packageId,
               rejectionReason,
             },
           },
         }),
-        // Create audit log
         prisma.auditLog.create({
           data: {
             userId: session.user.id,
@@ -253,7 +237,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             entityId: subscription.id,
             newData: {
               userId: subscription.userId,
-              packageTier: subscription.packageTier,
+              packageId: subscription.packageId,
               amount: subscription.amount,
               transactionId: subscription.transactionId,
               rejectionReason,
@@ -294,9 +278,9 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const body = await request.json().catch(() => ({}));
     const { reason } = body;
 
-    // Get subscription
     const subscription = await prisma.subscription.findUnique({
       where: { id },
+      include: { package: true },
     });
 
     if (!subscription) {
@@ -306,40 +290,35 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Get package info
-    const pkg = await prisma.package.findUnique({
-      where: { tier: subscription.packageTier },
-    });
+    const planLabel = subscription.package?.name ?? "—";
+    // Revert user to the system default plan instead of a hardcoded FREE.
+    const defaultPlan = await defaultPackage();
 
     await prisma.$transaction([
-      // Deactivate subscription
       prisma.subscription.update({
         where: { id },
         data: { isActive: false },
       }),
-      // Revert user to FREE package
       prisma.user.update({
         where: { id: subscription.userId },
         data: {
-          packageTier: PackageTier.FREE,
+          packageId: defaultPlan?.id ?? null,
           packageExpiresAt: null,
         },
       }),
-      // Create notification for user
       prisma.notification.create({
         data: {
           userId: subscription.userId,
           type: NotificationType.SYSTEM,
           title: "Subscription Cancelled",
-          message: `Your ${pkg?.name || subscription.packageTier} subscription has been cancelled by admin.${reason ? ` Reason: ${reason}` : ""}`,
+          message: `Your ${planLabel} subscription has been cancelled by admin.${reason ? ` Reason: ${reason}` : ""}`,
           data: {
             subscriptionId: subscription.id,
-            packageTier: subscription.packageTier,
+            packageId: subscription.packageId,
             reason,
           },
         },
       }),
-      // Create audit log
       prisma.auditLog.create({
         data: {
           userId: session.user.id,
@@ -348,7 +327,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
           entityId: subscription.id,
           newData: {
             userId: subscription.userId,
-            packageTier: subscription.packageTier,
+            packageId: subscription.packageId,
             reason,
           },
         },

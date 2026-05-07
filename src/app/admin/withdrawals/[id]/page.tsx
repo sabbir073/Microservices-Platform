@@ -72,7 +72,7 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
           totalEarnings: true,
           totalWithdrawals: true,
           kycStatus: true,
-          packageTier: true,
+          package: { select: { slug: true, name: true } },
           createdAt: true,
           country: true,
           _count: {
@@ -104,7 +104,7 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
       totalEarnings: number;
       totalWithdrawals: number;
       kycStatus: string;
-      packageTier: string;
+      package: { slug: string; name: string } | null;
       createdAt: Date;
       country: string | null;
       _count: {
@@ -151,7 +151,7 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
   const risk = assessWithdrawalRisk({
     amount: withdrawal.amount,
     userKycStatus: withdrawal.user.kycStatus,
-    userPackageTier: withdrawal.user.packageTier,
+    userPackageTier: withdrawal.user.package?.slug ?? "default",
     accountAgeDays: accountAge,
     previousSuccessfulWithdrawals: previousWithdrawals.length,
     previousRejectedWithdrawals: rejectedCount,
@@ -259,13 +259,7 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
                 <div className="flex items-center gap-3 mt-2">
                   <span className="text-sm text-gray-500">Level {withdrawal.user.level}</span>
                   <span className="text-gray-600">|</span>
-                  <span className={`text-sm ${
-                    withdrawal.user.packageTier === "VIP" ? "text-amber-400" :
-                    withdrawal.user.packageTier === "ELITE" ? "text-purple-400" :
-                    withdrawal.user.packageTier === "PRO" ? "text-indigo-400" :
-                    withdrawal.user.packageTier === "STARTER" ? "text-blue-400" :
-                    "text-gray-400"
-                  }`}>{withdrawal.user.packageTier}</span>
+                  <span className="text-sm text-indigo-400">{withdrawal.user.package?.name ?? "—"}</span>
                   <span className="text-gray-600">|</span>
                   <span className={`text-sm ${
                     withdrawal.user.kycStatus === "APPROVED" ? "text-emerald-400" :

@@ -30,14 +30,6 @@ const taskTypes = [
   { id: "CUSTOM", label: "Custom", icon: Sparkles, color: "indigo", description: "Custom task type" },
 ];
 
-const packageTiers = [
-  { id: "FREE", label: "Free" },
-  { id: "STARTER", label: "Starter" },
-  { id: "PRO", label: "Pro" },
-  { id: "ELITE", label: "Elite" },
-  { id: "VIP", label: "VIP" },
-];
-
 // Note: social platform / action lists now live in src/lib/social-tasks.ts
 // (SOCIAL_PLATFORMS) and are sourced via the SocialTaskBuilder component.
 
@@ -72,7 +64,7 @@ interface TaskFormProps {
     dailyLimit: number | null;
     totalLimit: number | null;
     minLevel: number;
-    requiredPackage: string;
+    requiredAccessLevel: number;
     countries: string[];
     contentUrl: string | null;
     thumbnailUrl: string | null;
@@ -124,7 +116,7 @@ export function TaskForm({ task }: TaskFormProps) {
     dailyLimit: task?.dailyLimit || "",
     totalLimit: task?.totalLimit || "",
     minLevel: task?.minLevel || 1,
-    requiredPackage: task?.requiredPackage || "FREE",
+    requiredAccessLevel: task?.requiredAccessLevel ?? 0,
     countries: task?.countries || [],
     contentUrl: task?.contentUrl || "",
     thumbnailUrl: task?.thumbnailUrl || "",
@@ -950,19 +942,24 @@ export function TaskForm({ task }: TaskFormProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-2">
-              Required Package
+              Required Access Level
             </label>
-            <select
-              value={formData.requiredPackage}
-              onChange={(e) => setFormData({ ...formData, requiredPackage: e.target.value })}
+            <input
+              type="number"
+              min={0}
+              max={1000}
+              value={formData.requiredAccessLevel}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  requiredAccessLevel: parseInt(e.target.value) || 0,
+                })
+              }
               className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
-            >
-              {packageTiers.map((tier) => (
-                <option key={tier.id} value={tier.id}>
-                  {tier.label}
-                </option>
-              ))}
-            </select>
+            />
+            <p className="text-[11px] text-gray-500 mt-1">
+              Only users on a plan with <code>accessLevel ≥ {formData.requiredAccessLevel}</code> can see / start this task. Default plan is usually 0.
+            </p>
           </div>
 
           <div>
@@ -987,8 +984,8 @@ export function TaskForm({ task }: TaskFormProps) {
             👁 Who will see this task
           </p>
           <p>
-            Users at <strong>level {formData.minLevel}+</strong> on the{" "}
-            <strong>{formData.requiredPackage}</strong> tier or higher
+            Users at <strong>level {formData.minLevel}+</strong> on a plan with{" "}
+            <strong>access level ≥ {formData.requiredAccessLevel}</strong>
             {formData.countries.length > 0
               ? <> from <strong>{formData.countries.join(", ")}</strong></>
               : <> from <strong>any country</strong></>}

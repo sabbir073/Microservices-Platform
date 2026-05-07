@@ -9,6 +9,7 @@ import {
   NotificationType,
   KYCStatus,
 } from "@/generated/prisma";
+import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
 
 // Fee configuration per payment method
 const PAYMENT_FEES: Record<PaymentMethod, { percentage: number; fixed: number }> = {
@@ -167,12 +168,21 @@ export async function POST(request: NextRequest) {
         id: true,
         pointsBalance: true,
         kycStatus: true,
-        packageTier: true,
       },
     });
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Effective package (handles expiry + isDefault fallback).
+    const userPackage = await getEffectivePackage(session.user.id);
+
+    if (!packageHasFeature(userPackage, "withdrawals")) {
+      return NextResponse.json(
+        { error: "Withdrawals are disabled for your plan" },
+        { status: 403 }
+      );
     }
 
     // Check KYC status for amounts > $100
@@ -183,14 +193,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get package limits
-    const packageInfo = await prisma.package.findUnique({
-      where: { tier: user.packageTier },
-      select: {
-        minWithdrawal: true,
-        withdrawalFee: true,
-      },
-    });
+    // Use the resolved package row directly — no extra fetch needed.
+    const packageInfo = userPackage
+      ? {
+          minWithdrawal: userPackage.minWithdrawal,
+          withdrawalFee: userPackage.withdrawalFeeDiscount,
+        }
+      : null;
 
     // Check package minimum withdrawal
     const packageMinWithdrawal = packageInfo?.minWithdrawal || 5;

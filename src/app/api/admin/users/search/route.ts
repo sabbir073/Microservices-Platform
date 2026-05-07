@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
         name: true,
         email: true,
         avatar: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
       },
       take: 10,
     });

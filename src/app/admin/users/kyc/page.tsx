@@ -84,7 +84,7 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
                 avatar: true,
                 createdAt: true,
                 kycStatus: true,
-                packageTier: true,
+                package: { select: { slug: true, name: true } },
                 level: true,
                 country: true,
                 nidNumber: true,
@@ -106,7 +106,7 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
       avatar: string | null;
       createdAt: Date;
       kycStatus: string;
-      packageTier: string;
+      package: { slug: string; name: string } | null;
       level: number;
       country: string | null;
       nidNumber: string | null;
@@ -304,20 +304,8 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
                                 Lv {doc.user.level}
                               </span>
                               <span className="text-slate-600">|</span>
-                              <span
-                                className={`text-xs ${
-                                  doc.user.packageTier === "VIP"
-                                    ? "text-amber-400"
-                                    : doc.user.packageTier === "ELITE"
-                                    ? "text-purple-400"
-                                    : doc.user.packageTier === "PRO"
-                                    ? "text-indigo-400"
-                                    : doc.user.packageTier === "STARTER"
-                                    ? "text-blue-400"
-                                    : "text-slate-400"
-                                }`}
-                              >
-                                {doc.user.packageTier}
+                              <span className="text-xs text-indigo-400">
+                                {doc.user.package?.name ?? "—"}
                               </span>
                               {doc.user.country && (
                                 <>

@@ -285,7 +285,12 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   // User must be ACTIVE and old enough
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, status: true, createdAt: true },
+    select: {
+      id: true,
+      status: true,
+      createdAt: true,
+      package: { select: { socialEarningMultiplier: true } },
+    },
   });
   if (!user || user.status !== "ACTIVE") {
     return { points: 0, xp: 0, skipped: "banned" };
@@ -295,6 +300,11 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   if (ageHours < cfg.minAccountAgeHours) {
     return { points: 0, xp: 0, skipped: "min_age" };
   }
+
+  // Per-plan multiplier (defaults to 1× if no plan).
+  const planMultiplier =
+    (user as unknown as { package: { socialEarningMultiplier: number } | null }).package
+      ?.socialEarningMultiplier ?? 1;
 
   // Per-post cap (only counted against recipient credits — the post is what fills up)
   let postEarned = 0;
@@ -340,8 +350,8 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
     }
   }
 
-  // Cap points
-  let allowPoints = Math.max(0, Math.floor(rule.points));
+  // Cap points (apply plan multiplier first, then daily/post caps)
+  let allowPoints = Math.max(0, Math.floor(rule.points * planMultiplier));
   if (allowPoints > 0) {
     if (postId && role === "recipient") {
       allowPoints = Math.min(allowPoints, cfg.capPerPost - postEarned);
@@ -352,8 +362,8 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
     allowPoints = 0;
   }
 
-  // Cap xp
-  let allowXp = Math.max(0, Math.floor(rule.xp));
+  // Cap xp (plan multiplier applies here too)
+  let allowXp = Math.max(0, Math.floor(rule.xp * planMultiplier));
   if (allowXp > 0 && cfg.dailyXpCapPerUser > 0) {
     allowXp = Math.min(allowXp, Math.max(0, cfg.dailyXpCapPerUser - todayXp));
   }

@@ -33,7 +33,7 @@ const createUserSchema = z.object({
     ])
     .default("USER"),
   status: z.enum(["ACTIVE", "PENDING_VERIFICATION"]).default("ACTIVE"),
-  packageTier: z.enum(["FREE", "STARTER", "PRO", "ELITE", "VIP"]).default("FREE"),
+  packageId: z.string().optional().nullable(),
 
   // Personal
   gender: optStr,
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
         phone: n(data.phone),
         role: data.role,
         status: data.status,
-        packageTier: data.packageTier,
+        packageId: data.packageId ?? null,
         // Personal
         gender: n(data.gender),
         dateOfBirth,
@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
         email: true,
         role: true,
         status: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
         createdAt: true,
       },
     });

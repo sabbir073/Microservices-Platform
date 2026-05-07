@@ -2,114 +2,216 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { z } from "zod";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-export async function GET(request: NextRequest, { params }: RouteParams) {
-  try {
-    const session = await auth();
+// PUT — every field optional so admin can patch one switch at a time.
+const PLAN_PATCH = z
+  .object({
+    slug: z
+      .string()
+      .min(1)
+      .max(60)
+      .regex(/^[a-z0-9][a-z0-9-]*$/)
+      .optional(),
+    name: z.string().min(1).max(80).optional(),
+    description: z.string().max(500).optional().nullable(),
+    accessLevel: z.number().int().min(0).max(1000).optional(),
+    isDefault: z.boolean().optional(),
+    isActive: z.boolean().optional(),
+    order: z.number().int().min(0).max(1000).optional(),
 
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    priceMonthly: z.number().min(0).optional(),
+    priceYearly: z.number().min(0).optional().nullable(),
+    validityDays: z.number().int().min(0).optional().nullable(),
 
-    const adminRole = session.user.role as UserRole | undefined;
-    if (!hasPermission(adminRole, "packages.view")) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    tasksEnabled: z.boolean().optional(),
+    socialFeedEnabled: z.boolean().optional(),
+    referralsEnabled: z.boolean().optional(),
+    withdrawalsEnabled: z.boolean().optional(),
+    marketplaceEnabled: z.boolean().optional(),
+    boostEnabled: z.boolean().optional(),
+    dailyMissionEnabled: z.boolean().optional(),
+    lotteryEnabled: z.boolean().optional(),
+    coursesEnabled: z.boolean().optional(),
 
-    const { id } = await params;
+    socialTasksEnabled: z.boolean().optional(),
+    proxyTasksEnabled: z.boolean().optional(),
+    articleTasksEnabled: z.boolean().optional(),
+    videoTasksEnabled: z.boolean().optional(),
+    quizTasksEnabled: z.boolean().optional(),
+    surveyTasksEnabled: z.boolean().optional(),
+    offerwallTasksEnabled: z.boolean().optional(),
 
-    const pkg = await prisma.package.findUnique({
-      where: { id },
-    });
+    dailyTaskLimit: z.number().int().min(-1).max(100000).optional(),
+    minWithdrawal: z.number().min(0).optional(),
+    withdrawalFeeDiscount: z.number().min(0).max(100).optional(),
 
-    if (!pkg) {
-      return NextResponse.json({ error: "Package not found" }, { status: 404 });
-    }
+    xpMultiplier: z.number().min(0.1).max(50).optional(),
+    taskRewardMultiplier: z.number().min(0.1).max(50).optional(),
+    socialEarningMultiplier: z.number().min(0.1).max(50).optional(),
+    dailyReferralPoints: z.number().min(0).optional(),
+    referralCommissionLevels: z.number().int().min(0).max(10).optional(),
 
-    // Get subscriber count
-    const subscriberCount = await prisma.user.count({
-      where: { packageTier: pkg.tier },
-    });
+    features: z.array(z.string().max(120)).max(40).optional(),
+    badgeColor: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .optional()
+      .nullable(),
+  })
+  .strict();
 
-    return NextResponse.json({ package: pkg, subscriberCount });
-  } catch (error) {
-    console.error("Error fetching package:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch package" },
-      { status: 500 }
-    );
+export async function GET(_req: NextRequest, { params }: RouteParams) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const role = session.user.role as UserRole | undefined;
+  if (!hasPermission(role, "packages.view")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const pkg = await prisma.package.findUnique({ where: { id } });
+  if (!pkg) {
+    return NextResponse.json({ error: "Package not found" }, { status: 404 });
+  }
+
+  const userCount = await prisma.user.count({ where: { packageId: id } });
+  return NextResponse.json({ package: pkg, userCount });
 }
 
-export async function PUT(request: NextRequest, { params }: RouteParams) {
-  try {
-    const session = await auth();
+export async function PUT(req: NextRequest, { params }: RouteParams) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const role = session.user.role as UserRole | undefined;
+  if (!hasPermission(role, "packages.edit")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
-    if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const { id } = await params;
+  const existing = await prisma.package.findUnique({ where: { id } });
+  if (!existing) {
+    return NextResponse.json({ error: "Package not found" }, { status: 404 });
+  }
 
-    const adminRole = session.user.role as UserRole | undefined;
-    if (!hasPermission(adminRole, "packages.edit")) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-
-    const { id } = await params;
-    const body = await request.json();
-
-    // Check if package exists
-    const existingPackage = await prisma.package.findUnique({
-      where: { id },
-    });
-
-    if (!existingPackage) {
-      return NextResponse.json({ error: "Package not found" }, { status: 404 });
-    }
-
-    const {
-      name,
-      description,
-      priceMonthly,
-      priceYearly,
-      dailyTaskLimit,
-      withdrawalFee,
-      minWithdrawal,
-      features,
-      referralBonus,
-      xpMultiplier,
-      isActive,
-      order,
-    } = body;
-
-    // Update the package
-    const pkg = await prisma.package.update({
-      where: { id },
-      data: {
-        name,
-        description: description || null,
-        priceMonthly: parseFloat(priceMonthly.toString()),
-        priceYearly: priceYearly ? parseFloat(priceYearly.toString()) : null,
-        dailyTaskLimit: parseInt(dailyTaskLimit.toString()),
-        withdrawalFee: parseFloat(withdrawalFee.toString()),
-        minWithdrawal: parseFloat(minWithdrawal.toString()),
-        features: features || [],
-        referralBonus: parseFloat(referralBonus.toString()),
-        xpMultiplier: parseFloat(xpMultiplier.toString()),
-        isActive: isActive ?? true,
-        order: parseInt(order?.toString() || "0"),
-      },
-    });
-
-    return NextResponse.json({ success: true, package: pkg });
-  } catch (error) {
-    console.error("Error updating package:", error);
+  const body = await req.json().catch(() => null);
+  const parsed = PLAN_PATCH.safeParse(body);
+  if (!parsed.success) {
     return NextResponse.json(
-      { error: "Failed to update package" },
-      { status: 500 }
+      { error: "Invalid input", details: parsed.error.issues },
+      { status: 400 }
     );
   }
+  const data = parsed.data;
+
+  // Default plan is system-protected — must always be active and remain default.
+  if (existing.isDefault) {
+    if (data.isActive === false) {
+      return NextResponse.json(
+        { error: "The default plan cannot be deactivated" },
+        { status: 400 }
+      );
+    }
+    if (data.isDefault === false) {
+      return NextResponse.json(
+        {
+          error:
+            "Cannot un-set the default plan. Mark another plan as default first.",
+        },
+        { status: 400 }
+      );
+    }
+  }
+
+  // Slug uniqueness — refuse to clobber another row.
+  if (data.slug && data.slug !== existing.slug) {
+    const collide = await prisma.package.findUnique({
+      where: { slug: data.slug },
+    });
+    if (collide) {
+      return NextResponse.json(
+        { error: `Slug "${data.slug}" already in use` },
+        { status: 409 }
+      );
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    // Promoting another plan to default — clear the existing default first.
+    if (data.isDefault === true && !existing.isDefault) {
+      await tx.package.updateMany({
+        where: { isDefault: true },
+        data: { isDefault: false },
+      });
+    }
+    return tx.package.update({ where: { id }, data });
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: session.user.id,
+      action: "PACKAGE_UPDATED",
+      entity: "Package",
+      entityId: id,
+      newData: { changedKeys: Object.keys(data) },
+    },
+  });
+
+  return NextResponse.json({ success: true, package: updated });
+}
+
+export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const role = session.user.role as UserRole | undefined;
+  if (!hasPermission(role, "packages.edit")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const pkg = await prisma.package.findUnique({ where: { id } });
+  if (!pkg) {
+    return NextResponse.json({ error: "Package not found" }, { status: 404 });
+  }
+
+  if (pkg.isDefault) {
+    return NextResponse.json(
+      { error: "The default plan cannot be deleted" },
+      { status: 400 }
+    );
+  }
+
+  // Block delete while users are still attached. Admin must reassign first.
+  const userCount = await prisma.user.count({ where: { packageId: id } });
+  if (userCount > 0) {
+    return NextResponse.json(
+      {
+        error: `Cannot delete: ${userCount} user(s) are on this plan. Move them to another plan first.`,
+      },
+      { status: 400 }
+    );
+  }
+
+  await prisma.package.delete({ where: { id } });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: session.user.id,
+      action: "PACKAGE_DELETED",
+      entity: "Package",
+      entityId: id,
+      newData: { slug: pkg.slug, name: pkg.name },
+    },
+  });
+
+  return NextResponse.json({ success: true });
 }

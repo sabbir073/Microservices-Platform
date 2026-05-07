@@ -122,6 +122,8 @@ export type Permission =
   | "moderation.view"
   | "moderation.manage"
   | "social.moderate"
+  | "social.post"
+  | "social.promote"
   // Logs
   | "logs.view"
   // Marketing
@@ -179,6 +181,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "fraud.view", "fraud.manage",
     "proxy.view", "proxy.manage",
     "moderation.view", "moderation.manage", "social.moderate",
+    "social.post", "social.promote",
     "logs.view",
     "campaigns.view", "campaigns.manage",
     "notifications.view", "notifications.send",
@@ -240,6 +243,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "ticker.view", "ticker.edit",
     "analytics.view", "analytics.export",
     "referrals.view",
+    "social.post", "social.promote",
     "media.view",
   ],
 

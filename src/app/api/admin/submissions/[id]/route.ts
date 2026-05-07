@@ -34,7 +34,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             email: true,
             avatar: true,
             level: true,
-            packageTier: true,
+            package: { select: { slug: true, name: true } },
           },
         },
         task: true,

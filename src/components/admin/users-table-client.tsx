@@ -28,7 +28,7 @@ interface UserRow {
   role: string;
   status: string;
   kycStatus: string;
-  packageTier: string;
+  package: { slug: string; name: string } | null;
   pointsBalance: number;
   cashBalance: number;
   level: number;
@@ -271,22 +271,15 @@ export function UsersTableClient({
                         </span>
                       </td>
                       <td className="py-4 px-4">
-                        <span
-                          className={cn(
-                            "px-2 py-1 rounded-full text-xs font-medium",
-                            u.packageTier === "VIP"
-                              ? "bg-amber-500/10 text-amber-400"
-                              : u.packageTier === "ELITE"
-                              ? "bg-purple-500/10 text-purple-400"
-                              : u.packageTier === "PRO"
-                              ? "bg-indigo-500/10 text-indigo-400"
-                              : u.packageTier === "STARTER"
-                              ? "bg-blue-500/10 text-blue-400"
-                              : "bg-slate-500/10 text-slate-400"
-                          )}
-                        >
-                          {u.packageTier}
-                        </span>
+                        {u.package ? (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400">
+                            {u.package.name}
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-slate-500/10 text-slate-400">
+                            —
+                          </span>
+                        )}
                       </td>
                       <td className="py-4 px-4">
                         <div className="text-sm">

@@ -141,7 +141,7 @@ export async function GET(request: NextRequest) {
           name: true,
           createdAt: true,
           status: true,
-          packageTier: true,
+          package: { select: { slug: true, name: true } },
           pointsBalance: true,
           cashBalance: true,
           totalEarnings: true,
@@ -153,11 +153,14 @@ export async function GET(request: NextRequest) {
         orderBy: { createdAt: "desc" },
       });
 
+      type UserExport = (typeof users)[number] & {
+        package: { slug: string; name: string } | null;
+      };
       csvContent = "ID,Email,Name,Created At,Status,Package,Points Balance,Cash Balance,Total Earnings,Total Withdrawals,Referral Code,Country,Last Login\n";
-      csvContent += users
+      csvContent += (users as unknown as UserExport[])
         .map(
           (u) =>
-            `"${u.id}","${u.email}","${u.name || ""}","${format(u.createdAt, "yyyy-MM-dd HH:mm:ss")}","${u.status}","${u.packageTier}",${u.pointsBalance},${u.cashBalance},${u.totalEarnings},${u.totalWithdrawals},"${u.referralCode}","${u.country || ""}","${u.lastLoginAt ? format(u.lastLoginAt, "yyyy-MM-dd HH:mm:ss") : ""}"`
+            `"${u.id}","${u.email}","${u.name || ""}","${format(u.createdAt, "yyyy-MM-dd HH:mm:ss")}","${u.status}","${u.package?.name ?? ""}",${u.pointsBalance},${u.cashBalance},${u.totalEarnings},${u.totalWithdrawals},"${u.referralCode}","${u.country || ""}","${u.lastLoginAt ? format(u.lastLoginAt, "yyyy-MM-dd HH:mm:ss") : ""}"`
         )
         .join("\n");
     } else if (reportType === "tasks") {

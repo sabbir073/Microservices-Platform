@@ -49,6 +49,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
     prisma.user.findUnique({
       where: { id },
       include: {
+        package: { select: { id: true, slug: true, name: true, badgeColor: true } },
         transactions: {
           orderBy: { createdAt: "desc" },
           take: 10,
@@ -153,6 +154,12 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
       status: string;
       createdAt: Date;
     }>;
+    package: {
+      id: string;
+      slug: string;
+      name: string;
+      badgeColor: string | null;
+    } | null;
   };
 
   const roleConfig = ROLE_CONFIG[user.role as UserRole] || ROLE_CONFIG.USER;
@@ -318,13 +325,12 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
             <Package className="w-4 h-4 text-purple-400" />
             <span className="text-xs text-gray-500">Package</span>
           </div>
-          <p className={`text-xl font-bold ${
-            user.packageTier === "VIP" ? "text-amber-400" :
-            user.packageTier === "ELITE" ? "text-purple-400" :
-            user.packageTier === "PRO" ? "text-indigo-400" :
-            user.packageTier === "STARTER" ? "text-blue-400" :
-            "text-gray-400"
-          }`}>{user.packageTier}</p>
+          <p
+            className="text-xl font-bold"
+            style={{ color: user.package?.badgeColor ?? "#a5b4fc" }}
+          >
+            {user.package?.name ?? "—"}
+          </p>
           {user.packageExpiresAt && (
             <p className="text-xs text-gray-500">
               Expires {format(user.packageExpiresAt, "MMM d")}

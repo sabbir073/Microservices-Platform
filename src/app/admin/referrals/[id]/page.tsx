@@ -23,10 +23,22 @@ export default async function ReferralTreePage({
       email: true,
       avatar: true,
       referralCode: true,
-      packageTier: true,
+      package: { select: { slug: true, name: true } },
     },
   });
   if (!user) notFound();
 
-  return <ReferralTreeView userId={user.id} user={user} />;
+  return (
+    <ReferralTreeView
+      userId={user.id}
+      user={{
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        avatar: user.avatar,
+        referralCode: user.referralCode,
+        packageTier: user.package?.name ?? "—",
+      }}
+    />
+  );
 }

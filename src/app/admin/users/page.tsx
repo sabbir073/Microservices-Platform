@@ -64,7 +64,8 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
     where.kycStatus = params.kyc as Prisma.EnumKYCStatusFilter["equals"];
   }
   if (params.package && params.package !== "all") {
-    where.packageTier = params.package as Prisma.EnumPackageTierFilter["equals"];
+    // Filter by Package.slug (e.g. ?package=pro-monthly).
+    where.package = { slug: params.package };
   }
   if (params.country && params.country.trim()) {
     where.country = {
@@ -114,7 +115,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
         role: true,
         status: true,
         kycStatus: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
         pointsBalance: true,
         cashBalance: true,
         level: true,
@@ -415,7 +416,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
 
       {/* Users Table — client component for selection / bulk actions */}
       <UsersTableClient
-        users={allUsers}
+        users={allUsers as unknown as Parameters<typeof UsersTableClient>[0]["users"]}
         totalCount={totalCount}
         page={page}
         pageSize={pageSize}

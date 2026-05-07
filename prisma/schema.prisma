@@ -95,13 +95,7 @@ enum PaymentMethod {
   PAYPAL
 }
 
-enum PackageTier {
-  FREE
-  STARTER
-  PRO
-  ELITE
-  VIP
-}
+// PackageTier enum removed in 2026-05 migration — use Package model + accessLevel instead.
 
 enum TaskDifficulty {
   EASY
@@ -196,7 +190,7 @@ model DailyMissionTemplate {
   id                      String      @id @default(cuid())
   name                    String
   description             String?     @db.Text
-  packageTier             PackageTier @default(FREE)
+  requiredAccessLevel     Int         @default(0)
   requiredLevel           Int         @default(1)
   completionXpReward      Int         @default(0)
   completionPointsReward  Int         @default(0)
@@ -211,7 +205,7 @@ model DailyMissionTemplate {
   items   DailyMissionItem[]
   claims  DailyMissionClaim[]
 
-  @@index([packageTier])
+  @@index([requiredAccessLevel])
   @@index([isActive])
 }
 
@@ -485,7 +479,7 @@ model Quiz {
   maxAttempts     Int            @default(3)
   cooldownHours   Int            @default(24)
   requiredLevel   Int            @default(1)
-  requiredPackage PackageTier?
+  requiredAccessLevel Int?
   questions       QuizQuestion[]
   aiGenerated     Boolean        @default(false)
   aiPrompt        String?        @db.Text
@@ -586,7 +580,8 @@ model User {
   level             Int         @default(1)
   streak            Int         @default(0)
   lastCheckIn       DateTime?
-  packageTier       PackageTier @default(FREE)
+  packageId         String?
+  package           Package?    @relation(fields: [packageId], references: [id], onDelete: SetNull)
   packageExpiresAt  DateTime?
   kycStatus         KYCStatus   @default(NOT_SUBMITTED)
   kycSubmittedAt    DateTime?
@@ -808,7 +803,7 @@ model Task {
   totalLimit      Int?
   completedCount  Int          @default(0)
   minLevel        Int          @default(1)
-  requiredPackage PackageTier  @default(FREE)
+  requiredAccessLevel Int      @default(0)
   countries       String[]     @default([])
   contentUrl      String?
   thumbnailUrl    String?
@@ -835,7 +830,7 @@ model Task {
   articleKeys     ArticleTaskKey[]
   @@index([status])
   @@index([type])
-  @@index([requiredPackage])
+  @@index([requiredAccessLevel])
 }
 
 model TaskCategory {
@@ -977,28 +972,75 @@ model UserPaymentMethod {
 }
 
 model Package {
-  id              String      @id @default(cuid())
-  tier            PackageTier @unique
+  id              String   @id @default(cuid())
+  slug            String   @unique
   name            String
   description     String?
+  accessLevel     Int      @default(0)
+  isDefault       Boolean  @default(false)
+
+  // Pricing
   priceMonthly    Float
   priceYearly     Float?
-  dailyTaskLimit  Int
-  withdrawalFee   Float       @default(0)
-  minWithdrawal   Float
-  features        String[]
-  referralBonus   Float       @default(0)
-  xpMultiplier    Float       @default(1)
-  isActive        Boolean     @default(true)
-  order           Int         @default(0)
-  createdAt       DateTime    @default(now())
-  updatedAt       DateTime    @updatedAt
+  validityDays    Int?
+
+  // Section-level feature toggles
+  tasksEnabled        Boolean @default(true)
+  socialFeedEnabled   Boolean @default(true)
+  referralsEnabled    Boolean @default(true)
+  withdrawalsEnabled  Boolean @default(true)
+  marketplaceEnabled  Boolean @default(true)
+  boostEnabled        Boolean @default(true)
+  dailyMissionEnabled Boolean @default(true)
+  lotteryEnabled      Boolean @default(true)
+  coursesEnabled      Boolean @default(true)
+
+  // Per-task-type toggles
+  socialTasksEnabled    Boolean @default(true)
+  proxyTasksEnabled     Boolean @default(true)
+  articleTasksEnabled   Boolean @default(true)
+  videoTasksEnabled     Boolean @default(true)
+  quizTasksEnabled      Boolean @default(true)
+  surveyTasksEnabled    Boolean @default(true)
+  offerwallTasksEnabled Boolean @default(true)
+
+  // Limits
+  dailyTaskLimit        Int   @default(-1)
+  withdrawalFeeDiscount Float @default(0)
+  minWithdrawal         Float
+
+  // Multipliers
+  xpMultiplier            Float @default(1)
+  taskRewardMultiplier    Float @default(1)
+  socialEarningMultiplier Float @default(1)
+  dailyReferralPoints     Float @default(5)
+  // Number of upline referral levels this plan unlocks. 0 = user can refer
+  // but earns no commission at any level. 1 = L1 only. N = L1..L_N.
+  referralCommissionLevels Int  @default(0)
+
+  // Marketing
+  features    String[]
+  badgeColor  String?
+
+  // System
+  isActive  Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         User[]
+  subscriptions Subscription[]
+
+  @@index([accessLevel])
+  @@index([isDefault])
+  @@index([isActive])
 }
 
 model Subscription {
   id            String      @id @default(cuid())
   userId        String
-  packageTier   PackageTier
+  packageId     String?
+  package       Package?    @relation(fields: [packageId], references: [id], onDelete: SetNull)
   startDate     DateTime    @default(now())
   endDate       DateTime
   amount        Float
@@ -1010,6 +1052,7 @@ model Subscription {
   updatedAt     DateTime    @updatedAt
   @@index([userId])
   @@index([isActive])
+  @@index([packageId])
 }
 
 enum CommissionType {
@@ -1195,6 +1238,15 @@ model Post {
   images      String[]
   isPublic    Boolean   @default(true)
   isPinned    Boolean   @default(false)
+  // Admin-set OFFICIAL announcement. Pinned to the very top of the feed
+  // and shown with an OFFICIAL badge. Created via /api/admin/feed/announce.
+  isAnnouncement   Boolean   @default(false)
+  // Admin-set PROMOTED post. Appears with a PROMOTED badge and is
+  // interleaved through the feed. Auto-expires when promotedUntil < now().
+  isPromoted       Boolean   @default(false)
+  promotedUntil    DateTime?
+  // Optional sponsor name shown next to the PROMOTED badge (e.g. "NordVPN").
+  promotedNote     String?   @db.VarChar(120)
   likesCount  Int       @default(0)
   commentsCount Int     @default(0)
   sharesCount Int       @default(0)
@@ -1218,6 +1270,8 @@ model Post {
   @@index([userId])
   @@index([createdAt])
   @@index([groupId])
+  @@index([isAnnouncement])
+  @@index([isPromoted, promotedUntil])
 }
 
 model Follow {
