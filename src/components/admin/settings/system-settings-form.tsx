@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 
 export type SettingsBag = Record<string, unknown>;
 
@@ -266,20 +267,20 @@ export function SystemSettingsForm({
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Logo URL">
-                <input
+              <Field label="Logo">
+                <ImageUploadField
                   value={(values.logo_url as string) || ""}
-                  onChange={(e) => set("logo_url", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
+                  onChange={(url) => set("logo_url", url)}
+                  title="Select Logo"
+                  previewSize="square"
                 />
               </Field>
-              <Field label="Favicon URL">
-                <input
+              <Field label="Favicon">
+                <ImageUploadField
                   value={(values.favicon_url as string) || ""}
-                  onChange={(e) => set("favicon_url", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
+                  onChange={(url) => set("favicon_url", url)}
+                  title="Select Favicon"
+                  previewSize="sm"
                 />
               </Field>
             </div>

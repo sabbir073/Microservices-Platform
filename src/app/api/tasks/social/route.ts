@@ -1,16 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { PackageTier, TaskStatus, TaskType } from "@/generated/prisma/client";
+import { TaskStatus, TaskType } from "@/generated/prisma/client";
 import type { SocialConfig } from "@/lib/social-tasks";
-
-const TIER_ORDER: Record<PackageTier, number> = {
-  FREE: 0,
-  STARTER: 1,
-  PRO: 2,
-  ELITE: 3,
-  VIP: 4,
-};
+import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
 
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -22,11 +15,12 @@ export async function GET(request: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, level: true, packageTier: true },
+    select: { id: true, level: true },
   });
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+  const userPackage = await getEffectivePackage(session.user.id);
 
   // For non-"available", look up the user's submissions for SOCIAL tasks
   if (status !== "available") {
@@ -57,17 +51,22 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // Available
-  const allowedTiers = (Object.entries(TIER_ORDER) as [PackageTier, number][])
-    .filter(([, order]) => order <= TIER_ORDER[user.packageTier])
-    .map(([t]) => t);
+  // Plan must allow social tasks at all.
+  if (
+    !packageHasFeature(userPackage, "tasks") ||
+    !packageHasFeature(userPackage, "socialTasks")
+  ) {
+    return NextResponse.json({ tasks: [] });
+  }
+
+  const accessLevel = userPackage?.accessLevel ?? 0;
 
   const tasks = await prisma.task.findMany({
     where: {
       type: TaskType.SOCIAL,
       status: TaskStatus.ACTIVE,
       minLevel: { lte: user.level },
-      requiredPackage: { in: allowedTiers },
+      requiredAccessLevel: { lte: accessLevel },
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
     },
     orderBy: { createdAt: "desc" },

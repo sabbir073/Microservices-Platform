@@ -14,6 +14,7 @@ import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
+import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { SOCIAL_PLATFORMS, getAction } from "@/lib/social-tasks";
@@ -364,14 +365,17 @@ export function SocialTasksView() {
             )}
 
             {submitting.instructionVideoUrl && (
-              <a
-                href={submitting.instructionVideoUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block text-xs text-indigo-400 hover:text-indigo-300 underline"
-              >
-                ▶ Watch instruction video
-              </a>
+              <div className="space-y-2">
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                  Instruction video
+                </p>
+                <div className="max-w-2xl mx-auto">
+                  <InlineVideoEmbed
+                    url={submitting.instructionVideoUrl}
+                    title={`Instruction video — ${submitting.title}`}
+                  />
+                </div>
+              </div>
             )}
 
             {/* AI prompt section — when admin enabled it */}

@@ -7,43 +7,44 @@ export async function GET() {
   try {
     const session = await auth();
 
-    // Get all active packages
     const packages = await prisma.package.findMany({
       where: { isActive: true },
       orderBy: { order: "asc" },
     });
 
-    // If user is authenticated, get their current package
-    let userPackage = null;
+    let userPackageId: string | null = null;
+    let userAccessLevel = 0;
     let userSubscription = null;
 
     if (session?.user?.id) {
       const user = await prisma.user.findUnique({
         where: { id: session.user.id },
         select: {
-          packageTier: true,
+          packageId: true,
           packageExpiresAt: true,
+          package: { select: { id: true, slug: true, accessLevel: true } },
         },
       });
 
       if (user) {
-        userPackage = user.packageTier;
+        userPackageId = user.packageId;
+        userAccessLevel = user.package?.accessLevel ?? 0;
 
-        // Get active subscription details
         userSubscription = await prisma.subscription.findFirst({
           where: {
             userId: session.user.id,
             isActive: true,
           },
           orderBy: { createdAt: "desc" },
+          include: { package: { select: { slug: true, name: true } } },
         });
       }
     }
 
-    // Format packages for frontend
     const formattedPackages = packages.map((pkg) => ({
       id: pkg.id,
-      tier: pkg.tier,
+      tier: pkg.slug,
+      slug: pkg.slug,
       name: pkg.name,
       description: pkg.description,
       pricing: {
@@ -55,31 +56,31 @@ export async function GET() {
       },
       benefits: {
         dailyTaskLimit: pkg.dailyTaskLimit,
-        withdrawalFee: pkg.withdrawalFee,
+        withdrawalFee: pkg.withdrawalFeeDiscount,
         minWithdrawal: pkg.minWithdrawal,
-        referralBonus: pkg.referralBonus,
+        referralBonus: pkg.dailyReferralPoints,
         xpMultiplier: pkg.xpMultiplier,
         features: pkg.features,
       },
-      isCurrentPackage: userPackage === pkg.tier,
-      canUpgrade: userPackage
-        ? getPackageOrder(pkg.tier) > getPackageOrder(userPackage)
-        : pkg.tier !== "FREE",
-      canDowngrade: userPackage
-        ? getPackageOrder(pkg.tier) < getPackageOrder(userPackage)
-        : false,
+      isCurrentPackage: userPackageId === pkg.id,
+      canUpgrade: pkg.accessLevel > userAccessLevel,
+      canDowngrade: pkg.accessLevel < userAccessLevel,
     }));
+
+    const userSub = userSubscription as
+      | (typeof userSubscription & { package: { slug: string; name: string } | null })
+      | null;
 
     return NextResponse.json({
       packages: formattedPackages,
-      currentPackage: userPackage,
-      subscription: userSubscription
+      currentPackage: userPackageId,
+      subscription: userSub
         ? {
-            tier: userSubscription.packageTier,
-            startDate: userSubscription.startDate,
-            endDate: userSubscription.endDate,
-            autoRenew: userSubscription.autoRenew,
-            isActive: userSubscription.isActive,
+            tier: userSub.package?.slug ?? "default",
+            startDate: userSub.startDate,
+            endDate: userSub.endDate,
+            autoRenew: userSub.autoRenew,
+            isActive: userSub.isActive,
           }
         : null,
     });
@@ -102,37 +103,34 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { packageTier, billingPeriod, paymentMethod, transactionId, paymentScreenshot: _paymentScreenshot } = body;
+    const { packageId, packageSlug, billingPeriod, paymentMethod, transactionId, paymentScreenshot: _paymentScreenshot } = body;
 
-    // Validate required fields
-    if (!packageTier || !paymentMethod || !transactionId) {
+    if ((!packageId && !packageSlug) || !paymentMethod || !transactionId) {
       return NextResponse.json(
-        { error: "Package tier, payment method, and transaction ID are required" },
+        { error: "Package, payment method, and transaction ID are required" },
         { status: 400 }
       );
     }
 
-    // Validate package tier
-    const pkg = await prisma.package.findUnique({
-      where: { tier: packageTier },
+    const pkg = await prisma.package.findFirst({
+      where: packageId ? { id: packageId } : { slug: packageSlug },
     });
 
     if (!pkg || !pkg.isActive) {
       return NextResponse.json({ error: "Invalid package" }, { status: 400 });
     }
 
-    // Calculate price based on billing period
     const price = billingPeriod === "yearly" && pkg.priceYearly
       ? pkg.priceYearly
       : pkg.priceMonthly;
 
-    // Get current user
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
         id: true,
-        packageTier: true,
+        packageId: true,
         packageExpiresAt: true,
+        package: { select: { accessLevel: true } },
       },
     });
 
@@ -140,15 +138,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Check if user is trying to downgrade
-    if (getPackageOrder(packageTier) <= getPackageOrder(user.packageTier) && user.packageTier !== "FREE") {
+    // Reject downgrade-or-same purchases (except from default plan upward).
+    const userLevel = user.package?.accessLevel ?? 0;
+    if (pkg.accessLevel <= userLevel && user.packageId === pkg.id) {
       return NextResponse.json(
-        { error: "Cannot downgrade or subscribe to same package" },
+        { error: "You're already on this plan." },
         { status: 400 }
       );
     }
 
-    // Check if user has a pending subscription request
     const pendingSubscription = await prisma.subscription.findFirst({
       where: {
         userId: session.user.id,
@@ -164,7 +162,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate subscription dates (will be updated when approved)
     const startDate = new Date();
     const endDate = new Date();
     if (billingPeriod === "yearly") {
@@ -173,22 +170,20 @@ export async function POST(request: NextRequest) {
       endDate.setMonth(endDate.getMonth() + 1);
     }
 
-    // Create a pending subscription request with transaction ID
     const subscription = await prisma.subscription.create({
       data: {
         userId: session.user.id,
-        packageTier,
+        packageId: pkg.id,
         startDate,
         endDate,
         amount: price,
         paymentMethod: paymentMethod,
-        transactionId, // User-provided transaction ID for admin verification
-        isActive: false, // Will be activated by admin after payment verification
+        transactionId,
+        isActive: false,
         autoRenew: false,
       },
     });
 
-    // Create notification for user
     await prisma.notification.create({
       data: {
         userId: session.user.id,
@@ -197,7 +192,7 @@ export async function POST(request: NextRequest) {
         message: `Your subscription request for ${pkg.name} ($${price.toFixed(2)}) with transaction ID "${transactionId}" has been submitted and is pending admin verification.`,
         data: {
           subscriptionId: subscription.id,
-          packageTier,
+          packageId: pkg.id,
           price,
           billingPeriod,
           transactionId,
@@ -208,7 +203,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       subscription: {
         id: subscription.id,
-        packageTier,
+        packageId: pkg.id,
+        packageName: pkg.name,
         price,
         billingPeriod,
         status: "PENDING_VERIFICATION",
@@ -225,16 +221,4 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
-}
-
-// Helper function to get package order for comparison
-function getPackageOrder(tier: string): number {
-  const order: Record<string, number> = {
-    FREE: 0,
-    STARTER: 1,
-    PRO: 2,
-    ELITE: 3,
-    VIP: 4,
-  };
-  return order[tier] ?? 0;
 }

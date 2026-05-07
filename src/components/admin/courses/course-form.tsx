@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Loader2, Save, ChevronDown, ChevronUp } from "lucide-react";
 import { toast } from "sonner";
+import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 
 interface Lesson {
   title: string;
@@ -140,12 +141,11 @@ export function CourseForm() {
             placeholder="What will students learn?"
           />
         </Field>
-        <Field label="Thumbnail URL">
-          <input
+        <Field label="Thumbnail">
+          <ImageUploadField
             value={meta.thumbnail}
-            onChange={(e) => setMeta({ ...meta, thumbnail: e.target.value })}
-            className={inp}
-            placeholder="https://…"
+            onChange={(url) => setMeta({ ...meta, thumbnail: url })}
+            title="Select Course Thumbnail"
           />
         </Field>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

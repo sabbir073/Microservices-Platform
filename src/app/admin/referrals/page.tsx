@@ -53,6 +53,7 @@ export default async function AdminReferralsPage({ searchParams }: PageProps) {
       _count: {
         select: { referrals: true },
       },
+      package: { select: { id: true, slug: true, name: true } },
     },
   });
 
@@ -288,20 +289,8 @@ export default async function AdminReferralsPage({ searchParams }: PageProps) {
                       </span>
                     </td>
                     <td className="py-4 px-6">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          user.packageTier === "VIP"
-                            ? "bg-amber-500/10 text-amber-400"
-                            : user.packageTier === "ELITE"
-                            ? "bg-purple-500/10 text-purple-400"
-                            : user.packageTier === "PRO"
-                            ? "bg-indigo-500/10 text-indigo-400"
-                            : user.packageTier === "STARTER"
-                            ? "bg-blue-500/10 text-blue-400"
-                            : "bg-gray-500/10 text-gray-400"
-                        }`}
-                      >
-                        {user.packageTier}
+                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400">
+                        {(user as { package?: { name?: string } | null }).package?.name ?? "—"}
                       </span>
                     </td>
                     <td className="py-4 px-6">

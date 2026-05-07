@@ -10,9 +10,21 @@ type Tier = "FREE" | "STARTER" | "PRO" | "ELITE" | "VIP";
 type Duration = "MONTHLY" | "QUARTERLY" | "YEARLY" | "LIFETIME";
 type Method = "POINTS" | "CASH" | "CARD" | "BKASH" | "NAGAD" | "BINANCE";
 
+// Hardcoded display sets per legacy tier slug. Falls back to the FREE entry
+// when the plan slug isn't one of the original 5 (since admin can now create
+// arbitrary slugs like "pro-monthly").
+function tierVisualKey(slug: string): Tier {
+  const upper = slug.toUpperCase();
+  if (upper === "FREE" || upper === "STARTER" || upper === "PRO" || upper === "ELITE" || upper === "VIP") {
+    return upper;
+  }
+  return "FREE";
+}
+
 interface PackageRow {
   id: string;
-  tier: Tier;
+  /** Slug — free-form identifier, e.g. "free", "pro-monthly". */
+  tier: string;
   name: string;
   description?: string;
   priceMonthly: number;
@@ -67,7 +79,7 @@ export function PackagesView({
 }: PackagesViewProps) {
   const router = useRouter();
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
-  const [selectedTier, setSelectedTier] = useState<Tier | null>(null);
+  const [selectedTier, setSelectedTier] = useState<string | null>(null);
   const [duration, setDuration] = useState<Duration>("MONTHLY");
   const [method, setMethod] = useState<Method>("CASH");
   const [busy, setBusy] = useState(false);
@@ -173,10 +185,10 @@ export function PackagesView({
                   <div
                     className={cn(
                       "w-10 h-10 rounded-xl bg-linear-to-br text-white flex items-center justify-center shrink-0",
-                      TIER_GRADIENT[p.tier]
+                      TIER_GRADIENT[tierVisualKey(p.tier)]
                     )}
                   >
-                    {TIER_ICON[p.tier]}
+                    {TIER_ICON[tierVisualKey(p.tier)]}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -201,7 +213,7 @@ export function PackagesView({
                   </div>
                 </div>
                 <ul className="mt-3 grid grid-cols-2 gap-1 text-[11px]">
-                  {FEATURES[p.tier].map((f) => (
+                  {FEATURES[tierVisualKey(p.tier)].map((f: string) => (
                     <li
                       key={f}
                       className="inline-flex items-start gap-1 text-gray-300"

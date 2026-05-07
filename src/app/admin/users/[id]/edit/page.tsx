@@ -19,48 +19,55 @@ export default async function EditUserPage({
   }
 
   const { id } = await params;
-  const userRaw = await prisma.user.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      name: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      username: true,
-      phone: true,
-      role: true,
-      status: true,
-      level: true,
-      xp: true,
-      pointsBalance: true,
-      cashBalance: true,
-      packageTier: true,
-      kycStatus: true,
-      isBlueVerified: true,
-      gender: true,
-      dateOfBirth: true,
-      nidNumber: true,
-      profession: true,
-      maritalStatus: true,
-      studyLevel: true,
-      nationality: true,
-      bloodGroup: true,
-      secondaryEmail: true,
-      secondaryPhone: true,
-      bio: true,
-      country: true,
-      region: true,
-      division: true,
-      subDivision: true,
-      district: true,
-      subDistrict: true,
-      city: true,
-      village: true,
-      street: true,
-      postalCode: true,
-    },
-  });
+  const [userRaw, plans] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        username: true,
+        phone: true,
+        role: true,
+        status: true,
+        level: true,
+        xp: true,
+        pointsBalance: true,
+        cashBalance: true,
+        packageId: true,
+        kycStatus: true,
+        isBlueVerified: true,
+        gender: true,
+        dateOfBirth: true,
+        nidNumber: true,
+        profession: true,
+        maritalStatus: true,
+        studyLevel: true,
+        nationality: true,
+        bloodGroup: true,
+        secondaryEmail: true,
+        secondaryPhone: true,
+        bio: true,
+        country: true,
+        region: true,
+        division: true,
+        subDivision: true,
+        district: true,
+        subDistrict: true,
+        city: true,
+        village: true,
+        street: true,
+        postalCode: true,
+      },
+    }),
+    prisma.package.findMany({
+      where: { isActive: true },
+      orderBy: [{ order: "asc" }, { accessLevel: "asc" }],
+      select: { id: true, slug: true, name: true },
+    }),
+  ]);
 
   if (!userRaw) notFound();
 
@@ -83,7 +90,7 @@ export default async function EditUserPage({
         Back to user detail
       </Link>
 
-      <UserEditForm user={user} isSuperAdmin={isSuperAdmin} />
+      <UserEditForm user={user} isSuperAdmin={isSuperAdmin} plans={plans} />
     </div>
   );
 }

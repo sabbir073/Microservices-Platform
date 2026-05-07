@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { TaskStatus, PackageTier, SubmissionStatus } from "@/generated/prisma";
+import { TaskStatus, TaskType, SubmissionStatus } from "@/generated/prisma";
+import { getEffectivePackage, packageHasFeature, type PackageFeatureKey } from "@/lib/packages";
 
-// Package tier order for comparison
-const PACKAGE_ORDER: Record<PackageTier, number> = {
-  FREE: 0,
-  STARTER: 1,
-  PRO: 2,
-  ELITE: 3,
-  VIP: 4,
+const TASK_TYPE_FEATURE: Record<TaskType, PackageFeatureKey> = {
+  SOCIAL: "socialTasks",
+  PROXY: "proxyTasks",
+  ARTICLE: "articleTasks",
+  VIDEO: "videoTasks",
+  QUIZ: "quizTasks",
+  SURVEY: "surveyTasks",
+  OFFERWALL: "offerwallTasks",
+  CUSTOM: "tasks",
 };
 
 // POST /api/tasks/:id/start - Start a task
@@ -26,7 +29,6 @@ export async function POST(
 
     const { id } = await params;
 
-    // Get task with full details
     const task = await prisma.task.findUnique({
       where: { id },
     });
@@ -35,7 +37,6 @@ export async function POST(
       return NextResponse.json({ error: "Task not found" }, { status: 404 });
     }
 
-    // Check if task is active
     if (task.status !== TaskStatus.ACTIVE) {
       return NextResponse.json(
         { error: "Task is not available" },
@@ -43,12 +44,10 @@ export async function POST(
       );
     }
 
-    // Check if task has expired
     if (task.expiresAt && new Date() > task.expiresAt) {
       return NextResponse.json({ error: "Task has expired" }, { status: 400 });
     }
 
-    // Check if task has started
     if (task.startsAt && new Date() < task.startsAt) {
       return NextResponse.json(
         { error: "Task has not started yet" },
@@ -56,13 +55,11 @@ export async function POST(
       );
     }
 
-    // Get user
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
         id: true,
         level: true,
-        packageTier: true,
         country: true,
       },
     });
@@ -71,7 +68,28 @@ export async function POST(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Check user level requirement
+    // Resolve effective plan (handles expiry + isDefault fallback).
+    const userPackage = await getEffectivePackage(session.user.id);
+
+    // Plan-level Tasks gate (admin can switch off all tasks for a plan).
+    if (!packageHasFeature(userPackage, "tasks")) {
+      return NextResponse.json(
+        { error: "Tasks are disabled for your plan" },
+        { status: 403 }
+      );
+    }
+
+    // Per-task-type gate (e.g. plan with articleTasksEnabled=false can't
+    // start an ARTICLE task).
+    const typeFeature = TASK_TYPE_FEATURE[task.type];
+    if (!packageHasFeature(userPackage, typeFeature)) {
+      return NextResponse.json(
+        { error: `${task.type} tasks are disabled for your plan` },
+        { status: 403 }
+      );
+    }
+
+    // Level requirement
     if (user.level < task.minLevel) {
       return NextResponse.json(
         { error: `Minimum level ${task.minLevel} required` },
@@ -79,15 +97,18 @@ export async function POST(
       );
     }
 
-    // Check package tier requirement
-    if (PACKAGE_ORDER[user.packageTier] < PACKAGE_ORDER[task.requiredPackage]) {
+    // Access-level gate replaces the old PackageTier check.
+    const userLevel = userPackage?.accessLevel ?? 0;
+    if (userLevel < task.requiredAccessLevel) {
       return NextResponse.json(
-        { error: `${task.requiredPackage} package or higher required` },
+        {
+          error: `This task requires a higher plan (level ${task.requiredAccessLevel}+, you have ${userLevel}).`,
+        },
         { status: 403 }
       );
     }
 
-    // Check country restriction
+    // Country restriction
     if (task.countries.length > 0 && user.country) {
       if (!task.countries.includes(user.country)) {
         return NextResponse.json(
@@ -97,7 +118,28 @@ export async function POST(
       }
     }
 
-    // Check if task has reached total limit
+    // Plan-level dailyTaskLimit (across all tasks today).
+    if (userPackage && userPackage.dailyTaskLimit !== -1) {
+      const dayStart = new Date();
+      dayStart.setHours(0, 0, 0, 0);
+      const totalToday = await prisma.taskSubmission.count({
+        where: {
+          userId: session.user.id,
+          createdAt: { gte: dayStart },
+          status: { in: ["APPROVED", "AUTO_APPROVED", "PENDING"] },
+        },
+      });
+      if (totalToday >= userPackage.dailyTaskLimit) {
+        return NextResponse.json(
+          {
+            error: `Daily task limit reached for your plan (${userPackage.dailyTaskLimit}/day).`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Total task limit (global across all users)
     if (task.totalLimit && task.completedCount >= task.totalLimit) {
       return NextResponse.json(
         { error: "Task limit has been reached" },
@@ -105,7 +147,7 @@ export async function POST(
       );
     }
 
-    // Check if user has already completed this task today (daily limit)
+    // Per-task daily limit (admin-set on the task itself)
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -126,7 +168,7 @@ export async function POST(
       );
     }
 
-    // Check cooldown period
+    // Cooldown between attempts on this specific task
     if (task.cooldownMinutes > 0) {
       const cooldownTime = new Date(
         Date.now() - task.cooldownMinutes * 60 * 1000
@@ -154,7 +196,7 @@ export async function POST(
       }
     }
 
-    // Check if user already has a pending submission for this task
+    // Resume a pending submission if one exists.
     const existingPending = await prisma.taskSubmission.findFirst({
       where: {
         taskId: id,
@@ -164,7 +206,6 @@ export async function POST(
     });
 
     if (existingPending) {
-      // Return the existing submission instead of creating a new one
       return NextResponse.json({
         submission: existingPending,
         task: {
@@ -187,7 +228,6 @@ export async function POST(
       });
     }
 
-    // Create new submission
     const submission = await prisma.taskSubmission.create({
       data: {
         taskId: id,

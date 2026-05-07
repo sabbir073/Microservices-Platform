@@ -151,14 +151,25 @@ export default async function TaskDetailPage({ params }: PageProps) {
         </div>
 
         {/* Actions */}
-        <TaskDetailActions
-          taskId={task.id}
-          taskTitle={task.title}
-          taskStatus={task.status}
-          canEdit={canEdit}
-          canDelete={canDelete}
-          canCreate={canCreate}
-        />
+        <div className="flex items-center gap-2 flex-wrap">
+          {task.type === "SURVEY" && (
+            <Link
+              href={`/admin/tasks/${task.id}/responses`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white text-sm font-bold rounded-lg"
+            >
+              <ClipboardList className="w-4 h-4" />
+              View Responses
+            </Link>
+          )}
+          <TaskDetailActions
+            taskId={task.id}
+            taskTitle={task.title}
+            taskStatus={task.status}
+            canEdit={canEdit}
+            canDelete={canDelete}
+            canCreate={canCreate}
+          />
+        </div>
       </div>
 
       {/* Stats */}
@@ -381,20 +392,10 @@ export default async function TaskDetailPage({ params }: PageProps) {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Layers className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm text-gray-400">Package</span>
+                  <span className="text-sm text-gray-400">Min access level</span>
                 </div>
-                <span className={`px-2 py-0.5 rounded-full text-xs ${
-                  task.requiredPackage === "VIP"
-                    ? "bg-amber-500/10 text-amber-400"
-                    : task.requiredPackage === "ELITE"
-                    ? "bg-purple-500/10 text-purple-400"
-                    : task.requiredPackage === "PRO"
-                    ? "bg-indigo-500/10 text-indigo-400"
-                    : task.requiredPackage === "STARTER"
-                    ? "bg-blue-500/10 text-blue-400"
-                    : "bg-gray-500/10 text-gray-400"
-                }`}>
-                  {task.requiredPackage}
+                <span className="px-2 py-0.5 rounded-full text-xs bg-indigo-500/10 text-indigo-400">
+                  {task.requiredAccessLevel}
                 </span>
               </div>
               {task.duration && (

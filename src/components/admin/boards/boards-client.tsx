@@ -3,19 +3,79 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Layers, Plus, Loader2, X, Edit, Trash2 } from "lucide-react";
+import {
+  Layers,
+  Plus,
+  Loader2,
+  X,
+  Edit,
+  Trash2,
+  BarChart3,
+  Lock,
+  Users,
+  Coins,
+  Zap,
+  Trophy,
+} from "lucide-react";
 import { toast } from "sonner";
+import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 
 interface Board {
   id: string;
   title: string;
   description: string | null;
   iconEmoji: string | null;
+  imageUrl: string | null;
+  category: string | null;
+  expiresAt: string | Date | null;
   pointsReward: number;
   xpReward: number;
   isActive: boolean;
   order: number;
+  unlockBoardId?: string | null;
   taskCount?: number;
+  claimCount?: number;
+}
+
+interface AnalyticsData {
+  taskCount: number;
+  totalCompletions: number;
+  totalClaims: number;
+  pointsDistributed: number;
+  xpDistributed: number;
+  uniqueParticipants: number;
+  recentClaims: Array<{
+    id: string;
+    pointsEarned: number;
+    xpEarned: number;
+    claimedAt: string;
+    user: {
+      id: string;
+      name: string | null;
+      email: string | null;
+      image: string | null;
+    };
+  }>;
+}
+
+const BOARD_CATEGORIES = [
+  "Marketing",
+  "Development",
+  "Design",
+  "Sales",
+  "Learning",
+  "Other",
+] as const;
+
+// Convert ISO datetime → "YYYY-MM-DDTHH:mm" for <input type="datetime-local">
+function toDatetimeLocal(v: string | Date | null): string {
+  if (!v) return "";
+  const d = typeof v === "string" ? new Date(v) : v;
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
+    d.getDate()
+  )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 interface Props {
@@ -28,20 +88,28 @@ interface FormState {
   title: string;
   description: string;
   iconEmoji: string;
+  imageUrl: string;
+  category: string; // "" | one of BOARD_CATEGORIES
+  expiresAt: string; // datetime-local string, "" means no deadline
   pointsReward: number;
   xpReward: number;
   isActive: boolean;
   order: number;
+  unlockBoardId: string; // "" means no prerequisite
 }
 
 const EMPTY: FormState = {
   title: "",
   description: "",
   iconEmoji: "📌",
+  imageUrl: "",
+  category: "",
+  expiresAt: "",
   pointsReward: 1000,
   xpReward: 100,
   isActive: true,
   order: 0,
+  unlockBoardId: "",
 };
 
 export function BoardsClient({ initialBoards, canManage }: Props) {
@@ -49,6 +117,11 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
   const [boards, setBoards] = useState(initialBoards);
   const [modal, setModal] = useState<FormState | null>(null);
   const [busy, setBusy] = useState(false);
+  const [analyticsBoard, setAnalyticsBoard] = useState<Board | null>(null);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+  const boardById = new Map(boards.map((b) => [b.id, b]));
 
   const openCreate = () => setModal({ ...EMPTY });
   const openEdit = (b: Board) =>
@@ -57,12 +130,39 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
       title: b.title,
       description: b.description ?? "",
       iconEmoji: b.iconEmoji ?? "📌",
+      imageUrl: b.imageUrl ?? "",
+      category: b.category ?? "",
+      expiresAt: toDatetimeLocal(b.expiresAt ?? null),
       pointsReward: b.pointsReward,
       xpReward: b.xpReward,
       isActive: b.isActive,
       order: b.order,
+      unlockBoardId: b.unlockBoardId ?? "",
     });
   const close = () => setModal(null);
+
+  const openAnalytics = async (b: Board) => {
+    setAnalyticsBoard(b);
+    setAnalytics(null);
+    setAnalyticsLoading(true);
+    try {
+      const res = await fetch(`/api/admin/boards/${b.id}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      setAnalytics(data.stats as AnalyticsData);
+    } catch (err) {
+      toast.error("Couldn't load analytics", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+      setAnalyticsBoard(null);
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+  const closeAnalytics = () => {
+    setAnalyticsBoard(null);
+    setAnalytics(null);
+  };
 
   const submit = async () => {
     if (!modal) return;
@@ -82,10 +182,16 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
           title: modal.title.trim(),
           description: modal.description.trim() || null,
           iconEmoji: modal.iconEmoji.trim() || null,
+          imageUrl: modal.imageUrl.trim() || null,
+          category: modal.category || null,
+          expiresAt: modal.expiresAt
+            ? new Date(modal.expiresAt).toISOString()
+            : null,
           pointsReward: modal.pointsReward,
           xpReward: modal.xpReward,
           isActive: modal.isActive,
           order: modal.order,
+          unlockBoardId: modal.unlockBoardId || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -195,9 +301,17 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
                 </span>
               </div>
               {b.description && (
-                <p className="text-sm text-slate-400 mb-4 line-clamp-2">
+                <p className="text-sm text-slate-400 mb-3 line-clamp-2">
                   {b.description}
                 </p>
+              )}
+              {b.unlockBoardId && (
+                <div className="mb-3 inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] bg-amber-500/10 border border-amber-500/30 text-amber-300">
+                  <Lock className="w-3 h-3" />
+                  Unlocks after &quot;
+                  {boardById.get(b.unlockBoardId)?.title ?? "Unknown board"}
+                  &quot;
+                </div>
               )}
               <div className="flex items-center justify-between text-sm pt-3 border-t border-slate-800">
                 <div>
@@ -206,10 +320,17 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
                   </p>
                   <p className="text-xs text-slate-500">
                     {b.xpReward > 0 ? `+${b.xpReward} XP · ` : ""}
-                    {b.taskCount ?? 0} tasks
+                    {b.taskCount ?? 0} tasks · {b.claimCount ?? 0} claims
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => openAnalytics(b)}
+                    className="p-1.5 text-slate-400 hover:text-purple-400 hover:bg-slate-800 rounded transition-colors"
+                    title="Analytics"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                  </button>
                   {canManage && (
                     <>
                       <button
@@ -238,6 +359,126 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {analyticsBoard && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center px-0 sm:px-4">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={closeAnalytics}
+          />
+          <div className="relative bg-slate-900 border border-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={closeAnalytics}
+              className="absolute top-4 right-4 p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-1">
+              {analyticsBoard.iconEmoji && (
+                <span className="text-2xl">{analyticsBoard.iconEmoji}</span>
+              )}
+              <h2 className="text-lg font-semibold text-white truncate">
+                {analyticsBoard.title}
+              </h2>
+            </div>
+            <p className="text-sm text-slate-400 mb-4 inline-flex items-center gap-1.5">
+              <BarChart3 className="w-4 h-4" />
+              Analytics &amp; recent activity
+            </p>
+
+            {analyticsLoading && (
+              <div className="flex items-center justify-center py-12 text-slate-400">
+                <Loader2 className="w-6 h-6 animate-spin" />
+              </div>
+            )}
+
+            {!analyticsLoading && analytics && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-2">
+                  <Stat
+                    icon={<Trophy className="w-4 h-4 text-amber-400" />}
+                    label="Total Claims"
+                    value={analytics.totalClaims.toLocaleString()}
+                  />
+                  <Stat
+                    icon={<Users className="w-4 h-4 text-indigo-400" />}
+                    label="Unique Participants"
+                    value={analytics.uniqueParticipants.toLocaleString()}
+                  />
+                  <Stat
+                    icon={<Coins className="w-4 h-4 text-amber-400" />}
+                    label="Points Distributed"
+                    value={analytics.pointsDistributed.toLocaleString()}
+                  />
+                  <Stat
+                    icon={<Zap className="w-4 h-4 text-indigo-400" />}
+                    label="XP Distributed"
+                    value={analytics.xpDistributed.toLocaleString()}
+                  />
+                </div>
+                <Stat
+                  icon={<Layers className="w-4 h-4 text-purple-400" />}
+                  label="Task Completions"
+                  value={`${analytics.totalCompletions.toLocaleString()} across ${analytics.taskCount} task${analytics.taskCount === 1 ? "" : "s"}`}
+                  full
+                />
+
+                <div>
+                  <h3 className="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                    Recent Claims
+                  </h3>
+                  {analytics.recentClaims.length === 0 ? (
+                    <p className="text-sm text-slate-500 italic">
+                      No claims yet.
+                    </p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {analytics.recentClaims.map((c) => (
+                        <li
+                          key={c.id}
+                          className="flex items-center gap-3 p-2 rounded-lg bg-slate-950 border border-slate-800"
+                        >
+                          {c.user.image ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={c.user.image}
+                              alt=""
+                              className="w-8 h-8 rounded-full object-cover bg-slate-800"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs text-slate-300 font-bold">
+                              {(c.user.name ?? c.user.email ?? "?")
+                                .slice(0, 1)
+                                .toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-white truncate">
+                              {c.user.name ?? c.user.email ?? "Unknown user"}
+                            </p>
+                            <p className="text-[11px] text-slate-500 tabular-nums">
+                              {new Date(c.claimedAt).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-bold text-amber-400 tabular-nums">
+                              +{c.pointsEarned.toLocaleString()} pts
+                            </p>
+                            <p className="text-[10px] text-indigo-400 tabular-nums">
+                              +{c.xpEarned} XP
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -301,6 +542,43 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
                 />
               </Field>
 
+              <Field label="Banner Image (optional)">
+                <ImageUploadField
+                  value={modal.imageUrl}
+                  onChange={(url) => setModal({ ...modal, imageUrl: url })}
+                  title="Select Board Banner"
+                />
+              </Field>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Category">
+                  <select
+                    value={modal.category}
+                    onChange={(e) =>
+                      setModal({ ...modal, category: e.target.value })
+                    }
+                    className={inp}
+                  >
+                    <option value="">— None</option>
+                    {BOARD_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Deadline (optional)">
+                  <input
+                    type="datetime-local"
+                    value={modal.expiresAt}
+                    onChange={(e) =>
+                      setModal({ ...modal, expiresAt: e.target.value })
+                    }
+                    className={inp}
+                  />
+                </Field>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <Field label="Bonus Points">
                   <input
@@ -341,6 +619,32 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
                   }
                   className={inp}
                 />
+              </Field>
+
+              <Field label="Prerequisite Board (optional)">
+                <select
+                  value={modal.unlockBoardId}
+                  onChange={(e) =>
+                    setModal({ ...modal, unlockBoardId: e.target.value })
+                  }
+                  className={inp}
+                >
+                  <option value="">— None (always unlocked)</option>
+                  {boards
+                    .filter((b) => b.id !== modal.id)
+                    .map((b) => (
+                      <option key={b.id} value={b.id}>
+                        {b.iconEmoji ? `${b.iconEmoji} ` : ""}
+                        {b.title}
+                      </option>
+                    ))}
+                </select>
+                {modal.unlockBoardId && (
+                  <p className="text-[11px] text-amber-300 mt-1">
+                    🔒 Users must first claim the selected board before this
+                    one becomes available.
+                  </p>
+                )}
               </Field>
 
               <label className="flex items-center gap-3 cursor-pointer">
@@ -396,6 +700,34 @@ function Field({
         {label}
       </label>
       {children}
+    </div>
+  );
+}
+
+function Stat({
+  icon,
+  label,
+  value,
+  full,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+  full?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-lg bg-slate-950 border border-slate-800 p-3 ${
+        full ? "col-span-2" : ""
+      }`}
+    >
+      <div className="flex items-center gap-1.5 mb-1">
+        {icon}
+        <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+          {label}
+        </p>
+      </div>
+      <p className="text-base font-bold text-white tabular-nums">{value}</p>
     </div>
   );
 }

@@ -25,12 +25,60 @@ export async function POST(
     return NextResponse.json({ error: "Board not found" }, { status: 404 });
   }
 
+  if (board.expiresAt && board.expiresAt.getTime() < Date.now()) {
+    return NextResponse.json(
+      { error: "This board has expired. Reward can no longer be claimed." },
+      { status: 400 }
+    );
+  }
+
+  // Enforce prerequisite chain — user must have claimed the unlocking board
+  // (either via the new BoardClaim row or the legacy Transaction.reference).
+  if (board.unlockBoardId) {
+    const [prereqClaim, legacyPrereq, prereqBoard] = await Promise.all([
+      prisma.boardClaim.findUnique({
+        where: {
+          userId_boardId: { userId, boardId: board.unlockBoardId },
+        },
+        select: { id: true },
+      }),
+      prisma.transaction.findFirst({
+        where: {
+          userId,
+          reference: `board_claim_${board.unlockBoardId}`,
+        },
+        select: { id: true },
+      }),
+      prisma.taskBoard.findUnique({
+        where: { id: board.unlockBoardId },
+        select: { title: true },
+      }),
+    ]);
+    if (!prereqClaim && !legacyPrereq) {
+      return NextResponse.json(
+        {
+          error: `Locked. Claim "${prereqBoard?.title ?? "the prerequisite board"}" first.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const reference = `board_claim_${board.id}`;
-  const existing = await prisma.transaction.findFirst({
-    where: { userId, reference },
-    select: { id: true },
-  });
-  if (existing) {
+  // Two-source claim check: new BoardClaim table is canonical going forward,
+  // but legacy Transaction.reference rows from before the BoardClaim model
+  // still count to prevent re-claims.
+  const [existingClaim, legacyTxn] = await Promise.all([
+    prisma.boardClaim.findUnique({
+      where: { userId_boardId: { userId, boardId: board.id } },
+      select: { id: true },
+    }),
+    prisma.transaction.findFirst({
+      where: { userId, reference },
+      select: { id: true },
+    }),
+  ]);
+  if (existingClaim || legacyTxn) {
     return NextResponse.json(
       { error: "Reward already claimed for this board" },
       { status: 400 }
@@ -65,7 +113,7 @@ export async function POST(
   const points = board.pointsReward ?? 0;
   const xp = board.xpReward ?? 0;
 
-  const [, , tx] = await prisma.$transaction([
+  const [, , tx, claim] = await prisma.$transaction([
     prisma.user.update({
       where: { id: userId },
       data: {
@@ -95,12 +143,32 @@ export async function POST(
         metadata: { boardId: board.id, xp },
       },
     }),
+    // BoardClaim row enforces single claim via the (userId, boardId) unique
+    // constraint and gives admin a queryable per-user audit trail.
+    prisma.boardClaim.create({
+      data: {
+        userId,
+        boardId: board.id,
+        pointsEarned: points,
+        xpEarned: xp,
+        taskCount: completedCount,
+      },
+    }),
   ]);
+
+  // Backfill the transactionId on the BoardClaim now that we have it
+  if (tx.id) {
+    await prisma.boardClaim.update({
+      where: { id: claim.id },
+      data: { transactionId: tx.id },
+    });
+  }
 
   return NextResponse.json({
     success: true,
     points,
     xp,
     transactionId: tx.id,
+    claimId: claim.id,
   });
 }

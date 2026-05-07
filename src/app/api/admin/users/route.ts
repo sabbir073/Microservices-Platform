@@ -6,25 +6,67 @@ import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 
-// Create user schema
+// Helper for optional, possibly-empty string fields
+const optStr = z.string().max(200).optional().nullable();
+
+// Create user schema — accepts the full editable user profile
 const createUserSchema = z.object({
-  name: z.string().min(2).max(50),
+  // Required core
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.enum([
-    "USER",
-    "SUPER_ADMIN",
-    "FINANCE_ADMIN",
-    "CONTENT_ADMIN",
-    "SUPPORT_ADMIN",
-    "MARKETING_ADMIN",
-    "MODERATOR",
-  ]).default("USER"),
+
+  // Account
+  name: z.string().min(2).max(80).optional(),
+  firstName: optStr,
+  lastName: optStr,
+  username: z.string().min(2).max(40).optional().nullable(),
+  phone: optStr,
+  role: z
+    .enum([
+      "USER",
+      "SUPER_ADMIN",
+      "FINANCE_ADMIN",
+      "CONTENT_ADMIN",
+      "SUPPORT_ADMIN",
+      "MARKETING_ADMIN",
+      "MODERATOR",
+    ])
+    .default("USER"),
   status: z.enum(["ACTIVE", "PENDING_VERIFICATION"]).default("ACTIVE"),
-  packageTier: z.enum(["FREE", "STARTER", "PRO", "ELITE", "VIP"]).default("FREE"),
-  phone: z.string().optional(),
-  country: z.string().optional(),
+  packageId: z.string().optional().nullable(),
+
+  // Personal
+  gender: optStr,
+  dateOfBirth: z.string().optional().nullable(), // ISO date string
+  nidNumber: optStr,
+  profession: optStr,
+  maritalStatus: optStr,
+  studyLevel: optStr,
+  nationality: optStr,
+  bloodGroup: optStr,
+  secondaryEmail: z.string().email().optional().nullable().or(z.literal("")),
+  secondaryPhone: optStr,
+  bio: z.string().max(500).optional().nullable(),
+
+  // Address
+  country: optStr,
+  region: optStr,
+  division: optStr,
+  subDivision: optStr,
+  district: optStr,
+  subDistrict: optStr,
+  city: optStr,
+  village: optStr,
+  street: optStr,
+  postalCode: optStr,
 });
+
+// Tiny helper — empty string → null
+const n = (s: unknown): string | null => {
+  if (typeof s !== "string") return null;
+  const t = s.trim();
+  return t.length === 0 ? null : t;
+};
 
 // POST /api/admin/users - Create a new user
 export async function POST(request: NextRequest) {
@@ -60,35 +102,85 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if email already exists
-    const existingUser = await prisma.user.findUnique({
+    // Build a sensible display name if admin didn't supply one
+    const composedName =
+      n(data.name) ??
+      ([n(data.firstName), n(data.lastName)].filter(Boolean).join(" ") ||
+        data.email.split("@")[0]);
+
+    // Check email uniqueness
+    const existingEmail = await prisma.user.findUnique({
       where: { email: data.email },
     });
-
-    if (existingUser) {
+    if (existingEmail) {
       return NextResponse.json(
         { error: "Email already registered" },
         { status: 400 }
       );
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(data.password, 12);
+    // Check username uniqueness if provided
+    if (data.username) {
+      const existingUsername = await prisma.user.findFirst({
+        where: { username: data.username },
+        select: { id: true },
+      });
+      if (existingUsername) {
+        return NextResponse.json(
+          { error: "Username already taken" },
+          { status: 400 }
+        );
+      }
+    }
 
-    // Generate unique referral code
+    const hashedPassword = await bcrypt.hash(data.password, 12);
     const referralCode = uuidv4().slice(0, 8).toUpperCase();
 
-    // Create user
+    let dateOfBirth: Date | null = null;
+    if (data.dateOfBirth) {
+      const dob = new Date(data.dateOfBirth);
+      if (!Number.isNaN(dob.getTime())) {
+        dateOfBirth = dob;
+      }
+    }
+
     const user = await prisma.user.create({
       data: {
-        name: data.name,
+        // Core
         email: data.email,
         password: hashedPassword,
+        name: composedName.trim() || data.email.split("@")[0],
+        firstName: n(data.firstName),
+        lastName: n(data.lastName),
+        username: n(data.username),
+        phone: n(data.phone),
         role: data.role,
         status: data.status,
-        packageTier: data.packageTier,
-        phone: data.phone || null,
-        country: data.country || null,
+        packageId: data.packageId ?? null,
+        // Personal
+        gender: n(data.gender),
+        dateOfBirth,
+        nidNumber: n(data.nidNumber),
+        profession: n(data.profession),
+        maritalStatus: n(data.maritalStatus),
+        studyLevel: n(data.studyLevel),
+        nationality: n(data.nationality),
+        bloodGroup: n(data.bloodGroup),
+        secondaryEmail: n(data.secondaryEmail),
+        secondaryPhone: n(data.secondaryPhone),
+        bio: n(data.bio),
+        // Address
+        country: n(data.country),
+        region: n(data.region),
+        division: n(data.division),
+        subDivision: n(data.subDivision),
+        district: n(data.district),
+        subDistrict: n(data.subDistrict),
+        city: n(data.city),
+        village: n(data.village),
+        street: n(data.street),
+        postalCode: n(data.postalCode),
+        // Misc
         referralCode,
         emailVerified: data.status === "ACTIVE" ? new Date() : null,
       },
@@ -98,8 +190,22 @@ export async function POST(request: NextRequest) {
         email: true,
         role: true,
         status: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
         createdAt: true,
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "USER_CREATED",
+        entity: "User",
+        entityId: user.id,
+        newData: {
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
       },
     });
 

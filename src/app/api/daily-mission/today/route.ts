@@ -1,19 +1,14 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { SubmissionStatus, TaskType } from "@/generated/prisma/client";
+import {
+  buildDailyProgress,
+  resolveTaskTypeBucket,
+} from "@/lib/daily-mission-progress";
 
 function utcDateKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
-
-function utcStartOfDay(d = new Date()): Date {
-  const x = new Date(d);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
-}
-
-const TASK_TYPE_VALUES = new Set(Object.values(TaskType));
 
 export async function GET() {
   const session = await auth();
@@ -24,21 +19,30 @@ export async function GET() {
 
   const me = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, level: true, packageTier: true },
+    select: {
+      id: true,
+      level: true,
+      package: { select: { accessLevel: true } },
+    },
   });
   if (!me) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  // Pick today's mission for the user's package tier — newest active that fits
-  // their level, ordered by `order` then createdAt.
+  const accessLevel = me.package?.accessLevel ?? 0;
+
+  // Pick the highest-accessLevel mission template the user qualifies for.
   const missionRaw = await prisma.dailyMissionTemplate.findFirst({
     where: {
-      packageTier: me.packageTier,
+      requiredAccessLevel: { lte: accessLevel },
       isActive: true,
       requiredLevel: { lte: me.level },
     },
-    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+    orderBy: [
+      { requiredAccessLevel: "desc" },
+      { order: "asc" },
+      { createdAt: "desc" },
+    ],
     include: { items: { orderBy: { order: "asc" } } },
   });
 
@@ -59,43 +63,10 @@ export async function GET() {
   const mission = missionRaw as typeof missionRaw & { items: ItemRow[] };
 
   const today = utcDateKey();
-  const todayStart = utcStartOfDay();
+  const countByType = await buildDailyProgress(userId, mission.items);
 
-  // Count submissions per task-type for the user, today, with completed status.
-  const completedToday = await prisma.taskSubmission.findMany({
-    where: {
-      userId,
-      createdAt: { gte: todayStart },
-      status: { in: [SubmissionStatus.APPROVED, SubmissionStatus.AUTO_APPROVED] },
-    },
-    select: { taskId: true, task: { select: { type: true, boardId: true } } },
-  });
-  type SubmRow = {
-    taskId: string;
-    task: { type: string; boardId: string | null };
-  };
-  const subs = completedToday as SubmRow[];
-
-  const countByType: Record<string, number> = {};
-  for (const s of subs) {
-    countByType[s.task.type] = (countByType[s.task.type] ?? 0) + 1;
-    if (s.task.boardId) {
-      // Tasks tied to a board count for both their TaskType and BOARD bucket
-      countByType.BOARD = (countByType.BOARD ?? 0) + 1;
-    }
-  }
-
-  // Items + per-item progress
   const itemsWithProgress = mission.items.map((it) => {
-    // For taskType not in enum (BOARD/MANUAL/CUSTOM), only BOARD has count above.
-    // MANUAL & CUSTOM aren't a real TaskType → fall back to CUSTOM bucket count.
-    const sourceType = TASK_TYPE_VALUES.has(it.taskType as TaskType)
-      ? it.taskType
-      : it.taskType === "BOARD"
-      ? "BOARD"
-      : it.taskType === "MANUAL"
-      ? "CUSTOM"
-      : it.taskType;
+    const sourceType = resolveTaskTypeBucket(it.taskType);
     const completed = countByType[sourceType] ?? 0;
     return {
       id: it.id,
@@ -112,9 +83,9 @@ export async function GET() {
     };
   });
 
-  const allDone = itemsWithProgress.every((it) => it.done);
   const totalItems = itemsWithProgress.length;
   const doneItems = itemsWithProgress.filter((it) => it.done).length;
+  const allDone = totalItems > 0 && itemsWithProgress.every((it) => it.done);
 
   // Already claimed today?
   const claim = await prisma.dailyMissionClaim.findUnique({
@@ -128,7 +99,6 @@ export async function GET() {
   });
 
   // Streak: count consecutive prior days with claims (this mission OR any).
-  // Cheap approach: pull the last 30 claims for this user and walk back.
   let streak = claim?.streak ?? 0;
   if (!claim) {
     const recent = await prisma.dailyMissionClaim.findMany({
@@ -158,7 +128,7 @@ export async function GET() {
       id: mission.id,
       name: mission.name,
       description: mission.description,
-      packageTier: mission.packageTier,
+      requiredAccessLevel: mission.requiredAccessLevel,
       requiredLevel: mission.requiredLevel,
       completionXpReward: mission.completionXpReward,
       completionPointsReward: mission.completionPointsReward,

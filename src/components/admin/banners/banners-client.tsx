@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 
 interface Banner {
   id: string;
@@ -374,12 +375,11 @@ function EditBannerModal({
               </select>
             </Field>
           </div>
-          <Field label="Image URL (overrides gradient)">
-            <input
+          <Field label="Banner Image (overrides gradient)">
+            <ImageUploadField
               value={form.imageUrl}
-              onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-              className={inp}
-              placeholder="https://…"
+              onChange={(url) => setForm({ ...form, imageUrl: url })}
+              title="Select Banner Image"
             />
           </Field>
           <Field label="Gradient Background">
@@ -489,6 +489,7 @@ function CreateBannerModal({
     title: "",
     subtitle: "",
     iconEmoji: "🎉",
+    imageUrl: "",
     bgGradient: gradients[0],
     linkUrl: "",
     location: "HOME",
@@ -571,6 +572,13 @@ function CreateBannerModal({
               </select>
             </Field>
           </div>
+          <Field label="Banner Image (overrides gradient)">
+            <ImageUploadField
+              value={form.imageUrl}
+              onChange={(url) => setForm({ ...form, imageUrl: url })}
+              title="Select Banner Image"
+            />
+          </Field>
           <Field label="Gradient Background">
             <div className="grid grid-cols-3 gap-2">
               {gradients.map((g) => (

@@ -6,6 +6,16 @@ import { toast } from "sonner";
 
 const STORAGE_KEY = "push_prompt_dismissed_at";
 
+/** Routes where the prompt is suppressed — focused user flows. */
+const SUPPRESSED_PATHS = [
+  "/article-tasks",
+  "/video-tasks",
+  "/quiz-tasks",
+  "/survey-tasks",
+  "/social-tasks",
+  "/proxy-tasks",
+];
+
 export function PushPermissionPrompt() {
   const [show, setShow] = useState(false);
 
@@ -13,6 +23,10 @@ export function PushPermissionPrompt() {
     if (typeof window === "undefined") return;
     if (!("Notification" in window)) return;
     if (Notification.permission !== "default") return;
+    // Don't interrupt focused task flows (e.g. mid-way through an article
+    // task, the user shouldn't get a "Enable Notifications?" banner).
+    const path = window.location.pathname || "";
+    if (SUPPRESSED_PATHS.some((p) => path.startsWith(p))) return;
     const dismissed = Number(localStorage.getItem(STORAGE_KEY) ?? 0);
     if (Date.now() - dismissed < 7 * 24 * 60 * 60 * 1000) return;
     const t = setTimeout(() => setShow(true), 6000);

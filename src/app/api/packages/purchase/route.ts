@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { PackageTier, PaymentMethod } from "@/generated/prisma/client";
+import { PaymentMethod } from "@/generated/prisma/client";
 
 const schema = z.object({
   packageId: z.string().min(1),
@@ -52,9 +52,9 @@ export async function POST(request: NextRequest) {
   if (!pkg) {
     return NextResponse.json({ error: "Package not found" }, { status: 404 });
   }
-  if (pkg.tier === "FREE") {
+  if (pkg.priceMonthly === 0 && pkg.priceYearly == null) {
     return NextResponse.json(
-      { error: "FREE tier doesn't need to be purchased" },
+      { error: "Free plans don't need to be purchased" },
       { status: 400 }
     );
   }
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
       await tx.user.update({
         where: { id: userId },
         data: {
-          packageTier: pkg.tier as PackageTier,
+          packageId: pkg.id,
           packageExpiresAt: endDate,
         },
       });
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
     await tx.subscription.create({
       data: {
         userId,
-        packageTier: pkg.tier as PackageTier,
+        packageId: pkg.id,
         startDate: now,
         endDate,
         amount: totalUsd,

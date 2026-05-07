@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { WithdrawalStatus } from "@/generated/prisma";
+import { getSubscriptionStatus } from "@/lib/packages";
 
 // GET /api/wallet - Get user wallet details
 export async function GET() {
@@ -12,7 +13,6 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get user with balance info
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
@@ -23,7 +23,6 @@ export async function GET() {
         totalWithdrawals: true,
         level: true,
         xp: true,
-        packageTier: true,
         kycStatus: true,
       },
     });
@@ -32,7 +31,9 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Get pending withdrawal amount
+    // Resolve the user's effective plan + raw expiry status (for the renew banner).
+    const sub = await getSubscriptionStatus(session.user.id);
+
     const pendingWithdrawalsList = await prisma.withdrawal.findMany({
       where: {
         userId: session.user.id,
@@ -42,27 +43,13 @@ export async function GET() {
     });
     const pendingWithdrawalsAmount = pendingWithdrawalsList.reduce((sum, w) => sum + w.amount, 0);
 
-    // Get package info for withdrawal limits
-    const packageInfo = await prisma.package.findUnique({
-      where: { tier: user.packageTier },
-      select: {
-        name: true,
-        minWithdrawal: true,
-        withdrawalFee: true,
-        dailyTaskLimit: true,
-      },
-    });
-
-    // Get today's earnings
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    // Get this month's earnings
     const monthStart = new Date();
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    // Fetch all earning transactions for this month (includes today)
     const monthTransactions = await prisma.transaction.findMany({
       where: {
         userId: session.user.id,
@@ -79,7 +66,6 @@ export async function GET() {
 
     const monthEarningsPoints = monthTransactions.reduce((sum, t) => sum + (t.points || 0), 0);
 
-    // Get tasks completed today
     const tasksCompletedToday = await prisma.taskSubmission.count({
       where: {
         userId: session.user.id,
@@ -88,8 +74,9 @@ export async function GET() {
       },
     });
 
-    // Calculate available balance (points - pending withdrawals converted)
     const availablePoints = user.pointsBalance - Math.floor(pendingWithdrawalsAmount * 1000);
+
+    const pkg = sub.effective;
 
     return NextResponse.json({
       balance: {
@@ -108,14 +95,23 @@ export async function GET() {
         xp: user.xp,
       },
       package: {
-        tier: user.packageTier,
-        name: packageInfo?.name || user.packageTier,
-        minWithdrawal: packageInfo?.minWithdrawal || 5,
-        withdrawalFee: packageInfo?.withdrawalFee || 0,
-        dailyTaskLimit: packageInfo?.dailyTaskLimit || 10,
+        id: pkg?.id ?? null,
+        slug: pkg?.slug ?? null,
+        name: pkg?.name ?? "Free",
+        accessLevel: pkg?.accessLevel ?? 0,
+        minWithdrawal: pkg?.minWithdrawal ?? 5,
+        withdrawalFeeDiscount: pkg?.withdrawalFeeDiscount ?? 0,
+        dailyTaskLimit: pkg?.dailyTaskLimit ?? -1,
+        // Subscription status — UI can render a "Renew" banner.
+        rawPackageId: sub.rawPackageId,
+        expired: sub.expired,
+        expiresAt: sub.expiresAt,
       },
       kycStatus: user.kycStatus,
-      canWithdraw: user.kycStatus === "APPROVED" && availablePoints >= (packageInfo?.minWithdrawal || 5) * 1000,
+      canWithdraw:
+        !!pkg?.withdrawalsEnabled &&
+        user.kycStatus === "APPROVED" &&
+        availablePoints >= (pkg?.minWithdrawal ?? 5) * 1000,
     });
   } catch (error) {
     console.error("Error fetching wallet:", error);

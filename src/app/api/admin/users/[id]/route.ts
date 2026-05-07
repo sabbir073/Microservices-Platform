@@ -39,7 +39,7 @@ export async function GET(
         role: true,
         status: true,
         kycStatus: true,
-        packageTier: true,
+        package: { select: { id: true, slug: true, name: true } },
         packageExpiresAt: true,
         pointsBalance: true,
         cashBalance: true,
@@ -97,7 +97,7 @@ const updateUserSchema = z.object({
   xp: z.number().int().min(0).optional(),
   pointsBalance: z.number().int().min(0).optional(),
   cashBalance: z.number().min(0).optional(),
-  packageTier: z.enum(["FREE", "STARTER", "PRO", "ELITE", "VIP"]).optional(),
+  packageId: z.string().nullable().optional(),
   packageExpiresAt: z.string().datetime().optional().nullable(),
   kycStatus: z.enum(["NOT_SUBMITTED", "PENDING", "APPROVED", "REJECTED"]).optional(),
   isBlueVerified: z.boolean().optional(),
@@ -225,7 +225,7 @@ export async function PATCH(
     if (data.xp !== undefined) updateData.xp = data.xp;
     if (data.pointsBalance !== undefined) updateData.pointsBalance = data.pointsBalance;
     if (data.cashBalance !== undefined) updateData.cashBalance = data.cashBalance;
-    if (data.packageTier !== undefined) updateData.packageTier = data.packageTier;
+    if (data.packageId !== undefined) updateData.packageId = data.packageId;
     if (data.packageExpiresAt !== undefined) {
       updateData.packageExpiresAt = data.packageExpiresAt
         ? new Date(data.packageExpiresAt)
@@ -275,7 +275,7 @@ export async function PATCH(
         username: true,
         role: true,
         status: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
         kycStatus: true,
       },
     });

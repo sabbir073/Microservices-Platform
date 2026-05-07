@@ -31,17 +31,17 @@ export async function GET(request: NextRequest) {
       where.isActive = true;
     }
 
-    // Get subscriptions
+    // Get subscriptions (with package join)
     const subscriptions = await prisma.subscription.findMany({
       where,
       orderBy: { createdAt: "desc" },
       skip,
       take: limit,
+      include: { package: { select: { id: true, slug: true, name: true } } },
     });
 
     const total = await prisma.subscription.count({ where });
 
-    // Get user info separately
     const userIds = [...new Set(subscriptions.map((s) => s.userId))];
     const users = await prisma.user.findMany({
       where: { id: { in: userIds } },
@@ -50,23 +50,17 @@ export async function GET(request: NextRequest) {
         name: true,
         email: true,
         avatar: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
       },
     });
     const userMap = new Map(users.map((u) => [u.id, u]));
 
-    // Get package info
-    const packageTiers = [...new Set(subscriptions.map((s) => s.packageTier))];
-    const packages = await prisma.package.findMany({
-      where: { tier: { in: packageTiers } },
-      select: { tier: true, name: true },
-    });
-    const packageMap = new Map(packages.map((p) => [p.tier, p]));
-
     return NextResponse.json({
       subscriptions: subscriptions.map((sub) => {
-        const user = userMap.get(sub.userId);
-        const pkg = packageMap.get(sub.packageTier);
+        const user = userMap.get(sub.userId) as
+          | { name: string | null; email: string; avatar: string | null; package: { slug: string; name: string } | null }
+          | undefined;
+        const subPkg = (sub as unknown as { package: { id: string; slug: string; name: string } | null }).package;
         return {
           id: sub.id,
           user: {
@@ -74,11 +68,12 @@ export async function GET(request: NextRequest) {
             name: user?.name || "Unknown",
             email: user?.email || "",
             avatar: user?.avatar,
-            currentPackage: user?.packageTier,
+            currentPackage: user?.package?.name ?? null,
           },
           package: {
-            tier: sub.packageTier,
-            name: pkg?.name || sub.packageTier,
+            id: subPkg?.id,
+            slug: subPkg?.slug,
+            name: subPkg?.name ?? "—",
           },
           amount: sub.amount,
           paymentMethod: sub.paymentMethod,

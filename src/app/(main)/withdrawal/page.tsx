@@ -13,7 +13,7 @@ export default async function WithdrawalPage() {
       select: {
         cashBalance: true,
         pointsBalance: true,
-        packageTier: true,
+        package: { select: { slug: true } },
       },
     }),
     prisma.userPaymentMethod.findMany({
@@ -26,7 +26,7 @@ export default async function WithdrawalPage() {
     <WithdrawalView
       cashBalance={Number(user?.cashBalance ?? 0)}
       pointsBalance={user?.pointsBalance ?? 0}
-      packageTier={user?.packageTier ?? "FREE"}
+      packageTier={user?.package?.slug ?? "default"}
       methods={methods.map((m) => ({
         id: m.id,
         type: m.method,

@@ -58,16 +58,13 @@ export async function POST(request: NextRequest) {
     const where: Prisma.UserWhereInput = { status: "ACTIVE" };
 
     if (target === "package" && packageFilter?.length) {
-      where.packageTier = {
-        in: packageFilter as ("FREE" | "STARTER" | "PRO" | "ELITE" | "VIP")[],
-      };
+      // packageFilter is an array of plan slugs (e.g. ["pro-monthly", "vip"]).
+      where.package = { slug: { in: packageFilter as string[] } };
     }
 
     if (target === "segment") {
       if (packages && packages.length > 0) {
-        where.packageTier = {
-          in: packages as ("FREE" | "STARTER" | "PRO" | "ELITE" | "VIP")[],
-        };
+        where.package = { slug: { in: packages as string[] } };
       }
       if (typeof minLevel === "number" && minLevel > 0) {
         where.level = { ...(where.level as object), gte: minLevel };

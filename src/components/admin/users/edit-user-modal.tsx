@@ -38,7 +38,7 @@ export interface EditUserData {
   xp: number;
   pointsBalance: number;
   cashBalance: number;
-  packageTier: string;
+  packageId: string | null;
   kycStatus: string;
   isBlueVerified: boolean;
   // Personal
@@ -69,6 +69,8 @@ export interface EditUserData {
 interface UserEditFormProps {
   user: EditUserData;
   isSuperAdmin: boolean;
+  /** All active plans, used to populate the plan picker. */
+  plans: Array<{ id: string; slug: string; name: string }>;
   /** Called when admin clicks Cancel or after successful Save. Defaults to router.back(). */
   onDone?: () => void;
 }
@@ -104,6 +106,7 @@ const PROFESSIONS = [
 export function UserEditForm({
   user,
   isSuperAdmin,
+  plans,
   onDone,
 }: UserEditFormProps) {
   const router = useRouter();
@@ -134,7 +137,7 @@ export function UserEditForm({
     xp: user.xp,
     pointsBalance: user.pointsBalance,
     cashBalance: user.cashBalance,
-    packageTier: user.packageTier,
+    packageId: user.packageId ?? "",
     kycStatus: user.kycStatus,
     isBlueVerified: user.isBlueVerified,
 
@@ -193,8 +196,8 @@ export function UserEditForm({
         payload.pointsBalance = Number(form.pointsBalance);
       if (form.cashBalance !== user.cashBalance)
         payload.cashBalance = Number(form.cashBalance);
-      if (form.packageTier !== user.packageTier)
-        payload.packageTier = form.packageTier;
+      if (form.packageId !== (user.packageId ?? ""))
+        payload.packageId = form.packageId || null;
       if (form.kycStatus !== user.kycStatus)
         payload.kycStatus = form.kycStatus;
       if (form.isBlueVerified !== user.isBlueVerified)
@@ -719,17 +722,18 @@ export function UserEditForm({
                 detail page (creates a transaction record).
               </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Package Tier">
+                <Field label="Plan">
                   <select
-                    value={form.packageTier}
-                    onChange={(e) => set("packageTier", e.target.value)}
+                    value={form.packageId}
+                    onChange={(e) => set("packageId", e.target.value)}
                     className={fieldCls}
                   >
-                    <option value="FREE">Free</option>
-                    <option value="STARTER">Starter</option>
-                    <option value="PRO">Pro</option>
-                    <option value="ELITE">Elite</option>
-                    <option value="VIP">VIP</option>
+                    <option value="">— None —</option>
+                    {plans.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
                   </select>
                 </Field>
                 <Field label="KYC Status">

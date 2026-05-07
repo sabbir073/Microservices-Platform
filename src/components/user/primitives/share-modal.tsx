@@ -11,6 +11,10 @@ interface ShareModalProps {
   url: string;
   title?: string;
   text?: string;
+  /** Fired after the user picks a share destination. The channel hints how
+   * they shared (copy_link / native / x / facebook / etc.) so the caller can
+   * track the action server-side. */
+  onShare?: (channel: string) => void;
 }
 
 const PLATFORMS: Array<{
@@ -62,6 +66,7 @@ export function ShareModal({
   url,
   title = "Share",
   text = "",
+  onShare,
 }: ShareModalProps) {
   const [copied, setCopied] = useState(false);
 
@@ -71,6 +76,7 @@ export function ShareModal({
       setCopied(true);
       toast.success("Link copied");
       setTimeout(() => setCopied(false), 1800);
+      onShare?.("copy_link");
     } catch {
       toast.error("Failed to copy");
     }
@@ -80,6 +86,7 @@ export function ShareModal({
     if (typeof navigator !== "undefined" && "share" in navigator) {
       try {
         await navigator.share({ title, text, url });
+        onShare?.("native");
       } catch {
         /* user cancelled */
       }
@@ -124,6 +131,7 @@ export function ShareModal({
                 href={p.build(url, text)}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => onShare?.(p.key)}
                 className={`flex flex-col items-center justify-center gap-1 py-3 rounded-lg ${p.color} text-[10px] font-semibold`}
               >
                 <span className="text-base">{p.name[0]}</span>

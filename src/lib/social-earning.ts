@@ -1,18 +1,21 @@
 /**
  * Social engagement earning helper.
  *
- * Awards points to a content author when another user engages with their post
- * (view / like / vote / comment / share / mention). All knobs are admin-tunable
- * via SystemSetting rows under category="social_earning".
+ * Awards points + XP to BOTH sides of an engagement:
+ *   - The "recipient" (the post author who received the engagement).
+ *   - The "actor" (the user who performed the action — liker / commenter / sharer / voter).
+ *
+ * Each side has its own admin-tunable enable, points, and xp setting per action.
+ * Defaults keep the actor side OFF so day-one behaviour matches the legacy
+ * recipient-only system.
  *
  * Idempotency: every credit writes a Transaction with a deterministic
- * `reference` of the form `social_<action>_<postId>_<sourceUserId>` (for views,
- * likes, votes, comments, mentions) — so accidental double-fires from race
- * conditions can't double-credit (unique reference would collide on the
- * Transaction insert).
+ * `reference` that includes a `_recipient_` or `_actor_` segment so the two
+ * sides cannot collide. POST_CREATE keeps its date-keyed once-per-day reference.
  */
 import { prisma } from "@/lib/prisma";
 import {
+  Prisma,
   TransactionStatus,
   TransactionType,
   NotificationType,
@@ -28,44 +31,109 @@ export type SocialAction =
   | "DONATION_RECEIVED"
   | "MENTION_RECEIVED";
 
-interface AwardArgs {
-  recipientUserId: string;
+export type SkipReason =
+  | "disabled"
+  | "self"
+  | "min_age"
+  | "banned"
+  | "post_cap"
+  | "daily_cap"
+  | "daily_xp_cap"
+  | "duplicate"
+  | "no_recipient";
+
+export interface AwardArgs {
+  postOwnerUserId: string | null;
+  actorUserId: string | null;
   action: SocialAction;
   postId?: string | null;
-  sourceUserId?: string | null;
-  // Override the deterministic reference (used by POST_CREATE which is once-per-day)
   referenceOverride?: string;
+}
+
+export interface SideResult {
+  points: number;
+  xp: number;
+  skipped?: SkipReason;
+}
+
+export interface AwardResult {
+  recipient: SideResult;
+  actor: SideResult;
+}
+
+interface PerSideRule {
+  enabled: boolean;
+  points: number;
+  xp: number;
 }
 
 interface SocialEarningConfig {
   enabled: boolean;
   perActivity: Record<
     SocialAction,
-    { enabled: boolean; points: number }
+    { recipient: PerSideRule; actor: PerSideRule }
   >;
   dailyCapPerUser: number;
+  dailyXpCapPerUser: number;
   capPerPost: number;
   minAccountAgeHours: number;
+  countTowardDailyMissions: boolean;
+  missionDistinctPost: boolean;
 }
 
 const DEFAULTS: SocialEarningConfig = {
   enabled: true,
   perActivity: {
-    POST_CREATE: { enabled: true, points: 5 },
-    VIEW_RECEIVED: { enabled: true, points: 0 }, // disabled by default (fractional)
-    LIKE_RECEIVED: { enabled: true, points: 1 },
-    VOTE_RECEIVED: { enabled: true, points: 1 },
-    COMMENT_RECEIVED: { enabled: true, points: 2 },
-    SHARE_RECEIVED: { enabled: true, points: 3 },
-    DONATION_RECEIVED: { enabled: false, points: 0 },
-    MENTION_RECEIVED: { enabled: true, points: 1 },
+    POST_CREATE: {
+      recipient: { enabled: true, points: 5, xp: 0 },
+      actor: { enabled: false, points: 0, xp: 0 },
+    },
+    VIEW_RECEIVED: {
+      recipient: { enabled: true, points: 0, xp: 0 },
+      actor: { enabled: false, points: 0, xp: 0 },
+    },
+    LIKE_RECEIVED: {
+      recipient: { enabled: true, points: 1, xp: 0 },
+      actor: { enabled: false, points: 0, xp: 0 },
+    },
+    VOTE_RECEIVED: {
+      recipient: { enabled: true, points: 1, xp: 0 },
+      actor: { enabled: false, points: 0, xp: 0 },
+    },
+    COMMENT_RECEIVED: {
+      recipient: { enabled: true, points: 2, xp: 0 },
+      actor: { enabled: false, points: 0, xp: 0 },
+    },
+    SHARE_RECEIVED: {
+      recipient: { enabled: true, points: 3, xp: 0 },
+      actor: { enabled: false, points: 0, xp: 0 },
+    },
+    DONATION_RECEIVED: {
+      recipient: { enabled: false, points: 0, xp: 0 },
+      actor: { enabled: false, points: 0, xp: 0 },
+    },
+    MENTION_RECEIVED: {
+      recipient: { enabled: true, points: 1, xp: 0 },
+      actor: { enabled: false, points: 0, xp: 0 },
+    },
   },
   dailyCapPerUser: 500,
+  dailyXpCapPerUser: 1000,
   capPerPost: 100,
   minAccountAgeHours: 24,
+  countTowardDailyMissions: true,
+  missionDistinctPost: true,
 };
 
 const CATEGORY = "social_earning";
+
+const ACTOR_LOG_ACTION: Partial<Record<SocialAction, string>> = {
+  POST_CREATE: "POST_CREATED",
+  LIKE_RECEIVED: "LIKE_GIVEN",
+  COMMENT_RECEIVED: "COMMENT_GIVEN",
+  VOTE_RECEIVED: "VOTE_GIVEN",
+  SHARE_RECEIVED: "SHARE_GIVEN",
+};
 
 function asNumber(v: unknown, fallback: number): number {
   if (typeof v === "number") return v;
@@ -100,6 +168,10 @@ export async function getSocialEarningConfig(): Promise<SocialEarningConfig> {
       map.get("social_earning.daily_cap_per_user"),
       DEFAULTS.dailyCapPerUser
     ),
+    dailyXpCapPerUser: asNumber(
+      map.get("social_earning.daily_xp_cap_per_user"),
+      DEFAULTS.dailyXpCapPerUser
+    ),
     capPerPost: asNumber(
       map.get("social_earning.cap_per_post"),
       DEFAULTS.capPerPost
@@ -108,18 +180,47 @@ export async function getSocialEarningConfig(): Promise<SocialEarningConfig> {
       map.get("social_earning.min_account_age_hours"),
       DEFAULTS.minAccountAgeHours
     ),
+    countTowardDailyMissions: asBoolean(
+      map.get("social_earning.count_toward_daily_missions"),
+      DEFAULTS.countTowardDailyMissions
+    ),
+    missionDistinctPost: asBoolean(
+      map.get("social_earning.mission_distinct_post"),
+      DEFAULTS.missionDistinctPost
+    ),
   };
   for (const action of Object.keys(DEFAULTS.perActivity) as SocialAction[]) {
     const k = action.toLowerCase();
+    const def = DEFAULTS.perActivity[action];
     cfg.perActivity[action] = {
-      enabled: asBoolean(
-        map.get(`social_earning.${k}_enabled`),
-        DEFAULTS.perActivity[action].enabled
-      ),
-      points: asNumber(
-        map.get(`social_earning.${k}_points`),
-        DEFAULTS.perActivity[action].points
-      ),
+      recipient: {
+        enabled: asBoolean(
+          map.get(`social_earning.${k}_enabled`),
+          def.recipient.enabled
+        ),
+        points: asNumber(
+          map.get(`social_earning.${k}_points`),
+          def.recipient.points
+        ),
+        xp: asNumber(
+          map.get(`social_earning.${k}_recipient_xp`),
+          def.recipient.xp
+        ),
+      },
+      actor: {
+        enabled: asBoolean(
+          map.get(`social_earning.${k}_actor_enabled`),
+          def.actor.enabled
+        ),
+        points: asNumber(
+          map.get(`social_earning.${k}_actor_points`),
+          def.actor.points
+        ),
+        xp: asNumber(
+          map.get(`social_earning.${k}_actor_xp`),
+          def.actor.xp
+        ),
+      },
     };
   }
 
@@ -141,7 +242,7 @@ function utcStartOfDay(d = new Date()): Date {
   return x;
 }
 
-const ACTION_DESCRIPTION: Record<SocialAction, string> = {
+const ACTION_DESCRIPTION_RECIPIENT: Record<SocialAction, string> = {
   POST_CREATE: "Created a post",
   VIEW_RECEIVED: "Earned from a view on your post",
   LIKE_RECEIVED: "Earned from a like on your post",
@@ -152,137 +253,308 @@ const ACTION_DESCRIPTION: Record<SocialAction, string> = {
   MENTION_RECEIVED: "Mentioned in a post / comment",
 };
 
-interface AwardResult {
-  awarded: number;
-  skipped?: "disabled" | "self" | "min_age" | "banned" | "post_cap" | "daily_cap" | "duplicate" | "no_recipient";
+const ACTION_DESCRIPTION_ACTOR: Record<SocialAction, string> = {
+  POST_CREATE: "Created a post",
+  VIEW_RECEIVED: "Viewed a post",
+  LIKE_RECEIVED: "Liked a post",
+  VOTE_RECEIVED: "Voted on a poll",
+  COMMENT_RECEIVED: "Commented on a post",
+  SHARE_RECEIVED: "Shared a post",
+  DONATION_RECEIVED: "Made a donation",
+  MENTION_RECEIVED: "Mentioned someone",
+};
+
+interface CreditCtx {
+  userId: string;
+  role: "recipient" | "actor";
+  rule: PerSideRule;
+  cfg: SocialEarningConfig;
+  action: SocialAction;
+  postId: string | null | undefined;
+  sourceUserId: string | null | undefined;
+  referenceOverride?: string;
 }
 
-/**
- * Try to award social engagement points. Safe to call from anywhere; never
- * throws on business-rule misses, only on infra errors.
- */
-export async function awardSocialEarning(args: AwardArgs): Promise<AwardResult> {
-  const { recipientUserId, action, postId, sourceUserId, referenceOverride } = args;
+async function creditOne(ctx: CreditCtx): Promise<SideResult> {
+  const { userId, role, rule, cfg, action, postId, sourceUserId } = ctx;
 
-  if (!recipientUserId) return { awarded: 0, skipped: "no_recipient" };
-  if (sourceUserId && sourceUserId === recipientUserId) {
-    return { awarded: 0, skipped: "self" };
+  if (!rule.enabled || (rule.points <= 0 && rule.xp <= 0)) {
+    return { points: 0, xp: 0, skipped: "disabled" };
   }
 
-  const cfg = await getSocialEarningConfig();
-  if (!cfg.enabled) return { awarded: 0, skipped: "disabled" };
-  const rule = cfg.perActivity[action];
-  if (!rule || !rule.enabled || rule.points <= 0) {
-    return { awarded: 0, skipped: "disabled" };
-  }
-
-  // Recipient must be ACTIVE and old enough
-  const recipient = await prisma.user.findUnique({
-    where: { id: recipientUserId },
-    select: { id: true, status: true, createdAt: true },
+  // User must be ACTIVE and old enough
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      status: true,
+      createdAt: true,
+      package: { select: { socialEarningMultiplier: true } },
+    },
   });
-  if (!recipient || recipient.status !== "ACTIVE") {
-    return { awarded: 0, skipped: "banned" };
+  if (!user || user.status !== "ACTIVE") {
+    return { points: 0, xp: 0, skipped: "banned" };
   }
   const ageHours =
-    (Date.now() - recipient.createdAt.getTime()) / (1000 * 60 * 60);
+    (Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60);
   if (ageHours < cfg.minAccountAgeHours) {
-    return { awarded: 0, skipped: "min_age" };
+    return { points: 0, xp: 0, skipped: "min_age" };
   }
 
-  // Per-post cap
+  // Per-plan multiplier (defaults to 1× if no plan).
+  const planMultiplier =
+    (user as unknown as { package: { socialEarningMultiplier: number } | null }).package
+      ?.socialEarningMultiplier ?? 1;
+
+  // Per-post cap (only counted against recipient credits — the post is what fills up)
   let postEarned = 0;
-  if (postId) {
+  if (postId && role === "recipient") {
     const p = await prisma.post.findUnique({
       where: { id: postId },
       select: { socialEarnings: true },
     });
-    if (!p) return { awarded: 0, skipped: "no_recipient" };
+    if (!p) return { points: 0, xp: 0, skipped: "no_recipient" };
     postEarned = p.socialEarnings;
     if (postEarned >= cfg.capPerPost) {
-      return { awarded: 0, skipped: "post_cap" };
+      return { points: 0, xp: 0, skipped: "post_cap" };
     }
   }
 
-  // Daily cap (today's social_* transactions)
   const todayStart = utcStartOfDay();
-  const dailyAgg = await prisma.transaction.aggregate({
+
+  // Daily points cap
+  const dailyPts = await prisma.transaction.aggregate({
     where: {
-      userId: recipientUserId,
+      userId,
       reference: { startsWith: "social_" },
       createdAt: { gte: todayStart },
     },
     _sum: { points: true },
   });
-  const todayEarned = Math.max(0, dailyAgg._sum.points ?? 0);
-  if (todayEarned >= cfg.dailyCapPerUser) {
-    return { awarded: 0, skipped: "daily_cap" };
+  const todayPoints = Math.max(0, dailyPts._sum.points ?? 0);
+
+  // Daily XP cap (sum metadata.xp on today's social_* rows)
+  let todayXp = 0;
+  if (cfg.dailyXpCapPerUser > 0) {
+    const todayRows = await prisma.transaction.findMany({
+      where: {
+        userId,
+        reference: { startsWith: "social_" },
+        createdAt: { gte: todayStart },
+      },
+      select: { metadata: true },
+    });
+    for (const r of todayRows) {
+      const md = r.metadata as { xp?: number } | null;
+      if (md && typeof md.xp === "number") todayXp += md.xp;
+    }
   }
 
-  // Final allowed
-  let allow = Math.floor(rule.points);
-  if (allow <= 0) return { awarded: 0, skipped: "disabled" };
-  if (postId) allow = Math.min(allow, cfg.capPerPost - postEarned);
-  allow = Math.min(allow, cfg.dailyCapPerUser - todayEarned);
-  if (allow <= 0) return { awarded: 0, skipped: "daily_cap" };
+  // Cap points (apply plan multiplier first, then daily/post caps)
+  let allowPoints = Math.max(0, Math.floor(rule.points * planMultiplier));
+  if (allowPoints > 0) {
+    if (postId && role === "recipient") {
+      allowPoints = Math.min(allowPoints, cfg.capPerPost - postEarned);
+    }
+    allowPoints = Math.min(allowPoints, Math.max(0, cfg.dailyCapPerUser - todayPoints));
+  }
+  if (allowPoints > 0 && cfg.dailyCapPerUser > 0 && todayPoints >= cfg.dailyCapPerUser) {
+    allowPoints = 0;
+  }
+
+  // Cap xp (plan multiplier applies here too)
+  let allowXp = Math.max(0, Math.floor(rule.xp * planMultiplier));
+  if (allowXp > 0 && cfg.dailyXpCapPerUser > 0) {
+    allowXp = Math.min(allowXp, Math.max(0, cfg.dailyXpCapPerUser - todayXp));
+  }
+
+  if (allowPoints <= 0 && allowXp <= 0) {
+    if (cfg.dailyCapPerUser > 0 && todayPoints >= cfg.dailyCapPerUser) {
+      return { points: 0, xp: 0, skipped: "daily_cap" };
+    }
+    if (cfg.dailyXpCapPerUser > 0 && todayXp >= cfg.dailyXpCapPerUser) {
+      return { points: 0, xp: 0, skipped: "daily_xp_cap" };
+    }
+    return { points: 0, xp: 0, skipped: "disabled" };
+  }
 
   // Idempotent reference
   const reference =
-    referenceOverride ??
+    ctx.referenceOverride ??
     (action === "POST_CREATE"
-      ? `social_post_${recipientUserId}_${utcDateKey()}`
-      : `social_${action.toLowerCase()}_${postId ?? "_"}_${sourceUserId ?? "_"}`);
+      ? `social_post_${role}_${userId}_${utcDateKey()}`
+      : `social_${action.toLowerCase()}_${role}_${postId ?? "_"}_${sourceUserId ?? "_"}`);
 
-  // Atomic credit. If reference already exists (rare race), the unique-ish
-  // create will throw — catch and treat as duplicate.
-  try {
-    await prisma.$transaction([
-      prisma.transaction.create({
-        data: {
-          userId: recipientUserId,
-          type: TransactionType.EARNING,
-          status: TransactionStatus.COMPLETED,
-          points: allow,
-          amount: allow / 1000,
-          description: ACTION_DESCRIPTION[action],
-          reference,
-          metadata: { action, postId, sourceUserId },
+  // Pre-flight duplicate check (the reference field is not unique on Transaction
+  // but we treat it as logically unique for idempotency).
+  const dup = await prisma.transaction.findFirst({
+    where: { reference },
+    select: { id: true },
+  });
+  if (dup) return { points: 0, xp: 0, skipped: "duplicate" };
+
+  const description =
+    role === "recipient"
+      ? ACTION_DESCRIPTION_RECIPIENT[action]
+      : ACTION_DESCRIPTION_ACTOR[action];
+
+  const ops: Prisma.PrismaPromise<unknown>[] = [];
+
+  ops.push(
+    prisma.transaction.create({
+      data: {
+        userId,
+        type: TransactionType.EARNING,
+        status: TransactionStatus.COMPLETED,
+        points: allowPoints,
+        amount: allowPoints / 1000,
+        description,
+        reference,
+        metadata: {
+          action,
+          role,
+          postId: postId ?? null,
+          sourceUserId: sourceUserId ?? null,
+          xp: allowXp,
         },
-      }),
-      prisma.user.update({
-        where: { id: recipientUserId },
-        data: {
-          pointsBalance: { increment: allow },
-          totalEarnings: { increment: allow / 1000 },
-        },
-      }),
-      ...(postId
-        ? [
-            prisma.post.update({
-              where: { id: postId },
-              data: { socialEarnings: { increment: allow } },
-            }),
-          ]
-        : []),
+      },
+    })
+  );
+
+  ops.push(
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        pointsBalance: { increment: allowPoints },
+        totalEarnings: { increment: allowPoints / 1000 },
+        xp: { increment: allowXp },
+      },
+    })
+  );
+
+  if (postId && role === "recipient" && allowPoints > 0) {
+    ops.push(
+      prisma.post.update({
+        where: { id: postId },
+        data: { socialEarnings: { increment: allowPoints } },
+      })
+    );
+  }
+
+  if (allowPoints > 0 || allowXp > 0) {
+    const parts: string[] = [];
+    if (allowPoints > 0) parts.push(`+${allowPoints} pts`);
+    if (allowXp > 0) parts.push(`+${allowXp} XP`);
+    ops.push(
       prisma.notification.create({
         data: {
-          userId: recipientUserId,
+          userId,
           type: NotificationType.WALLET,
-          title: `+${allow} pts earned`,
-          message: ACTION_DESCRIPTION[action],
-          data: { action, postId, sourceUserId, amount: allow },
+          title: parts.join(" · "),
+          message: description,
+          data: {
+            action,
+            role,
+            postId: postId ?? null,
+            sourceUserId: sourceUserId ?? null,
+            points: allowPoints,
+            xp: allowXp,
+          },
         },
-      }),
-    ]);
-    return { awarded: allow };
+      })
+    );
+  }
+
+  // Actor-side: log to SocialActionLog so daily missions can count it
+  if (role === "actor" && cfg.countTowardDailyMissions) {
+    const logAction = ACTOR_LOG_ACTION[action];
+    if (logAction) {
+      ops.push(
+        prisma.socialActionLog.create({
+          data: {
+            userId,
+            action: logAction,
+            postId: postId ?? null,
+            dateKey: utcDateKey(),
+          },
+        })
+      );
+    }
+  }
+
+  try {
+    await prisma.$transaction(ops);
+    return { points: allowPoints, xp: allowXp };
   } catch (err) {
-    // Reference is not unique on Transaction, but if a true duplicate happens
-    // we surface it as a skip; otherwise re-throw.
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("Unique constraint") || msg.includes("duplicate key")) {
-      return { awarded: 0, skipped: "duplicate" };
+      return { points: 0, xp: 0, skipped: "duplicate" };
     }
-    console.error("[social-earning] award failed:", err);
-    return { awarded: 0, skipped: "duplicate" };
+    console.error("[social-earning] credit failed:", err);
+    return { points: 0, xp: 0, skipped: "duplicate" };
   }
+}
+
+/**
+ * Award social engagement rewards. Handles both recipient (post owner) and
+ * actor (engaging user) credits. Safe to call from anywhere; never throws on
+ * business-rule misses, only on infra errors.
+ *
+ * For POST_CREATE the post owner IS the actor — actor side is short-circuited
+ * as `self` to avoid double-credit; the recipient credit is the only payout.
+ */
+export async function awardSocialEarning(
+  args: AwardArgs
+): Promise<AwardResult> {
+  const { postOwnerUserId, actorUserId, action, postId, referenceOverride } = args;
+
+  const result: AwardResult = {
+    recipient: { points: 0, xp: 0, skipped: "no_recipient" },
+    actor: { points: 0, xp: 0, skipped: "no_recipient" },
+  };
+
+  const cfg = await getSocialEarningConfig();
+  if (!cfg.enabled) {
+    return {
+      recipient: { points: 0, xp: 0, skipped: "disabled" },
+      actor: { points: 0, xp: 0, skipped: "disabled" },
+    };
+  }
+
+  // Recipient credit
+  if (postOwnerUserId) {
+    if (actorUserId && actorUserId === postOwnerUserId && action !== "POST_CREATE") {
+      result.recipient = { points: 0, xp: 0, skipped: "self" };
+    } else {
+      result.recipient = await creditOne({
+        userId: postOwnerUserId,
+        role: "recipient",
+        rule: cfg.perActivity[action].recipient,
+        cfg,
+        action,
+        postId,
+        sourceUserId: actorUserId,
+        referenceOverride,
+      });
+    }
+  }
+
+  // Actor credit — skipped when actor === recipient (e.g. POST_CREATE is one-sided)
+  if (actorUserId) {
+    if (postOwnerUserId && actorUserId === postOwnerUserId) {
+      result.actor = { points: 0, xp: 0, skipped: "self" };
+    } else {
+      result.actor = await creditOne({
+        userId: actorUserId,
+        role: "actor",
+        rule: cfg.perActivity[action].actor,
+        cfg,
+        action,
+        postId,
+        sourceUserId: postOwnerUserId,
+      });
+    }
+  }
+
+  return result;
 }

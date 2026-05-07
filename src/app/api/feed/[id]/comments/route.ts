@@ -155,12 +155,12 @@ export async function POST(
       data: { commentsCount: { increment: 1 } },
     });
 
-    // Social earning — comment author awards the post owner
+    // Social earning — recipient (owner) and optionally actor (commenter)
     await awardSocialEarning({
-      recipientUserId: post.userId,
+      postOwnerUserId: post.userId,
+      actorUserId: session.user.id,
       action: "COMMENT_RECEIVED",
       postId: id,
-      sourceUserId: session.user.id,
     });
 
     // Mentions in this comment
@@ -186,10 +186,10 @@ export async function POST(
         );
         for (const m of filtered) {
           await awardSocialEarning({
-            recipientUserId: m.id,
+            postOwnerUserId: m.id,
+            actorUserId: session.user!.id,
             action: "MENTION_RECEIVED",
             postId: id,
-            sourceUserId: session.user!.id,
           });
         }
       }

@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       where.kycStatus = kyc as Prisma.EnumKYCStatusFilter["equals"];
     }
     if (packageTier && packageTier !== "all") {
-      where.packageTier = packageTier as Prisma.EnumPackageTierFilter["equals"];
+      where.package = { slug: packageTier };
     }
 
     // Fetch all matching users
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
         role: true,
         status: true,
         kycStatus: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
         pointsBalance: true,
         cashBalance: true,
         totalEarnings: true,
@@ -78,8 +78,9 @@ export async function GET(request: NextRequest) {
     // Type assertion for Prisma Accelerate
     type UserWithCount = typeof usersRaw[0] & {
       _count: { referrals: number; taskSubmissions: number };
+      package: { slug: string; name: string } | null;
     };
-    const users = usersRaw as UserWithCount[];
+    const users = usersRaw as unknown as UserWithCount[];
 
     // Generate CSV
     const headers = [
@@ -121,7 +122,7 @@ export async function GET(request: NextRequest) {
         user.role,
         user.status,
         user.kycStatus,
-        user.packageTier,
+        user.package?.name ?? "",
         user.pointsBalance,
         user.cashBalance.toFixed(2),
         user.totalEarnings.toFixed(2),

@@ -62,12 +62,12 @@ export async function POST(
       where: { postId: id },
     });
 
-    // Social earning hook — owner gets points for receiving a like
+    // Social earning hook — recipient (owner) and optionally actor (liker)
     await awardSocialEarning({
-      recipientUserId: post.userId,
+      postOwnerUserId: post.userId,
+      actorUserId: session.user.id,
       action: "LIKE_RECEIVED",
       postId: id,
-      sourceUserId: session.user.id,
     });
 
     return NextResponse.json({

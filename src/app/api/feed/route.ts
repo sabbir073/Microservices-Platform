@@ -24,19 +24,58 @@ export async function GET(request: NextRequest) {
       where.userId = userId;
     }
 
-    // Get posts
+    // Get posts. Sort priority:
+    //   1. Announcements (admin OFFICIAL posts) — top of feed
+    //   2. User-paid Boost (isPinned)
+    //   3. Recency
+    // Promoted posts are NOT pulled in here; they're merged in below so we
+    // can interleave them every ~4 organic posts and respect promotedUntil.
     const [posts, total] = await Promise.all([
       prisma.post.findMany({
-        where,
-        orderBy: [{ isPinned: "desc" }, { createdAt: "desc" }],
+        where: { ...where, isAnnouncement: false, isPromoted: false },
+        orderBy: [
+          { isPinned: "desc" },
+          { createdAt: "desc" },
+        ],
         skip,
         take: limit,
       }),
       prisma.post.count({ where }),
     ]);
 
+    // Announcements + active promoted posts — only on page 1, prepended
+    // and interleaved respectively. On page 2+ the user has already seen
+    // them so we skip to keep the feed feeling fresh.
+    const now = new Date();
+    type FeedPost = (typeof posts)[number];
+    let announcements: FeedPost[] = [];
+    let promoted: FeedPost[] = [];
+    if (page === 1 && !userId) {
+      [announcements, promoted] = await Promise.all([
+        prisma.post.findMany({
+          where: { ...where, isAnnouncement: true },
+          orderBy: [{ createdAt: "desc" }],
+          take: 5,
+        }),
+        prisma.post.findMany({
+          where: {
+            ...where,
+            isPromoted: true,
+            OR: [{ promotedUntil: null }, { promotedUntil: { gt: now } }],
+          },
+          orderBy: [{ createdAt: "desc" }],
+          take: 5,
+        }),
+      ]);
+    }
+
+    // Combine for downstream lookups (users, likes, votes). We include
+    // announcements + promoted in the union so badges/likes/votes resolve
+    // for them too.
+    const allPosts = [...announcements, ...posts, ...promoted];
+
     // Get post users
-    const userIds = [...new Set(posts.map((p) => p.userId))];
+    const userIds = [...new Set(allPosts.map((p) => p.userId))];
     const users = await prisma.user.findMany({
       where: { id: { in: userIds } },
       select: {
@@ -45,8 +84,9 @@ export async function GET(request: NextRequest) {
         username: true,
         avatar: true,
         level: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
         isBlueVerified: true,
+        role: true,
       },
     });
     const userMap = new Map(users.map((u) => [u.id, u]));
@@ -58,7 +98,7 @@ export async function GET(request: NextRequest) {
       const likes = await prisma.like.findMany({
         where: {
           userId: session.user.id,
-          postId: { in: posts.map((p) => p.id) },
+          postId: { in: allPosts.map((p) => p.id) },
         },
         select: { postId: true },
       });
@@ -83,19 +123,24 @@ export async function GET(request: NextRequest) {
       const votes = await prisma.vote.findMany({
         where: {
           userId: session.user.id,
-          postId: { in: posts.map((p) => p.id) },
+          postId: { in: allPosts.map((p) => p.id) },
         },
         select: { postId: true, optionId: true },
       });
       userVoteMap = new Map(votes.map((v) => [v.postId, v.optionId]));
     }
 
-    const formattedPosts = posts.map((post) => ({
+    type FormattablePost = (typeof allPosts)[number];
+    const formatPost = (post: FormattablePost) => ({
       id: post.id,
       content: post.content,
       images: post.images,
       isPublic: post.isPublic,
       isPinned: post.isPinned,
+      isAnnouncement: post.isAnnouncement,
+      isPromoted: post.isPromoted,
+      promotedUntil: post.promotedUntil,
+      promotedNote: post.promotedNote,
       likesCount: post.likesCount,
       commentsCount: post.commentsCount,
       sharesCount: post.sharesCount,
@@ -111,7 +156,29 @@ export async function GET(request: NextRequest) {
       isLiked: userLikes.has(post.id),
       isOwner: session?.user?.id === post.userId,
       isFollowingAuthor: followingSet.has(post.userId),
-    }));
+    });
+
+    // Interleave: announcements at top → organic posts with one promoted
+    // injected every ~4 entries.
+    const organic = posts.map(formatPost);
+    const promotedFormatted = promoted.map(formatPost);
+    const interleaved: ReturnType<typeof formatPost>[] = [];
+    let promoIdx = 0;
+    organic.forEach((p, i) => {
+      interleaved.push(p);
+      if (promoIdx < promotedFormatted.length && (i + 1) % 4 === 0) {
+        interleaved.push(promotedFormatted[promoIdx++]);
+      }
+    });
+    // Any leftover promoted posts go at the end of the page.
+    while (promoIdx < promotedFormatted.length) {
+      interleaved.push(promotedFormatted[promoIdx++]);
+    }
+
+    const formattedPosts = [
+      ...announcements.map(formatPost),
+      ...interleaved,
+    ];
 
     return NextResponse.json({
       posts: formattedPosts,
@@ -225,7 +292,8 @@ export async function POST(request: NextRequest) {
 
     // Social earning — author gets daily post-create bonus (capped 1×/day via reference)
     await awardSocialEarning({
-      recipientUserId: session.user.id,
+      postOwnerUserId: session.user.id,
+      actorUserId: session.user.id,
       action: "POST_CREATE",
       postId: post.id,
     });
@@ -249,10 +317,10 @@ export async function POST(request: NextRequest) {
         );
         for (const m of filtered) {
           await awardSocialEarning({
-            recipientUserId: m.id,
+            postOwnerUserId: m.id,
+            actorUserId: session.user!.id,
             action: "MENTION_RECEIVED",
             postId: post.id,
-            sourceUserId: session.user!.id,
           });
         }
       }
@@ -267,7 +335,7 @@ export async function POST(request: NextRequest) {
         username: true,
         avatar: true,
         level: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
         isBlueVerified: true,
       },
     });
@@ -278,6 +346,11 @@ export async function POST(request: NextRequest) {
         content: post.content,
         images: post.images,
         isPublic: post.isPublic,
+        isPinned: post.isPinned,
+        isAnnouncement: post.isAnnouncement,
+        isPromoted: post.isPromoted,
+        promotedUntil: post.promotedUntil,
+        promotedNote: post.promotedNote,
         likesCount: 0,
         commentsCount: 0,
         sharesCount: 0,

@@ -16,6 +16,9 @@ import {
   ListChecks,
   Power,
   ShieldAlert,
+  Target,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -30,16 +33,25 @@ type ActivityKey =
   | "donation_received"
   | "mention_received";
 
-interface ActivityRow {
+interface SideRow {
   enabled: boolean;
   points: number;
+  xp: number;
+}
+
+interface ActivityRow {
+  recipient: SideRow;
+  actor: SideRow;
 }
 
 interface FormState {
   enabled: boolean;
   daily_cap_per_user: number;
+  daily_xp_cap_per_user: number;
   cap_per_post: number;
   min_account_age_hours: number;
+  count_toward_daily_missions: boolean;
+  mission_distinct_post: boolean;
   activities: Record<ActivityKey, ActivityRow>;
 }
 
@@ -50,55 +62,55 @@ interface Props {
 
 const ACTIVITY_META: Record<
   ActivityKey,
-  { label: string; icon: typeof Sparkles; example: string; preview: (pts: number) => string }
+  { label: string; icon: typeof Sparkles; example: string; actorLabel: string }
 > = {
   post_create: {
     label: "Post created",
     icon: Edit3,
     example: "When the user publishes a post (max 1×/day)",
-    preview: (p) => `${p} pts per day if user posts`,
+    actorLabel: "Self-action: actor & recipient are the same — only recipient pays out",
   },
   view_received: {
     label: "View received",
     icon: Eye,
-    example: "When another user views the author's post (unique per viewer)",
-    preview: (p) => `1,000 unique views = ${p * 1000} pts`,
+    example: "When another user views the author's post",
+    actorLabel: "Reward viewer (passive — keep off unless you want to pay scrolling)",
   },
   like_received: {
     label: "Like received",
     icon: Heart,
     example: "Each like on the author's post",
-    preview: (p) => `100 likes = ${p * 100} pts`,
+    actorLabel: "Reward the user who clicks Like",
   },
   vote_received: {
     label: "Vote received",
     icon: ListChecks,
     example: "Each vote on the author's poll (first time per voter)",
-    preview: (p) => `100 votes = ${p * 100} pts`,
+    actorLabel: "Reward the user who casts a vote",
   },
   comment_received: {
     label: "Comment received",
     icon: MessageCircle,
     example: "Each comment on the author's post",
-    preview: (p) => `50 comments = ${p * 50} pts`,
+    actorLabel: "Reward the user who posts a comment",
   },
   share_received: {
     label: "Share received",
     icon: Share2,
-    example: "Each share of the author's post (when share-tracking ships)",
-    preview: (p) => `20 shares = ${p * 20} pts`,
+    example: "Each share of the author's post",
+    actorLabel: "Reward the user who shares the post",
   },
   donation_received: {
     label: "Donation received",
     icon: HandCoins,
     example: "Bonus on top of donated points (donor pts already transfer)",
-    preview: (p) => `10 donations = ${p * 10} bonus pts`,
+    actorLabel: "Bonus reward for the donor on top of the donation",
   },
   mention_received: {
     label: "Mention received",
     icon: AtSign,
     example: "Each time someone @mentions this user",
-    preview: (p) => `20 mentions = ${p * 20} pts`,
+    actorLabel: "Reward the user who writes the @mention",
   },
 };
 
@@ -106,11 +118,38 @@ export function SocialEarningForm({ initial, canEdit }: Props) {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(initial);
   const [busy, setBusy] = useState(false);
+  const [openActor, setOpenActor] = useState<Record<ActivityKey, boolean>>(
+    () =>
+      Object.fromEntries(
+        (Object.keys(ACTIVITY_META) as ActivityKey[]).map((k) => [
+          k,
+          initial.activities[k]?.actor.enabled ?? false,
+        ])
+      ) as Record<ActivityKey, boolean>
+  );
 
-  const setActivity = (k: ActivityKey, patch: Partial<ActivityRow>) =>
+  const setRecipient = (k: ActivityKey, patch: Partial<SideRow>) =>
     setForm((p) => ({
       ...p,
-      activities: { ...p.activities, [k]: { ...p.activities[k], ...patch } },
+      activities: {
+        ...p.activities,
+        [k]: {
+          ...p.activities[k],
+          recipient: { ...p.activities[k].recipient, ...patch },
+        },
+      },
+    }));
+
+  const setActor = (k: ActivityKey, patch: Partial<SideRow>) =>
+    setForm((p) => ({
+      ...p,
+      activities: {
+        ...p.activities,
+        [k]: {
+          ...p.activities[k],
+          actor: { ...p.activities[k].actor, ...patch },
+        },
+      },
     }));
 
   const save = async () => {
@@ -135,15 +174,18 @@ export function SocialEarningForm({ initial, canEdit }: Props) {
   };
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
           <Sparkles className="w-6 h-6 text-amber-400" />
           Social Earning
         </h1>
         <p className="text-slate-400 text-sm mt-1">
-          Configure how authors earn points from views, likes, comments, etc. on
-          their posts. Caps prevent runaway earning from viral content.
+          Configure points and XP awarded for social engagement. Each action has
+          two payout sides: the <strong>recipient</strong> (post author) and the{" "}
+          <strong>actor</strong> (the user who performed the action). Actor side
+          ships disabled — turn it on per-action when you want to reward
+          engagement on top of receiving it.
         </p>
       </div>
 
@@ -175,8 +217,8 @@ export function SocialEarningForm({ initial, canEdit }: Props) {
               </span>
             </p>
             <p className="text-xs text-slate-400">
-              Off = no points fire from any social activity, regardless of the
-              per-activity rates below.
+              Off = no points or XP fire from any social activity, regardless
+              of the per-activity rates below.
             </p>
           </div>
           <input
@@ -195,62 +237,86 @@ export function SocialEarningForm({ initial, canEdit }: Props) {
           Per-activity rates
         </h2>
         <p className="text-xs text-slate-400 mb-4">
-          Each activity has its own toggle. Disabled activities never award
-          points even if the master switch is on.
+          Each activity has separate rates for the recipient and the actor.
+          Click "Actor reward" to expand the actor controls per row.
         </p>
         <div className="space-y-2">
           {(Object.keys(ACTIVITY_META) as ActivityKey[]).map((k) => {
             const meta = ACTIVITY_META[k];
             const row = form.activities[k];
             const Icon = meta.icon;
+            const actorOpen = openActor[k];
+            const isPostCreate = k === "post_create";
             return (
               <div
                 key={k}
                 className={cn(
-                  "rounded-lg border p-3 flex items-center gap-3 transition-colors",
-                  row.enabled
+                  "rounded-lg border p-3 transition-colors",
+                  row.recipient.enabled || row.actor.enabled
                     ? "border-slate-700 bg-slate-950"
-                    : "border-slate-800 bg-slate-900/30 opacity-60"
+                    : "border-slate-800 bg-slate-900/30 opacity-70"
                 )}
               >
-                <input
-                  type="checkbox"
-                  checked={row.enabled}
-                  onChange={(e) => setActivity(k, { enabled: e.target.checked })}
-                  disabled={!canEdit}
-                  className="rounded bg-slate-800 border-slate-600 text-blue-500"
-                  aria-label={`Toggle ${meta.label}`}
-                />
-                <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
-                  <Icon className="w-4 h-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-white">{meta.label}</p>
-                  <p className="text-[11px] text-slate-500">{meta.example}</p>
-                </div>
-                <div className="shrink-0">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min={0}
-                      step={1}
-                      value={row.points}
-                      onChange={(e) =>
-                        setActivity(k, {
-                          points: Math.max(0, parseFloat(e.target.value) || 0),
-                        })
-                      }
-                      disabled={!canEdit || !row.enabled}
-                      className="w-20 px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white tabular-nums focus:outline-none focus:border-blue-500 disabled:opacity-60"
-                    />
-                    <span className="text-xs text-slate-500">pts</span>
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-500/10 text-blue-400 shrink-0">
+                    <Icon className="w-4 h-4" />
                   </div>
-                  {row.enabled && row.points > 0 && (
-                    <p className="text-[10px] text-emerald-400 mt-1 text-right">
-                      {meta.preview(row.points)}
-                    </p>
-                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-white">{meta.label}</p>
+                    <p className="text-[11px] text-slate-500">{meta.example}</p>
+                  </div>
                 </div>
+
+                {/* Recipient controls */}
+                <SideControls
+                  side="recipient"
+                  row={row.recipient}
+                  canEdit={canEdit}
+                  onChange={(patch) => setRecipient(k, patch)}
+                />
+
+                {/* Actor controls — collapsible (hidden entirely for POST_CREATE since actor === recipient) */}
+                {!isPostCreate && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setOpenActor((p) => ({ ...p, [k]: !p[k] }))
+                      }
+                      className="mt-2 inline-flex items-center gap-1 text-[11px] text-slate-400 hover:text-white"
+                    >
+                      {actorOpen ? (
+                        <ChevronUp className="w-3 h-3" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3" />
+                      )}
+                      Actor reward
+                      {row.actor.enabled && (
+                        <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[10px] font-bold">
+                          ON
+                        </span>
+                      )}
+                    </button>
+                    {actorOpen && (
+                      <div className="mt-2 ml-7 pl-3 border-l-2 border-slate-800">
+                        <p className="text-[11px] text-slate-500 mb-1">
+                          {meta.actorLabel}
+                        </p>
+                        <SideControls
+                          side="actor"
+                          row={row.actor}
+                          canEdit={canEdit}
+                          onChange={(patch) => setActor(k, patch)}
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
+                {isPostCreate && (
+                  <p className="mt-2 ml-11 text-[11px] text-slate-500 italic">
+                    {meta.actorLabel}
+                  </p>
+                )}
               </div>
             );
           })}
@@ -265,10 +331,10 @@ export function SocialEarningForm({ initial, canEdit }: Props) {
         </h2>
         <p className="text-xs text-amber-200/80 mb-4">
           Hard limits to prevent gaming the system or runaway points from
-          viral content.
+          viral content. Caps apply per user per UTC day.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Field label="Daily cap per user (pts)" hint="Max social earnings/day per user">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+          <Field label="Daily points cap (per user)" hint="Max social pts/day">
             <input
               type="number"
               min={0}
@@ -283,7 +349,22 @@ export function SocialEarningForm({ initial, canEdit }: Props) {
               className={inp}
             />
           </Field>
-          <Field label="Max earnings per post (pts)" hint="Cap per single post (any source)">
+          <Field label="Daily XP cap (per user)" hint="Max social XP/day">
+            <input
+              type="number"
+              min={0}
+              value={form.daily_xp_cap_per_user}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  daily_xp_cap_per_user: Math.max(0, parseInt(e.target.value) || 0),
+                })
+              }
+              disabled={!canEdit}
+              className={inp}
+            />
+          </Field>
+          <Field label="Max points per post" hint="Cap recipient earnings on a single post">
             <input
               type="number"
               min={0}
@@ -319,6 +400,64 @@ export function SocialEarningForm({ initial, canEdit }: Props) {
         </div>
       </div>
 
+      {/* Daily mission integration */}
+      <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-5">
+        <h2 className="text-base font-bold text-white mb-1 inline-flex items-center gap-2">
+          <Target className="w-4 h-4 text-indigo-400" />
+          Daily mission integration
+        </h2>
+        <p className="text-xs text-indigo-200/80 mb-4">
+          Let social actions count toward daily missions. Mission templates
+          can use task types <code className="px-1 py-0.5 rounded bg-slate-800 text-slate-200">SOCIAL_LIKE</code>,{" "}
+          <code className="px-1 py-0.5 rounded bg-slate-800 text-slate-200">SOCIAL_COMMENT</code>,{" "}
+          <code className="px-1 py-0.5 rounded bg-slate-800 text-slate-200">SOCIAL_SHARE</code>,{" "}
+          <code className="px-1 py-0.5 rounded bg-slate-800 text-slate-200">SOCIAL_POST</code>,{" "}
+          <code className="px-1 py-0.5 rounded bg-slate-800 text-slate-200">SOCIAL_VOTE</code>.
+        </p>
+        <div className="space-y-2">
+          <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg bg-slate-950 border border-slate-800">
+            <input
+              type="checkbox"
+              checked={form.count_toward_daily_missions}
+              onChange={(e) =>
+                setForm({ ...form, count_toward_daily_missions: e.target.checked })
+              }
+              disabled={!canEdit}
+              className="rounded bg-slate-800 border-slate-600 text-indigo-500"
+            />
+            <div className="flex-1">
+              <p className="text-sm font-bold text-white">
+                Count social actions toward missions
+              </p>
+              <p className="text-[11px] text-slate-500">
+                When enabled, each like/comment/share/post the user makes is
+                logged for the day's mission progress.
+              </p>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg bg-slate-950 border border-slate-800">
+            <input
+              type="checkbox"
+              checked={form.mission_distinct_post}
+              onChange={(e) =>
+                setForm({ ...form, mission_distinct_post: e.target.checked })
+              }
+              disabled={!canEdit || !form.count_toward_daily_missions}
+              className="rounded bg-slate-800 border-slate-600 text-indigo-500"
+            />
+            <div className="flex-1">
+              <p className="text-sm font-bold text-white">
+                Count distinct posts only (anti-spam)
+              </p>
+              <p className="text-[11px] text-slate-500">
+                e.g. 5 likes on 5 different posts count as 5; 5 likes on the
+                same post count as 1. Recommended on.
+              </p>
+            </div>
+          </label>
+        </div>
+      </div>
+
       {canEdit && (
         <div className="flex justify-end">
           <button
@@ -335,6 +474,63 @@ export function SocialEarningForm({ initial, canEdit }: Props) {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+function SideControls({
+  side,
+  row,
+  canEdit,
+  onChange,
+}: {
+  side: "recipient" | "actor";
+  row: SideRow;
+  canEdit: boolean;
+  onChange: (patch: Partial<SideRow>) => void;
+}) {
+  return (
+    <div className="mt-2 ml-11 grid grid-cols-1 sm:grid-cols-3 gap-2">
+      <label className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+        <input
+          type="checkbox"
+          checked={row.enabled}
+          onChange={(e) => onChange({ enabled: e.target.checked })}
+          disabled={!canEdit}
+          className="rounded bg-slate-800 border-slate-600 text-blue-500"
+        />
+        <span className="text-[11px] text-slate-300 capitalize">
+          {side} enabled
+        </span>
+      </label>
+      <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+        <span className="text-[11px] text-slate-400 w-16 shrink-0">Points</span>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={row.points}
+          onChange={(e) =>
+            onChange({ points: Math.max(0, parseFloat(e.target.value) || 0) })
+          }
+          disabled={!canEdit || !row.enabled}
+          className="flex-1 px-2 py-0.5 bg-slate-950 border border-slate-700 rounded text-sm text-white tabular-nums focus:outline-none focus:border-blue-500 disabled:opacity-60"
+        />
+      </div>
+      <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+        <span className="text-[11px] text-slate-400 w-16 shrink-0">XP</span>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={row.xp}
+          onChange={(e) =>
+            onChange({ xp: Math.max(0, parseFloat(e.target.value) || 0) })
+          }
+          disabled={!canEdit || !row.enabled}
+          className="flex-1 px-2 py-0.5 bg-slate-950 border border-slate-700 rounded text-sm text-white tabular-nums focus:outline-none focus:border-blue-500 disabled:opacity-60"
+        />
+      </div>
     </div>
   );
 }

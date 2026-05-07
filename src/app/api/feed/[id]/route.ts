@@ -33,7 +33,7 @@ export async function GET(
         name: true,
         avatar: true,
         level: true,
-        packageTier: true,
+        package: { select: { slug: true, name: true } },
       },
     });
 

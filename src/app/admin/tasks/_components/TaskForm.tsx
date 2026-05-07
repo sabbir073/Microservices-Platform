@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Save, X, Plus, Trash2, AlertCircle, Loader2, Image as ImageIcon } from "lucide-react";
 import { MediaSelector } from "@/components/media/MediaSelector";
@@ -8,9 +8,15 @@ import type { MediaItem } from "@/types/media";
 import { SocialTaskBuilder } from "./SocialTaskBuilder";
 import { ArticleTaskBuilder } from "./ArticleTaskBuilder";
 import { VideoTaskBuilder } from "./VideoTaskBuilder";
+import { SurveyTaskBuilder } from "./SurveyTaskBuilder";
 import { emptySocialConfig, type SocialConfig } from "@/lib/social-tasks";
 import { emptyArticleConfig, validateArticleConfig, type ArticleConfig } from "@/lib/article-tasks";
 import { emptyVideoConfig, validateVideoConfig, type VideoConfig } from "@/lib/video-tasks";
+import {
+  emptySurveyConfig,
+  validateSurveyConfig,
+  type SurveyConfig,
+} from "@/lib/survey-tasks";
 
 // Task types with icons and colors
 const taskTypes = [
@@ -22,14 +28,6 @@ const taskTypes = [
   { id: "PROXY", label: "Proxy", icon: Globe, color: "cyan", description: "Geo-targeted browsing" },
   { id: "OFFERWALL", label: "Offerwall", icon: Gift, color: "emerald", description: "Complete offers" },
   { id: "CUSTOM", label: "Custom", icon: Sparkles, color: "indigo", description: "Custom task type" },
-];
-
-const packageTiers = [
-  { id: "FREE", label: "Free" },
-  { id: "STARTER", label: "Starter" },
-  { id: "PRO", label: "Pro" },
-  { id: "ELITE", label: "Elite" },
-  { id: "VIP", label: "VIP" },
 ];
 
 // Note: social platform / action lists now live in src/lib/social-tasks.ts
@@ -66,7 +64,7 @@ interface TaskFormProps {
     dailyLimit: number | null;
     totalLimit: number | null;
     minLevel: number;
-    requiredPackage: string;
+    requiredAccessLevel: number;
     countries: string[];
     contentUrl: string | null;
     thumbnailUrl: string | null;
@@ -78,11 +76,13 @@ interface TaskFormProps {
     socialConfig?: SocialConfig | null;
     articleConfig?: ArticleConfig | null;
     videoConfig?: VideoConfig | null;
+    surveyConfig?: SurveyConfig | null;
     proxyInstructions: string | null;
     startsAt: Date | null;
     expiresAt: Date | null;
     cooldownMinutes: number;
     autoApprove: boolean;
+    boardId?: string | null;
   };
 }
 
@@ -96,7 +96,13 @@ interface QuizQuestion {
 
 export function TaskForm({ task }: TaskFormProps) {
   const router = useRouter();
-  const isEditing = !!task;
+  // After the in-place save creates a brand-new task, we hold its id
+  // here so subsequent saves PATCH the right row instead of POSTing
+  // duplicates. Also surfaces the id to child components (the article
+  // wizard) so they can save sectional changes immediately.
+  const [createdTaskId, setCreatedTaskId] = useState<string | null>(null);
+  const effectiveTaskId = task?.id ?? createdTaskId;
+  const isEditing = !!effectiveTaskId;
 
   // Form state
   const [formData, setFormData] = useState({
@@ -110,7 +116,7 @@ export function TaskForm({ task }: TaskFormProps) {
     dailyLimit: task?.dailyLimit || "",
     totalLimit: task?.totalLimit || "",
     minLevel: task?.minLevel || 1,
-    requiredPackage: task?.requiredPackage || "FREE",
+    requiredAccessLevel: task?.requiredAccessLevel ?? 0,
     countries: task?.countries || [],
     contentUrl: task?.contentUrl || "",
     thumbnailUrl: task?.thumbnailUrl || "",
@@ -123,7 +129,33 @@ export function TaskForm({ task }: TaskFormProps) {
     expiresAt: task?.expiresAt ? new Date(task.expiresAt).toISOString().slice(0, 16) : "",
     cooldownMinutes: task?.cooldownMinutes || 0,
     autoApprove: task?.autoApprove || false,
+    boardId: task?.boardId || "",
   });
+
+  // Task Boards available to assign — loaded once on mount
+  const [boards, setBoards] = useState<
+    Array<{ id: string; title: string; isActive: boolean; pointsReward: number; xpReward: number }>
+  >([]);
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/admin/boards")
+      .then((r) => (r.ok ? r.json() : { boards: [] }))
+      .then((d) => {
+        if (cancel) return;
+        const list: Array<{
+          id: string;
+          title: string;
+          isActive: boolean;
+          pointsReward: number;
+          xpReward: number;
+        }> = d.boards ?? [];
+        setBoards(list.filter((b) => b.isActive));
+      })
+      .catch(() => {});
+    return () => {
+      cancel = true;
+    };
+  }, []);
 
   // Instructions steps
   const [instructionSteps, setInstructionSteps] = useState<string[]>(
@@ -152,6 +184,11 @@ export function TaskForm({ task }: TaskFormProps) {
     task?.videoConfig ?? emptyVideoConfig()
   );
 
+  // Survey task config
+  const [surveyConfig, setSurveyConfig] = useState<SurveyConfig>(
+    task?.surveyConfig ?? emptySurveyConfig()
+  );
+
   // Media selector state
   const [mediaSelectorOpen, setMediaSelectorOpen] = useState(false);
   const [mediaSelectorTarget, setMediaSelectorTarget] = useState<"thumbnail" | { type: "quiz"; index: number } | null>(null);
@@ -159,7 +196,35 @@ export function TaskForm({ task }: TaskFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  /**
+   * Save the task without redirecting away from the form. Used by the
+   * article-task wizard's Step 1 "Save Pages & Continue" / "Save as Draft"
+   * buttons so the user doesn't have to click the outer "Create Task"
+   * button first. Pass `isDraft: true` to create the task as PAUSED.
+   * Returns the saved task's id (existing or newly-created), or null on
+   * error. runSubmit already manages loading/error state.
+   */
+  const saveTaskInPlace = async (
+    opts?: { isDraft?: boolean }
+  ): Promise<string | null> => {
+    const fakeEvent = {
+      preventDefault: () => {},
+    } as unknown as React.FormEvent;
+    const result = await runSubmit(fakeEvent, opts?.isDraft ?? false, {
+      redirect: false,
+    });
+    return result.taskId;
+  };
+
   const handleSubmit = async (e: React.FormEvent, isDraft = false) => {
+    await runSubmit(e, isDraft, { redirect: true });
+  };
+
+  const runSubmit = async (
+    e: React.FormEvent,
+    isDraft: boolean,
+    opts: { redirect: boolean }
+  ): Promise<{ taskId: string | null }> => {
     e.preventDefault();
     setLoading(true);
     setError("");
@@ -192,12 +257,25 @@ export function TaskForm({ task }: TaskFormProps) {
       if (formData.type === "ARTICLE") {
         const v = validateArticleConfig(articleConfig);
         if (!v.ok) throw new Error(v.error ?? "Invalid article config");
-        // Strip blank links and back-fill contentUrl with first link
-        articleConfigOut = {
-          ...articleConfig,
-          links: articleConfig.links.filter((l) => l.url.trim()),
-        };
-        contentUrlOut = articleConfigOut.links[0]?.url ?? "";
+        if (articleConfig.useKeyPool) {
+          // Pool mode: strip blank pages, back-fill contentUrl with first page url
+          const cleanedPages = (articleConfig.pages ?? []).filter((p) =>
+            p.url.trim()
+          );
+          articleConfigOut = {
+            ...articleConfig,
+            pages: cleanedPages,
+            links: cleanedPages.map((p) => ({ url: p.url, label: p.label })),
+          };
+          contentUrlOut = cleanedPages[0]?.url ?? "";
+        } else {
+          // Legacy mode: strip blank links and back-fill contentUrl with first link
+          articleConfigOut = {
+            ...articleConfig,
+            links: articleConfig.links.filter((l) => l.url.trim()),
+          };
+          contentUrlOut = articleConfigOut.links[0]?.url ?? "";
+        }
       }
 
       // For VIDEO tasks, validate and prep config
@@ -211,6 +289,14 @@ export function TaskForm({ task }: TaskFormProps) {
         durationOut = videoConfig.watchSeconds;
       }
 
+      // For SURVEY tasks, validate and prep config
+      let surveyConfigOut: SurveyConfig | null = null;
+      if (formData.type === "SURVEY") {
+        const v = validateSurveyConfig(surveyConfig);
+        if (!v.ok) throw new Error(v.error ?? "Invalid survey config");
+        surveyConfigOut = surveyConfig;
+      }
+
       // Prepare the data
       const submitData = {
         ...formData,
@@ -220,6 +306,7 @@ export function TaskForm({ task }: TaskFormProps) {
         socialConfig: socialConfigOut,
         articleConfig: articleConfigOut,
         videoConfig: videoConfigOut,
+        surveyConfig: surveyConfigOut,
         contentUrl: contentUrlOut,
         duration: durationOut
           ? parseInt(durationOut.toString())
@@ -231,10 +318,13 @@ export function TaskForm({ task }: TaskFormProps) {
         expiresAt: formData.expiresAt ? new Date(formData.expiresAt).toISOString() : null,
         status: isDraft ? "PAUSED" : "ACTIVE",
         questions: formData.type === "QUIZ" ? questions : null,
+        boardId: formData.boardId || null,
       };
 
-      const url = isEditing ? `/api/admin/tasks/${task.id}` : "/api/admin/tasks";
-      const method = isEditing ? "PUT" : "POST";
+      const url = effectiveTaskId
+        ? `/api/admin/tasks/${effectiveTaskId}`
+        : "/api/admin/tasks";
+      const method = effectiveTaskId ? "PUT" : "POST";
 
       const response = await fetch(url, {
         method,
@@ -247,10 +337,31 @@ export function TaskForm({ task }: TaskFormProps) {
         throw new Error(data.error || "Failed to save task");
       }
 
-      router.push("/admin/tasks");
-      router.refresh();
+      // Parse the response to extract the saved task id (used by the
+      // wizard's in-place save path).
+      let savedTaskId: string | null = effectiveTaskId ?? null;
+      try {
+        const data = await response.json();
+        if (data && data.task && typeof data.task.id === "string") {
+          savedTaskId = data.task.id;
+        }
+      } catch {
+        // ignore — we only care about the redirect path below
+      }
+      // Persist the new id locally so subsequent saves PATCH instead of
+      // POSTing again, and so child components see the live id.
+      if (savedTaskId && savedTaskId !== effectiveTaskId) {
+        setCreatedTaskId(savedTaskId);
+      }
+
+      if (opts.redirect) {
+        router.push("/admin/tasks");
+        router.refresh();
+      }
+      return { taskId: savedTaskId };
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
+      return { taskId: null };
     } finally {
       setLoading(false);
     }
@@ -392,6 +503,41 @@ export function TaskForm({ task }: TaskFormProps) {
         </button>
       </div>
 
+      {/* Assign to Task Board */}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              Assign to Task Board
+            </h2>
+            <p className="text-sm text-gray-400 mt-0.5">
+              Optional — task becomes part of a board&apos;s reward bundle.
+            </p>
+          </div>
+        </div>
+        <select
+          value={formData.boardId ?? ""}
+          onChange={(e) =>
+            setFormData({ ...formData, boardId: e.target.value })
+          }
+          className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-indigo-500"
+        >
+          <option value="">— Standalone task (default)</option>
+          {boards.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.title}
+            </option>
+          ))}
+        </select>
+        {formData.boardId && (
+          <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3 text-xs text-amber-300">
+            ⚠ This task will <strong>not grant individual points or XP</strong>{" "}
+            on completion. The reward is bundled into the Task Board and paid
+            out when the user claims the entire board.
+          </div>
+        )}
+      </div>
+
       {/* Basic Info */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
         <h2 className="text-lg font-semibold text-white">Basic Information</h2>
@@ -486,6 +632,8 @@ export function TaskForm({ task }: TaskFormProps) {
           <ArticleTaskBuilder
             value={articleConfig}
             onChange={setArticleConfig}
+            taskId={effectiveTaskId ?? undefined}
+            onSaveTask={saveTaskInPlace}
           />
         </div>
       )}
@@ -520,6 +668,21 @@ export function TaskForm({ task }: TaskFormProps) {
             </p>
           </div>
           <SocialTaskBuilder value={socialConfig} onChange={setSocialConfig} />
+        </div>
+      )}
+
+      {/* Survey Settings — dynamic question builder */}
+      {formData.type === "SURVEY" && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-white">Survey Settings</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Build a list of questions. Each user can submit answers once;
+              every submission goes to PENDING for admin review. Question ids
+              stay stable so renaming a prompt is safe for analytics.
+            </p>
+          </div>
+          <SurveyTaskBuilder value={surveyConfig} onChange={setSurveyConfig} />
         </div>
       )}
 
@@ -779,19 +942,24 @@ export function TaskForm({ task }: TaskFormProps) {
 
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-2">
-              Required Package
+              Required Access Level
             </label>
-            <select
-              value={formData.requiredPackage}
-              onChange={(e) => setFormData({ ...formData, requiredPackage: e.target.value })}
+            <input
+              type="number"
+              min={0}
+              max={1000}
+              value={formData.requiredAccessLevel}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  requiredAccessLevel: parseInt(e.target.value) || 0,
+                })
+              }
               className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
-            >
-              {packageTiers.map((tier) => (
-                <option key={tier.id} value={tier.id}>
-                  {tier.label}
-                </option>
-              ))}
-            </select>
+            />
+            <p className="text-[11px] text-gray-500 mt-1">
+              Only users on a plan with <code>accessLevel ≥ {formData.requiredAccessLevel}</code> can see / start this task. Default plan is usually 0.
+            </p>
           </div>
 
           <div>
@@ -816,8 +984,8 @@ export function TaskForm({ task }: TaskFormProps) {
             👁 Who will see this task
           </p>
           <p>
-            Users at <strong>level {formData.minLevel}+</strong> on the{" "}
-            <strong>{formData.requiredPackage}</strong> tier or higher
+            Users at <strong>level {formData.minLevel}+</strong> on a plan with{" "}
+            <strong>access level ≥ {formData.requiredAccessLevel}</strong>
             {formData.countries.length > 0
               ? <> from <strong>{formData.countries.join(", ")}</strong></>
               : <> from <strong>any country</strong></>}

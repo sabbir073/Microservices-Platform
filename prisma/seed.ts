@@ -215,82 +215,32 @@ async function main() {
   });
   console.log(`Created ${tasks.count} sample tasks`);
 
-  // Create packages
-  const packages = await prisma.package.createMany({
-    skipDuplicates: true,
-    data: [
-      {
-        tier: "FREE",
-        name: "Free",
-        description: "Get started with basic features",
-        priceMonthly: 0,
-        priceYearly: 0,
-        dailyTaskLimit: 10,
-        withdrawalFee: 5,
-        minWithdrawal: 500,
-        features: ["10 tasks per day", "Standard withdrawals", "Basic support"],
-        xpMultiplier: 1,
-        order: 0,
-      },
-      {
-        tier: "STARTER",
-        name: "Starter",
-        description: "Entry package — more tasks, better rewards",
-        priceMonthly: 4.99,
-        priceYearly: 49.99,
-        dailyTaskLimit: 15,
-        withdrawalFee: 3,
-        minWithdrawal: 300,
-        features: ["15 tasks per day", "Lower withdrawal fees", "Email support", "1.1x earning bonus"],
-        referralBonus: 5,
-        xpMultiplier: 1.1,
-        order: 1,
-      },
-      {
-        tier: "PRO",
-        name: "Pro",
-        description: "For serious earners — advanced features, higher limits",
-        priceMonthly: 9.99,
-        priceYearly: 99.99,
-        dailyTaskLimit: 25,
-        withdrawalFee: 2,
-        minWithdrawal: 200,
-        features: ["25 tasks per day", "Reduced fees", "Priority support", "1.25x earning bonus", "Exclusive tasks"],
-        referralBonus: 10,
-        xpMultiplier: 1.25,
-        order: 2,
-      },
-      {
-        tier: "ELITE",
-        name: "Elite",
-        description: "Premium benefits — priority support, big limits",
-        priceMonthly: 19.99,
-        priceYearly: 199.99,
-        dailyTaskLimit: 50,
-        withdrawalFee: 1,
-        minWithdrawal: 100,
-        features: ["50 tasks per day", "Lower fees", "Priority 24/7 support", "1.5x earning bonus", "All exclusive tasks", "Faster payouts"],
-        referralBonus: 15,
-        xpMultiplier: 1.5,
-        order: 3,
-      },
-      {
-        tier: "VIP",
-        name: "VIP",
-        description: "Maximum rewards — unlimited access, dedicated manager",
-        priceMonthly: 49.99,
-        priceYearly: 499.99,
-        dailyTaskLimit: 9999,
-        withdrawalFee: 0,
-        minWithdrawal: 50,
-        features: ["Unlimited tasks", "Zero withdrawal fees", "Dedicated account manager", "2x earning bonus", "All exclusive tasks", "Instant payouts", "VIP-only events"],
-        referralBonus: 25,
-        xpMultiplier: 2,
-        order: 4,
-      },
-    ],
+  // Seed the default plan only — admin creates the rest from /admin/packages.
+  // Every new user is auto-attached to this row via isDefault=true.
+  await prisma.package.upsert({
+    where: { slug: "default" },
+    update: {},
+    create: {
+      slug: "default",
+      name: "Default",
+      description: "Default plan — every new user starts here. Admin can rename this row or create new plans from /admin/packages.",
+      accessLevel: 0,
+      isDefault: true,
+      priceMonthly: 0,
+      priceYearly: null,
+      dailyTaskLimit: -1,
+      minWithdrawal: 5,
+      withdrawalFeeDiscount: 0,
+      xpMultiplier: 1,
+      taskRewardMultiplier: 1,
+      socialEarningMultiplier: 1,
+      dailyReferralPoints: 5,
+      referralCommissionLevels: 0,
+      features: ["All features enabled", "Customize from /admin/packages"],
+      order: 0,
+    },
   });
-  console.log(`Created ${packages.count} packages`);
+  console.log("Seeded default plan");
 
   // Create referral levels
   const referralLevels = await prisma.referralLevel.createMany({

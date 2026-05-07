@@ -45,6 +45,7 @@ export default async function SocialPage() {
         id: session.user.id,
         name: session.user.name ?? null,
         avatar: session.user.image ?? null,
+        role: session.user.role ?? null,
       }}
       initialBanners={banners}
       initialTicker={tickerPayload?.items ?? []}

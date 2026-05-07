@@ -42,6 +42,11 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  SocialStatsGroup,
+  LifetimeStatsGroup,
+} from "@/components/user/profile/profile-stat-groups";
+import { LocationSelector } from "@/components/shared/location-selector";
 
 interface CompletionItem {
   key: string;
@@ -126,6 +131,15 @@ interface ProfileResponse {
     postsCount: number;
     followersCount: number;
     followingCount: number;
+    lifetime: {
+      totalEarnedPoints: number | null;
+      totalEarnedUsd: number | null;
+      tasksCompleted: number;
+      rank: number;
+      totalXp: number;
+      level: number;
+      team: number;
+    };
   };
   package: {
     tier: string;
@@ -466,12 +480,14 @@ export function ProfileView() {
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <StatTile icon={<Edit3 className="w-4 h-4" />} label="Posts" value={stats.postsCount.toLocaleString()} tone="indigo" />
-        <StatTile icon={<Users className="w-4 h-4" />} label="Followers" value={stats.followersCount.toLocaleString()} tone="purple" />
-        <StatTile icon={<Plus className="w-4 h-4" />} label="Following" value={stats.followingCount.toLocaleString()} tone="emerald" />
-        <StatTile icon={<Trophy className="w-4 h-4" />} label="Level" value={`Lv ${stats.level}`} tone="amber" />
+      {/* Profile (Posts/Followers/Following) + Lifetime Stats */}
+      <div className="space-y-4">
+        <SocialStatsGroup
+          posts={stats.postsCount}
+          followers={stats.followersCount}
+          following={stats.followingCount}
+        />
+        <LifetimeStatsGroup stats={stats.lifetime} />
       </div>
 
       {/* Profile completion ring */}
@@ -871,6 +887,7 @@ function AddressTab({
     city: address.city ?? "",
     subDistrict: address.subDistrict ?? "",
     district: address.district ?? "",
+    subDivision: "",
     division: address.division ?? "",
     region: address.region ?? "",
     postalCode: address.postalCode ?? "",
@@ -880,45 +897,36 @@ function AddressTab({
 
   return (
     <Card title="Address">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Field label="Street">
-          <input value={form.street} onChange={(e) => setForm({ ...form, street: e.target.value })} className={inp} />
-        </Field>
-        <Field label="Village / Area">
-          <input value={form.village} onChange={(e) => setForm({ ...form, village: e.target.value })} className={inp} />
-        </Field>
-        <Field label="City">
-          <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className={inp} />
-        </Field>
-        <Field label="Sub-District / Thana">
-          <input value={form.subDistrict} onChange={(e) => setForm({ ...form, subDistrict: e.target.value })} className={inp} />
-        </Field>
-        <Field label="District">
-          <input value={form.district} onChange={(e) => setForm({ ...form, district: e.target.value })} className={inp} />
-        </Field>
-        <Field label="Division / State">
-          <input value={form.division} onChange={(e) => setForm({ ...form, division: e.target.value })} className={inp} />
-        </Field>
-        <Field label="Region">
-          <input value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} className={inp} />
-        </Field>
-        <Field label="Postal Code">
-          <input value={form.postalCode} onChange={(e) => setForm({ ...form, postalCode: e.target.value })} className={inp} />
-        </Field>
-        <Field label="Country">
-          <select value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className={inp}>
-            <option value="">—</option>
-            {COUNTRIES.map((c) => (
-              <option key={c.code} value={c.code}>{c.name}</option>
-            ))}
-          </select>
-        </Field>
-      </div>
-      <div className="flex justify-end pt-2">
+      <LocationSelector
+        value={{
+          country: form.country,
+          region: form.region,
+          division: form.division,
+          subDivision: form.subDivision,
+          district: form.district,
+          subDistrict: form.subDistrict,
+          city: form.city,
+          village: form.village,
+          street: form.street,
+          postalCode: form.postalCode,
+        }}
+        onChange={(p) =>
+          setForm((prev) => ({
+            ...prev,
+            ...Object.fromEntries(
+              Object.entries(p).map(([k, v]) => [k, v ?? ""])
+            ),
+          }))
+        }
+      />
+      <div className="flex justify-end pt-3">
         <button
           onClick={async () => {
             setBusy(true);
-            await patch(form);
+            // Don't send subDivision (not on User schema for this user-side flow)
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { subDivision: _sub, ...payload } = form;
+            await patch(payload);
             setBusy(false);
           }}
           disabled={busy}

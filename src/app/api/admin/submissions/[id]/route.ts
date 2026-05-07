@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { processReferralCommissions } from "@/lib/referral-commissions";
+import { Prisma } from "@/generated/prisma/client";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
             email: true,
             avatar: true,
             level: true,
-            packageTier: true,
+            package: { select: { slug: true, name: true } },
           },
         },
         task: true,
@@ -105,55 +106,67 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
 
-      // Approve the submission and award points/XP
-      const [submission] = await prisma.$transaction([
-        // Update submission
+      // Tasks assigned to a Task Board don't grant individual rewards on
+      // approval — the bundle pays out via /api/tasks/boards/[id]/claim.
+      const isBoardTask = !!existingSubmission.task.boardId;
+      const earnedPoints = isBoardTask ? 0 : existingSubmission.task.pointsReward;
+      const earnedXp = isBoardTask ? 0 : existingSubmission.task.xpReward;
+
+      // Approve the submission. For non-board tasks award points/XP and write
+      // a transaction; for board tasks just mark APPROVED and bump the
+      // task's completedCount counter.
+      const txnOps: Prisma.PrismaPromise<unknown>[] = [
         prisma.taskSubmission.update({
           where: { id },
           data: {
             status: "APPROVED",
             reviewedBy: session.user.id,
             reviewedAt: new Date(),
-            pointsEarned: existingSubmission.task.pointsReward,
-            xpEarned: existingSubmission.task.xpReward,
+            pointsEarned: earnedPoints,
+            xpEarned: earnedXp,
           },
         }),
-        // Update user balance and XP
-        prisma.user.update({
-          where: { id: existingSubmission.userId },
-          data: {
-            pointsBalance: { increment: existingSubmission.task.pointsReward },
-            xp: { increment: existingSubmission.task.xpReward },
-            totalEarnings: { increment: existingSubmission.task.pointsReward * 0.001 }, // Assuming 1000 pts = $1
-          },
-        }),
-        // Update task completed count
         prisma.task.update({
           where: { id: existingSubmission.taskId },
-          data: {
-            completedCount: { increment: 1 },
-          },
+          data: { completedCount: { increment: 1 } },
         }),
-        // Create transaction record
-        prisma.transaction.create({
-          data: {
-            userId: existingSubmission.userId,
-            type: "EARNING",
-            status: "COMPLETED",
-            points: existingSubmission.task.pointsReward,
-            amount: existingSubmission.task.pointsReward * 0.001,
-            description: `Earned from task: ${existingSubmission.task.title}`,
-            reference: existingSubmission.id,
-          },
-        }),
-      ]);
+      ];
 
-      // Process referral commissions (after transaction completes)
-      await processReferralCommissions(
-        existingSubmission.userId,
-        existingSubmission.task.pointsReward,
-        existingSubmission.taskId
-      );
+      if (!isBoardTask) {
+        txnOps.push(
+          prisma.user.update({
+            where: { id: existingSubmission.userId },
+            data: {
+              pointsBalance: { increment: earnedPoints },
+              xp: { increment: earnedXp },
+              totalEarnings: { increment: earnedPoints * 0.001 },
+            },
+          }),
+          prisma.transaction.create({
+            data: {
+              userId: existingSubmission.userId,
+              type: "EARNING",
+              status: "COMPLETED",
+              points: earnedPoints,
+              amount: earnedPoints * 0.001,
+              description: `Earned from task: ${existingSubmission.task.title}`,
+              reference: existingSubmission.id,
+            },
+          })
+        );
+      }
+
+      const [submission] = await prisma.$transaction(txnOps);
+
+      // Process referral commissions (after transaction completes) — skip
+      // for board tasks since no points were minted.
+      if (!isBoardTask) {
+        await processReferralCommissions(
+          existingSubmission.userId,
+          existingSubmission.task.pointsReward,
+          existingSubmission.taskId
+        );
+      }
 
       // Audit log
       await prisma.auditLog.create({

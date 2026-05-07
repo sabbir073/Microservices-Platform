@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { TaskStatus, TaskType, PackageTier } from "@/generated/prisma";
+import { TaskStatus, TaskType } from "@/generated/prisma";
+import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
 
-// Package tier order for comparison
-const PACKAGE_ORDER: Record<PackageTier, number> = {
-  FREE: 0,
-  STARTER: 1,
-  PRO: 2,
-  ELITE: 3,
-  VIP: 4,
+import type { PackageFeatureKey } from "@/lib/packages";
+
+// Map TaskType → per-type feature flag on Package. CUSTOM falls under the
+// generic `tasks` flag since it has no dedicated toggle.
+const TASK_TYPE_FEATURE: Record<TaskType, PackageFeatureKey> = {
+  SOCIAL: "socialTasks",
+  PROXY: "proxyTasks",
+  ARTICLE: "articleTasks",
+  VIDEO: "videoTasks",
+  QUIZ: "quizTasks",
+  SURVEY: "surveyTasks",
+  OFFERWALL: "offerwallTasks",
+  CUSTOM: "tasks",
 };
 
 // GET /api/tasks - Fetch available tasks for user
@@ -28,13 +35,12 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "20");
     const skip = (page - 1) * limit;
 
-    // Get user with their package tier and level
+    // Get user with their level + country
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
         id: true,
         level: true,
-        packageTier: true,
         country: true,
         pointsBalance: true,
         xp: true,
@@ -44,6 +50,27 @@ export async function GET(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
+    // Resolve the user's effective plan — handles expiry + isDefault fallback.
+    const userPackage = await getEffectivePackage(session.user.id);
+
+    // Tasks-section gate. If admin disabled tasks for this plan, return empty.
+    if (!packageHasFeature(userPackage, "tasks")) {
+      return NextResponse.json({
+        tasks: [],
+        pagination: { page, limit, total: 0, totalPages: 0 },
+        user: {
+          level: user.level,
+          packageName: userPackage?.name ?? null,
+          accessLevel: userPackage?.accessLevel ?? 0,
+          pointsBalance: user.pointsBalance,
+          xp: user.xp,
+        },
+        reason: "tasks_disabled_for_plan",
+      });
+    }
+
+    const accessLevel = userPackage?.accessLevel ?? 0;
 
     // Get user's completed tasks today for daily limit check
     const todayStart = new Date();
@@ -55,30 +82,30 @@ export async function GET(request: NextRequest) {
         createdAt: { gte: todayStart },
         status: { in: ["APPROVED", "AUTO_APPROVED", "PENDING"] },
       },
-      select: { taskId: true },
+      select: { taskId: true, status: true },
     });
 
-    const completedTaskIdsToday = userSubmissionsToday.map((s) => s.taskId);
+    const userTodayCounts = new Map<string, number>();
+    const pendingTaskIds = new Set<string>();
+    for (const s of userSubmissionsToday) {
+      userTodayCounts.set(s.taskId, (userTodayCounts.get(s.taskId) ?? 0) + 1);
+      if (s.status === "PENDING") pendingTaskIds.add(s.taskId);
+    }
 
-    // Build task query — use AND-only structure so each constraint composes correctly.
+    // Hide entire task types that this plan has switched off (e.g. plan with
+    // articleTasksEnabled=false should never see ARTICLE tasks in the list).
+    const allowedTypes = (Object.keys(TASK_TYPE_FEATURE) as TaskType[]).filter(
+      (t) => packageHasFeature(userPackage, TASK_TYPE_FEATURE[t])
+    );
+
     const andClauses: Array<Record<string, unknown>> = [
-      // Not expired
       { OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] },
-      // Already started
       { OR: [{ startsAt: null }, { startsAt: { lte: new Date() } }] },
-      // User must meet minimum level
       { minLevel: { lte: user.level } },
-      // User must have required package tier
-      {
-        requiredPackage: {
-          in: Object.entries(PACKAGE_ORDER)
-            .filter(([, order]) => order <= PACKAGE_ORDER[user.packageTier])
-            .map(([tier]) => tier as PackageTier),
-        },
-      },
+      { requiredAccessLevel: { lte: accessLevel } },
+      { type: { in: allowedTypes } },
     ];
 
-    // Country filter — task must allow this user's country (or be global).
     if (user.country) {
       andClauses.push({
         OR: [
@@ -93,19 +120,16 @@ export async function GET(request: NextRequest) {
       AND: andClauses,
     };
 
-    // Filter by type if specified
     if (type) {
       where.type = type;
     }
 
-    // Filter by category if specified
     if (category) {
       where.categories = {
         some: { name: category },
       };
     }
 
-    // Fetch tasks
     const [tasks, total] = await Promise.all([
       prisma.task.findMany({
         where,
@@ -116,7 +140,6 @@ export async function GET(request: NextRequest) {
       prisma.task.count({ where }),
     ]);
 
-    // Get categories for each task
     const taskIds = tasks.map((t) => t.id);
     const taskCategories = await prisma.taskCategory.findMany({
       where: {
@@ -131,7 +154,6 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    // Build task-to-categories map
     const taskCategoryMap = new Map<string, Array<{ id: string; name: string; icon: string | null; color: string | null }>>();
     taskCategories.forEach((cat) => {
       cat.tasks.forEach((task) => {
@@ -141,7 +163,6 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    // Get submission counts
     const submissionCounts = await Promise.all(
       taskIds.map((id) =>
         prisma.taskSubmission.count({ where: { taskId: id } })
@@ -149,19 +170,21 @@ export async function GET(request: NextRequest) {
     );
     const submissionCountMap = new Map(taskIds.map((id, idx) => [id, submissionCounts[idx]]));
 
-    // Process tasks to add eligibility and status info
     const processedTasks = tasks.map((task) => {
-      // Check if user has already completed this task today
-      const completedToday = completedTaskIdsToday.includes(task.id);
+      const todayCount = userTodayCounts.get(task.id) ?? 0;
+      const hasPending = pendingTaskIds.has(task.id);
+      const dailyLimit = task.dailyLimit ?? 1;
+      const dailyLimitReached = todayCount >= dailyLimit;
 
-      // Check if task has reached total limit
       const reachedTotalLimit =
         task.totalLimit && task.completedCount >= task.totalLimit;
 
-      // Check if user can do this task
-      const canStart = !completedToday && !reachedTotalLimit;
+      const canStart =
+        hasPending || (!dailyLimitReached && !reachedTotalLimit);
 
-      // Calculate remaining slots
+      const completedToday = !canStart;
+
+      const remainingToday = Math.max(0, dailyLimit - todayCount);
       const remainingSlots = task.totalLimit
         ? task.totalLimit - task.completedCount
         : null;
@@ -175,8 +198,12 @@ export async function GET(request: NextRequest) {
         xpReward: task.xpReward,
         thumbnailUrl: task.thumbnailUrl,
         duration: task.duration,
+        instructions: task.instructions,
+        instructionVideoUrl: task.instructionVideoUrl,
+        contentUrl: task.contentUrl,
+        videoConfig: task.videoConfig,
         minLevel: task.minLevel,
-        requiredPackage: task.requiredPackage,
+        requiredAccessLevel: task.requiredAccessLevel,
         categories: taskCategoryMap.get(task.id) || [],
         socialPlatform: task.socialPlatform,
         socialAction: task.socialAction,
@@ -184,11 +211,16 @@ export async function GET(request: NextRequest) {
         expiresAt: task.expiresAt,
         completedCount: submissionCountMap.get(task.id) || 0,
         remainingSlots,
+        dailyLimit,
+        remainingToday,
+        hasPending,
+        dailyLimitReached,
+        totalLimitReached: !!reachedTotalLimit,
         canStart,
         completedToday,
         reason: !canStart
-          ? completedToday
-            ? "Already completed today"
+          ? dailyLimitReached
+            ? "Daily limit reached"
             : reachedTotalLimit
               ? "Task limit reached"
               : null
@@ -196,8 +228,10 @@ export async function GET(request: NextRequest) {
       };
     });
 
+    const visibleTasks = processedTasks.filter((t) => t.canStart);
+
     return NextResponse.json({
-      tasks: processedTasks,
+      tasks: visibleTasks,
       pagination: {
         page,
         limit,
@@ -206,7 +240,8 @@ export async function GET(request: NextRequest) {
       },
       user: {
         level: user.level,
-        packageTier: user.packageTier,
+        packageName: userPackage?.name ?? null,
+        accessLevel,
         pointsBalance: user.pointsBalance,
         xp: user.xp,
       },

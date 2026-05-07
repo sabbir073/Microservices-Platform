@@ -62,11 +62,11 @@ export function Header({ user }: HeaderProps) {
           setUnreadCount(notifData.unreadCount || 0);
         }
 
-        // Fetch wallet balance
+        // Fetch wallet balance — endpoint returns { balance: { points, ... }, stats, ... }
         const walletRes = await fetch("/api/wallet");
         if (walletRes.ok) {
           const walletData = await walletRes.json();
-          setWalletBalance(walletData.pointsBalance || 0);
+          setWalletBalance(walletData?.balance?.points ?? 0);
         }
       } catch (error) {
         console.error("Error fetching header data:", error);

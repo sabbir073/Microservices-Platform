@@ -8,10 +8,17 @@ export default async function PackagesPage() {
   if (!session?.user?.id) redirect("/login");
 
   const [packages, user] = await Promise.all([
-    prisma.package.findMany({ orderBy: { priceMonthly: "asc" } }),
+    prisma.package.findMany({
+      where: { isActive: true },
+      orderBy: { priceMonthly: "asc" },
+    }),
     prisma.user.findUnique({
       where: { id: session.user.id },
-      select: { packageTier: true, cashBalance: true, pointsBalance: true },
+      select: {
+        package: { select: { slug: true } },
+        cashBalance: true,
+        pointsBalance: true,
+      },
     }),
   ]);
 
@@ -19,15 +26,15 @@ export default async function PackagesPage() {
     <PackagesView
       packages={packages.map((p) => ({
         id: p.id,
-        tier: p.tier,
+        tier: p.slug,
         name: p.name,
         description: p.description ?? undefined,
         priceMonthly: p.priceMonthly,
         priceYearly: p.priceYearly ?? undefined,
         dailyTaskLimit: p.dailyTaskLimit,
-        withdrawalFee: p.withdrawalFee,
+        withdrawalFee: p.withdrawalFeeDiscount,
       }))}
-      currentTier={user?.packageTier ?? "FREE"}
+      currentTier={user?.package?.slug ?? "default"}
       cashBalance={Number(user?.cashBalance ?? 0)}
       pointsBalance={user?.pointsBalance ?? 0}
     />

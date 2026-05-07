@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
       dailyLimit,
       totalLimit,
       minLevel,
-      requiredPackage,
+      requiredAccessLevel,
       countries,
       contentUrl,
       thumbnailUrl,
@@ -42,11 +42,13 @@ export async function POST(request: NextRequest) {
       socialConfig,
       articleConfig,
       videoConfig,
+      surveyConfig,
       proxyInstructions,
       startsAt,
       expiresAt,
       cooldownMinutes,
       autoApprove,
+      boardId,
     } = body;
 
     // Validate required fields
@@ -63,6 +65,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid task type" }, { status: 400 });
     }
 
+    // Validate boardId references an existing active board, if provided
+    if (boardId) {
+      const board = await prisma.taskBoard.findUnique({
+        where: { id: boardId },
+        select: { id: true, isActive: true },
+      });
+      if (!board || !board.isActive) {
+        return NextResponse.json(
+          { error: "Selected Task Board not found or inactive" },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create the task
     const task = await prisma.task.create({
       data: {
@@ -77,7 +93,10 @@ export async function POST(request: NextRequest) {
         dailyLimit: dailyLimit ? parseInt(dailyLimit.toString()) : null,
         totalLimit: totalLimit ? parseInt(totalLimit.toString()) : null,
         minLevel: parseInt(minLevel?.toString() || "1"),
-        requiredPackage: requiredPackage || "FREE",
+        requiredAccessLevel:
+          typeof requiredAccessLevel === "number"
+            ? requiredAccessLevel
+            : parseInt(String(requiredAccessLevel ?? 0)) || 0,
         countries: countries || [],
         contentUrl: contentUrl || null,
         thumbnailUrl: thumbnailUrl || null,
@@ -95,12 +114,30 @@ export async function POST(request: NextRequest) {
         videoConfig: videoConfig
           ? JSON.parse(JSON.stringify(videoConfig))
           : null,
+        surveyConfig: surveyConfig
+          ? JSON.parse(JSON.stringify(surveyConfig))
+          : null,
         proxyInstructions: proxyInstructions || null,
         startsAt: startsAt ? new Date(startsAt) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         cooldownMinutes: parseInt(cooldownMinutes?.toString() || "0"),
         autoApprove: autoApprove || false,
+        boardId: boardId || null,
         createdById: session.user.id,
+        // Surveys: always manual review, once-per-user. These overrides win.
+        ...(type === "SURVEY"
+          ? { autoApprove: false, dailyLimit: 1, totalLimit: 1 }
+          : {}),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: session.user.id,
+        action: "TASK_CREATED",
+        entity: "Task",
+        entityId: task.id,
+        newData: { type, title, pointsReward: task.pointsReward },
       },
     });
 

@@ -2,9 +2,15 @@ import { prisma } from "@/lib/prisma";
 import { TransactionType, TransactionStatus, NotificationType } from "@/generated/prisma";
 
 /**
- * Process referral commissions for a user's task completion
- * Supports both PERCENTAGE and FLAT_RATE commission types
- * Processes up to 10 levels of referrals
+ * Process referral commissions for a user's task completion.
+ *
+ * Walks up the user's referral chain (up to 10 levels). Each upline user only
+ * earns commission for levels their plan unlocks:
+ *   - `Package.referralCommissionLevels === 0` → no commission at any level.
+ *   - `referralCommissionLevels === N` → earns from L1..L_N only.
+ *
+ * Higher levels in the chain still earn (or skip) based on their own plan —
+ * one ineligible upline does not stop commissions from flowing past them.
  */
 export async function processReferralCommissions(
   userId: string,
@@ -12,14 +18,13 @@ export async function processReferralCommissions(
   taskId: string
 ) {
   try {
-    // Get referral settings
     const referralLevels = await prisma.referralLevel.findMany({
       where: { isActive: true },
       orderBy: { level: "asc" },
     });
 
     if (referralLevels.length === 0) {
-      // Use default rates if no settings (10% for level 1)
+      // Default L1 = 10% if admin hasn't seeded any levels.
       referralLevels.push({
         id: "1",
         level: 1,
@@ -33,7 +38,6 @@ export async function processReferralCommissions(
       });
     }
 
-    // Get user's referral chain (up to 10 levels)
     let currentUser = await prisma.user.findUnique({
       where: { id: userId },
       select: { referredById: true },
@@ -45,88 +49,113 @@ export async function processReferralCommissions(
       const referrerConfig = referralLevels.find((r) => r.level === level);
       if (!referrerConfig) break;
 
-      // Calculate commission based on type
-      let commission: number;
-      if (referrerConfig.commissionType === "PERCENTAGE") {
-        // Percentage-based commission (value is percentage 0-100)
-        commission = Math.floor(pointsEarned * (referrerConfig.commissionValue / 100));
-      } else {
-        // Flat rate commission (value is fixed points amount)
-        commission = Math.floor(referrerConfig.commissionValue * 1000); // Convert dollars to points
-      }
-
-      if (commission > 0) {
-        // Credit the referrer
-        await prisma.user.update({
-          where: { id: currentUser.referredById },
-          data: {
-            pointsBalance: { increment: commission },
-            totalEarnings: { increment: commission / 1000 },
-          },
-        });
-
-        // Create transaction
-        await prisma.transaction.create({
-          data: {
-            userId: currentUser.referredById,
-            type: TransactionType.REFERRAL,
-            status: TransactionStatus.COMPLETED,
-            points: commission,
-            amount: commission / 1000,
-            description: `Level ${level} referral commission (${
-              referrerConfig.commissionType === "PERCENTAGE"
-                ? `${referrerConfig.commissionValue}%`
-                : `$${referrerConfig.commissionValue}`
-            })`,
-            reference: `referral_${userId}_${taskId}`,
-            metadata: {
-              referredUserId: userId,
-              sourceTaskId: taskId,
-              level,
-              commissionType: referrerConfig.commissionType,
-              commissionValue: referrerConfig.commissionValue,
-            },
-          },
-        });
-
-        // Record referral earning
-        await prisma.referralEarning.create({
-          data: {
-            userId: currentUser.referredById,
-            referredUserId: userId,
-            level,
-            amount: commission / 1000,
-            sourceType: "TASK",
-            sourceId: taskId,
-          },
-        });
-
-        // Create notification for referrer
-        await prisma.notification.create({
-          data: {
-            userId: currentUser.referredById,
-            type: NotificationType.REFERRAL,
-            title: "Referral Commission!",
-            message: `You earned ${commission} points from your level ${level} referral's activity!`,
-            data: {
-              commission,
-              level,
-              referredUserId: userId,
-              commissionType: referrerConfig.commissionType,
-              commissionValue: referrerConfig.commissionValue,
-            },
-          },
-        });
-      }
-
-      // Move up the chain
-      currentUser = await prisma.user.findUnique({
+      // Look up the upline's plan — they only earn this level if their plan
+      // unlocks it (referralCommissionLevels >= level) and referrals are enabled.
+      const upline = await prisma.user.findUnique({
         where: { id: currentUser.referredById },
-        select: { referredById: true },
+        select: {
+          id: true,
+          referredById: true,
+          package: {
+            select: {
+              referralCommissionLevels: true,
+              referralsEnabled: true,
+            },
+          },
+        },
       });
+
+      const allowedLevels = upline?.package?.referralCommissionLevels ?? 0;
+      const referralsOn = upline?.package?.referralsEnabled ?? false;
+      const eligible = referralsOn && allowedLevels >= level;
+
+      if (!eligible) {
+        // Surfaces the exact reason a commission was skipped — invaluable
+        // when admin reports "user X is still earning at level N" and we
+        // need to verify the gate fired.
+        console.log(
+          `[referral-commission] skip user=${currentUser.referredById} level=${level} ` +
+            `reason=${!referralsOn ? "referrals_disabled" : `plan_only_unlocks_${allowedLevels}`}`
+        );
+      }
+
+      if (eligible) {
+        let commission: number;
+        if (referrerConfig.commissionType === "PERCENTAGE") {
+          commission = Math.floor(pointsEarned * (referrerConfig.commissionValue / 100));
+        } else {
+          commission = Math.floor(referrerConfig.commissionValue * 1000);
+        }
+
+        if (commission > 0) {
+          await prisma.user.update({
+            where: { id: currentUser.referredById },
+            data: {
+              pointsBalance: { increment: commission },
+              totalEarnings: { increment: commission / 1000 },
+            },
+          });
+
+          await prisma.transaction.create({
+            data: {
+              userId: currentUser.referredById,
+              type: TransactionType.REFERRAL,
+              status: TransactionStatus.COMPLETED,
+              points: commission,
+              amount: commission / 1000,
+              description: `Level ${level} referral commission (${
+                referrerConfig.commissionType === "PERCENTAGE"
+                  ? `${referrerConfig.commissionValue}%`
+                  : `$${referrerConfig.commissionValue}`
+              })`,
+              reference: `referral_${userId}_${taskId}_L${level}`,
+              metadata: {
+                referredUserId: userId,
+                sourceTaskId: taskId,
+                level,
+                commissionType: referrerConfig.commissionType,
+                commissionValue: referrerConfig.commissionValue,
+              },
+            },
+          });
+
+          await prisma.referralEarning.create({
+            data: {
+              userId: currentUser.referredById,
+              referredUserId: userId,
+              level,
+              amount: commission / 1000,
+              sourceType: "TASK",
+              sourceId: taskId,
+            },
+          });
+
+          await prisma.notification.create({
+            data: {
+              userId: currentUser.referredById,
+              type: NotificationType.REFERRAL,
+              title: "Referral Commission!",
+              message: `You earned ${commission} points from your level ${level} referral's activity!`,
+              data: {
+                commission,
+                level,
+                referredUserId: userId,
+                commissionType: referrerConfig.commissionType,
+                commissionValue: referrerConfig.commissionValue,
+              },
+            },
+          });
+        }
+      }
+
+      // Always continue up the chain — a free-tier upline doesn't block their
+      // own upline from earning their (eligible) commission.
+      currentUser = upline
+        ? { referredById: upline.referredById }
+        : null;
     }
   } catch (error) {
     console.error("Error processing referral commissions:", error);
-    // Don't throw - referral errors shouldn't block the main task
+    // Don't throw — referral errors shouldn't block the main task.
   }
 }

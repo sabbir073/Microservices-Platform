@@ -6,6 +6,7 @@ import { TaskForm } from "../../_components/TaskForm";
 import type { SocialConfig } from "@/lib/social-tasks";
 import type { ArticleConfig } from "@/lib/article-tasks";
 import type { VideoConfig } from "@/lib/video-tasks";
+import type { SurveyConfig } from "@/lib/survey-tasks";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
@@ -58,6 +59,7 @@ export default async function EditTaskPage({ params }: PageProps) {
           socialConfig: task.socialConfig as SocialConfig | null,
           articleConfig: task.articleConfig as ArticleConfig | null,
           videoConfig: task.videoConfig as VideoConfig | null,
+          surveyConfig: task.surveyConfig as SurveyConfig | null,
         }}
       />
     </div>

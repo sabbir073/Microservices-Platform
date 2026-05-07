@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { KYCStatus } from "@/generated/prisma";
 import { calculateProfileCompletion } from "@/lib/profile-completion";
+import { getXpRank } from "@/lib/user-rank";
 
 const PROFILE_FIELDS = {
   id: true,
@@ -21,7 +22,7 @@ const PROFILE_FIELDS = {
   pointsBalance: true,
   cashBalance: true,
   totalEarnings: true,
-  packageTier: true,
+  package: { select: { id: true, slug: true, name: true, features: true, dailyTaskLimit: true } },
   packageExpiresAt: true,
   referralCode: true,
   kycStatus: true,
@@ -66,6 +67,9 @@ const PROFILE_FIELDS = {
   privacyLocation: true,
   followersCount: true,
   followingCount: true,
+  displayFollowersBoost: true,
+  displayFollowingBoost: true,
+  displayPostsBoost: true,
   createdAt: true,
 } as const;
 
@@ -101,9 +105,7 @@ export async function GET() {
     type CountRel = { _count: { referrals: number; taskSubmissions: number; transactions: number; socialAccounts: number; posts: number } };
     const u = user as typeof user & CountRel;
 
-    const pkg = await prisma.package.findUnique({
-      where: { tier: u.packageTier },
-    });
+    const pkg = u.package;
 
     const xpForNextLevel = calculateXpForLevel(u.level + 1);
     const xpProgress = u.xp - calculateXpForLevel(u.level);
@@ -210,13 +212,23 @@ export async function GET() {
         referralsCount: u._count.referrals,
         achievementsCount,
         socialAccountsCount: u._count.socialAccounts,
-        postsCount: u._count.posts,
-        followersCount: u.followersCount,
-        followingCount: u.followingCount,
+        // Display = max(0, real + admin-set boost). Admin boost can be negative.
+        postsCount: Math.max(0, u._count.posts + u.displayPostsBoost),
+        followersCount: Math.max(0, u.followersCount + u.displayFollowersBoost),
+        followingCount: Math.max(0, u.followingCount + u.displayFollowingBoost),
+        lifetime: {
+          totalEarnedPoints: Math.round(u.totalEarnings * 1000),
+          totalEarnedUsd: u.totalEarnings,
+          tasksCompleted: u._count.taskSubmissions,
+          rank: await getXpRank(u.id, u.xp),
+          totalXp: u.xp,
+          level: u.level,
+          team: u._count.referrals,
+        },
       },
       package: {
-        tier: u.packageTier,
-        name: pkg?.name || u.packageTier,
+        tier: pkg?.slug ?? "default",
+        name: pkg?.name ?? "Free",
         expiresAt: u.packageExpiresAt,
         features: pkg?.features || [],
         dailyTaskLimit: pkg?.dailyTaskLimit || 10,

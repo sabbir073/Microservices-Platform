@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getXpRank } from "@/lib/user-rank";
 
 // GET /api/users/[id]/profile — public profile data, honors privacy settings.
 export async function GET(
@@ -25,8 +26,10 @@ export async function GET(
       country: true,
       tags: true,
       level: true,
+      xp: true,
+      totalEarnings: true,
       isBlueVerified: true,
-      packageTier: true,
+      package: { select: { slug: true, name: true } },
       status: true,
       privacyAvatar: true,
       privacyBio: true,
@@ -35,7 +38,16 @@ export async function GET(
       privacyLocation: true,
       followersCount: true,
       followingCount: true,
+      displayFollowersBoost: true,
+      displayFollowingBoost: true,
+      displayPostsBoost: true,
       createdAt: true,
+      _count: {
+        select: {
+          taskSubmissions: true,
+          referrals: true,
+        },
+      },
     },
   });
 
@@ -86,6 +98,34 @@ export async function GET(
     where: { userId: u.id, isPublic: true },
   });
 
+  const statsVisible = showByPrivacy(u.privacyStats);
+  const earningsVisible = showByPrivacy(u.privacyEarnings);
+
+  let lifetime: {
+    totalEarnedPoints: number | null;
+    totalEarnedUsd: number | null;
+    tasksCompleted: number;
+    rank: number;
+    totalXp: number;
+    level: number;
+    team: number;
+  } | null = null;
+  if (statsVisible) {
+    lifetime = {
+      // Earnings tile respects the separate privacyEarnings setting — when
+      // private, the totals are nulled but rank/xp/level/team stay visible.
+      totalEarnedPoints: earningsVisible
+        ? Math.round(u.totalEarnings * 1000)
+        : null,
+      totalEarnedUsd: earningsVisible ? u.totalEarnings : null,
+      tasksCompleted: u._count.taskSubmissions,
+      rank: await getXpRank(u.id, u.xp),
+      totalXp: u.xp,
+      level: u.level,
+      team: u._count.referrals,
+    };
+  }
+
   return NextResponse.json({
     user: {
       id: u.id,
@@ -98,12 +138,19 @@ export async function GET(
       tags: u.tags,
       level: u.level,
       isBlueVerified: u.isBlueVerified,
-      packageTier: u.packageTier,
+      packageTier: u.package?.slug ?? "default",
       createdAt: u.createdAt,
-      // Stats — gated by privacyStats
-      postsCount: showByPrivacy(u.privacyStats) ? postsCount : null,
-      followersCount: showByPrivacy(u.privacyStats) ? u.followersCount : null,
-      followingCount: showByPrivacy(u.privacyStats) ? u.followingCount : null,
+      // Stats — gated by privacyStats. Display = max(0, real + admin boost).
+      postsCount: statsVisible
+        ? Math.max(0, postsCount + u.displayPostsBoost)
+        : null,
+      followersCount: statsVisible
+        ? Math.max(0, u.followersCount + u.displayFollowersBoost)
+        : null,
+      followingCount: statsVisible
+        ? Math.max(0, u.followingCount + u.displayFollowingBoost)
+        : null,
+      lifetime,
     },
     viewer: {
       isMe,

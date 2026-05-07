@@ -13,7 +13,7 @@ export default async function DailyMissionsAdminPage() {
   const canManage = hasPermission(adminRole, "missions.manage");
 
   const raw = await prisma.dailyMissionTemplate.findMany({
-    orderBy: [{ packageTier: "asc" }, { order: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ requiredAccessLevel: "asc" }, { order: "asc" }, { createdAt: "desc" }],
     include: {
       items: { orderBy: { order: "asc" } },
       _count: { select: { claims: true } },
@@ -36,13 +36,14 @@ export default async function DailyMissionsAdminPage() {
   };
   const missions = raw as WithRels[];
 
+  type ClientMission = Parameters<typeof DailyMissionsClient>[0]["initial"][number];
   return (
     <DailyMissionsClient
-      initial={missions.map((m) => ({
+      initial={missions.map((m): ClientMission => ({
         id: m.id,
         name: m.name,
         description: m.description,
-        packageTier: m.packageTier,
+        packageTier: `Level ${m.requiredAccessLevel}+` as ClientMission["packageTier"],
         requiredLevel: m.requiredLevel,
         completionXpReward: m.completionXpReward,
         completionPointsReward: m.completionPointsReward,

@@ -24,6 +24,7 @@ import {
   ImageIcon,
   ExternalLink,
 } from "lucide-react";
+import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 
 const NOTIFICATION_TYPES = [
   { value: "SYSTEM", label: "System", icon: AlertCircle, color: "text-gray-400" },
@@ -552,16 +553,15 @@ export function SendNotificationForm() {
             <div className="grid md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  <ImageIcon className="w-3.5 h-3.5 inline mr-1" /> Image URL
+                  <ImageIcon className="w-3.5 h-3.5 inline mr-1" /> Image
                 </label>
-                <input
-                  type="url"
+                <ImageUploadField
                   value={formData.imageUrl}
-                  onChange={(e) =>
-                    setFormData({ ...formData, imageUrl: e.target.value })
+                  onChange={(url) =>
+                    setFormData({ ...formData, imageUrl: url })
                   }
-                  placeholder="https://…"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+                  title="Select Notification Image"
+                  previewSize="sm"
                 />
               </div>
               <div>

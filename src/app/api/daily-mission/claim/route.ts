@@ -2,23 +2,18 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
-  SubmissionStatus,
-  TaskType,
   TransactionType,
   TransactionStatus,
   NotificationType,
 } from "@/generated/prisma/client";
+import {
+  buildDailyProgress,
+  resolveTaskTypeBucket,
+} from "@/lib/daily-mission-progress";
 
 function utcDateKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
 }
-function utcStartOfDay(d = new Date()): Date {
-  const x = new Date(d);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
-}
-
-const TASK_TYPE_VALUES = new Set(Object.values(TaskType));
 
 export async function POST() {
   const session = await auth();
@@ -29,69 +24,56 @@ export async function POST() {
 
   const me = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, level: true, packageTier: true },
+    select: {
+      id: true,
+      level: true,
+      package: { select: { accessLevel: true } },
+    },
   });
   if (!me) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  const accessLevel = me.package?.accessLevel ?? 0;
+
   const missionRaw = await prisma.dailyMissionTemplate.findFirst({
     where: {
-      packageTier: me.packageTier,
+      requiredAccessLevel: { lte: accessLevel },
       isActive: true,
       requiredLevel: { lte: me.level },
     },
-    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+    orderBy: [
+      { requiredAccessLevel: "desc" },
+      { order: "asc" },
+      { createdAt: "desc" },
+    ],
     include: { items: { orderBy: { order: "asc" } } },
   });
   if (!missionRaw) {
-    return NextResponse.json({ error: "No active mission for your tier" }, { status: 404 });
+    return NextResponse.json(
+      { error: "No active mission for your tier" },
+      { status: 404 }
+    );
   }
-  type ItemRow = {
-    id: string;
-    taskType: string;
-    targetCount: number;
-  };
+  type ItemRow = { id: string; taskType: string; targetCount: number };
   const mission = missionRaw as typeof missionRaw & { items: ItemRow[] };
 
   const today = utcDateKey();
-  const todayStart = utcStartOfDay();
 
-  // Confirm completion
-  const completed = await prisma.taskSubmission.findMany({
-    where: {
-      userId,
-      createdAt: { gte: todayStart },
-      status: { in: [SubmissionStatus.APPROVED, SubmissionStatus.AUTO_APPROVED] },
-    },
-    select: { taskId: true, task: { select: { type: true, boardId: true } } },
-  });
-  type SubmRow = {
-    taskId: string;
-    task: { type: string; boardId: string | null };
-  };
-  const subs = completed as SubmRow[];
-  const countByType: Record<string, number> = {};
-  for (const s of subs) {
-    countByType[s.task.type] = (countByType[s.task.type] ?? 0) + 1;
-    if (s.task.boardId) {
-      countByType.BOARD = (countByType.BOARD ?? 0) + 1;
-    }
-  }
+  // Server-side completion check using shared progress builder
+  const countByType = await buildDailyProgress(userId, mission.items);
 
   for (const it of mission.items) {
-    const sourceType = TASK_TYPE_VALUES.has(it.taskType as TaskType)
-      ? it.taskType
-      : it.taskType === "BOARD"
-      ? "BOARD"
-      : it.taskType === "MANUAL"
-      ? "CUSTOM"
-      : it.taskType;
+    const sourceType = resolveTaskTypeBucket(it.taskType);
     const got = countByType[sourceType] ?? 0;
     if (got < it.targetCount) {
       return NextResponse.json(
         {
-          error: `Mission incomplete — need ${it.targetCount - got} more ${it.taskType.toLowerCase()} task${it.targetCount - got > 1 ? "s" : ""}.`,
+          error: `Mission incomplete — need ${
+            it.targetCount - got
+          } more ${it.taskType.toLowerCase()} task${
+            it.targetCount - got > 1 ? "s" : ""
+          }.`,
         },
         { status: 400 }
       );
@@ -163,7 +145,9 @@ export async function POST() {
         userId,
         type: NotificationType.ACHIEVEMENT,
         title: "🎯 Daily Mission Complete!",
-        message: `You earned ${points} pts + ${xp} XP from "${mission.name}". Streak: ${streak} day${streak === 1 ? "" : "s"}.`,
+        message: `You earned ${points} pts + ${xp} XP from "${mission.name}". Streak: ${streak} day${
+          streak === 1 ? "" : "s"
+        }.`,
         data: { missionId: mission.id, points, xp, streak },
       },
     }),

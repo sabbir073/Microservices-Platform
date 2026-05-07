@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { PackageTier } from "@/generated/prisma";
-
-// Package tier order for comparison (reserved for tier-gated task access)
-const _PACKAGE_ORDER: Record<PackageTier, number> = {
-  FREE: 0,
-  STARTER: 1,
-  PRO: 2,
-  ELITE: 3,
-  VIP: 4,
-};
 
 // GET /api/tasks/:id - Get single task details
 export async function GET(
@@ -52,18 +42,26 @@ export async function GET(
       orderBy: { createdAt: "desc" },
     });
 
-    // Check if user has completed today
+    // Count today's submissions for this user (used for dailyLimit gate).
+    // Statuses APPROVED/AUTO_APPROVED/PENDING all consume a daily slot —
+    // matches the legacy /api/tasks/[id]/start convention.
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const completedToday = await prisma.taskSubmission.findFirst({
+    const todayCount = await prisma.taskSubmission.count({
       where: {
         taskId: id,
         userId: session.user.id,
         createdAt: { gte: todayStart },
-        status: { in: ["APPROVED", "AUTO_APPROVED"] },
+        status: { in: ["APPROVED", "AUTO_APPROVED", "PENDING"] },
       },
     });
+
+    const effectiveDailyLimit = task.dailyLimit ?? 1;
+    const dailyLimitReached = todayCount >= effectiveDailyLimit;
+    const totalLimitReached =
+      !!task.totalLimit && task.completedCount >= task.totalLimit;
+    const remainingToday = Math.max(0, effectiveDailyLimit - todayCount);
 
     return NextResponse.json({
       task: {
@@ -76,7 +74,13 @@ export async function GET(
       userStatus: {
         hasActiveSubmission: !!activeSubmission,
         activeSubmissionId: activeSubmission?.id,
-        completedToday: !!completedToday,
+        // Back-compat alias — older clients still read this field.
+        completedToday: dailyLimitReached || totalLimitReached,
+        // Explicit, accurate flags for the new UI.
+        dailyLimitReached,
+        totalLimitReached,
+        remainingToday,
+        dailyLimit: effectiveDailyLimit,
       },
     });
   } catch (error) {

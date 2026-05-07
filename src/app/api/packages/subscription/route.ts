@@ -11,13 +11,13 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Get user with package info
     const user = await prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
         id: true,
-        packageTier: true,
+        packageId: true,
         packageExpiresAt: true,
+        package: true,
       },
     });
 
@@ -25,71 +25,76 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Get active subscription
     const activeSubscription = await prisma.subscription.findFirst({
       where: {
         userId: session.user.id,
         isActive: true,
       },
       orderBy: { createdAt: "desc" },
+      include: { package: { select: { id: true, slug: true, name: true } } },
     });
 
-    // Get pending subscription (if any)
     const pendingSubscription = await prisma.subscription.findFirst({
       where: {
         userId: session.user.id,
         isActive: false,
       },
       orderBy: { createdAt: "desc" },
+      include: { package: { select: { id: true, slug: true, name: true } } },
     });
 
-    // Get subscription history
     const subscriptionHistory = await prisma.subscription.findMany({
       where: { userId: session.user.id },
       orderBy: { createdAt: "desc" },
       take: 10,
+      include: { package: { select: { slug: true, name: true } } },
     });
 
-    // Get package details
-    const pkg = await prisma.package.findUnique({
-      where: { tier: user.packageTier },
-    });
+    type SubWithPkg<T> = T & { package: { id: string; slug: string; name: string } | null };
+    const pkg = (user as unknown as { package: { id: string; slug: string; name: string; features: string[]; dailyTaskLimit: number; withdrawalFeeDiscount: number; minWithdrawal: number } | null }).package;
+    const activeSub = activeSubscription as unknown as SubWithPkg<typeof activeSubscription> | null;
+    const pendingSub = pendingSubscription as unknown as SubWithPkg<typeof pendingSubscription> | null;
+    const history = subscriptionHistory as unknown as Array<SubWithPkg<(typeof subscriptionHistory)[number]>>;
 
     return NextResponse.json({
       currentPackage: {
-        tier: user.packageTier,
-        name: pkg?.name || user.packageTier,
+        id: pkg?.id ?? null,
+        tier: pkg?.slug ?? "default",
+        name: pkg?.name ?? "Free",
         expiresAt: user.packageExpiresAt,
-        features: pkg?.features || [],
-        dailyTaskLimit: pkg?.dailyTaskLimit || 10,
-        withdrawalFee: pkg?.withdrawalFee || 0,
-        minWithdrawal: pkg?.minWithdrawal || 5,
+        features: pkg?.features ?? [],
+        dailyTaskLimit: pkg?.dailyTaskLimit ?? -1,
+        withdrawalFee: pkg?.withdrawalFeeDiscount ?? 0,
+        minWithdrawal: pkg?.minWithdrawal ?? 5,
       },
-      activeSubscription: activeSubscription
+      activeSubscription: activeSub
         ? {
-            id: activeSubscription.id,
-            tier: activeSubscription.packageTier,
-            startDate: activeSubscription.startDate,
-            endDate: activeSubscription.endDate,
-            amount: activeSubscription.amount,
-            autoRenew: activeSubscription.autoRenew,
-            paymentMethod: activeSubscription.paymentMethod,
+            id: activeSub.id,
+            tier: activeSub.package?.slug ?? "—",
+            packageName: activeSub.package?.name ?? "—",
+            startDate: activeSub.startDate,
+            endDate: activeSub.endDate,
+            amount: activeSub.amount,
+            autoRenew: activeSub.autoRenew,
+            paymentMethod: activeSub.paymentMethod,
           }
         : null,
-      pendingSubscription: pendingSubscription
+      pendingSubscription: pendingSub
         ? {
-            id: pendingSubscription.id,
-            tier: pendingSubscription.packageTier,
-            amount: pendingSubscription.amount,
-            transactionId: pendingSubscription.transactionId,
-            paymentMethod: pendingSubscription.paymentMethod,
-            submittedAt: pendingSubscription.createdAt,
+            id: pendingSub.id,
+            tier: pendingSub.package?.slug ?? "—",
+            packageName: pendingSub.package?.name ?? "—",
+            amount: pendingSub.amount,
+            transactionId: pendingSub.transactionId,
+            paymentMethod: pendingSub.paymentMethod,
+            submittedAt: pendingSub.createdAt,
             status: "PENDING_VERIFICATION",
           }
         : null,
-      history: subscriptionHistory.map((sub) => ({
+      history: history.map((sub) => ({
         id: sub.id,
-        tier: sub.packageTier,
+        tier: sub.package?.slug ?? "—",
+        packageName: sub.package?.name ?? "—",
         amount: sub.amount,
         startDate: sub.startDate,
         endDate: sub.endDate,
@@ -116,13 +121,13 @@ export async function DELETE() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Find pending subscription
     const pendingSubscription = await prisma.subscription.findFirst({
       where: {
         userId: session.user.id,
         isActive: false,
       },
       orderBy: { createdAt: "desc" },
+      include: { package: { select: { name: true } } },
     });
 
     if (!pendingSubscription) {
@@ -132,21 +137,23 @@ export async function DELETE() {
       );
     }
 
-    // Delete the pending subscription
+    const pendingSub = pendingSubscription as unknown as typeof pendingSubscription & {
+      package: { name: string } | null;
+    };
+
     await prisma.subscription.delete({
-      where: { id: pendingSubscription.id },
+      where: { id: pendingSub.id },
     });
 
-    // Create notification
     await prisma.notification.create({
       data: {
         userId: session.user.id,
         type: "SYSTEM",
         title: "Subscription Request Cancelled",
-        message: `Your pending subscription request for ${pendingSubscription.packageTier} package has been cancelled.`,
+        message: `Your pending subscription request for ${pendingSub.package?.name ?? "the package"} has been cancelled.`,
         data: {
-          subscriptionId: pendingSubscription.id,
-          packageTier: pendingSubscription.packageTier,
+          subscriptionId: pendingSub.id,
+          packageId: pendingSub.packageId,
         },
       },
     });

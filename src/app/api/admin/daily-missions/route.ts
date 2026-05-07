@@ -51,7 +51,7 @@ export async function GET() {
   }
 
   const missions = await prisma.dailyMissionTemplate.findMany({
-    orderBy: [{ packageTier: "asc" }, { order: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ requiredAccessLevel: "asc" }, { order: "asc" }, { createdAt: "desc" }],
     include: {
       items: { orderBy: { order: "asc" } },
       _count: { select: { claims: true } },
@@ -101,7 +101,7 @@ export async function POST(req: NextRequest) {
       action: "DAILY_MISSION_CREATED",
       entity: "DailyMissionTemplate",
       entityId: created.id,
-      newData: { name: created.name, packageTier: created.packageTier, items: items.length },
+      newData: { name: created.name, requiredAccessLevel: created.requiredAccessLevel, items: items.length },
     },
   });
 

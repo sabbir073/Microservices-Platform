@@ -11,10 +11,12 @@ import {
   KeyRound,
   Server,
   Clock,
+  Video as VideoIcon,
 } from "lucide-react";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
+import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +29,8 @@ interface ProxyTask {
   country: string;
   serverHost?: string;
   serverPort?: number;
+  instructions?: string | null;
+  instructionVideoUrl?: string | null;
 }
 
 interface SessionCredentials {
@@ -331,6 +335,38 @@ export function ProxyTasksView() {
       >
         {active && (
           <div className="space-y-4">
+            {active.instructions && (
+              <div className="rounded-lg bg-gray-950 border border-gray-800 p-3">
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">
+                  Steps
+                </p>
+                <ol className="space-y-1 text-sm text-gray-300 list-decimal pl-4">
+                  {active.instructions
+                    .split("\n")
+                    .map((s) => s.trim())
+                    .filter(Boolean)
+                    .map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                </ol>
+              </div>
+            )}
+
+            {active.instructionVideoUrl && (
+              <div className="space-y-2">
+                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold inline-flex items-center gap-1.5">
+                  <VideoIcon className="w-3 h-3" />
+                  Instruction video
+                </p>
+                <div className="max-w-2xl mx-auto">
+                  <InlineVideoEmbed
+                    url={active.instructionVideoUrl}
+                    title={`Instruction video — ${active.title}`}
+                  />
+                </div>
+              </div>
+            )}
+
             {/* Session timer */}
             <div className="rounded-2xl bg-gray-800 p-4">
               <div className="flex items-center justify-between mb-2">

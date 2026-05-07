@@ -26,10 +26,7 @@ const createQuizSchema = z.object({
   maxAttempts: z.number().int().min(1).default(3),
   cooldownHours: z.number().int().min(0).default(24),
   requiredLevel: z.number().int().min(1).default(1),
-  requiredPackage: z
-    .enum(["FREE", "STARTER", "PRO", "ELITE", "VIP"])
-    .optional()
-    .nullable(),
+  requiredAccessLevel: z.number().int().min(0).max(1000).optional().nullable(),
   questions: z.array(questionSchema).min(1),
   aiGenerated: z.boolean().optional().default(false),
   aiPrompt: z.string().optional().nullable(),
@@ -121,7 +118,7 @@ export async function POST(request: NextRequest) {
         maxAttempts: data.maxAttempts,
         cooldownHours: data.cooldownHours,
         requiredLevel: data.requiredLevel,
-        requiredPackage: data.requiredPackage ?? null,
+        requiredAccessLevel: data.requiredAccessLevel ?? null,
         aiGenerated: !!data.aiGenerated,
         aiPrompt: data.aiPrompt ?? null,
         createdById: session.user.id,

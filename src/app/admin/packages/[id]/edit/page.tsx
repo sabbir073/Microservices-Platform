@@ -2,21 +2,13 @@ import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { PackageForm } from "../../_components/PackageForm";
-import { ArrowLeft, Crown, Star, Sparkles, Package } from "lucide-react";
+import { PackageForm, type PackageFormPkg } from "../../_components/PackageForm";
+import { ArrowLeft, Edit } from "lucide-react";
 import Link from "next/link";
 
 interface PageProps {
   params: Promise<{ id: string }>;
 }
-
-const tierConfig: Record<string, { icon: typeof Package; color: string }> = {
-  FREE: { icon: Package, color: "text-gray-400" },
-  STARTER: { icon: Star, color: "text-blue-400" },
-  PRO: { icon: Sparkles, color: "text-indigo-400" },
-  ELITE: { icon: Crown, color: "text-purple-400" },
-  VIP: { icon: Crown, color: "text-amber-400" },
-};
 
 export default async function EditPackagePage({ params }: PageProps) {
   const session = await auth();
@@ -40,12 +32,55 @@ export default async function EditPackagePage({ params }: PageProps) {
     notFound();
   }
 
-  const config = tierConfig[pkg.tier] || tierConfig.FREE;
-  const Icon = config.icon;
+  // Re-shape into the form's view model so Tailwind/React control flow stays simple.
+  const formPkg: PackageFormPkg = {
+    id: pkg.id,
+    slug: pkg.slug,
+    name: pkg.name,
+    description: pkg.description,
+    accessLevel: pkg.accessLevel,
+    isDefault: pkg.isDefault,
+    isActive: pkg.isActive,
+    order: pkg.order,
+
+    priceMonthly: pkg.priceMonthly,
+    priceYearly: pkg.priceYearly,
+    validityDays: pkg.validityDays,
+
+    tasksEnabled: pkg.tasksEnabled,
+    socialFeedEnabled: pkg.socialFeedEnabled,
+    referralsEnabled: pkg.referralsEnabled,
+    withdrawalsEnabled: pkg.withdrawalsEnabled,
+    marketplaceEnabled: pkg.marketplaceEnabled,
+    boostEnabled: pkg.boostEnabled,
+    dailyMissionEnabled: pkg.dailyMissionEnabled,
+    lotteryEnabled: pkg.lotteryEnabled,
+    coursesEnabled: pkg.coursesEnabled,
+
+    socialTasksEnabled: pkg.socialTasksEnabled,
+    proxyTasksEnabled: pkg.proxyTasksEnabled,
+    articleTasksEnabled: pkg.articleTasksEnabled,
+    videoTasksEnabled: pkg.videoTasksEnabled,
+    quizTasksEnabled: pkg.quizTasksEnabled,
+    surveyTasksEnabled: pkg.surveyTasksEnabled,
+    offerwallTasksEnabled: pkg.offerwallTasksEnabled,
+
+    dailyTaskLimit: pkg.dailyTaskLimit,
+    minWithdrawal: pkg.minWithdrawal,
+    withdrawalFeeDiscount: pkg.withdrawalFeeDiscount,
+
+    xpMultiplier: pkg.xpMultiplier,
+    taskRewardMultiplier: pkg.taskRewardMultiplier,
+    socialEarningMultiplier: pkg.socialEarningMultiplier,
+    dailyReferralPoints: pkg.dailyReferralPoints,
+    referralCommissionLevels: pkg.referralCommissionLevels,
+
+    features: pkg.features,
+    badgeColor: pkg.badgeColor,
+  };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="flex items-center gap-4">
         <Link
           href="/admin/packages"
@@ -54,18 +89,20 @@ export default async function EditPackagePage({ params }: PageProps) {
           <ArrowLeft className="w-5 h-5 text-gray-400" />
         </Link>
         <div className="flex items-center gap-3">
-          <div className={`p-2 rounded-lg bg-gray-800`}>
-            <Icon className={`w-5 h-5 ${config.color}`} />
+          <div className="p-2 rounded-lg bg-gray-800">
+            <Edit className="w-5 h-5 text-indigo-400" />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-white">Edit {pkg.name}</h1>
-            <p className="text-gray-400">Configure package settings and pricing</p>
+            <p className="text-gray-400 text-sm">
+              Slug: <code className="font-mono">{pkg.slug}</code> · Access level{" "}
+              <code className="font-mono">{pkg.accessLevel}</code>
+            </p>
           </div>
         </div>
       </div>
 
-      {/* Form */}
-      <PackageForm pkg={pkg} />
+      <PackageForm pkg={formPkg} mode="edit" />
     </div>
   );
 }
