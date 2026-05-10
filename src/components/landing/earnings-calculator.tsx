@@ -1,7 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { Calculator, Sparkles, ArrowRight, Coins, Users, ListChecks } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  Calculator,
+  Sparkles,
+  ArrowRight,
+  Coins,
+  Users,
+  ListChecks,
+  TrendingUp,
+  Minus,
+  Plus,
+  Lock,
+} from "lucide-react";
 import Link from "next/link";
 import type { CalculatorContent, CalculatorPlan } from "@/lib/landing-content";
 import { DEFAULT_LANDING_CONTENT } from "@/lib/landing-content";
@@ -16,9 +27,52 @@ const PLAN_GRADIENTS: Record<string, string> = {
 
 const FALLBACK_GRADIENT = "from-blue-500 to-purple-500";
 
+const TASK_PRESETS = [10, 50, 100, 250, 500] as const;
+
 function pickDefaultPlan(plans: CalculatorPlan[]): string {
   if (plans.length === 0) return "";
+  const pro = plans.find((p) => p.name === "PRO");
+  if (pro) return pro.name;
   return plans[0].name;
+}
+
+function formatCurrency(value: number, fractionDigits = 0): string {
+  return value.toLocaleString("en-US", {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+}
+
+function useCountUp(target: number, duration = 600): number {
+  const [display, setDisplay] = useState(target);
+  const fromRef = useRef(target);
+  const startRef = useRef<number | null>(null);
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    fromRef.current = display;
+    startRef.current = null;
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+
+    const tick = (now: number) => {
+      if (startRef.current === null) startRef.current = now;
+      const elapsed = now - startRef.current;
+      const t = Math.min(1, elapsed / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      const next = fromRef.current + (target - fromRef.current) * eased;
+      setDisplay(next);
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [target, duration]);
+
+  return display;
 }
 
 type Props = Partial<CalculatorContent>;
@@ -35,8 +89,9 @@ export function EarningsCalculator(props: Props) {
   const [l2, setL2] = useState(40);
   const [l3, setL3] = useState(80);
 
-  const activePlan =
-    v.plans.find((p) => p.name === plan) ?? v.plans[0];
+  const activePlan = v.plans.find((p) => p.name === plan) ?? v.plans[0];
+  const activeGradient =
+    PLAN_GRADIENTS[activePlan?.name ?? ""] ?? FALLBACK_GRADIENT;
 
   const teamLevels = activePlan?.team_levels ?? 0;
   const supportsL1 = teamLevels >= 1;
@@ -55,219 +110,550 @@ export function EarningsCalculator(props: Props) {
   const dailyTeam =
     teamDailyBase * (effectiveL1 * c1 + effectiveL2 * c2 + effectiveL3 * c3);
   const dailyTotal = dailyDirect + dailyTeam;
-  const calc = {
-    dailyDirect,
-    dailyTeam,
-    dailyTotal,
-    monthly: dailyTotal * 30,
-    yearly: dailyTotal * 365,
+  const monthly = dailyTotal * 30;
+  const yearly = dailyTotal * 365;
+
+  const animatedMonthly = useCountUp(monthly);
+
+  const directShare =
+    dailyTotal > 0 ? Math.round((dailyDirect / dailyTotal) * 100) : 100;
+  const teamShare = 100 - directShare;
+
+  const adjustTasks = (delta: number) => {
+    setDailyTasks((prev) => Math.max(0, Math.min(500, prev + delta)));
   };
 
   return (
-    <section id="calculator" className="relative py-16 sm:py-24 px-4">
-      <div className="max-w-5xl mx-auto">
-        <div className="text-center mb-8">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold mb-3">
+    <section
+      id="calculator"
+      className="relative py-16 sm:py-24 px-4 scroll-mt-20"
+    >
+      <div className="max-w-6xl mx-auto">
+        <div className="text-center mb-8 sm:mb-12">
+          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-300 text-xs font-semibold mb-4">
             <Calculator className="w-3.5 h-3.5" />
             {v.badge}
           </span>
-          <h2 className="text-3xl sm:text-4xl font-extrabold text-white">
+          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-white tracking-tight">
             {v.heading}
           </h2>
-          <p className="text-slate-400 mt-2 max-w-xl mx-auto text-sm sm:text-base">
+          <p className="text-slate-400 mt-3 max-w-xl mx-auto text-sm sm:text-base">
             {v.subheading}
           </p>
         </div>
 
-        <div className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-xl overflow-hidden">
-          <div className="grid lg:grid-cols-2 gap-0">
-            <div className="p-6 sm:p-8 border-b lg:border-b-0 lg:border-r border-white/10 space-y-5">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
-                  Choose your plan
-                </label>
-                <div
-                  className="grid gap-1"
-                  style={{
-                    gridTemplateColumns: `repeat(${Math.max(v.plans.length, 1)}, minmax(0, 1fr))`,
-                  }}
-                >
-                  {v.plans.map((p) => {
-                    const gradient =
-                      PLAN_GRADIENTS[p.name] ?? FALLBACK_GRADIENT;
-                    return (
-                      <button
-                        key={p.name}
-                        onClick={() => setPlan(p.name)}
-                        className={`px-1 py-2 rounded-lg text-[10px] sm:text-xs font-bold transition-all ${
-                          plan === p.name
-                            ? `bg-linear-to-r ${gradient} text-white shadow-lg`
-                            : "bg-white/5 text-slate-400 hover:bg-white/10"
-                        }`}
-                      >
-                        {p.name}
-                      </button>
-                    );
-                  })}
-                </div>
-                <p className="text-[11px] text-slate-500 mt-2">
-                  Rate: ${activePlan?.per_task ?? 0}/task ·{" "}
-                  {activePlan?.multiplier ?? 1}× multiplier
-                </p>
-              </div>
+        <div className="relative">
+          <div className="absolute -inset-px rounded-[1.75rem] bg-linear-to-br from-blue-500/30 via-purple-500/20 to-emerald-500/30 blur-sm opacity-60" />
 
-              <div>
-                <label className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
-                  <span>Daily tasks</span>
-                  <span className="text-blue-400 tabular-nums">
-                    {dailyTasks}
-                  </span>
-                </label>
-                <input
-                  type="range"
-                  min={0}
-                  max={500}
-                  step={5}
-                  value={dailyTasks}
-                  onChange={(e) => setDailyTasks(Number(e.target.value))}
-                  className="w-full accent-blue-500"
-                />
-              </div>
-
-              <div className="space-y-3">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Team size
-                </label>
-
-                {teamLevels === 0 && (
-                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-300">
-                    {activePlan?.name ?? "This"} plan does not support team
-                    building. Upgrade to unlock referral commission.
+          <div className="relative rounded-3xl border border-white/10 bg-slate-950/70 backdrop-blur-xl overflow-hidden shadow-2xl shadow-black/40">
+            <div className="grid lg:grid-cols-[1.1fr_1fr] gap-0">
+              {/* LEFT — Inputs */}
+              <div className="p-5 sm:p-7 lg:p-8 border-b lg:border-b-0 lg:border-r border-white/10 space-y-6 sm:space-y-7">
+                {/* Plan picker */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Choose your plan
+                    </label>
+                    <span className="text-[11px] text-slate-500">
+                      {v.plans.length} plans
+                    </span>
                   </div>
-                )}
 
-                {(
-                  [
-                    {
-                      key: "l1",
-                      enabled: supportsL1,
-                      label: `Level 1 (${v.commission_l1}%)`,
-                      value: l1,
-                      set: setL1,
-                      color: "accent-emerald-500 text-emerald-400",
-                    },
-                    {
-                      key: "l2",
-                      enabled: supportsL2,
-                      label: `Level 2 (${v.commission_l2}%)`,
-                      value: l2,
-                      set: setL2,
-                      color: "accent-purple-500 text-purple-400",
-                    },
-                    {
-                      key: "l3",
-                      enabled: supportsL3,
-                      label: `Level 3 (${v.commission_l3}%)`,
-                      value: l3,
-                      set: setL3,
-                      color: "accent-amber-500 text-amber-400",
-                    },
-                  ] as const
-                )
-                  .filter((row) => row.enabled)
-                  .map((row) => (
-                    <div key={row.key}>
-                      <div className="flex items-center justify-between text-xs mb-1">
-                        <span className="text-slate-400">{row.label}</span>
-                        <span
-                          className={`tabular-nums font-bold ${row.color.split(" ")[1]}`}
+                  <div className="-mx-5 sm:mx-0 px-5 sm:px-0 overflow-x-auto sm:overflow-visible scrollbar-thin">
+                    <div className="flex sm:grid gap-2 sm:gap-2 snap-x snap-mandatory pb-1 sm:pb-0"
+                      style={{
+                        gridTemplateColumns: `repeat(${Math.max(v.plans.length, 1)}, minmax(0, 1fr))`,
+                      }}
+                    >
+                      {v.plans.map((p) => {
+                        const gradient =
+                          PLAN_GRADIENTS[p.name] ?? FALLBACK_GRADIENT;
+                        const active = plan === p.name;
+                        return (
+                          <button
+                            key={p.name}
+                            onClick={() => setPlan(p.name)}
+                            aria-pressed={active}
+                            className={`group relative shrink-0 sm:shrink snap-start min-w-[7rem] sm:min-w-0 rounded-xl p-3 text-left transition-all duration-200 border ${
+                              active
+                                ? `bg-linear-to-br ${gradient} border-white/30 shadow-lg shadow-black/30 scale-[1.02]`
+                                : "bg-white/[0.04] border-white/10 hover:bg-white/[0.08] hover:border-white/20"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span
+                                className={`text-[11px] sm:text-xs font-extrabold tracking-wide ${
+                                  active ? "text-white" : "text-slate-200"
+                                }`}
+                              >
+                                {p.name}
+                              </span>
+                              {active && (
+                                <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                              )}
+                            </div>
+                            <div
+                              className={`mt-1.5 text-[11px] tabular-nums font-semibold ${
+                                active ? "text-white/90" : "text-slate-400"
+                              }`}
+                            >
+                              ${p.per_task}/task
+                            </div>
+                            <div
+                              className={`mt-0.5 text-[10px] ${
+                                active ? "text-white/70" : "text-slate-500"
+                              }`}
+                            >
+                              {p.team_levels === 0
+                                ? "Solo"
+                                : `${p.team_levels} team lvl${p.team_levels > 1 ? "s" : ""}`}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="w-1 h-1 rounded-full bg-blue-400" />
+                      Rate{" "}
+                      <span className="text-slate-300 tabular-nums">
+                        ${activePlan?.per_task ?? 0}
+                      </span>
+                      /task
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="w-1 h-1 rounded-full bg-purple-400" />
+                      Multiplier{" "}
+                      <span className="text-slate-300 tabular-nums">
+                        {activePlan?.multiplier ?? 1}×
+                      </span>
+                    </span>
+                  </p>
+                </div>
+
+                {/* Daily tasks */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Daily tasks
+                    </label>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => adjustTasks(-5)}
+                        className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 transition-colors disabled:opacity-30"
+                        disabled={dailyTasks <= 0}
+                        aria-label="Decrease daily tasks"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="min-w-[3.5rem] text-center text-base sm:text-lg font-extrabold text-blue-300 tabular-nums">
+                        {dailyTasks}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => adjustTasks(5)}
+                        className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 transition-colors disabled:opacity-30"
+                        disabled={dailyTasks >= 500}
+                        aria-label="Increase daily tasks"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <input
+                    type="range"
+                    min={0}
+                    max={500}
+                    step={5}
+                    value={dailyTasks}
+                    onChange={(e) => setDailyTasks(Number(e.target.value))}
+                    className="ec-range w-full"
+                    style={{
+                      ["--ec-progress" as string]: `${(dailyTasks / 500) * 100}%`,
+                    }}
+                    aria-label="Daily tasks"
+                  />
+
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    {TASK_PRESETS.map((preset) => {
+                      const active = dailyTasks === preset;
+                      return (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setDailyTasks(preset)}
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold tabular-nums transition-colors ${
+                            active
+                              ? "bg-blue-500/20 text-blue-200 border border-blue-400/40"
+                              : "bg-white/5 text-slate-400 border border-white/10 hover:bg-white/10 hover:text-slate-200"
+                          }`}
                         >
-                          {row.value}
-                        </span>
+                          {preset}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Team size */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <label className="block text-[11px] sm:text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Team size
+                    </label>
+                    {teamLevels > 0 && (
+                      <span className="text-[11px] text-slate-500">
+                        {teamLevels} level{teamLevels > 1 ? "s" : ""} unlocked
+                      </span>
+                    )}
+                  </div>
+
+                  {teamLevels === 0 ? (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 sm:p-4 flex items-start gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center shrink-0">
+                        <Lock className="w-4 h-4 text-amber-300" />
                       </div>
-                      <input
-                        type="range"
-                        min={0}
-                        max={500}
-                        step={5}
-                        value={row.value}
-                        onChange={(e) => row.set(Number(e.target.value))}
-                        className={`w-full ${row.color.split(" ")[0]}`}
+                      <div className="flex-1 text-xs text-amber-100/90 leading-relaxed">
+                        <span className="font-bold text-amber-200">
+                          {activePlan?.name ?? "This"} plan
+                        </span>{" "}
+                        is solo-only. Upgrade to{" "}
+                        <span className="font-semibold text-amber-200">
+                          STARTER
+                        </span>{" "}
+                        or higher to unlock referral commissions and team
+                        earnings.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3.5">
+                      {(
+                        [
+                          {
+                            key: "l1",
+                            enabled: supportsL1,
+                            label: "Level 1",
+                            commission: v.commission_l1,
+                            value: l1,
+                            set: setL1,
+                            color: "emerald",
+                            dot: "bg-emerald-400",
+                            badge:
+                              "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+                            valueText: "text-emerald-300",
+                            rangeClass: "ec-range-emerald",
+                          },
+                          {
+                            key: "l2",
+                            enabled: supportsL2,
+                            label: "Level 2",
+                            commission: v.commission_l2,
+                            value: l2,
+                            set: setL2,
+                            color: "purple",
+                            dot: "bg-purple-400",
+                            badge:
+                              "bg-purple-500/15 text-purple-300 border-purple-500/30",
+                            valueText: "text-purple-300",
+                            rangeClass: "ec-range-purple",
+                          },
+                          {
+                            key: "l3",
+                            enabled: supportsL3,
+                            label: "Level 3",
+                            commission: v.commission_l3,
+                            value: l3,
+                            set: setL3,
+                            color: "amber",
+                            dot: "bg-amber-400",
+                            badge:
+                              "bg-amber-500/15 text-amber-300 border-amber-500/30",
+                            valueText: "text-amber-300",
+                            rangeClass: "ec-range-amber",
+                          },
+                        ] as const
+                      )
+                        .filter((row) => row.enabled)
+                        .map((row) => (
+                          <div
+                            key={row.key}
+                            className="rounded-xl bg-white/[0.03] border border-white/10 p-3"
+                          >
+                            <div className="flex items-center justify-between text-xs mb-2">
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`w-1.5 h-1.5 rounded-full ${row.dot}`}
+                                />
+                                <span className="font-semibold text-slate-200">
+                                  {row.label}
+                                </span>
+                                <span
+                                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${row.badge}`}
+                                >
+                                  {row.commission}%
+                                </span>
+                              </div>
+                              <span
+                                className={`tabular-nums font-extrabold ${row.valueText}`}
+                              >
+                                {row.value}
+                              </span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={500}
+                              step={5}
+                              value={row.value}
+                              onChange={(e) =>
+                                row.set(Number(e.target.value))
+                              }
+                              className={`ec-range ${row.rangeClass} w-full`}
+                              style={{
+                                ["--ec-progress" as string]: `${(row.value / 500) * 100}%`,
+                              }}
+                              aria-label={`${row.label} team size`}
+                            />
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT — Results */}
+              <div className="relative p-5 sm:p-7 lg:p-8 bg-linear-to-br from-blue-600/15 via-purple-600/10 to-transparent">
+                <div
+                  aria-hidden
+                  className={`absolute -top-20 -right-20 w-64 h-64 rounded-full bg-linear-to-br ${activeGradient} opacity-20 blur-3xl pointer-events-none transition-all duration-500`}
+                />
+
+                <div className="relative">
+                  <div className="text-center">
+                    <p className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-bold text-slate-400">
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      Monthly Potential
+                    </p>
+                    <p className="mt-2 text-[2.75rem] sm:text-6xl font-extrabold bg-linear-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent tabular-nums leading-none">
+                      ${formatCurrency(animatedMonthly)}
+                    </p>
+                    <p className="text-xs sm:text-sm text-slate-400 mt-2 tabular-nums">
+                      ≈{" "}
+                      <span className="text-slate-200 font-semibold">
+                        ${formatCurrency(dailyTotal, 2)}
+                      </span>{" "}
+                      per day
+                    </p>
+                  </div>
+
+                  {/* Breakdown bar */}
+                  <div className="mt-6">
+                    <div className="flex items-center justify-between text-[11px] mb-2">
+                      <span className="inline-flex items-center gap-1.5 text-slate-400">
+                        <span className="w-2 h-2 rounded-sm bg-blue-400" />
+                        Tasks{" "}
+                        <span className="text-slate-200 font-bold tabular-nums">
+                          {directShare}%
+                        </span>
+                      </span>
+                      <span className="inline-flex items-center gap-1.5 text-slate-400">
+                        <span className="text-slate-200 font-bold tabular-nums">
+                          {teamShare}%
+                        </span>{" "}
+                        Team
+                        <span className="w-2 h-2 rounded-sm bg-purple-400" />
+                      </span>
+                    </div>
+                    <div className="h-2 w-full rounded-full overflow-hidden bg-white/5 border border-white/10 flex">
+                      <div
+                        className="h-full bg-linear-to-r from-blue-500 to-cyan-400 transition-all duration-500"
+                        style={{ width: `${directShare}%` }}
+                      />
+                      <div
+                        className="h-full bg-linear-to-r from-purple-500 to-pink-400 transition-all duration-500"
+                        style={{ width: `${teamShare}%` }}
                       />
                     </div>
-                  ))}
-              </div>
-            </div>
+                  </div>
 
-            <div className="p-6 sm:p-8 bg-linear-to-br from-blue-600/10 via-purple-600/5 to-transparent">
-              <div className="text-center">
-                <p className="text-xs uppercase tracking-wider font-bold text-slate-400">
-                  Monthly Potential
-                </p>
-                <p className="text-5xl sm:text-6xl font-extrabold bg-linear-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent tabular-nums mt-2">
-                  ${calc.monthly.toFixed(0)}
-                </p>
-                <p className="text-xs text-slate-500 mt-1">
-                  ≈ ${calc.dailyTotal.toFixed(2)} / day
-                </p>
-              </div>
+                  {/* Stat cards */}
+                  <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-5">
+                    <div className="rounded-xl bg-white/[0.04] border border-white/10 p-2.5 sm:p-3 text-center">
+                      <ListChecks className="w-4 h-4 text-blue-300 mx-auto mb-1" />
+                      <p className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                        From Tasks
+                      </p>
+                      <p className="text-sm sm:text-base font-bold text-white tabular-nums mt-0.5">
+                        ${formatCurrency(dailyDirect * 30)}
+                      </p>
+                      <p className="text-[9px] text-slate-500 mt-0.5">/mo</p>
+                    </div>
+                    <div className="rounded-xl bg-white/[0.04] border border-white/10 p-2.5 sm:p-3 text-center">
+                      <Users className="w-4 h-4 text-purple-300 mx-auto mb-1" />
+                      <p className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                        From Team
+                      </p>
+                      <p className="text-sm sm:text-base font-bold text-white tabular-nums mt-0.5">
+                        ${formatCurrency(dailyTeam * 30)}
+                      </p>
+                      <p className="text-[9px] text-slate-500 mt-0.5">/mo</p>
+                    </div>
+                    <div className="rounded-xl bg-white/[0.04] border border-white/10 p-2.5 sm:p-3 text-center">
+                      <Coins className="w-4 h-4 text-amber-300 mx-auto mb-1" />
+                      <p className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                        Daily
+                      </p>
+                      <p className="text-sm sm:text-base font-bold text-white tabular-nums mt-0.5">
+                        ${formatCurrency(dailyTotal, 2)}
+                      </p>
+                      <p className="text-[9px] text-slate-500 mt-0.5">/day</p>
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-3 gap-2 mt-6">
-                <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
-                  <ListChecks className="w-4 h-4 text-blue-400 mx-auto mb-1" />
-                  <p className="text-[10px] uppercase font-bold text-slate-400">
-                    From Tasks
-                  </p>
-                  <p className="text-base font-bold text-white tabular-nums mt-0.5">
-                    ${(calc.dailyDirect * 30).toFixed(0)}
+                  {/* Yearly callout */}
+                  <div className="mt-4 rounded-xl bg-linear-to-r from-amber-500/15 to-orange-500/10 border border-amber-500/30 p-3 sm:p-4 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-lg bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
+                      <Sparkles className="w-4 h-4 text-amber-300" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-amber-300/90">
+                        Yearly Projection
+                      </p>
+                      <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums truncate">
+                        ${formatCurrency(yearly)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* CTA */}
+                  <Link
+                    href="/register"
+                    className="group mt-5 w-full inline-flex items-center justify-center gap-2 py-3.5 sm:py-4 rounded-xl bg-linear-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-sm sm:text-base font-bold transition-all shadow-lg shadow-purple-900/30 hover:shadow-purple-700/40 active:scale-[0.99]"
+                  >
+                    Start Earning Now
+                    <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                  <p className="text-[10px] sm:text-[11px] text-slate-500 text-center mt-2.5">
+                    Estimates only · Actual earnings vary by activity
                   </p>
                 </div>
-                <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
-                  <Users className="w-4 h-4 text-purple-400 mx-auto mb-1" />
-                  <p className="text-[10px] uppercase font-bold text-slate-400">
-                    From Team
-                  </p>
-                  <p className="text-base font-bold text-white tabular-nums mt-0.5">
-                    ${(calc.dailyTeam * 30).toFixed(0)}
-                  </p>
-                </div>
-                <div className="rounded-xl bg-white/5 border border-white/10 p-3 text-center">
-                  <Coins className="w-4 h-4 text-amber-400 mx-auto mb-1" />
-                  <p className="text-[10px] uppercase font-bold text-slate-400">
-                    Daily
-                  </p>
-                  <p className="text-base font-bold text-white tabular-nums mt-0.5">
-                    ${calc.dailyTotal.toFixed(2)}
-                  </p>
-                </div>
               </div>
-
-              <div className="mt-4 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
-                <div className="flex-1">
-                  <p className="text-[10px] uppercase tracking-wider font-bold text-amber-400">
-                    Yearly Projection
-                  </p>
-                  <p className="text-lg font-extrabold text-white tabular-nums">
-                    ${calc.yearly.toFixed(0)}
-                  </p>
-                </div>
-              </div>
-
-              <Link
-                href="/register"
-                className="mt-5 w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-linear-to-r from-blue-600 to-purple-600 hover:opacity-90 text-white text-sm font-bold transition-opacity"
-              >
-                🚀 Start Earning Now
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <p className="text-[10px] text-slate-500 text-center mt-2">
-                Estimates only · Actual earnings vary by activity
-              </p>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Custom range slider styling */}
+      <style jsx>{`
+        .ec-range {
+          -webkit-appearance: none;
+          appearance: none;
+          height: 6px;
+          border-radius: 9999px;
+          background: linear-gradient(
+            to right,
+            rgb(59 130 246) 0%,
+            rgb(168 85 247) var(--ec-progress, 0%),
+            rgba(255, 255, 255, 0.08) var(--ec-progress, 0%),
+            rgba(255, 255, 255, 0.08) 100%
+          );
+          outline: none;
+          cursor: pointer;
+          transition: background 0.15s ease;
+        }
+        .ec-range::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 20px;
+          height: 20px;
+          border-radius: 9999px;
+          background: white;
+          border: 3px solid rgb(59 130 246);
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+          cursor: grab;
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .ec-range::-webkit-slider-thumb:hover {
+          transform: scale(1.15);
+        }
+        .ec-range::-webkit-slider-thumb:active {
+          cursor: grabbing;
+          transform: scale(1.05);
+          box-shadow: 0 4px 16px rgba(59, 130, 246, 0.6);
+        }
+        .ec-range::-moz-range-thumb {
+          width: 20px;
+          height: 20px;
+          border-radius: 9999px;
+          background: white;
+          border: 3px solid rgb(59 130 246);
+          box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+          cursor: grab;
+          transition: transform 0.15s ease;
+        }
+        .ec-range::-moz-range-thumb:hover {
+          transform: scale(1.15);
+        }
+        .ec-range-emerald {
+          background: linear-gradient(
+            to right,
+            rgb(16 185 129) 0%,
+            rgb(20 184 166) var(--ec-progress, 0%),
+            rgba(255, 255, 255, 0.08) var(--ec-progress, 0%),
+            rgba(255, 255, 255, 0.08) 100%
+          );
+        }
+        .ec-range-emerald::-webkit-slider-thumb {
+          border-color: rgb(16 185 129);
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+        }
+        .ec-range-emerald::-moz-range-thumb {
+          border-color: rgb(16 185 129);
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+        }
+        .ec-range-purple {
+          background: linear-gradient(
+            to right,
+            rgb(168 85 247) 0%,
+            rgb(217 70 239) var(--ec-progress, 0%),
+            rgba(255, 255, 255, 0.08) var(--ec-progress, 0%),
+            rgba(255, 255, 255, 0.08) 100%
+          );
+        }
+        .ec-range-purple::-webkit-slider-thumb {
+          border-color: rgb(168 85 247);
+          box-shadow: 0 4px 12px rgba(168, 85, 247, 0.4);
+        }
+        .ec-range-purple::-moz-range-thumb {
+          border-color: rgb(168 85 247);
+          box-shadow: 0 4px 12px rgba(168, 85, 247, 0.4);
+        }
+        .ec-range-amber {
+          background: linear-gradient(
+            to right,
+            rgb(245 158 11) 0%,
+            rgb(249 115 22) var(--ec-progress, 0%),
+            rgba(255, 255, 255, 0.08) var(--ec-progress, 0%),
+            rgba(255, 255, 255, 0.08) 100%
+          );
+        }
+        .ec-range-amber::-webkit-slider-thumb {
+          border-color: rgb(245 158 11);
+          box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+        }
+        .ec-range-amber::-moz-range-thumb {
+          border-color: rgb(245 158 11);
+          box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+        }
+        .scrollbar-thin::-webkit-scrollbar {
+          height: 4px;
+        }
+      `}</style>
     </section>
   );
 }

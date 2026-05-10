@@ -9,6 +9,7 @@ import { SocialTaskBuilder } from "./SocialTaskBuilder";
 import { ArticleTaskBuilder } from "./ArticleTaskBuilder";
 import { VideoTaskBuilder } from "./VideoTaskBuilder";
 import { SurveyTaskBuilder } from "./SurveyTaskBuilder";
+import { CustomTaskBuilder } from "./CustomTaskBuilder";
 import { emptySocialConfig, type SocialConfig } from "@/lib/social-tasks";
 import { emptyArticleConfig, validateArticleConfig, type ArticleConfig } from "@/lib/article-tasks";
 import { emptyVideoConfig, validateVideoConfig, type VideoConfig } from "@/lib/video-tasks";
@@ -17,6 +18,11 @@ import {
   validateSurveyConfig,
   type SurveyConfig,
 } from "@/lib/survey-tasks";
+import {
+  DEFAULT_CUSTOM_CONFIG,
+  validateCustomConfig,
+  type CustomConfig,
+} from "@/lib/custom-tasks";
 
 // Task types with icons and colors
 const taskTypes = [
@@ -77,6 +83,7 @@ interface TaskFormProps {
     articleConfig?: ArticleConfig | null;
     videoConfig?: VideoConfig | null;
     surveyConfig?: SurveyConfig | null;
+    customConfig?: CustomConfig | null;
     proxyInstructions: string | null;
     startsAt: Date | null;
     expiresAt: Date | null;
@@ -189,6 +196,11 @@ export function TaskForm({ task }: TaskFormProps) {
     task?.surveyConfig ?? emptySurveyConfig()
   );
 
+  // Custom task config
+  const [customConfig, setCustomConfig] = useState<CustomConfig>(
+    task?.customConfig ?? DEFAULT_CUSTOM_CONFIG
+  );
+
   // Media selector state
   const [mediaSelectorOpen, setMediaSelectorOpen] = useState(false);
   const [mediaSelectorTarget, setMediaSelectorTarget] = useState<"thumbnail" | { type: "quiz"; index: number } | null>(null);
@@ -297,6 +309,14 @@ export function TaskForm({ task }: TaskFormProps) {
         surveyConfigOut = surveyConfig;
       }
 
+      // For CUSTOM tasks, validate and prep config
+      let customConfigOut: CustomConfig | null = null;
+      if (formData.type === "CUSTOM") {
+        const err = validateCustomConfig(customConfig);
+        if (err) throw new Error(err);
+        customConfigOut = customConfig;
+      }
+
       // Prepare the data
       const submitData = {
         ...formData,
@@ -307,6 +327,7 @@ export function TaskForm({ task }: TaskFormProps) {
         articleConfig: articleConfigOut,
         videoConfig: videoConfigOut,
         surveyConfig: surveyConfigOut,
+        customConfig: customConfigOut,
         contentUrl: contentUrlOut,
         duration: durationOut
           ? parseInt(durationOut.toString())
@@ -683,6 +704,25 @@ export function TaskForm({ task }: TaskFormProps) {
             </p>
           </div>
           <SurveyTaskBuilder value={surveyConfig} onChange={setSurveyConfig} />
+        </div>
+      )}
+
+      {/* Custom Task Settings — flexible "do anything" builder */}
+      {formData.type === "CUSTOM" && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-white inline-flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-indigo-400" />
+              Custom Task Form Builder
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Build any form you need. Add image-upload fields if you need
+              photos, file-upload fields for documents, link fields for URLs,
+              text/number fields for info — mix any types you want. Users will
+              fill the form, and you review the answers in admin → submissions.
+            </p>
+          </div>
+          <CustomTaskBuilder value={customConfig} onChange={setCustomConfig} />
         </div>
       )}
 

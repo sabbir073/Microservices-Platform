@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   User,
@@ -9,7 +9,6 @@ import {
   MapPin,
   Calendar,
   Shield,
-  Trophy,
   Camera,
   X,
   Loader2,
@@ -20,7 +19,6 @@ import {
   Edit3,
   Sparkles,
   Users,
-  Crown,
   Tag,
   Plus,
   Trash2,
@@ -33,20 +31,41 @@ import {
   Send,
   MessageCircle,
   Music2,
-  Eye,
-  EyeOff,
   Lock,
   Palette,
   CreditCard,
   Bell,
+  Upload,
+  Briefcase,
+  Languages,
+  Image as ImageIcon,
+  ThumbsUp,
+  MessageSquare,
+  Share2,
+  Eye as EyeIcon,
+  BarChart3,
+  UserPlus,
+  UserCheck,
+  Coins,
+  Droplet,
+  GraduationCap,
+  ShoppingBag,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import {
-  SocialStatsGroup,
-  LifetimeStatsGroup,
-} from "@/components/user/profile/profile-stat-groups";
+import { LifetimeStatsGroup } from "@/components/user/profile/profile-stat-groups";
 import { LocationSelector } from "@/components/shared/location-selector";
+import { useTheme } from "@/components/providers/theme-provider";
+import {
+  PackageBadge,
+  LevelBadge,
+  RankBadge,
+} from "@/components/user/profile/badges";
+import {
+  AnalyticsPanel,
+  type AnalyticsResp,
+} from "@/components/user/profile/analytics-panel";
+import { VerifiedBadge } from "@/components/user/profile/verified-badge";
 
 interface CompletionItem {
   key: string;
@@ -131,6 +150,12 @@ interface ProfileResponse {
     postsCount: number;
     followersCount: number;
     followingCount: number;
+    coursesEnrolled: number;
+    coursesCreated: number;
+    marketplaceListings: number;
+    marketplacePurchases: number;
+    marketplaceSales: number;
+    marketplaceSalesAmount: number;
     lifetime: {
       totalEarnedPoints: number | null;
       totalEarnedUsd: number | null;
@@ -152,6 +177,7 @@ interface ProfileResponse {
   verification: {
     kycStatus: string;
     isBlueVerified: boolean;
+    verifiedBadgeStyle: string | null;
     isEmailVerified: boolean;
     isPhoneVerified: boolean;
     twoFactorEnabled: boolean;
@@ -227,12 +253,15 @@ const PLATFORM_META: Record<
   DISCORD: { label: "Discord", icon: MessageCircle, gradient: "from-indigo-500 to-violet-600", countLabel: "Server members" },
 };
 
-type Tab = "overview" | "personal" | "address" | "kyc" | "social" | "privacy" | "theme" | "security";
+type PrimaryTab = "profile" | "posts" | "followers" | "following" | "analytics";
+type EditTab = "personal" | "address" | "kyc" | "social" | "privacy" | "theme" | "security";
 
 export function ProfileView() {
   const [data, setData] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [primaryTab, setPrimaryTab] = useState<PrimaryTab>("profile");
+  const [editOpen, setEditOpen] = useState(false);
+  const [editTab, setEditTab] = useState<EditTab>("personal");
   const [tagModalOpen, setTagModalOpen] = useState(false);
   const [photoTarget, setPhotoTarget] = useState<"avatar" | "coverPhoto" | null>(null);
   const [connectPlatform, setConnectPlatform] = useState<SocialAccount["platform"] | null>(null);
@@ -241,6 +270,16 @@ export function ProfileView() {
     timezone: string | null;
     dismissed: boolean;
   } | null>(null);
+  const editAnchorRef = useRef<HTMLDivElement | null>(null);
+
+  const openEdit = (which: EditTab = "personal") => {
+    setEditTab(which);
+    setEditOpen(true);
+    setPrimaryTab("profile");
+    requestAnimationFrame(() => {
+      editAnchorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
 
   const load = async () => {
     setLoading(true);
@@ -260,6 +299,21 @@ export function ProfileView() {
   useEffect(() => {
     load();
   }, []);
+
+  // Sync live theme with the user's saved preference whenever data loads
+  const { setTheme } = useTheme();
+  useEffect(() => {
+    const saved = data?.preferences?.theme;
+    if (!saved) return;
+    if (saved === "dark" || saved === "light") {
+      setTheme(saved);
+    } else if (saved === "system") {
+      const prefersDark =
+        typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+      setTheme(prefersDark ? "dark" : "light");
+    }
+  }, [data?.preferences?.theme, setTheme]);
 
   // Auto-country detection — only fires when country is missing
   useEffect(() => {
@@ -348,12 +402,12 @@ export function ProfileView() {
     );
   }
 
-  const { profile, stats, verification, preferences, socialAccounts, completion } = data;
+  const { profile, stats, verification, socialAccounts } = data;
   const displayName = profile.name ?? `${profile.firstName ?? ""} ${profile.lastName ?? ""}`.trim() ?? "User";
   const initial = (displayName || profile.email).charAt(0).toUpperCase();
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-5 pb-12">
       {/* Auto-country banner */}
       {autoCountry?.country && !autoCountry.dismissed && !profile.country && (
         <div className="rounded-xl border border-indigo-500/40 bg-indigo-500/10 p-3 flex items-center gap-3">
@@ -380,23 +434,24 @@ export function ProfileView() {
 
       {/* Profile Header */}
       <div className="relative rounded-2xl overflow-hidden border border-gray-800">
-        <div className="relative h-36 sm:h-48 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
+        <div className="relative h-40 sm:h-56 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
           {profile.coverPhoto && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={profile.coverPhoto} alt="" className="w-full h-full object-cover" />
           )}
           <button
             onClick={() => setPhotoTarget("coverPhoto")}
-            className="absolute top-3 right-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/50 backdrop-blur-md text-white text-xs hover:bg-black/70"
+            className="absolute top-3 right-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/55 backdrop-blur-md text-white text-xs font-medium hover:bg-black/75 border border-white/10"
           >
             <Camera className="w-3.5 h-3.5" />
-            Edit Cover
+            <span className="hidden xs:inline">Edit Cover</span>
+            <span className="xs:hidden">Cover</span>
           </button>
         </div>
-        <div className="bg-gray-900 px-4 sm:px-6 pt-12 pb-5 relative">
-          <div className="absolute -top-12 left-4 sm:left-6">
+        <div className="bg-gray-900 px-4 sm:px-6 pt-14 sm:pt-16 pb-5 relative">
+          <div className="absolute -top-14 sm:-top-16 left-4 sm:left-6">
             <div className="relative">
-              <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-linear-to-br from-indigo-500 to-purple-600 border-4 border-gray-900 flex items-center justify-center text-white text-3xl font-extrabold overflow-hidden">
+              <div className="w-28 h-28 sm:w-32 sm:h-32 rounded-2xl bg-linear-to-br from-indigo-500 to-purple-600 border-4 border-gray-900 flex items-center justify-center text-white text-4xl font-extrabold overflow-hidden shadow-xl">
                 {profile.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={profile.avatar} alt="" className="w-full h-full object-cover" />
@@ -406,17 +461,25 @@ export function ProfileView() {
               </div>
               <button
                 onClick={() => setPhotoTarget("avatar")}
-                className="absolute bottom-1 right-1 p-1.5 bg-gray-800 hover:bg-gray-700 rounded-full border border-gray-700"
+                className="absolute bottom-1 right-1 p-2 bg-gray-800 hover:bg-gray-700 rounded-full border-2 border-gray-900 shadow-lg"
+                aria-label="Change profile photo"
               >
                 <Camera className="w-3.5 h-3.5 text-white" />
               </button>
             </div>
           </div>
 
-          <div className="flex justify-end mb-2">
-            <button
-              onClick={() => setTab("personal")}
+          <div className="flex justify-end mb-2 gap-2">
+            <Link
+              href={`/u/${profile.id}`}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-xs font-semibold"
+            >
+              <EyeIcon className="w-3.5 h-3.5" />
+              View as public
+            </Link>
+            <button
+              onClick={() => openEdit("personal")}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shadow-lg shadow-indigo-900/30"
             >
               <Edit3 className="w-3.5 h-3.5" />
               Edit Profile
@@ -424,29 +487,52 @@ export function ProfileView() {
           </div>
 
           <div className="flex items-start gap-2 flex-wrap">
-            <h1 className="text-2xl font-bold text-white">{displayName}</h1>
-            {verification.isBlueVerified && (
-              <span title="KYC verified" className="text-blue-400 mt-1">
-                <CheckCircle className="w-5 h-5 fill-blue-500 text-white" />
-              </span>
-            )}
-            <span className="ml-auto inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold uppercase tracking-wider">
-              <Crown className="w-3 h-3" />
-              {data.package.tier}
-            </span>
+            <div className="min-w-0 flex-1">
+              <div className="inline-flex items-center gap-2 flex-wrap">
+                <h1 className="text-2xl sm:text-3xl font-bold text-white">
+                  {displayName}
+                </h1>
+                {verification.isBlueVerified && (
+                  <VerifiedBadge
+                    style={verification.verifiedBadgeStyle}
+                    size="md"
+                  />
+                )}
+              </div>
+              <p className="text-gray-500 text-sm mt-0.5">
+                @{profile.username ?? profile.email.split("@")[0]}
+              </p>
+            </div>
           </div>
-          <p className="text-gray-500 text-sm">@{profile.username ?? profile.email.split("@")[0]}</p>
-          {profile.bio && <p className="text-sm text-gray-300 mt-2">{profile.bio}</p>}
 
-          <div className="flex items-center flex-wrap gap-3 mt-3 text-xs text-gray-400">
+          {/* Prominent package + level pills */}
+          <div className="flex flex-wrap items-center gap-2 mt-3">
+            <PackageBadge tier={data.package.tier} name={data.package.name} href="/packages" />
+            <LevelBadge level={stats.level} xp={stats.xp} xpNeeded={stats.xpNeeded} xpProgress={stats.xpProgress} xpPercentage={stats.xpPercentage} />
+            <RankBadge rank={stats.lifetime.rank} />
+          </div>
+
+          {profile.bio && (
+            <p className="text-sm text-gray-300 mt-3 whitespace-pre-wrap leading-relaxed">
+              {profile.bio}
+            </p>
+          )}
+
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 mt-3 text-xs text-gray-400">
             {profile.country && (
-              <span className="inline-flex items-center gap-1">
-                <MapPin className="w-3 h-3" />
+              <span className="inline-flex items-center gap-1.5">
+                <MapPin className="w-3.5 h-3.5 text-rose-400" />
                 {COUNTRIES.find((c) => c.code === profile.country)?.name ?? profile.country}
               </span>
             )}
-            <span className="inline-flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
+            {profile.profession && (
+              <span className="inline-flex items-center gap-1.5">
+                <Briefcase className="w-3.5 h-3.5 text-amber-400" />
+                {profile.profession}
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-indigo-400" />
               Joined{" "}
               {new Date(profile.createdAt).toLocaleDateString("en-US", {
                 month: "short",
@@ -462,7 +548,7 @@ export function ProfileView() {
               return (
                 <span
                   key={t}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 text-[11px] font-medium border border-indigo-500/30"
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-indigo-500/10 text-indigo-300 text-[11px] font-medium border border-indigo-500/30"
                 >
                   <span>{meta?.emoji ?? "★"}</span>
                   {meta?.label ?? t}
@@ -471,82 +557,116 @@ export function ProfileView() {
             })}
             <button
               onClick={() => setTagModalOpen(true)}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-300 text-[11px] font-medium border border-gray-700"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-800 hover:bg-gray-700 text-gray-300 text-[11px] font-medium border border-gray-700"
             >
               <Tag className="w-3 h-3" />
               {profile.tags.length === 0 ? "Add tags" : "Edit tags"}
             </button>
           </div>
+
+          {/* Inline social stats — Facebook style */}
+          <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-gray-800">
+            <button
+              onClick={() => setPrimaryTab("posts")}
+              className="text-center hover:bg-gray-800/50 rounded-lg py-2 transition-colors"
+            >
+              <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+                {stats.postsCount.toLocaleString()}
+              </p>
+              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mt-0.5">
+                Posts
+              </p>
+            </button>
+            <button
+              onClick={() => setPrimaryTab("followers")}
+              className="text-center hover:bg-gray-800/50 rounded-lg py-2 transition-colors border-x border-gray-800"
+            >
+              <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+                {stats.followersCount.toLocaleString()}
+              </p>
+              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mt-0.5">
+                Followers
+              </p>
+            </button>
+            <button
+              onClick={() => setPrimaryTab("following")}
+              className="text-center hover:bg-gray-800/50 rounded-lg py-2 transition-colors"
+            >
+              <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+                {stats.followingCount.toLocaleString()}
+              </p>
+              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mt-0.5">
+                Following
+              </p>
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Profile (Posts/Followers/Following) + Lifetime Stats */}
-      <div className="space-y-4">
-        <SocialStatsGroup
-          posts={stats.postsCount}
-          followers={stats.followersCount}
-          following={stats.followingCount}
-        />
-        <LifetimeStatsGroup stats={stats.lifetime} />
-      </div>
+      {/* Lifetime stats — moved to top per user request */}
+      <LifetimeStatsGroup stats={stats.lifetime} />
 
-      {/* Profile completion ring */}
-      <CompletionCard
-        percentage={completion.percentage}
-        missing={completion.missing}
-        onJump={(href) => {
-          if (!href) return;
-          const params = new URLSearchParams(href.replace(/^\?/, ""));
-          const t = params.get("tab") as Tab | null;
-          if (t) setTab(t);
-        }}
-      />
-
-      {/* Tab nav */}
-      <nav className="flex gap-1 overflow-x-auto -mx-2 px-2 pb-1 border-b border-gray-800">
-        {(
-          [
-            { key: "overview", label: "Overview", icon: User },
-            { key: "personal", label: "Personal", icon: User },
-            { key: "address", label: "Address", icon: MapPin },
-            { key: "kyc", label: "KYC", icon: Shield },
-            { key: "social", label: "Social", icon: Twitter },
-            { key: "privacy", label: "Privacy", icon: Lock },
-            { key: "theme", label: "Theme", icon: Palette },
-            { key: "security", label: "Security", icon: Shield },
-          ] as const
-        ).map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
-              tab === t.key
-                ? "bg-indigo-500/15 text-white border border-indigo-500/40"
-                : "text-gray-400 hover:text-white hover:bg-gray-900"
-            )}
-          >
-            <t.icon className="w-4 h-4" />
-            {t.label}
-          </button>
-        ))}
+      {/* Sticky Facebook-style primary tabs */}
+      <nav className="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 bg-gray-950/95 backdrop-blur-md border-y border-gray-800">
+        <div className="flex gap-1 overflow-x-auto scrollbar-thin py-1">
+          {(
+            [
+              { key: "profile", label: "Profile", icon: User },
+              { key: "posts", label: "Posts", icon: ImageIcon },
+              { key: "followers", label: "Followers", icon: Users },
+              { key: "following", label: "Following", icon: UserPlus },
+              { key: "analytics", label: "Analytics", icon: BarChart3 },
+            ] as const
+          ).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setPrimaryTab(t.key)}
+              className={cn(
+                "inline-flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors relative",
+                primaryTab === t.key
+                  ? "text-indigo-400"
+                  : "text-gray-400 hover:text-white"
+              )}
+            >
+              <t.icon className="w-4 h-4" />
+              {t.label}
+              {primaryTab === t.key && (
+                <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-indigo-500 rounded-full" />
+              )}
+            </button>
+          ))}
+        </div>
       </nav>
 
       {/* Tab content */}
-      {tab === "overview" && <OverviewTab data={data} />}
-      {tab === "personal" && <PersonalTab data={data} patch={patch} />}
-      {tab === "address" && <AddressTab data={data} patch={patch} />}
-      {tab === "kyc" && <KycTab data={data} />}
-      {tab === "social" && (
-        <SocialTab
-          accounts={socialAccounts}
-          onConnect={(p) => setConnectPlatform(p)}
-          onDisconnect={disconnectSocial}
+      {primaryTab === "profile" && (
+        <ProfileTabBody
+          data={data}
+          patch={patch}
+          editAnchorRef={editAnchorRef}
+          editOpen={editOpen}
+          setEditOpen={setEditOpen}
+          editTab={editTab}
+          setEditTab={setEditTab}
+          openEdit={openEdit}
+          onJumpCompletion={(href) => {
+            if (!href) return;
+            const params = new URLSearchParams(href.replace(/^\?/, ""));
+            const t = params.get("tab") as EditTab | null;
+            openEdit(t ?? "personal");
+          }}
+          onConnectSocial={(p) => setConnectPlatform(p)}
+          onDisconnectSocial={disconnectSocial}
         />
       )}
-      {tab === "privacy" && <PrivacyTab privacy={preferences.privacy} patch={patch} />}
-      {tab === "theme" && <ThemeTab preferences={preferences} patch={patch} />}
-      {tab === "security" && <SecurityTab verification={verification} />}
+      {primaryTab === "posts" && <PostsListTab userId={profile.id} />}
+      {primaryTab === "followers" && (
+        <UserListTab endpoint={`/api/users/${profile.id}/followers`} viewerId={profile.id} />
+      )}
+      {primaryTab === "following" && (
+        <UserListTab endpoint={`/api/users/${profile.id}/following`} viewerId={profile.id} />
+      )}
+      {primaryTab === "analytics" && <AnalyticsTab />}
 
       {/* Modals */}
       {tagModalOpen && (
@@ -565,9 +685,9 @@ export function ProfileView() {
           target={photoTarget}
           currentUrl={photoTarget === "avatar" ? profile.avatar : profile.coverPhoto}
           onClose={() => setPhotoTarget(null)}
-          onSave={async (url) => {
-            const ok = await patch({ [photoTarget]: url });
-            if (ok) setPhotoTarget(null);
+          onSaved={() => {
+            setPhotoTarget(null);
+            load();
           }}
         />
       )}
@@ -615,124 +735,6 @@ function StatTile({
         <p className="text-xs text-gray-500">{label}</p>
         <p className="text-base font-bold text-white tabular-nums">{value}</p>
       </div>
-    </div>
-  );
-}
-
-function CompletionCard({
-  percentage,
-  missing,
-  onJump,
-}: {
-  percentage: number;
-  missing: CompletionItem[];
-  onJump: (href?: string) => void;
-}) {
-  const ringColor =
-    percentage >= 90
-      ? "stroke-emerald-400"
-      : percentage >= 60
-      ? "stroke-amber-400"
-      : "stroke-indigo-400";
-
-  return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
-      <div className="flex items-center gap-4">
-        {/* Ring */}
-        <div className="relative w-20 h-20 shrink-0">
-          <svg className="w-20 h-20 -rotate-90" viewBox="0 0 100 100">
-            <circle
-              cx="50"
-              cy="50"
-              r="42"
-              className="fill-none stroke-gray-800"
-              strokeWidth="10"
-            />
-            <circle
-              cx="50"
-              cy="50"
-              r="42"
-              className={cn("fill-none transition-[stroke-dashoffset]", ringColor)}
-              strokeWidth="10"
-              strokeLinecap="round"
-              strokeDasharray={Math.PI * 84}
-              strokeDashoffset={Math.PI * 84 * (1 - percentage / 100)}
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className="text-base font-extrabold text-white tabular-nums">
-              {percentage}%
-            </span>
-          </div>
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-bold text-white">Profile Completion</h3>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {percentage === 100
-              ? "Looking sharp — all set!"
-              : missing.length === 1
-              ? "1 item left to make it perfect"
-              : `${missing.length} items left to make it perfect`}
-          </p>
-          {missing.length > 0 && (
-            <p className="text-[11px] text-indigo-400 mt-1">
-              Higher completion = better task acceptance + premium opportunities.
-            </p>
-          )}
-        </div>
-      </div>
-
-      {missing.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-3 max-h-40 overflow-y-auto">
-          {missing.slice(0, 12).map((it) => (
-            <button
-              key={it.key}
-              onClick={() => onJump(it.href)}
-              className="flex items-center gap-2 p-2 rounded-lg bg-gray-950 border border-gray-800 hover:border-indigo-500/40 text-left transition-colors"
-            >
-              <Circle className="w-3.5 h-3.5 text-gray-600 shrink-0" />
-              <span className="text-xs text-gray-300 flex-1 truncate">{it.label}</span>
-              <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function OverviewTab({ data }: { data: ProfileResponse }) {
-  const { stats, verification, completion, socialAccounts } = data;
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-      <Card title="Verification">
-        <Row icon={<Mail className="w-4 h-4" />} label="Email" right={
-          verification.isEmailVerified ? <Verified /> : <span className="text-amber-400 text-xs">Not verified</span>
-        } />
-        <Row icon={<Phone className="w-4 h-4" />} label="Phone" right={
-          verification.isPhoneVerified ? <Verified /> : <span className="text-amber-400 text-xs">Not verified</span>
-        } />
-        <Row icon={<Shield className="w-4 h-4" />} label="KYC" right={
-          verification.kycStatus === "APPROVED" ? <Verified /> :
-          verification.kycStatus === "PENDING" ? <span className="text-yellow-400 text-xs">Pending</span> :
-          verification.kycStatus === "REJECTED" ? (
-            <Link href="/kyc/appeal" className="text-amber-400 text-xs hover:underline">Appeal →</Link>
-          ) : <span className="text-gray-500 text-xs">Not submitted</span>
-        } />
-        <Row icon={<Lock className="w-4 h-4" />} label="2FA" right={
-          verification.twoFactorEnabled ? <Verified /> : (
-            <Link href="/2fa-setup" className="text-indigo-400 text-xs hover:underline">Enable</Link>
-          )
-        } />
-      </Card>
-
-      <Card title="At a glance">
-        <Row icon={<Trophy className="w-4 h-4" />} label="Tasks completed" right={<strong className="text-white tabular-nums">{stats.tasksCompleted}</strong>} />
-        <Row icon={<Sparkles className="w-4 h-4" />} label="Total earnings" right={<strong className="text-white tabular-nums">${stats.totalEarnings.toFixed(2)}</strong>} />
-        <Row icon={<Twitter className="w-4 h-4" />} label="Connected socials" right={<strong className="text-white tabular-nums">{socialAccounts.length} / 8</strong>} />
-        <Row icon={<CheckCircle2 className="w-4 h-4" />} label="Profile completion" right={<strong className="text-white tabular-nums">{completion.percentage}%</strong>} />
-      </Card>
     </div>
   );
 }
@@ -923,9 +925,8 @@ function AddressTab({
         <button
           onClick={async () => {
             setBusy(true);
-            // Don't send subDivision (not on User schema for this user-side flow)
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { subDivision: _sub, ...payload } = form;
+            void _sub;
             await patch(payload);
             setBusy(false);
           }}
@@ -1184,23 +1185,53 @@ function ThemeTab({
   preferences: { theme: string; themeAccent: string; notifications: { enabled: boolean; email: boolean; push: boolean } };
   patch: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
+  const { setTheme } = useTheme();
+
+  const applyTheme = (mode: "dark" | "light" | "system") => {
+    let resolved: "dark" | "light";
+    if (mode === "system") {
+      resolved =
+        typeof window !== "undefined" &&
+        window.matchMedia &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+    } else {
+      resolved = mode;
+    }
+    setTheme(resolved);
+    patch({ theme: mode });
+  };
+
   return (
     <div className="space-y-4">
       <Card title="Appearance">
         <p className="text-xs text-gray-400 uppercase tracking-wider font-bold mb-2">Mode</p>
         <div className="grid grid-cols-3 gap-2">
-          {(["dark", "light", "system"] as const).map((t) => (
+          {(
+            [
+              { id: "dark", label: "Dark", swatch: "bg-slate-900" },
+              { id: "light", label: "Light", swatch: "bg-slate-100" },
+              { id: "system", label: "System", swatch: "bg-linear-to-br from-slate-100 to-slate-900" },
+            ] as const
+          ).map((t) => (
             <button
-              key={t}
-              onClick={() => patch({ theme: t })}
+              key={t.id}
+              onClick={() => applyTheme(t.id)}
               className={cn(
-                "py-3 rounded-lg text-sm font-semibold border capitalize",
-                preferences.theme === t
-                  ? "bg-indigo-500 text-white border-indigo-500"
-                  : "bg-gray-900 text-gray-400 border-gray-800 hover:border-gray-700"
+                "p-3 rounded-lg border text-sm font-semibold transition-colors flex flex-col items-center gap-2",
+                preferences.theme === t.id
+                  ? "bg-indigo-500/15 text-white border-indigo-500/50 ring-1 ring-indigo-500/40"
+                  : "bg-gray-900 text-gray-300 border-gray-800 hover:border-gray-700"
               )}
             >
-              {t}
+              <span
+                className={cn(
+                  "w-10 h-10 rounded-lg border border-white/10 shadow-inner",
+                  t.swatch
+                )}
+              />
+              {t.label}
             </button>
           ))}
         </div>
@@ -1322,6 +1353,934 @@ function SecurityTab({
   );
 }
 
+// ───────────────────────────── Profile Tab Body ─────────────────────────────
+
+function ProfileTabBody({
+  data,
+  patch,
+  editAnchorRef,
+  editOpen,
+  setEditOpen,
+  editTab,
+  setEditTab,
+  openEdit,
+  onJumpCompletion,
+  onConnectSocial,
+  onDisconnectSocial,
+}: {
+  data: ProfileResponse;
+  patch: (body: Record<string, unknown>) => Promise<boolean>;
+  editAnchorRef: React.RefObject<HTMLDivElement | null>;
+  editOpen: boolean;
+  setEditOpen: (v: boolean) => void;
+  editTab: EditTab;
+  setEditTab: (t: EditTab) => void;
+  openEdit: (which?: EditTab) => void;
+  onJumpCompletion: (href?: string) => void;
+  onConnectSocial: (p: SocialAccount["platform"]) => void;
+  onDisconnectSocial: (id: string) => void;
+}) {
+  const { profile, address, stats, verification, preferences, socialAccounts, completion } = data;
+
+  return (
+    <div className="space-y-5">
+      {/* Two-column on desktop, single column on mobile */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Left rail (1/3) — about, contact, work */}
+        <div className="space-y-5 lg:col-span-1">
+          <Card
+            title="Intro"
+            icon={<Sparkles className="w-3.5 h-3.5" />}
+            tone="indigo"
+          >
+            <p className="text-sm text-gray-300 whitespace-pre-wrap">
+              {profile.bio || (
+                <span className="text-gray-500 italic">
+                  No bio yet. Click Edit Profile to add one.
+                </span>
+              )}
+            </p>
+            <div className="space-y-2 mt-3 pt-3 border-t border-gray-800">
+              <InfoRow icon={<Mail className="w-3.5 h-3.5" />} label={profile.email} sub="Email" />
+              {profile.phone && (
+                <InfoRow icon={<Phone className="w-3.5 h-3.5" />} label={profile.phone} sub="Phone" />
+              )}
+              {profile.profession && (
+                <InfoRow icon={<Briefcase className="w-3.5 h-3.5" />} label={profile.profession} sub="Works as" />
+              )}
+              {profile.country && (
+                <InfoRow
+                  icon={<MapPin className="w-3.5 h-3.5" />}
+                  label={COUNTRIES.find((c) => c.code === profile.country)?.name ?? profile.country}
+                  sub="From"
+                />
+              )}
+              {profile.language && (
+                <InfoRow
+                  icon={<Languages className="w-3.5 h-3.5" />}
+                  label={LANGUAGES.find((l) => l.code === profile.language)?.name ?? profile.language}
+                  sub="Speaks"
+                />
+              )}
+              <InfoRow
+                icon={<Calendar className="w-3.5 h-3.5" />}
+                label={new Date(profile.createdAt).toLocaleDateString("en-US", {
+                  month: "long",
+                  year: "numeric",
+                })}
+                sub="Joined"
+              />
+            </div>
+            <button
+              onClick={() => openEdit("personal")}
+              className="mt-3 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-xs font-semibold"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              Edit Details
+            </button>
+          </Card>
+
+          <Card
+            title="Profile Completion"
+            icon={<CheckCircle2 className="w-3.5 h-3.5" />}
+            tone="emerald"
+          >
+            <div className="flex items-center gap-3">
+              <CompletionRing percentage={completion.percentage} />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-gray-400">
+                  {completion.percentage === 100
+                    ? "All set!"
+                    : `${completion.missing.length} item${completion.missing.length === 1 ? "" : "s"} left`}
+                </p>
+                <p className="text-[11px] text-indigo-400 mt-0.5">
+                  Higher % = better task acceptance
+                </p>
+              </div>
+            </div>
+            {completion.missing.length > 0 && (
+              <div className="mt-3 space-y-1.5 max-h-44 overflow-y-auto">
+                {completion.missing.slice(0, 8).map((it) => (
+                  <button
+                    key={it.key}
+                    onClick={() => onJumpCompletion(it.href)}
+                    className="w-full flex items-center gap-2 p-2 rounded-lg bg-gray-950 border border-gray-800 hover:border-indigo-500/40 text-left transition-colors"
+                  >
+                    <Circle className="w-3.5 h-3.5 text-gray-600 shrink-0" />
+                    <span className="text-xs text-gray-300 flex-1 truncate">{it.label}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        {/* Right rail (2/3) — about, address, verification, socials, lifetime */}
+        <div className="space-y-5 lg:col-span-2">
+          <Card
+            title="Personal Info"
+            icon={<User className="w-3.5 h-3.5" />}
+            tone="purple"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3">
+              <DataLine label="First name" value={profile.firstName} />
+              <DataLine label="Last name" value={profile.lastName} />
+              <DataLine label="Username" value={profile.username && `@${profile.username}`} />
+              <DataLine
+                label="Date of birth"
+                value={
+                  profile.dateOfBirth
+                    ? new Date(profile.dateOfBirth).toLocaleDateString("en-US", {
+                        month: "long",
+                        day: "numeric",
+                        year: "numeric",
+                      })
+                    : null
+                }
+              />
+              <DataLine label="Gender" value={profile.gender} />
+              <DataLine
+                label="Blood group"
+                value={profile.bloodGroup}
+                icon={<Droplet className="w-3.5 h-3.5 text-rose-400" />}
+              />
+              <DataLine label="Nationality" value={profile.nationality} />
+              <DataLine
+                label="Profession"
+                value={profile.profession}
+                icon={<Briefcase className="w-3.5 h-3.5 text-amber-400" />}
+              />
+              <DataLine label="Secondary email" value={profile.secondaryEmail} />
+              <DataLine label="Secondary phone" value={profile.secondaryPhone} />
+            </div>
+            <div className="flex justify-end pt-3 mt-3 border-t border-gray-800">
+              <button
+                onClick={() => openEdit("personal")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-bold"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Edit Personal Info
+              </button>
+            </div>
+          </Card>
+
+          <Card
+            title="Address"
+            icon={<MapPin className="w-3.5 h-3.5" />}
+            tone="rose"
+          >
+            {address.street ||
+            address.village ||
+            address.city ||
+            address.district ||
+            address.country ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-3">
+                <DataLine label="Street / House" value={address.street} />
+                <DataLine label="Village / Neighborhood" value={address.village} />
+                <DataLine label="City" value={address.city} />
+                <DataLine label="Sub-district" value={address.subDistrict} />
+                <DataLine label="District" value={address.district} />
+                <DataLine label="Division / State" value={address.division} />
+                <DataLine label="Region" value={address.region} />
+                <DataLine label="Postal Code" value={address.postalCode} />
+                <DataLine label="Country" value={address.country} />
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-700 bg-gray-950 p-4 text-center">
+                <MapPin className="w-6 h-6 text-gray-600 mx-auto mb-1" />
+                <p className="text-sm text-gray-400 font-semibold">
+                  No address set yet
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Add one to boost your profile completion.
+                </p>
+              </div>
+            )}
+            <div className="flex justify-end pt-3 mt-3 border-t border-gray-800">
+              <button
+                onClick={() => openEdit("address")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-bold"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                Edit Address
+              </button>
+            </div>
+          </Card>
+
+          <Card
+            title="Verification & Security"
+            icon={<Shield className="w-3.5 h-3.5" />}
+            tone="sky"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <VerifTile
+                icon={<Mail className="w-4 h-4" />}
+                label="Email"
+                ok={verification.isEmailVerified}
+                action={
+                  verification.isEmailVerified
+                    ? null
+                    : { label: "Verify", href: "/verify-email" }
+                }
+              />
+              <VerifTile
+                icon={<Phone className="w-4 h-4" />}
+                label="Phone"
+                ok={verification.isPhoneVerified}
+                action={
+                  verification.isPhoneVerified
+                    ? null
+                    : { label: "Verify", href: "/verify-phone" }
+                }
+              />
+              <VerifTile
+                icon={<Shield className="w-4 h-4" />}
+                label="KYC"
+                ok={verification.kycStatus === "APPROVED"}
+                pending={verification.kycStatus === "PENDING"}
+                rejected={verification.kycStatus === "REJECTED"}
+                action={
+                  verification.kycStatus === "APPROVED"
+                    ? null
+                    : verification.kycStatus === "REJECTED"
+                    ? { label: "Appeal", href: "/kyc/appeal" }
+                    : { label: "Submit", href: "/kyc" }
+                }
+              />
+              <VerifTile
+                icon={<Lock className="w-4 h-4" />}
+                label="2FA"
+                ok={verification.twoFactorEnabled}
+                action={
+                  verification.twoFactorEnabled
+                    ? null
+                    : { label: "Enable", href: "/2fa-setup" }
+                }
+              />
+            </div>
+          </Card>
+
+          <Card
+            title="Courses & Marketplace"
+            icon={<GraduationCap className="w-3.5 h-3.5" />}
+            tone="emerald"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Courses */}
+              <div className="rounded-xl border border-gray-800 bg-gray-950 p-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center">
+                    <GraduationCap className="w-4 h-4" />
+                  </div>
+                  <p className="text-sm font-bold text-white">Courses</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <Link
+                    href="/courses?filter=enrolled"
+                    className="rounded-lg border border-gray-800 bg-gray-900 p-2 hover:border-emerald-500/40 transition-colors"
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                      Enrolled
+                    </p>
+                    <p className="text-lg font-extrabold text-white tabular-nums">
+                      {stats.coursesEnrolled.toLocaleString()}
+                    </p>
+                  </Link>
+                  <Link
+                    href="/courses?filter=created"
+                    className="rounded-lg border border-gray-800 bg-gray-900 p-2 hover:border-emerald-500/40 transition-colors"
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                      Created
+                    </p>
+                    <p className="text-lg font-extrabold text-white tabular-nums">
+                      {stats.coursesCreated.toLocaleString()}
+                    </p>
+                  </Link>
+                </div>
+                <Link
+                  href="/courses"
+                  className="mt-2 inline-flex items-center gap-1 text-[11px] text-emerald-300 hover:text-emerald-200 font-semibold"
+                >
+                  Browse courses
+                  <ChevronRight className="w-3 h-3" />
+                </Link>
+              </div>
+
+              {/* Marketplace */}
+              <div className="rounded-xl border border-gray-800 bg-gray-950 p-3">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center">
+                    <ShoppingBag className="w-4 h-4" />
+                  </div>
+                  <p className="text-sm font-bold text-white">Marketplace</p>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <Link
+                    href="/marketplace?tab=listings"
+                    className="rounded-lg border border-gray-800 bg-gray-900 p-2 hover:border-amber-500/40 transition-colors"
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                      Listings
+                    </p>
+                    <p className="text-lg font-extrabold text-white tabular-nums">
+                      {stats.marketplaceListings.toLocaleString()}
+                    </p>
+                  </Link>
+                  <Link
+                    href="/marketplace?tab=sales"
+                    className="rounded-lg border border-gray-800 bg-gray-900 p-2 hover:border-amber-500/40 transition-colors"
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                      Sales
+                    </p>
+                    <p className="text-lg font-extrabold text-white tabular-nums">
+                      {stats.marketplaceSales.toLocaleString()}
+                    </p>
+                  </Link>
+                  <Link
+                    href="/marketplace?tab=purchases"
+                    className="rounded-lg border border-gray-800 bg-gray-900 p-2 hover:border-amber-500/40 transition-colors"
+                  >
+                    <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                      Bought
+                    </p>
+                    <p className="text-lg font-extrabold text-white tabular-nums">
+                      {stats.marketplacePurchases.toLocaleString()}
+                    </p>
+                  </Link>
+                </div>
+                {stats.marketplaceSalesAmount > 0 && (
+                  <p className="text-[11px] text-amber-300 mt-2 inline-flex items-center gap-1">
+                    <Coins className="w-3 h-3" />
+                    Earned{" "}
+                    <span className="font-bold tabular-nums">
+                      ${stats.marketplaceSalesAmount.toLocaleString(undefined, {
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>{" "}
+                    from sales
+                  </p>
+                )}
+                <Link
+                  href="/marketplace"
+                  className="mt-2 inline-flex items-center gap-1 text-[11px] text-amber-300 hover:text-amber-200 font-semibold"
+                >
+                  Open marketplace
+                  <ChevronRight className="w-3 h-3" />
+                </Link>
+              </div>
+            </div>
+          </Card>
+
+          <Card
+            title="Connected Social Accounts"
+            icon={<Globe className="w-3.5 h-3.5" />}
+            tone="amber"
+          >
+            {socialAccounts.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-700 bg-gray-950 p-4 text-center">
+                <Globe className="w-6 h-6 text-gray-600 mx-auto mb-1" />
+                <p className="text-sm text-gray-400 font-semibold">
+                  No social accounts connected
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Connect them to show your reach.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {socialAccounts.map((acc) => {
+                  const meta = PLATFORM_META[acc.platform];
+                  return (
+                    <div
+                      key={acc.id}
+                      className="flex items-center gap-2 p-2 rounded-lg bg-gray-950 border border-gray-800"
+                    >
+                      <div
+                        className={cn(
+                          "w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0 bg-linear-to-br",
+                          meta.gradient
+                        )}
+                      >
+                        <meta.icon className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-white truncate">
+                          @{acc.username}
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          {acc.followers.toLocaleString()} {meta.countLabel.toLowerCase()}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex justify-end pt-3 mt-3 border-t border-gray-800">
+              <button
+                onClick={() => openEdit("social")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-bold"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Manage Social Accounts
+              </button>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* Edit drawer (in-page accordion) */}
+      <div ref={editAnchorRef} className="scroll-mt-20">
+        <button
+          onClick={() => setEditOpen(!editOpen)}
+          className="w-full flex items-center justify-between gap-3 p-4 rounded-xl bg-gray-900 border border-gray-800 hover:border-gray-700"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center">
+              <Edit3 className="w-4 h-4 text-indigo-400" />
+            </div>
+            <div className="text-left">
+              <p className="text-sm font-bold text-white">Edit Profile & Settings</p>
+              <p className="text-[11px] text-gray-500">
+                Personal info, address, KYC, privacy, theme, security
+              </p>
+            </div>
+          </div>
+          <ChevronRight
+            className={cn(
+              "w-5 h-5 text-gray-500 transition-transform",
+              editOpen && "rotate-90"
+            )}
+          />
+        </button>
+
+        {editOpen && (
+          <div className="mt-3 space-y-3">
+            <nav className="flex gap-1 overflow-x-auto -mx-2 px-2 pb-1 border-b border-gray-800 scrollbar-thin">
+              {(
+                [
+                  { key: "personal", label: "Personal", icon: User },
+                  { key: "address", label: "Address", icon: MapPin },
+                  { key: "kyc", label: "KYC", icon: Shield },
+                  { key: "social", label: "Social", icon: Twitter },
+                  { key: "privacy", label: "Privacy", icon: Lock },
+                  { key: "theme", label: "Theme", icon: Palette },
+                  { key: "security", label: "Security", icon: Shield },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setEditTab(t.key)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
+                    editTab === t.key
+                      ? "bg-indigo-500/15 text-white border border-indigo-500/40"
+                      : "text-gray-400 hover:text-white hover:bg-gray-900"
+                  )}
+                >
+                  <t.icon className="w-4 h-4" />
+                  {t.label}
+                </button>
+              ))}
+            </nav>
+
+            {editTab === "personal" && <PersonalTab data={data} patch={patch} />}
+            {editTab === "address" && <AddressTab data={data} patch={patch} />}
+            {editTab === "kyc" && <KycTab data={data} />}
+            {editTab === "social" && (
+              <SocialTab
+                accounts={socialAccounts}
+                onConnect={onConnectSocial}
+                onDisconnect={onDisconnectSocial}
+              />
+            )}
+            {editTab === "privacy" && (
+              <PrivacyTab privacy={preferences.privacy} patch={patch} />
+            )}
+            {editTab === "theme" && <ThemeTab preferences={preferences} patch={patch} />}
+            {editTab === "security" && <SecurityTab verification={verification} />}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function InfoRow({
+  icon,
+  label,
+  sub,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  sub: string;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="text-gray-500 mt-0.5">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-white truncate">{label}</p>
+        <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold">
+          {sub}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function DataLine({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string | null | undefined;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+        {label}
+      </p>
+      <p className="text-sm text-white mt-0.5 inline-flex items-center gap-1.5">
+        {icon}
+        {value || <span className="text-gray-600 italic">—</span>}
+      </p>
+    </div>
+  );
+}
+
+function VerifTile({
+  icon,
+  label,
+  ok,
+  pending,
+  rejected,
+  action,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  ok: boolean;
+  pending?: boolean;
+  rejected?: boolean;
+  action: { label: string; href: string } | null;
+}) {
+  const status = ok
+    ? { tone: "border-emerald-500/30 bg-emerald-500/10", color: "text-emerald-400", text: "Verified" }
+    : pending
+    ? { tone: "border-amber-500/30 bg-amber-500/10", color: "text-amber-400", text: "Pending" }
+    : rejected
+    ? { tone: "border-red-500/30 bg-red-500/10", color: "text-red-400", text: "Rejected" }
+    : { tone: "border-gray-700 bg-gray-950", color: "text-gray-400", text: "Not set" };
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-3 p-3 rounded-lg border",
+        status.tone
+      )}
+    >
+      <div className={cn("p-1.5 rounded-md bg-black/20", status.color)}>{icon}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-bold text-white">{label}</p>
+        <p className={cn("text-[11px] font-semibold", status.color)}>
+          {status.text}
+        </p>
+      </div>
+      {action && (
+        <Link
+          href={action.href}
+          className="text-[11px] font-bold text-indigo-300 hover:text-indigo-200 px-2 py-1 rounded bg-indigo-500/10 border border-indigo-500/30 hover:bg-indigo-500/20 whitespace-nowrap"
+        >
+          {action.label} →
+        </Link>
+      )}
+    </div>
+  );
+}
+
+function CompletionRing({ percentage }: { percentage: number }) {
+  const ringColor =
+    percentage >= 90
+      ? "stroke-emerald-400"
+      : percentage >= 60
+      ? "stroke-amber-400"
+      : "stroke-indigo-400";
+  return (
+    <div className="relative w-16 h-16 shrink-0">
+      <svg className="w-16 h-16 -rotate-90" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="42" className="fill-none stroke-gray-800" strokeWidth="10" />
+        <circle
+          cx="50"
+          cy="50"
+          r="42"
+          className={cn("fill-none transition-[stroke-dashoffset]", ringColor)}
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={Math.PI * 84}
+          strokeDashoffset={Math.PI * 84 * (1 - percentage / 100)}
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <span className="text-sm font-extrabold text-white tabular-nums">{percentage}%</span>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────── Posts list tab ─────────────────────────────
+
+interface ApiPost {
+  id: string;
+  content: string;
+  images: string[];
+  isPinned: boolean;
+  likesCount: number;
+  commentsCount: number;
+  sharesCount: number;
+  viewsCount: number;
+  createdAt: string;
+  isLiked: boolean;
+}
+
+function PostsListTab({ userId }: { userId: string }) {
+  const [items, setItems] = useState<ApiPost[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancel = false;
+    fetch(`/api/users/${userId}/posts?limit=20`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancel) setItems(d.posts ?? []);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [userId]);
+
+  if (loading) {
+    return (
+      <div className="text-center py-12 text-gray-500 text-sm inline-flex items-center justify-center gap-2 w-full">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading posts…
+      </div>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-800 p-10 text-center">
+        <ImageIcon className="w-10 h-10 text-gray-700 mx-auto mb-2" />
+        <p className="text-sm text-gray-400 font-semibold">No posts yet</p>
+        <p className="text-xs text-gray-600 mt-1">
+          Your published posts will appear here.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3">
+      {items.map((p) => (
+        <div
+          key={p.id}
+          className="rounded-xl border border-gray-800 bg-gray-900 p-4 hover:border-gray-700 transition-colors"
+        >
+          {p.isPinned && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-2">
+              📌 Pinned
+            </span>
+          )}
+          {p.content && (
+            <p className="text-sm text-gray-200 whitespace-pre-wrap leading-relaxed">
+              {p.content}
+            </p>
+          )}
+          {p.images.length > 0 && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={p.images[0]}
+              alt=""
+              className="mt-3 w-full max-h-96 rounded-lg object-cover bg-gray-950"
+            />
+          )}
+          <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-800 text-xs text-gray-500">
+            <span className="inline-flex items-center gap-1">
+              <EyeIcon className="w-3.5 h-3.5" />
+              <span className="tabular-nums">{p.viewsCount.toLocaleString()}</span>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <ThumbsUp className="w-3.5 h-3.5" />
+              <span className="tabular-nums">{p.likesCount.toLocaleString()}</span>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span className="tabular-nums">{p.commentsCount.toLocaleString()}</span>
+            </span>
+            <span className="inline-flex items-center gap-1">
+              <Share2 className="w-3.5 h-3.5" />
+              <span className="tabular-nums">{p.sharesCount.toLocaleString()}</span>
+            </span>
+            <span className="ml-auto">
+              {new Date(p.createdAt).toLocaleDateString("en-US", {
+                month: "short",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ───────────────────────────── User list tab (followers/following) ─────────────────────────────
+
+interface UserListItem {
+  id: string;
+  name: string | null;
+  username: string | null;
+  avatar: string | null;
+  isBlueVerified: boolean;
+  verifiedBadgeStyle: string | null;
+  followersCount: number;
+  isFollowing: boolean;
+}
+
+function UserListTab({
+  endpoint,
+  viewerId,
+}: {
+  endpoint: string;
+  viewerId: string;
+}) {
+  const [items, setItems] = useState<UserListItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancel = false;
+    fetch(`${endpoint}?limit=30`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancel) setItems(d.items ?? []);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [endpoint]);
+
+  const toggle = async (target: UserListItem) => {
+    setBusyId(target.id);
+    try {
+      const r = await fetch(`/api/users/${target.id}/follow`, { method: "POST" });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.error ?? `HTTP ${r.status}`);
+      setItems((prev) =>
+        prev.map((u) =>
+          u.id === target.id
+            ? {
+                ...u,
+                isFollowing: !!d.following,
+                followersCount:
+                  typeof d.followersCount === "number"
+                    ? d.followersCount
+                    : u.followersCount,
+              }
+            : u
+        )
+      );
+    } catch (err) {
+      toast.error("Failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="text-center py-12 text-gray-500 text-sm inline-flex items-center justify-center gap-2 w-full">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        Loading…
+      </div>
+    );
+  }
+  if (items.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-gray-800 p-10 text-center">
+        <Users className="w-10 h-10 text-gray-700 mx-auto mb-2" />
+        <p className="text-sm text-gray-400 font-semibold">No users yet</p>
+      </div>
+    );
+  }
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      {items.map((u) => {
+        const initial = (u.name ?? u.username ?? "U").charAt(0).toUpperCase();
+        return (
+          <div
+            key={u.id}
+            className="flex items-center gap-3 p-3 rounded-xl border border-gray-800 bg-gray-900 hover:border-gray-700 transition-colors"
+          >
+            <Link href={`/u/${u.id}`} className="shrink-0">
+              <div className="w-11 h-11 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden">
+                {u.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={u.avatar} alt="" className="w-full h-full object-cover" />
+                ) : (
+                  initial
+                )}
+              </div>
+            </Link>
+            <div className="flex-1 min-w-0">
+              <Link href={`/u/${u.id}`} className="block">
+                <p className="text-sm font-bold text-white truncate inline-flex items-center gap-1">
+                  {u.name ?? u.username ?? "User"}
+                  {u.isBlueVerified && (
+                    <VerifiedBadge
+                      style={u.verifiedBadgeStyle}
+                      size="sm"
+                    />
+                  )}
+                </p>
+              </Link>
+              {u.username && <p className="text-[11px] text-gray-500">@{u.username}</p>}
+              <p className="text-[11px] text-gray-400 inline-flex items-center gap-1 mt-0.5">
+                <Coins className="w-3 h-3 text-amber-400" />
+                {u.followersCount.toLocaleString()} followers
+              </p>
+            </div>
+            {u.id !== viewerId && (
+              <button
+                onClick={() => toggle(u)}
+                disabled={busyId === u.id}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 inline-flex items-center gap-1",
+                  u.isFollowing
+                    ? "bg-gray-800 text-white border border-gray-700"
+                    : "bg-indigo-500 hover:bg-indigo-600 text-white"
+                )}
+              >
+                {busyId === u.id ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : u.isFollowing ? (
+                  <>
+                    <UserCheck className="w-3.5 h-3.5" />
+                    Following
+                  </>
+                ) : (
+                  <>
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Follow
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ───────────────────────────── Analytics Tab ─────────────────────────────
+
+function AnalyticsTab() {
+  const [data, setData] = useState<AnalyticsResp | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancel = false;
+    fetch("/api/profile/analytics")
+      .then((r) => r.json())
+      .then((d) => {
+        if (!cancel) setData(d as AnalyticsResp);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancel) setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  return <AnalyticsPanel data={data} loading={loading} />;
+}
+
 // ───────────────────────────── Modals ─────────────────────────────
 
 function TagModal({
@@ -1393,77 +2352,241 @@ function PhotoModal({
   target,
   currentUrl,
   onClose,
-  onSave,
+  onSaved,
 }: {
   target: "avatar" | "coverPhoto";
   currentUrl: string | null;
   onClose: () => void;
-  onSave: (url: string) => Promise<void>;
+  onSaved: () => void;
 }) {
-  const [url, setUrl] = useState(currentUrl ?? "");
-  const [showHide, setShowHide] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(currentUrl);
+  const [urlInput, setUrlInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Build preview from selected File
+  useEffect(() => {
+    if (!file) return;
+    const obj = URL.createObjectURL(file);
+    setPreviewUrl(obj);
+    return () => URL.revokeObjectURL(obj);
+  }, [file]);
+
+  const handleFileSelect = (f: File) => {
+    if (!f.type.startsWith("image/")) {
+      toast.error("Please choose an image file");
+      return;
+    }
+    if (f.size > 8 * 1024 * 1024) {
+      toast.error("Image must be under 8 MB");
+      return;
+    }
+    setFile(f);
+    setUrlInput("");
+  };
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) handleFileSelect(f);
+  };
+
+  const uploadFile = async () => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("target", target);
+      const res = await fetch("/api/profile/photo", {
+        method: "POST",
+        body: fd,
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      toast.success(target === "avatar" ? "Profile photo updated" : "Cover photo updated");
+      onSaved();
+    } catch (err) {
+      toast.error("Upload failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveUrl = async () => {
+    if (!urlInput.trim()) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [target]: urlInput.trim() }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      toast.success("Saved");
+      onSaved();
+    } catch (err) {
+      toast.error("Save failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removePhoto = async () => {
+    if (!confirm(`Remove ${target === "avatar" ? "profile photo" : "cover photo"}?`)) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [target]: null }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toast.success("Removed");
+      onSaved();
+    } catch (err) {
+      toast.error("Couldn't remove", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <Modal
       onClose={busy ? undefined : onClose}
       title={target === "avatar" ? "Update Profile Photo" : "Update Cover Photo"}
-      subtitle="Paste a public image URL (uploaded media library URL works too)"
+      subtitle="Upload from your device, or paste a public image URL"
     >
-      <div className="space-y-3">
-        {url && (
+      <div className="space-y-4">
+        {previewUrl && (
           <div
             className={cn(
-              "rounded-lg overflow-hidden border border-gray-800",
-              target === "avatar" ? "w-32 h-32 mx-auto rounded-full" : "h-32"
+              "rounded-lg overflow-hidden border border-gray-800 bg-gray-950",
+              target === "avatar"
+                ? "w-32 h-32 mx-auto rounded-full"
+                : "w-full aspect-[5/2]"
             )}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={url} alt="" className="w-full h-full object-cover" />
+            <img
+              src={previewUrl}
+              alt=""
+              className="w-full h-full object-cover"
+            />
           </div>
         )}
-        <div>
-          <label className="block text-xs font-medium text-gray-400 mb-1.5">Image URL</label>
-          <div className="relative">
-            <input
-              type={showHide ? "text" : "url"}
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://..."
-              className={cn(inp, "pr-9 font-mono text-xs")}
-            />
-            <button
-              type="button"
-              onClick={() => setShowHide((v) => !v)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-500 hover:text-white"
-            >
-              {showHide ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          </div>
+
+        {/* Drag & drop / click upload */}
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={cn(
+            "relative rounded-xl border-2 border-dashed p-5 cursor-pointer text-center transition-colors",
+            dragOver
+              ? "border-indigo-500 bg-indigo-500/5"
+              : "border-gray-700 hover:border-indigo-500/50 hover:bg-gray-950"
+          )}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) handleFileSelect(f);
+            }}
+          />
+          <Upload className="w-7 h-7 text-gray-500 mx-auto mb-2" />
+          <p className="text-sm text-white font-semibold">
+            {file ? file.name : "Click or drag image here"}
+          </p>
+          <p className="text-[11px] text-gray-500 mt-1">
+            JPG, PNG, WebP, GIF · Up to 8 MB
+          </p>
         </div>
-        {url !== (currentUrl ?? "") && url !== "" && (
+
+        {file && (
           <button
-            onClick={() => setUrl("")}
-            className="text-xs text-red-400 hover:text-red-300"
+            onClick={uploadFile}
+            disabled={busy}
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold rounded-lg disabled:opacity-50"
           >
-            Clear (use default)
+            {busy ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Upload className="w-4 h-4" />
+            )}
+            Upload {target === "avatar" ? "Profile Photo" : "Cover Photo"}
+          </button>
+        )}
+
+        {/* OR divider */}
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-gray-800" />
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+            or paste URL
+          </span>
+          <div className="flex-1 h-px bg-gray-800" />
+        </div>
+
+        <div className="flex gap-2">
+          <input
+            type="url"
+            value={urlInput}
+            onChange={(e) => {
+              setUrlInput(e.target.value);
+              if (e.target.value) {
+                setFile(null);
+                setPreviewUrl(e.target.value);
+              }
+            }}
+            placeholder="https://..."
+            className={cn(inp, "font-mono text-xs flex-1")}
+          />
+          <button
+            onClick={saveUrl}
+            disabled={busy || !urlInput.trim()}
+            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50 whitespace-nowrap"
+          >
+            Use URL
+          </button>
+        </div>
+
+        {currentUrl && (
+          <button
+            onClick={removePhoto}
+            disabled={busy}
+            className="w-full text-xs text-red-400 hover:text-red-300 disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Remove current photo
           </button>
         )}
       </div>
-      <div className="flex justify-end gap-2 mt-4">
-        <button onClick={onClose} disabled={busy} className="px-4 py-2 text-sm text-gray-400 hover:text-white">
-          Cancel
-        </button>
+
+      <div className="flex justify-end mt-5 pt-4 border-t border-gray-800">
         <button
-          onClick={async () => {
-            setBusy(true);
-            await onSave(url);
-            setBusy(false);
-          }}
+          onClick={onClose}
           disabled={busy}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold rounded-lg disabled:opacity-50"
+          className="px-4 py-2 text-sm text-gray-400 hover:text-white"
         >
-          {busy && <Loader2 className="w-4 h-4 animate-spin" />}
-          Save
+          Close
         </button>
       </div>
     </Modal>
@@ -1597,39 +2720,47 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({
+  title,
+  icon,
+  tone,
+  action,
+  children,
+}: {
+  title: string;
+  icon?: React.ReactNode;
+  tone?: "indigo" | "purple" | "amber" | "emerald" | "rose" | "sky";
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const tones: Record<NonNullable<typeof tone>, string> = {
+    indigo: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
+    purple: "bg-purple-500/10 text-purple-400 border-purple-500/30",
+    amber: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+    emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
+    rose: "bg-rose-500/10 text-rose-400 border-rose-500/30",
+    sky: "bg-sky-500/10 text-sky-400 border-sky-500/30",
+  };
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-5 space-y-3">
-      <h3 className="text-sm font-bold text-white">{title}</h3>
+    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-5 space-y-3 hover:border-gray-700 transition-colors">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          {icon && (
+            <div
+              className={cn(
+                "w-7 h-7 rounded-lg flex items-center justify-center border shrink-0",
+                tone ? tones[tone] : "bg-gray-800 text-gray-400 border-gray-700"
+              )}
+            >
+              {icon}
+            </div>
+          )}
+          <h3 className="text-sm font-bold text-white truncate">{title}</h3>
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
+      </div>
       {children}
     </div>
-  );
-}
-
-function Row({
-  icon,
-  label,
-  right,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  right: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-3 py-2">
-      <span className="text-gray-500">{icon}</span>
-      <span className="flex-1 text-sm text-gray-300">{label}</span>
-      <span className="shrink-0">{right}</span>
-    </div>
-  );
-}
-
-function Verified() {
-  return (
-    <span className="inline-flex items-center gap-1 text-emerald-400 text-xs font-semibold">
-      <CheckCircle className="w-3.5 h-3.5" />
-      Verified
-    </span>
   );
 }
 

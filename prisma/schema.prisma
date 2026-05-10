@@ -587,6 +587,10 @@ model User {
   kycSubmittedAt    DateTime?
   kycApprovedAt     DateTime?
   isBlueVerified    Boolean     @default(false)
+  // Visual style for the verified badge. Null/"BLUE" = classic blue tick.
+  // Other presets (GOLD, RAINBOW, EMERALD, PURPLE, ROSE, OCEAN) render
+  // a richer gradient — set by admin from the user-edit screen.
+  verifiedBadgeStyle String?    @default("BLUE")
   twoFactorEnabled  Boolean     @default(false)
   twoFactorSecret   String?
   referralCode      String      @unique
@@ -816,6 +820,7 @@ model Task {
   articleConfig   Json?      // Article task config (see lib/article-tasks.ts ArticleConfig)
   videoConfig     Json?      // Video task config (see lib/video-tasks.ts VideoConfig)
   surveyConfig    Json?      // Survey task config (see lib/survey-tasks.ts SurveyConfig)
+  customConfig    Json?      // Custom task config (see lib/custom-tasks.ts CustomConfig)
   proxyInstructions String?    @db.Text
   startsAt        DateTime?
   expiresAt       DateTime?

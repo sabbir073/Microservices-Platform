@@ -125,6 +125,7 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
             videoConfig: true,
             articleConfig: true,
             surveyConfig: true,
+            customConfig: true,
             socialConfig: true,
             questions: true,
             contentUrl: true,
@@ -168,6 +169,7 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
       videoConfig: unknown;
       articleConfig: unknown;
       surveyConfig: unknown;
+      customConfig: unknown;
       socialConfig: unknown;
       questions: unknown;
       contentUrl: string | null;

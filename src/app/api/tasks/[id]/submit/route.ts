@@ -18,6 +18,11 @@ import {
   type SurveyConfig,
   type SurveyAnswers,
 } from "@/lib/survey-tasks";
+import {
+  validateCustomAnswers,
+  type CustomConfig,
+  type CustomAnswers,
+} from "@/lib/custom-tasks";
 
 // POST /api/tasks/:id/submit - Submit task proof
 export async function POST(
@@ -44,6 +49,8 @@ export async function POST(
       screenshotUrl,
       username,
       generatedContent,
+      // CUSTOM-only proof field (admin-defined form answers)
+      customAnswers,
     } = body;
 
     // Get the task
@@ -203,6 +210,24 @@ export async function POST(
       }
     }
 
+    // ── Custom task: validate answers against admin-defined fields ──
+    if (task.type === "CUSTOM") {
+      const cfg = task.customConfig as CustomConfig | null;
+      if (!cfg || !Array.isArray(cfg.fields) || cfg.fields.length === 0) {
+        return NextResponse.json(
+          { error: "Custom task is misconfigured" },
+          { status: 400 }
+        );
+      }
+      const err = validateCustomAnswers(
+        cfg,
+        (customAnswers ?? {}) as CustomAnswers
+      );
+      if (err) {
+        return NextResponse.json({ error: err }, { status: 400 });
+      }
+    }
+
     // ── Video task: hard-fail on bad unique key (auto-reject) ──
     if (task.type === "VIDEO") {
       const cfg = task.videoConfig as VideoConfig | null;
@@ -237,13 +262,19 @@ export async function POST(
     // ARTICLE (key-pool) auto-approves since the key was atomically verified
     // against the pool — no human review needed.
     // VIDEO and QUIZ may auto-approve.
+    // CUSTOM auto-approves only when the admin opted into it via customConfig.autoApprove.
     const isArticleKeyPool =
       task.type === "ARTICLE" && claimedArticleKeyId !== null;
+    const customAutoApprove =
+      task.type === "CUSTOM" &&
+      (task.customConfig as CustomConfig | null)?.autoApprove === true;
     const shouldAutoApprove =
       !uniqueKeyMismatch &&
       task.type !== "SURVEY" &&
       (isArticleKeyPool ||
+        customAutoApprove ||
         (task.type !== "ARTICLE" &&
+          task.type !== "CUSTOM" &&
           (task.autoApprove || task.type === "VIDEO" || task.type === "QUIZ")));
 
     const newStatus = shouldAutoApprove
@@ -270,6 +301,11 @@ export async function POST(
     if (task.type === "ARTICLE" && uniqueKeyMismatch) {
       submissionMetadata.articleUniqueKeyMismatch = true;
       submissionMetadata.articleSubmittedUniqueKey = submittedUniqueKey ?? null;
+    }
+    // For CUSTOM: stash the admin-defined form answers so the admin review
+    // screen can render them next to the task config.
+    if (task.type === "CUSTOM" && customAnswers) {
+      submissionMetadata.customAnswers = customAnswers;
     }
     const hasMetadata = Object.keys(submissionMetadata).length > 0;
 

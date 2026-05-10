@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { validateCustomConfig, type CustomConfig } from "@/lib/custom-tasks";
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,6 +44,7 @@ export async function POST(request: NextRequest) {
       articleConfig,
       videoConfig,
       surveyConfig,
+      customConfig,
       proxyInstructions,
       startsAt,
       expiresAt,
@@ -63,6 +65,20 @@ export async function POST(request: NextRequest) {
     const validTypes = ["VIDEO", "ARTICLE", "QUIZ", "SURVEY", "SOCIAL", "PROXY", "OFFERWALL", "CUSTOM"];
     if (!validTypes.includes(type)) {
       return NextResponse.json({ error: "Invalid task type" }, { status: 400 });
+    }
+
+    // Validate CUSTOM task config
+    if (type === "CUSTOM") {
+      if (!customConfig) {
+        return NextResponse.json(
+          { error: "Custom tasks need a form configuration" },
+          { status: 400 }
+        );
+      }
+      const err = validateCustomConfig(customConfig as CustomConfig);
+      if (err) {
+        return NextResponse.json({ error: err }, { status: 400 });
+      }
     }
 
     // Validate boardId references an existing active board, if provided
@@ -116,6 +132,9 @@ export async function POST(request: NextRequest) {
           : null,
         surveyConfig: surveyConfig
           ? JSON.parse(JSON.stringify(surveyConfig))
+          : null,
+        customConfig: customConfig
+          ? JSON.parse(JSON.stringify(customConfig))
           : null,
         proxyInstructions: proxyInstructions || null,
         startsAt: startsAt ? new Date(startsAt) : null,

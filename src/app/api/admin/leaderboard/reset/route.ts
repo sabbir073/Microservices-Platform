@@ -8,12 +8,21 @@ import {
   NotificationType,
 } from "@/generated/prisma/client";
 import { z } from "zod";
+import {
+  computeCombinedTopUsers,
+  getEligiblePackages,
+} from "@/lib/leaderboard";
 
 const schema = z.object({
   period: z.enum(["daily", "weekly", "monthly"]),
 });
 
-type Metric = "POINTS_EARNED" | "TASKS_COMPLETED" | "REFERRALS" | "XP_EARNED";
+type Metric =
+  | "POINTS_EARNED"
+  | "TASKS_COMPLETED"
+  | "REFERRALS"
+  | "XP_EARNED"
+  | "COMBINED";
 
 async function readSetting(key: string): Promise<unknown> {
   const r = await prisma.systemSetting.findUnique({ where: { key } });
@@ -54,48 +63,127 @@ function distributePrizes(total: number, count: number, custom: number[] | null)
   return weights.map((w) => Math.round(total * w));
 }
 
-async function topUsers(metric: Metric, take: number) {
-  if (metric === "POINTS_EARNED") {
-    const users = await prisma.user.findMany({
-      orderBy: { totalEarnings: "desc" },
-      take,
-      select: { id: true, name: true, totalEarnings: true },
+async function topUsers(metric: Metric, take: number, eligibleSet: Set<string>) {
+  if (metric === "COMBINED") {
+    // Use the shared lib — already applies eligibility filtering.
+    const top = await computeCombinedTopUsers({
+      limit: take,
+      eligiblePackages: Array.from(eligibleSet),
+      filterEligible: true,
     });
-    return users.map((u) => ({
+    return top.map((r) => ({
+      userId: r.userId,
+      name: r.name,
+      value: Math.round(r.score),
+    }));
+  }
+
+  // Single-metric branches: pull a generous candidate pool then trim down to
+  // the top N eligible users.
+  const POOL = take * 5;
+  const filterByEligibility = <T extends { id: string; package: { slug: string } | null }>(
+    rows: T[]
+  ) => rows.filter((u) => u.package?.slug && eligibleSet.has(u.package.slug.toUpperCase())).slice(0, take);
+
+  if (metric === "POINTS_EARNED") {
+    const usersRaw = await prisma.user.findMany({
+      orderBy: { totalEarnings: "desc" },
+      take: POOL,
+      select: {
+        id: true,
+        name: true,
+        totalEarnings: true,
+        package: { select: { slug: true } },
+      },
+    });
+    const users = usersRaw as unknown as Array<{
+      id: string;
+      name: string | null;
+      totalEarnings: number;
+      package: { slug: string } | null;
+    }>;
+    return filterByEligibility(users).map((u) => ({
       userId: u.id,
       name: u.name,
       value: Math.round(u.totalEarnings * 1000),
     }));
   }
   if (metric === "XP_EARNED") {
-    const users = await prisma.user.findMany({
+    const usersRaw = await prisma.user.findMany({
       orderBy: { xp: "desc" },
-      take,
-      select: { id: true, name: true, xp: true },
+      take: POOL,
+      select: {
+        id: true,
+        name: true,
+        xp: true,
+        package: { select: { slug: true } },
+      },
     });
-    return users.map((u) => ({ userId: u.id, name: u.name, value: u.xp }));
+    const users = usersRaw as unknown as Array<{
+      id: string;
+      name: string | null;
+      xp: number;
+      package: { slug: string } | null;
+    }>;
+    return filterByEligibility(users).map((u) => ({
+      userId: u.id,
+      name: u.name,
+      value: u.xp,
+    }));
   }
   if (metric === "REFERRALS") {
-    const users = await prisma.user.findMany({
+    const usersRaw = await prisma.user.findMany({
       orderBy: { referrals: { _count: "desc" } },
-      take,
-      select: { id: true, name: true },
+      take: POOL,
+      select: {
+        id: true,
+        name: true,
+        package: { select: { slug: true } },
+      },
     });
+    const users = usersRaw as unknown as Array<{
+      id: string;
+      name: string | null;
+      package: { slug: string } | null;
+    }>;
+    const eligibleUsers = filterByEligibility(users);
     const counts = await Promise.all(
-      users.map((u) => prisma.user.count({ where: { referredById: u.id } }))
+      eligibleUsers.map((u) =>
+        prisma.user.count({ where: { referredById: u.id } })
+      )
     );
-    return users.map((u, i) => ({ userId: u.id, name: u.name, value: counts[i] }));
+    return eligibleUsers.map((u, i) => ({
+      userId: u.id,
+      name: u.name,
+      value: counts[i],
+    }));
   }
   // TASKS_COMPLETED
-  const users = await prisma.user.findMany({
+  const usersRaw = await prisma.user.findMany({
     orderBy: { taskSubmissions: { _count: "desc" } },
-    take,
-    select: { id: true, name: true },
+    take: POOL,
+    select: {
+      id: true,
+      name: true,
+      package: { select: { slug: true } },
+    },
   });
+  const users = usersRaw as unknown as Array<{
+    id: string;
+    name: string | null;
+    package: { slug: string } | null;
+  }>;
+  const eligibleUsers = filterByEligibility(users);
   const counts = await Promise.all(
-    users.map((u) => prisma.taskSubmission.count({ where: { userId: u.id } }))
+    eligibleUsers.map((u) =>
+      prisma.taskSubmission.count({ where: { userId: u.id } })
+    )
   );
-  return users.map((u, i) => ({ userId: u.id, name: u.name, value: counts[i] }));
+  return eligibleUsers.map((u, i) => ({
+    userId: u.id,
+    name: u.name,
+    value: counts[i],
+  }));
 }
 
 export async function POST(request: NextRequest) {
@@ -119,7 +207,12 @@ export async function POST(request: NextRequest) {
   const { period } = v.data;
 
   // Pull settings
-  const metric = ((await readSetting("lb_metric")) as Metric) || "POINTS_EARNED";
+  const metric =
+    ((await readSetting("lb_metric")) as Metric) || "COMBINED";
+  const eligiblePackages = await getEligiblePackages();
+  const eligibleSet = new Set(
+    eligiblePackages.map((s) => s.toUpperCase())
+  );
   const totalPrize = asNumber(
     await readSetting(`lb_${period}_prize`),
     period === "daily" ? 5000 : period === "weekly" ? 25000 : 100000
@@ -141,10 +234,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const winners = await topUsers(metric, winnerCount);
+  const winners = await topUsers(metric, winnerCount, eligibleSet);
   if (winners.length === 0) {
     return NextResponse.json(
-      { error: "No eligible users found for this metric" },
+      {
+        error:
+          "No eligible users found. Check the eligible-plans list in Settings — none of the top performers qualify.",
+      },
       { status: 400 }
     );
   }

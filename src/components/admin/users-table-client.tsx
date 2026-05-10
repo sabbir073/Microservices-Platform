@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import { ROLE_CONFIG, type UserRole } from "@/lib/rbac";
 import { BulkActionsBar } from "@/components/admin/bulk-actions-bar";
+import { PackageBadge } from "@/components/user/profile/badges";
+import { userDisplayId } from "@/lib/display-id";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -28,7 +30,7 @@ interface UserRow {
   role: string;
   status: string;
   kycStatus: string;
-  package: { slug: string; name: string } | null;
+  package: { slug: string; name: string; badgeColor: string | null } | null;
   pointsBalance: number;
   cashBalance: number;
   level: number;
@@ -219,11 +221,14 @@ export function UsersTableClient({
                             <p className="text-xs text-slate-500 truncate max-w-50">
                               {u.email}
                             </p>
-                            {u.username && (
-                              <p className="text-xs text-slate-600">
-                                @{u.username} · Lv {u.level}
-                              </p>
-                            )}
+                            <p className="text-[10px] font-mono text-slate-600 mt-0.5">
+                              {userDisplayId(u.id)}
+                              {u.username && (
+                                <span className="ml-1.5 font-sans">
+                                  · @{u.username} · Lv {u.level}
+                                </span>
+                              )}
+                            </p>
                           </div>
                         </Link>
                       </td>
@@ -272,9 +277,11 @@ export function UsersTableClient({
                       </td>
                       <td className="py-4 px-4">
                         {u.package ? (
-                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400">
-                            {u.package.name}
-                          </span>
+                          <PackageBadge
+                            tier={u.package.slug}
+                            name={u.package.name}
+                            size="sm"
+                          />
                         ) : (
                           <span className="px-2 py-1 rounded-full text-xs font-medium bg-slate-500/10 text-slate-400">
                             —

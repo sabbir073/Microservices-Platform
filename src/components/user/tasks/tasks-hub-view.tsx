@@ -43,7 +43,7 @@ const TYPE_TO_ROUTE: Record<string, string> = {
   MANUAL: "/manual-tasks",
   BOARD: "/board-tasks",
   OFFERWALL: "/earn#offerwall",
-  CUSTOM: "/manual-tasks",
+  CUSTOM: "/custom-tasks",
 };
 
 const QUICK_ACCESS = [
@@ -222,7 +222,11 @@ export function TasksHubView() {
       {!loading && filtered.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {filtered.map((t) => {
-            const route = TYPE_TO_ROUTE[t.type] ?? "/manual-tasks";
+            const baseRoute = TYPE_TO_ROUTE[t.type] ?? "/manual-tasks";
+            // Custom tasks deep-link straight into the task detail page;
+            // others land on their listing page.
+            const route =
+              t.type === "CUSTOM" ? `${baseRoute}/${t.id}` : baseRoute;
             return (
               <TaskCard
                 key={t.id}

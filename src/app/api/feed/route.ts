@@ -86,6 +86,7 @@ export async function GET(request: NextRequest) {
         level: true,
         package: { select: { slug: true, name: true } },
         isBlueVerified: true,
+        verifiedBadgeStyle: true,
         role: true,
       },
     });

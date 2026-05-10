@@ -27,6 +27,7 @@ export interface PanelTask {
   videoConfig: unknown;
   articleConfig: unknown;
   surveyConfig: unknown;
+  customConfig: unknown;
   socialConfig: unknown;
   questions: unknown;
   contentUrl: string | null;

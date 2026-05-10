@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { KYCStatus } from "@/generated/prisma";
 import { calculateProfileCompletion } from "@/lib/profile-completion";
-import { getXpRank } from "@/lib/user-rank";
+import { getXpRank, calculateXpForLevel } from "@/lib/user-rank";
 
 const PROFILE_FIELDS = {
   id: true,
@@ -29,6 +29,7 @@ const PROFILE_FIELDS = {
   emailVerified: true,
   phoneVerified: true,
   isBlueVerified: true,
+  verifiedBadgeStyle: true,
   twoFactorEnabled: true,
   notificationsEnabled: true,
   emailNotifications: true,
@@ -93,6 +94,9 @@ export async function GET() {
             transactions: true,
             socialAccounts: true,
             posts: true,
+            courseEnrollments: true,
+            marketplaceListings: true,
+            marketplacePurchases: true,
           },
         },
       },
@@ -102,8 +106,34 @@ export async function GET() {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    type CountRel = { _count: { referrals: number; taskSubmissions: number; transactions: number; socialAccounts: number; posts: number } };
+    type CountRel = {
+      _count: {
+        referrals: number;
+        taskSubmissions: number;
+        transactions: number;
+        socialAccounts: number;
+        posts: number;
+        courseEnrollments: number;
+        marketplaceListings: number;
+        marketplacePurchases: number;
+      };
+    };
     const u = user as typeof user & CountRel;
+
+    // Counts that aren't direct User relations
+    const [coursesCreatedCount, marketplaceSalesCount, marketplaceTotalSalesAmount] =
+      await Promise.all([
+        prisma.course.count({
+          where: { createdById: session.user.id },
+        }),
+        prisma.marketplacePurchase.count({
+          where: { listing: { sellerId: session.user.id } },
+        }),
+        prisma.marketplacePurchase.aggregate({
+          where: { listing: { sellerId: session.user.id }, status: "COMPLETED" },
+          _sum: { sellerAmount: true },
+        }),
+      ]);
 
     const pkg = u.package;
 
@@ -216,6 +246,12 @@ export async function GET() {
         postsCount: Math.max(0, u._count.posts + u.displayPostsBoost),
         followersCount: Math.max(0, u.followersCount + u.displayFollowersBoost),
         followingCount: Math.max(0, u.followingCount + u.displayFollowingBoost),
+        coursesEnrolled: u._count.courseEnrollments,
+        coursesCreated: coursesCreatedCount,
+        marketplaceListings: u._count.marketplaceListings,
+        marketplacePurchases: u._count.marketplacePurchases,
+        marketplaceSales: marketplaceSalesCount,
+        marketplaceSalesAmount: marketplaceTotalSalesAmount._sum.sellerAmount ?? 0,
         lifetime: {
           totalEarnedPoints: Math.round(u.totalEarnings * 1000),
           totalEarnedUsd: u.totalEarnings,
@@ -240,6 +276,7 @@ export async function GET() {
       verification: {
         kycStatus: u.kycStatus,
         isBlueVerified: u.isBlueVerified,
+        verifiedBadgeStyle: u.verifiedBadgeStyle ?? "BLUE",
         isEmailVerified: !!u.emailVerified,
         isPhoneVerified: !!u.phoneVerified,
         twoFactorEnabled: u.twoFactorEnabled,
@@ -472,17 +509,3 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-function calculateXpForLevel(level: number): number {
-  if (level <= 1) return 0;
-  if (level === 2) return 100;
-  if (level === 3) return 250;
-  if (level === 4) return 500;
-  if (level === 5) return 1000;
-  if (level === 6) return 2000;
-  if (level === 7) return 4000;
-  if (level === 8) return 7000;
-  if (level === 9) return 11000;
-  if (level === 10) return 16000;
-  if (level === 11) return 22000;
-  return 22000 + (level - 11) * 10000;
-}
