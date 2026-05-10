@@ -20,11 +20,14 @@ import {
   AlertCircle,
   CheckCircle,
   Check,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import { ADMIN_MODULES } from "@/lib/rbac";
+import { useTheme } from "@/components/providers/theme-provider";
 
 interface AdminHeaderProps {
   user: {
@@ -90,6 +93,8 @@ export function AdminHeader({ user }: AdminHeaderProps) {
   const [unreadCount, setUnreadCount] = useState(0);
   const pathname = usePathname();
   const pageTitle = usePageTitle(pathname);
+  const { theme, setTheme } = useTheme();
+  const isLight = theme === "light";
 
   // Fetch notifications, refresh every 30 seconds
   useEffect(() => {
@@ -199,6 +204,16 @@ export function AdminHeader({ user }: AdminHeaderProps) {
             <Shield className="w-3.5 h-3.5" />
             {user.role}
           </span>
+
+          {/* Theme Toggle */}
+          <button
+            onClick={() => setTheme(isLight ? "dark" : "light")}
+            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            aria-label={isLight ? "Switch to dark mode" : "Switch to light mode"}
+            title={isLight ? "Switch to dark mode" : "Switch to light mode"}
+          >
+            {isLight ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
+          </button>
 
           {/* Notifications */}
           <div className="relative">

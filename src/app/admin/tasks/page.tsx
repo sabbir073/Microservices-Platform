@@ -24,6 +24,7 @@ import {
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { taskDisplayId } from "@/lib/display-id";
 import { Prisma } from "@/generated/prisma/client";
 import { TaskActions } from "@/components/admin/task-actions";
 
@@ -376,6 +377,9 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
                     {task.title}
                   </h3>
                 </Link>
+                <p className="text-[10px] font-mono text-gray-600 mt-1">
+                  {taskDisplayId(task.id)}
+                </p>
                 <p className="text-sm text-gray-400 mt-1 line-clamp-2">
                   {task.description}
                 </p>

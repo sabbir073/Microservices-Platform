@@ -6,13 +6,13 @@ import {
   Loader2,
   Calendar,
   MapPin,
-  CheckCircle,
   UserPlus,
   UserCheck,
   Coins,
   Crown,
   Lock,
 } from "lucide-react";
+import { VerifiedBadge } from "@/components/user/profile/verified-badge";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -42,6 +42,7 @@ interface ProfileResp {
     tags: string[];
     level: number;
     isBlueVerified: boolean;
+    verifiedBadgeStyle: string | null;
     packageTier: string;
     createdAt: string;
     postsCount: number | null;
@@ -211,10 +212,12 @@ export function PublicProfileView({ userId, viewerId }: Props) {
           <div className="flex items-start gap-2 flex-wrap">
             <h1 className="text-xl sm:text-2xl font-bold text-white">{displayName}</h1>
             {user.isBlueVerified && (
-              <CheckCircle
-                className="w-5 h-5 text-blue-400 fill-blue-500/30 mt-1"
-                aria-label="Verified"
-              />
+              <span className="mt-1.5">
+                <VerifiedBadge
+                  style={user.verifiedBadgeStyle}
+                  size="md"
+                />
+              </span>
             )}
             <span className="ml-auto inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold uppercase tracking-wider">
               <Crown className="w-3 h-3" />
@@ -389,6 +392,7 @@ interface UserListItem {
   username: string | null;
   avatar: string | null;
   isBlueVerified: boolean;
+  verifiedBadgeStyle: string | null;
   followersCount: number;
   isFollowing: boolean;
 }
@@ -483,7 +487,7 @@ function UserListTab({
                 <p className="text-sm font-bold text-white truncate inline-flex items-center gap-1">
                   {u.name ?? u.username ?? "User"}
                   {u.isBlueVerified && (
-                    <CheckCircle className="w-3.5 h-3.5 text-blue-400 fill-blue-500/30" />
+                    <VerifiedBadge style={u.verifiedBadgeStyle} size="sm" />
                   )}
                 </p>
               </Link>

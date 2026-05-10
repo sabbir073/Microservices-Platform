@@ -29,7 +29,9 @@ export async function GET(
           username: true,
           avatar: true,
           isBlueVerified: true,
+          verifiedBadgeStyle: true,
           followersCount: true,
+          displayFollowersBoost: true,
         },
       },
     },
@@ -41,7 +43,9 @@ export async function GET(
       username: string | null;
       avatar: string | null;
       isBlueVerified: boolean;
+      verifiedBadgeStyle: string | null;
       followersCount: number;
+      displayFollowersBoost: number;
     };
   };
   const rows = follows as WithFollower[];
@@ -67,7 +71,11 @@ export async function GET(
       username: f.follower.username,
       avatar: f.follower.avatar,
       isBlueVerified: f.follower.isBlueVerified,
-      followersCount: f.follower.followersCount,
+      verifiedBadgeStyle: f.follower.verifiedBadgeStyle ?? "BLUE",
+      followersCount: Math.max(
+        0,
+        f.follower.followersCount + f.follower.displayFollowersBoost
+      ),
       isFollowing: followingSet.has(f.follower.id),
       followedAt: f.createdAt,
     })),

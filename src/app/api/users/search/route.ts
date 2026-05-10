@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
       username: true,
       avatar: true,
       isBlueVerified: true,
+      verifiedBadgeStyle: true,
     },
   });
 

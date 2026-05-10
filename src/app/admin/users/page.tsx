@@ -115,7 +115,7 @@ export default async function AdminUsersPage({ searchParams }: PageProps) {
         role: true,
         status: true,
         kycStatus: true,
-        package: { select: { slug: true, name: true } },
+        package: { select: { slug: true, name: true, badgeColor: true } },
         pointsBalance: true,
         cashBalance: true,
         level: true,

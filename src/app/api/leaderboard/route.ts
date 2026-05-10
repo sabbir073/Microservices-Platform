@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  computeCombinedTopUsers,
+  computeCombinedUserRank,
+  getEligiblePackages,
+} from "@/lib/leaderboard";
 
 // GET /api/leaderboard - Get leaderboard data
 export async function GET(request: NextRequest) {
@@ -8,8 +13,60 @@ export async function GET(request: NextRequest) {
     const session = await auth();
 
     const { searchParams } = new URL(request.url);
-    const type = searchParams.get("type") || "points"; // points, xp, referrals
+    const type = searchParams.get("type") || "combined"; // combined | points | xp | tasks | referrals
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 100);
+
+    // Combined mode — single mixed-metric leaderboard with eligibility.
+    if (type === "combined") {
+      const eligiblePackages = await getEligiblePackages();
+      const top = await computeCombinedTopUsers({ limit, eligiblePackages });
+      let currentUser: {
+        rank: number | string;
+        score: number;
+        components: { points: number; xp: number; tasks: number; team: number };
+        isEligible: boolean;
+        packageSlug: string;
+        isInTop: boolean;
+      } | null = null;
+      if (session?.user?.id) {
+        const inTopIdx = top.findIndex((r) => r.userId === session.user.id);
+        if (inTopIdx !== -1) {
+          const me = top[inTopIdx];
+          currentUser = {
+            rank: me.rank,
+            score: me.score,
+            components: me.components,
+            isEligible: me.isEligible,
+            packageSlug: me.packageSlug,
+            isInTop: true,
+          };
+        } else {
+          const computed = await computeCombinedUserRank(session.user.id);
+          if (computed) {
+            currentUser = {
+              rank: computed.rank > 500 ? "500+" : computed.rank,
+              score: computed.score,
+              components: computed.components,
+              isEligible: computed.isEligible,
+              packageSlug: computed.packageSlug,
+              isInTop: false,
+            };
+          }
+        }
+      }
+      const totalParticipants = await prisma.user.count();
+      return NextResponse.json({
+        leaderboard: top,
+        eligiblePackages,
+        currentUser,
+        metadata: {
+          type,
+          limit,
+          totalParticipants,
+          lastUpdated: new Date().toISOString(),
+        },
+      });
+    }
 
     let leaderboard: Array<{
       rank: number;
@@ -108,6 +165,42 @@ export async function GET(request: NextRequest) {
         packageTier: u.package?.slug ?? "default",
         value: referralCounts[idx],
       }));
+    } else if (type === "tasks") {
+      const usersRaw = await prisma.user.findMany({
+        orderBy: {
+          taskSubmissions: { _count: "desc" },
+        },
+        take: limit,
+        select: {
+          id: true,
+          name: true,
+          avatar: true,
+          level: true,
+          package: { select: { slug: true, name: true } },
+        },
+      });
+      const users = usersRaw as unknown as LBUser[];
+
+      const taskCounts = await Promise.all(
+        users.map((u) =>
+          prisma.taskSubmission.count({
+            where: {
+              userId: u.id,
+              status: { in: ["APPROVED", "AUTO_APPROVED"] },
+            },
+          })
+        )
+      );
+
+      leaderboard = users.map((u, idx) => ({
+        rank: idx + 1,
+        userId: u.id,
+        name: u.name || "Anonymous",
+        avatar: u.avatar,
+        level: u.level,
+        packageTier: u.package?.slug ?? "default",
+        value: taskCounts[idx],
+      }));
     }
 
     // Get current user's rank if authenticated
@@ -142,6 +235,13 @@ export async function GET(request: NextRequest) {
           } else if (type === "referrals") {
             userValue = await prisma.user.count({
               where: { referredById: session.user.id },
+            });
+          } else if (type === "tasks") {
+            userValue = await prisma.taskSubmission.count({
+              where: {
+                userId: session.user.id,
+                status: { in: ["APPROVED", "AUTO_APPROVED"] },
+              },
             });
           }
 

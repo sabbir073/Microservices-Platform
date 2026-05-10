@@ -24,6 +24,7 @@ import { format, formatDistanceToNow } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { YouTubePlayer } from "@/components/YouTubePlayer";
 import { TaskDetailActions } from "@/components/admin/task-actions";
+import { taskDisplayId } from "@/lib/display-id";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -130,6 +131,9 @@ export default async function TaskDetailPage({ params }: PageProps) {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-white">{task.title}</h1>
+              <p className="text-[11px] font-mono text-gray-500 mt-0.5">
+                {taskDisplayId(task.id)}
+              </p>
               <div className="flex items-center gap-3 mt-1">
                 <span className={`px-2 py-0.5 rounded-full text-xs ${config.bgColor} ${config.color}`}>
                   {task.type}

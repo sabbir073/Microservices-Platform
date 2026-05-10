@@ -1,10 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Loader2, Eye, EyeOff, Copy, Sparkles } from "lucide-react";
+import {
+  X,
+  Loader2,
+  Eye,
+  EyeOff,
+  Copy,
+  Sparkles,
+  Camera,
+  Trash2,
+  Image as ImageIcon,
+} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  VerifiedBadge,
+  VERIFIED_BADGE_STYLES,
+  type VerifiedBadgeStyle,
+} from "@/components/user/profile/verified-badge";
+import { userDisplayId } from "@/lib/display-id";
 
 // Generate a 12-char password with at least 1 lower / upper / digit / symbol
 function generateRandomPassword(length = 12): string {
@@ -41,6 +57,7 @@ export interface EditUserData {
   packageId: string | null;
   kycStatus: string;
   isBlueVerified: boolean;
+  verifiedBadgeStyle: string | null;
   // Personal
   gender: string | null;
   dateOfBirth: Date | null;
@@ -53,6 +70,8 @@ export interface EditUserData {
   secondaryEmail: string | null;
   secondaryPhone: string | null;
   bio: string | null;
+  avatar: string | null;
+  coverPhoto: string | null;
   // Address
   country: string | null;
   region: string | null;
@@ -75,12 +94,13 @@ interface UserEditFormProps {
   onDone?: () => void;
 }
 
-type Tab = "account" | "verify" | "balance" | "personal" | "address";
+type Tab = "account" | "verify" | "balance" | "photos" | "personal" | "address";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "account", label: "Account" },
   { id: "verify", label: "🔑 Verify & Password" },
   { id: "balance", label: "Balance & Tier" },
+  { id: "photos", label: "Photos" },
   { id: "personal", label: "Personal Info" },
   { id: "address", label: "Address" },
 ];
@@ -140,6 +160,7 @@ export function UserEditForm({
     packageId: user.packageId ?? "",
     kycStatus: user.kycStatus,
     isBlueVerified: user.isBlueVerified,
+    verifiedBadgeStyle: user.verifiedBadgeStyle ?? "BLUE",
 
     gender: user.gender ?? "",
     dateOfBirth: user.dateOfBirth
@@ -154,6 +175,9 @@ export function UserEditForm({
     secondaryEmail: user.secondaryEmail ?? "",
     secondaryPhone: user.secondaryPhone ?? "",
     bio: user.bio ?? "",
+
+    avatar: user.avatar ?? "",
+    coverPhoto: user.coverPhoto ?? "",
 
     country: user.country ?? "",
     region: user.region ?? "",
@@ -202,6 +226,8 @@ export function UserEditForm({
         payload.kycStatus = form.kycStatus;
       if (form.isBlueVerified !== user.isBlueVerified)
         payload.isBlueVerified = form.isBlueVerified;
+      if (form.verifiedBadgeStyle !== (user.verifiedBadgeStyle ?? "BLUE"))
+        payload.verifiedBadgeStyle = form.verifiedBadgeStyle || "BLUE";
       // Personal
       if (form.gender !== (user.gender ?? ""))
         payload.gender = form.gender || null;
@@ -229,6 +255,11 @@ export function UserEditForm({
       if (form.secondaryPhone !== (user.secondaryPhone ?? ""))
         payload.secondaryPhone = form.secondaryPhone || null;
       if (form.bio !== (user.bio ?? "")) payload.bio = form.bio || null;
+      // Photos
+      if (form.avatar !== (user.avatar ?? ""))
+        payload.avatar = form.avatar || null;
+      if (form.coverPhoto !== (user.coverPhoto ?? ""))
+        payload.coverPhoto = form.coverPhoto || null;
       // Address
       if (form.country !== (user.country ?? ""))
         payload.country = form.country || null;
@@ -640,6 +671,56 @@ export function UserEditForm({
                     ⚠️ Blue Verified is on but KYC is not approved. Approve KYC above for consistency.
                   </div>
                 )}
+
+                {/* Badge style picker — only when verified */}
+                {form.isBlueVerified && (
+                  <div className="rounded-lg border border-slate-700 bg-slate-950/40 p-3">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                          Badge Style
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Pick a colour. Hover the badge to preview the
+                          &quot;Verified&quot; tooltip.
+                        </p>
+                      </div>
+                      <VerifiedBadge
+                        style={form.verifiedBadgeStyle as VerifiedBadgeStyle}
+                        size="md"
+                      />
+                    </div>
+                    <div className="grid grid-cols-3 sm:grid-cols-7 gap-2">
+                      {(
+                        Object.keys(
+                          VERIFIED_BADGE_STYLES
+                        ) as VerifiedBadgeStyle[]
+                      ).map((id) => {
+                        const meta = VERIFIED_BADGE_STYLES[id];
+                        const active = form.verifiedBadgeStyle === id;
+                        return (
+                          <button
+                            type="button"
+                            key={id}
+                            onClick={() => set("verifiedBadgeStyle", id)}
+                            className={cn(
+                              "flex flex-col items-center gap-1.5 p-2 rounded-lg border transition-all",
+                              active
+                                ? "border-white bg-slate-800 ring-2 ring-white/30"
+                                : "border-slate-700 bg-slate-900 hover:border-slate-600"
+                            )}
+                            title={meta.label}
+                          >
+                            <VerifiedBadge style={id} size="md" />
+                            <span className="text-[10px] font-bold text-slate-200 uppercase tracking-wider">
+                              {meta.label}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </section>
 
               {/* Section 4 — Quick References */}
@@ -649,8 +730,16 @@ export function UserEditForm({
                 </h3>
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                   <div className="flex items-center gap-2">
-                    <dt className="text-slate-500 shrink-0">User ID:</dt>
-                    <dd className="text-slate-300 font-mono truncate">{user.id}</dd>
+                    <dt className="text-slate-500 shrink-0">Display ID:</dt>
+                    <dd className="text-white font-mono font-bold truncate">
+                      {userDisplayId(user.id)}
+                    </dd>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <dt className="text-slate-500 shrink-0">Internal ID:</dt>
+                    <dd className="text-slate-400 font-mono truncate text-[10px]">
+                      {user.id}
+                    </dd>
                   </div>
                   <div className="flex items-center gap-2">
                     <dt className="text-slate-500 shrink-0">Email:</dt>
@@ -763,6 +852,27 @@ export function UserEditForm({
                   Visible next to user&apos;s name
                 </span>
               </label>
+            </div>
+          )}
+
+          {tab === "photos" && (
+            <div className="space-y-5">
+              <p className="text-xs text-slate-400">
+                Upload images on this user&apos;s behalf. Stored on S3 and visible
+                on their public profile. Max 8&nbsp;MB each.
+              </p>
+              <PhotoField
+                label="Profile photo (avatar)"
+                kind="avatar"
+                value={form.avatar}
+                onChange={(url) => set("avatar", url ?? "")}
+              />
+              <PhotoField
+                label="Cover photo"
+                kind="coverPhoto"
+                value={form.coverPhoto}
+                onChange={(url) => set("coverPhoto", url ?? "")}
+              />
             </div>
           )}
 
@@ -1023,6 +1133,152 @@ function Field({
         {hint && <span className="text-slate-600 ml-2">{hint}</span>}
       </label>
       {children}
+    </div>
+  );
+}
+
+function PhotoField({
+  label,
+  kind,
+  value,
+  onChange,
+}: {
+  label: string;
+  kind: "avatar" | "coverPhoto";
+  value: string;
+  onChange: (url: string | null) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("Image must be under 8 MB");
+      return;
+    }
+    setBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/media/upload", {
+        method: "POST",
+        body: fd,
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      const url = d.cloudFrontUrl || d.url || d.s3Url;
+      if (!url) throw new Error("Upload returned no URL");
+      onChange(url);
+      toast.success(`${kind === "avatar" ? "Profile" : "Cover"} photo uploaded`);
+    } catch (err) {
+      toast.error("Upload failed", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) handleFile(f);
+  };
+
+  return (
+    <div>
+      <p className="text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+        {label}
+      </p>
+
+      {value && (
+        <div
+          className={cn(
+            "rounded-lg overflow-hidden border border-slate-700 bg-slate-950 mb-3",
+            kind === "avatar"
+              ? "w-32 h-32 rounded-full"
+              : "w-full aspect-[5/2]"
+          )}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={value} alt="" className="w-full h-full object-cover" />
+        </div>
+      )}
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        onClick={() => !busy && fileInputRef.current?.click()}
+        className={cn(
+          "rounded-xl border-2 border-dashed p-4 cursor-pointer text-center transition-colors",
+          dragOver
+            ? "border-blue-500 bg-blue-500/5"
+            : "border-slate-700 hover:border-blue-500/50 hover:bg-slate-950"
+        )}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/jpg,image/png,image/webp,image/gif"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) handleFile(f);
+          }}
+        />
+        {busy ? (
+          <div className="inline-flex items-center gap-2 text-slate-300">
+            <Loader2 className="w-4 h-4 animate-spin" />
+            Uploading...
+          </div>
+        ) : (
+          <>
+            {value ? (
+              <Camera className="w-6 h-6 text-slate-500 mx-auto mb-1" />
+            ) : (
+              <ImageIcon className="w-7 h-7 text-slate-500 mx-auto mb-1" />
+            )}
+            <p className="text-sm text-white font-semibold">
+              {value ? "Replace image" : "Click or drag image here"}
+            </p>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              JPG, PNG, WebP, GIF · Up to 8 MB
+            </p>
+          </>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 mt-2">
+        <input
+          type="url"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="...or paste a URL"
+          className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-slate-700 rounded-md text-xs font-mono text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange(null)}
+            disabled={busy}
+            className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+            title="Remove photo"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Remove
+          </button>
+        )}
+      </div>
     </div>
   );
 }

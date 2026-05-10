@@ -32,6 +32,8 @@ export async function GET(
         email: true,
         username: true,
         avatar: true,
+        coverPhoto: true,
+        bio: true,
         phone: true,
         country: true,
         language: true,
@@ -39,6 +41,8 @@ export async function GET(
         role: true,
         status: true,
         kycStatus: true,
+        isBlueVerified: true,
+        verifiedBadgeStyle: true,
         package: { select: { id: true, slug: true, name: true } },
         packageExpiresAt: true,
         pointsBalance: true,
@@ -101,6 +105,10 @@ const updateUserSchema = z.object({
   packageExpiresAt: z.string().datetime().optional().nullable(),
   kycStatus: z.enum(["NOT_SUBMITTED", "PENDING", "APPROVED", "REJECTED"]).optional(),
   isBlueVerified: z.boolean().optional(),
+  verifiedBadgeStyle: z
+    .enum(["BLUE", "GOLD", "RAINBOW", "EMERALD", "PURPLE", "ROSE", "OCEAN"])
+    .optional()
+    .nullable(),
 
   // Personal
   gender: z.enum(["Male", "Female", "Other"]).optional().nullable(),
@@ -114,6 +122,10 @@ const updateUserSchema = z.object({
   secondaryEmail: z.string().email().optional().nullable(),
   secondaryPhone: z.string().max(32).optional().nullable(),
   bio: z.string().max(500).optional().nullable(),
+
+  // Photos
+  avatar: z.string().url().optional().nullable(),
+  coverPhoto: z.string().url().optional().nullable(),
 
   // Address
   country: z.string().optional().nullable(),
@@ -234,6 +246,8 @@ export async function PATCH(
     if (data.kycStatus !== undefined) updateData.kycStatus = data.kycStatus;
     if (data.isBlueVerified !== undefined)
       updateData.isBlueVerified = data.isBlueVerified;
+    if (data.verifiedBadgeStyle !== undefined)
+      updateData.verifiedBadgeStyle = data.verifiedBadgeStyle;
 
     // Personal
     if (data.gender !== undefined) updateData.gender = data.gender;
@@ -252,6 +266,10 @@ export async function PATCH(
     if (data.secondaryPhone !== undefined)
       updateData.secondaryPhone = data.secondaryPhone;
     if (data.bio !== undefined) updateData.bio = data.bio;
+
+    // Photos
+    if (data.avatar !== undefined) updateData.avatar = data.avatar;
+    if (data.coverPhoto !== undefined) updateData.coverPhoto = data.coverPhoto;
 
     // Address
     if (data.country !== undefined) updateData.country = data.country;

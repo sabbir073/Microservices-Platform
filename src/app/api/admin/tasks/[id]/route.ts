@@ -109,6 +109,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       articleConfig,
       videoConfig,
       surveyConfig,
+      customConfig,
       proxyInstructions,
       startsAt,
       expiresAt,
@@ -169,6 +170,9 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           : null,
         surveyConfig: surveyConfig
           ? JSON.parse(JSON.stringify(surveyConfig))
+          : null,
+        customConfig: customConfig
+          ? JSON.parse(JSON.stringify(customConfig))
           : null,
         proxyInstructions: proxyInstructions || null,
         startsAt: startsAt ? new Date(startsAt) : null,
