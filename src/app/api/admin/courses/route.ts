@@ -2,81 +2,80 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
-import { z } from "zod";
+import { courseWriteSchema, saveCourse } from "@/lib/course-write";
 
-const lessonSchema = z.object({
-  title: z.string().min(2),
-  description: z.string().optional(),
-  videoUrl: z.string().url().optional().or(z.literal("")),
-  content: z.string().optional(),
-  duration: z.number().int().min(0).default(0),
-  isFree: z.boolean().optional().default(false),
-});
-
-const createSchema = z.object({
-  title: z.string().min(3).max(120),
-  description: z.string().min(3),
-  thumbnail: z.string().url().optional().or(z.literal("")),
-  category: z.string().default("General"),
-  difficulty: z.enum(["BEGINNER", "INTERMEDIATE", "ADVANCED"]).default("BEGINNER"),
-  price: z.number().min(0).default(0),
-  isFree: z.boolean().default(true),
-  status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).default("DRAFT"),
-  lessons: z.array(lessonSchema).min(1),
-});
-
-export async function POST(request: NextRequest) {
+// GET /api/admin/courses?status=PENDING_REVIEW&q=&take=&skip=
+export async function GET(req: NextRequest) {
   try {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    const adminRole = session.user.role as UserRole | undefined;
-    if (!hasPermission(adminRole, "courses.manage")) {
+    const role = session.user.role as UserRole | undefined;
+    if (!hasPermission(role, "courses.view")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    const { searchParams } = new URL(req.url);
+    const status = searchParams.get("status") ?? "";
+    const q = (searchParams.get("q") ?? "").trim();
+    const take = Math.min(100, Math.max(1, Number(searchParams.get("take") ?? 30)));
+    const skip = Math.max(0, Number(searchParams.get("skip") ?? 0));
 
-    const body = await request.json();
-    const validation = createSchema.safeParse(body);
-    if (!validation.success) {
+    const where: Record<string, unknown> = {};
+    if (status) where.status = status;
+    if (q)
+      where.OR = [
+        { title: { contains: q, mode: "insensitive" } },
+        { slug: { contains: q, mode: "insensitive" } },
+      ];
+
+    const [rows, total] = await Promise.all([
+      prisma.course.findMany({
+        where,
+        orderBy: { updatedAt: "desc" },
+        take,
+        skip,
+        include: {
+          tutor: { select: { id: true, name: true, email: true, avatar: true } },
+          _count: { select: { lessons: true, enrollments: true } },
+        },
+      }),
+      prisma.course.count({ where }),
+    ]);
+
+    return NextResponse.json({ rows, total });
+  } catch (error) {
+    console.error("List courses failed:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed" },
+      { status: 500 }
+    );
+  }
+}
+
+// POST /api/admin/courses — admin creates a course directly
+export async function POST(req: NextRequest) {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const role = session.user.role as UserRole | undefined;
+    if (!hasPermission(role, "courses.manage")) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    const body = await req.json();
+    const v = courseWriteSchema.safeParse(body);
+    if (!v.success) {
       return NextResponse.json(
-        { error: "Invalid input", details: validation.error.issues },
+        { error: "Invalid input", details: v.error.issues },
         { status: 400 }
       );
     }
-    const data = validation.data;
 
-    const totalDuration = data.lessons.reduce(
-      (acc, l) => acc + (l.duration ?? 0),
-      0
-    );
-
-    const course = await prisma.course.create({
-      data: {
-        title: data.title,
-        description: data.description,
-        thumbnail: data.thumbnail || null,
-        category: data.category,
-        difficulty: data.difficulty,
-        price: data.price,
-        isFree: data.isFree,
-        status: data.status,
-        totalLessons: data.lessons.length,
-        totalDuration,
-        createdById: session.user.id,
-        publishedAt: data.status === "PUBLISHED" ? new Date() : null,
-        lessons: {
-          create: data.lessons.map((l, i) => ({
-            order: i,
-            title: l.title,
-            description: l.description ?? null,
-            videoUrl: l.videoUrl || null,
-            content: l.content ?? null,
-            duration: l.duration ?? 0,
-            isFree: !!l.isFree,
-          })),
-        },
-      },
+    const course = await saveCourse(v.data, {
+      actor: "admin",
+      userId: session.user.id,
     });
 
     await prisma.auditLog.create({
@@ -87,17 +86,17 @@ export async function POST(request: NextRequest) {
         entityId: course.id,
         newData: {
           title: course.title,
-          lessons: data.lessons.length,
-          status: data.status,
+          status: course.status,
+          modules: v.data.modules.length,
         },
       },
     });
 
     return NextResponse.json({ success: true, course }, { status: 201 });
   } catch (error) {
-    console.error("Error creating course:", error);
+    console.error("Create course failed:", error);
     return NextResponse.json(
-      { error: "Failed to create course" },
+      { error: error instanceof Error ? error.message : "Failed" },
       { status: 500 }
     );
   }

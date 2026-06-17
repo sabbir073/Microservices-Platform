@@ -10,6 +10,7 @@ datasource db {
 
 enum UserRole {
   USER
+  TUTOR
   SUPER_ADMIN
   FINANCE_ADMIN
   CONTENT_ADMIN
@@ -70,6 +71,9 @@ enum TransactionType {
   GIFT
   LOTTERY_WIN
   CHECKIN
+  COURSE_PURCHASE
+  COURSE_TUTOR_EARNING
+  COURSE_REFUND
 }
 
 enum TransactionStatus {
@@ -531,10 +535,87 @@ enum MarketplaceListingStatus {
   EXPIRED
 }
 
+enum MarketplaceBidStatus {
+  ACTIVE // current high bid (only one ACTIVE per listing)
+  OUTBID // a later, higher bid replaced this one
+  WON    // auction closed and this bid won
+  LOST   // auction closed and this bid didn't win
+  CANCELLED
+}
+
+enum MarketplaceOfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COUNTERED
+  EXPIRED
+  WITHDRAWN
+}
+
 enum CourseStatus {
   DRAFT
+  PENDING_REVIEW
   PUBLISHED
+  SUSPENDED
   ARCHIVED
+}
+
+enum CourseSkillLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+  ALL_LEVELS
+}
+
+enum CourseLessonType {
+  VIDEO
+  ARTICLE
+  QUIZ
+  ASSIGNMENT
+  LIVE
+  RESOURCE
+}
+
+enum QuizQuestionType {
+  MCQ
+  TRUE_FALSE
+  MULTI_SELECT
+}
+
+enum AssignmentSubmissionStatus {
+  PENDING
+  GRADED
+  RESUBMIT
+}
+
+enum LiveClassStatus {
+  UPCOMING
+  LIVE
+  ENDED
+  CANCELLED
+}
+
+enum CourseRefundStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CouponType {
+  PERCENT
+  FIXED
+}
+
+enum CouponScope {
+  ALL
+  CATEGORY
+  SPECIFIC_COURSES
+}
+
+enum TutorApplicationStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum LotteryStatus {
@@ -553,6 +634,7 @@ enum NotificationType {
   ACHIEVEMENT
   LOTTERY
   SOCIAL
+  COURSE
 }
 model User {
   id                String      @id @default(cuid())
@@ -647,7 +729,28 @@ model User {
   notifications     Notification[]
   marketplaceListings MarketplaceListing[]
   marketplacePurchases MarketplacePurchase[]
+  marketplaceWatches  MarketplaceWatch[]
+  marketplaceViews    MarketplaceListingView[]
+  marketplaceBids     MarketplaceBid[]
+  marketplaceOffers   MarketplaceOffer[]
   courseEnrollments CourseEnrollment[]
+  tutorProfile      TutorProfile?
+  tutorApplications TutorApplication[]
+  tutorApplicationsReviewed TutorApplication[] @relation("TutorAppReviewer")
+  coursesTaught     Course[]              @relation("CourseTutor")
+  courseReviews     CourseReview[]
+  courseQuestionsAsked    CourseQuestion[]  @relation("CourseQuestionAsker")
+  courseQuestionsAnswered CourseQuestion[]  @relation("CourseQuestionAnswerer")
+  courseBookmarks   CourseBookmark[]
+  courseAnnouncements CourseAnnouncement[]
+  courseQuizAttempts  CourseQuizAttempt[]
+  courseAssignmentSubmissions CourseAssignmentSubmission[]
+  courseAssignmentSubmissionsGraded CourseAssignmentSubmission[] @relation("AssignmentGrader")
+  courseCertificates  CourseCertificate[]
+  courseCoupons       CourseCoupon[]
+  courseRefundsRequested CourseRefundRequest[] @relation("CourseRefundUser")
+  courseRefundsProcessed CourseRefundRequest[] @relation("CourseRefundAdmin")
+  courseViews         CourseListingView[]
   lotteryTickets    LotteryTicket[]
   posts             Post[]
   comments          Comment[]
@@ -1097,11 +1200,60 @@ model MarketplaceListing {
   seller          User                     @relation(fields: [sellerId], references: [id])
   title           String
   description     String                   @db.Text
+  // Free-form category retained for back-compat (existing rows). New listings
+  // should use assetType + subType instead. See src/lib/marketplace-categories.ts.
   category        String
+  // Typed asset taxonomy. Drives the dynamic listing form + per-category
+  // commission. Defaults to "DIGITAL_PRODUCT" so legacy rows stay valid.
+  assetType       String                   @default("DIGITAL_PRODUCT")
+  subType         String?
+  // Category-specific structured data (mirrors customConfig pattern on Task).
+  details         Json?
   price           Float
   currency        String                   @default("USD")
   images          String[]
+  // Proof-of-asset screenshots (Search Console, analytics, ad dashboards,
+  // payout history). Kept separate from `images` (which is the marketing gallery).
+  screenshots     String[]
+  // PDFs, traffic reports, P&L docs.
+  attachments     String[]
   files           String[]
+  // Long-form description (markdown). Short `description` stays for cards/list.
+  richDescription String?                  @db.Text
+  // Asset financials (where relevant — null for non-monetized assets).
+  monthlyRevenue  Float?
+  monthlyProfit   Float?
+  monthlyExpenses Float?
+  monthlyTraffic  Int?
+  assetAgeMonths  Int?
+  niche           String?
+  reasonsForSelling String?                @db.Text
+  whatsIncluded   String?                  @db.Text
+  whatsNotIncluded String?                 @db.Text
+  // Admin-set after reviewing proof screenshots. Surfaces a green badge.
+  verifiedMetrics Boolean                  @default(false)
+  // Adult / quarantined content. Hidden from default browsing.
+  nsfw            Boolean                  @default(false)
+  // Revenue figures hidden until buyer signs an NDA.
+  ndaGated        Boolean                  @default(false)
+  // Auction support. When false the listing is fixed-price buy-now only.
+  auctionMode     Boolean                  @default(false)
+  startingBid     Float?
+  reservePrice    Float?
+  buyNowPrice     Float?
+  auctionEndsAt   DateTime?
+  isFeatured      Boolean                  @default(false)
+  featuredUntil   DateTime?
+  isPromoted      Boolean                  @default(false)
+  promotedUntil   DateTime?
+  // Override platform commission in basis points (100 bps = 1%).
+  // Falls back to setting `marketplace_commission_rates` when null.
+  commissionRateBps Int?
+  // Pre-aggregated counters for fast list rendering.
+  bidsCount       Int                      @default(0)
+  bidderCount     Int                      @default(0)
+  uniqueViewers   Int                      @default(0)
+  directPurchasesCount Int                 @default(0)
   status          MarketplaceListingStatus @default(ACTIVE)
   views           Int                      @default(0)
   createdAt       DateTime                 @default(now())
@@ -1109,9 +1261,15 @@ model MarketplaceListing {
   expiresAt       DateTime?
   purchases       MarketplacePurchase[]
   cartItems       CartItem[]
+  watches         MarketplaceWatch[]
+  viewLog         MarketplaceListingView[]
+  bids            MarketplaceBid[]
+  offers          MarketplaceOffer[]
   @@index([sellerId])
   @@index([status])
   @@index([category])
+  @@index([assetType])
+  @@index([isFeatured])
 }
 
 model MarketplacePurchase {
@@ -1143,44 +1301,232 @@ model CartItem {
   @@index([userId])
 }
 
+// Users can "watch" listings — soft favorites that surface in seller analytics
+// ("12 people are watching this listing").
+model MarketplaceWatch {
+  id        String             @id @default(cuid())
+  userId    String
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  watchedAt DateTime           @default(now())
+
+  @@unique([userId, listingId])
+  @@index([listingId])
+  @@index([userId])
+}
+
+// Per-view audit row for marketplace listing analytics. The viewer can be
+// anonymous (sessionHash dedupes). Phase-4 charts read from this table; the
+// hot `uniqueViewers` counter on MarketplaceListing is incremented when this
+// is the user's first row.
+model MarketplaceListingView {
+  id          String             @id @default(cuid())
+  listingId   String
+  listing     MarketplaceListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sessionHash String
+  source      String?
+  viewedAt    DateTime           @default(now())
+
+  @@unique([listingId, sessionHash])
+  @@index([listingId])
+  @@index([viewedAt])
+}
+
+// A bid in an auction-mode listing. Only one ACTIVE bid exists per listing at
+// any time; placing a higher bid moves the previous ACTIVE row to OUTBID and
+// notifies the prior bidder.
+model MarketplaceBid {
+  id        String               @id @default(cuid())
+  listingId String
+  listing   MarketplaceListing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  bidderId  String
+  bidder    User                 @relation(fields: [bidderId], references: [id], onDelete: Cascade)
+  amount    Float
+  status    MarketplaceBidStatus @default(ACTIVE)
+  message   String?              @db.Text
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+
+  @@index([listingId])
+  @@index([bidderId])
+  @@index([listingId, status])
+}
+
+// A "make an offer" submission. Independent of auction bids — a buyer can
+// offer any amount; the seller accepts / rejects / counters. Accepting an
+// offer turns it into a MarketplacePurchase at the agreed price.
+model MarketplaceOffer {
+  id            String                 @id @default(cuid())
+  listingId     String
+  listing       MarketplaceListing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerId       String
+  buyer         User                   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  amount        Float
+  message       String?                @db.Text
+  status        MarketplaceOfferStatus @default(PENDING)
+  counterAmount Float?
+  counterMessage String?               @db.Text
+  expiresAt     DateTime?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([listingId])
+  @@index([buyerId])
+  @@index([listingId, status])
+}
+
 model Course {
   id              String        @id @default(cuid())
   title           String
+  slug            String?       @unique
+  subtitle        String?
   description     String        @db.Text
   thumbnail       String?
+  bannerUrl       String?
+  promoVideoUrl   String?
   category        String
+  categoryId      String?
+  category_rel    CourseCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  subcategoryId   String?
+  subcategory_rel CourseSubcategory? @relation(fields: [subcategoryId], references: [id], onDelete: SetNull)
   difficulty      String        @default("BEGINNER")
+  skillLevel      CourseSkillLevel @default(BEGINNER)
+  language        String        @default("en")
   price           Float         @default(0)
+  originalPrice   Float?
+  discountPrice   Float?
+  discountEndsAt  DateTime?
   isFree          Boolean       @default(false)
   totalLessons    Int           @default(0)
   totalDuration   Int           @default(0)
   status          CourseStatus  @default(DRAFT)
   enrollmentCount Int           @default(0)
   rating          Float         @default(0)
+  totalRatings    Int           @default(0)
+  avgRating       Float         @default(0)
+  totalReviews    Int           @default(0)
+  totalQuestions  Int           @default(0)
+  totalRevenueCents Int         @default(0)
+  uniqueViewers   Int           @default(0)
+  learningOutcomes String[]     @default([])
+  requirements    String[]      @default([])
+  whatsIncluded   String[]      @default([])
+  faqs            Json?
+  seoTitle        String?
+  seoDescription  String?
+  seoKeywords     String[]      @default([])
+  tutorId         String?
+  tutor           User?         @relation("CourseTutor", fields: [tutorId], references: [id], onDelete: SetNull)
+  certificateEnabled Boolean    @default(true)
+  commissionRateBps Int?
+  isFeatured      Boolean       @default(false)
+  featuredUntil   DateTime?
+  isPromoted      Boolean       @default(false)
+  promotedUntil   DateTime?
+  nsfw            Boolean       @default(false)
   createdById     String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
   publishedAt     DateTime?
+  lastContentUpdate DateTime?
+  modules         CourseModule[]
   lessons         CourseLesson[]
   enrollments     CourseEnrollment[]
+  reviews         CourseReview[]
+  questions       CourseQuestion[]
+  bookmarks       CourseBookmark[]
+  announcements   CourseAnnouncement[]
+  quizzes         CourseQuiz[]
+  assignments     CourseAssignment[]
+  liveClasses     CourseLiveClass[]
+  certificates    CourseCertificate[]
+  refundRequests  CourseRefundRequest[]
+  views           CourseListingView[]
   @@index([status])
   @@index([category])
+  @@index([categoryId])
+  @@index([tutorId])
+  @@index([isFeatured])
+  @@index([slug])
 }
 
-model CourseLesson {
+model CourseCategory {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+  iconKey     String?
+  color       String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  subcategories CourseSubcategory[]
+  courses     Course[]
+  @@index([isActive])
+  @@index([order])
+}
+
+model CourseSubcategory {
+  id         String   @id @default(cuid())
+  categoryId String
+  category   CourseCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  slug       String
+  name       String
+  order      Int      @default(0)
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  courses    Course[]
+  @@unique([categoryId, slug])
+  @@index([categoryId])
+}
+
+model CourseModule {
   id          String   @id @default(cuid())
   courseId    String
   course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   title       String
   description String?
-  content     String?  @db.Text
-  videoUrl    String?
-  duration    Int      @default(0)
-  order       Int
-  isFree      Boolean  @default(false)
+  order       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  lessons     CourseLesson[]
   @@index([courseId])
+}
+
+model CourseLesson {
+  id           String   @id @default(cuid())
+  courseId     String
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  moduleId     String?
+  module       CourseModule? @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  title        String
+  description  String?
+  content      String?  @db.Text
+  videoUrl     String?
+  subtitlesUrl String?
+  transcript   String?  @db.Text
+  duration     Int      @default(0)
+  order        Int
+  isFree       Boolean  @default(false)
+  isPreview    Boolean  @default(false)
+  lessonType   CourseLessonType @default(VIDEO)
+  resources    Json?
+  quizId       String?
+  quiz         CourseQuiz? @relation("LessonQuiz", fields: [quizId], references: [id], onDelete: SetNull)
+  assignmentId String?
+  assignment   CourseAssignment? @relation("LessonAssignment", fields: [assignmentId], references: [id], onDelete: SetNull)
+  liveClassId  String?
+  liveClass    CourseLiveClass? @relation("LessonLive", fields: [liveClassId], references: [id], onDelete: SetNull)
+  progress     CourseLessonProgress[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@index([courseId])
+  @@index([moduleId])
 }
 
 model CourseEnrollment {
@@ -1192,10 +1538,305 @@ model CourseEnrollment {
   progress        Int      @default(0)
   completedLessons String[] @default([])
   completedAt     DateTime?
+  pricePaid       Float    @default(0)
+  couponCode      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  lessonProgress  CourseLessonProgress[]
+  refundRequests  CourseRefundRequest[]
   @@unique([courseId, userId])
   @@index([userId])
+}
+
+model CourseLessonProgress {
+  id             String   @id @default(cuid())
+  enrollmentId   String
+  enrollment     CourseEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  lessonId       String
+  lesson         CourseLesson     @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  watchedSeconds Int      @default(0)
+  totalSeconds   Int      @default(0)
+  isCompleted    Boolean  @default(false)
+  lastPosition   Int      @default(0)
+  notes          Json?
+  bookmarks      Json?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+  @@unique([enrollmentId, lessonId])
+  @@index([enrollmentId])
+  @@index([lessonId])
+}
+
+model CourseReview {
+  id           String   @id @default(cuid())
+  courseId     String
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rating       Int
+  title        String?
+  comment      String?  @db.Text
+  helpfulCount Int      @default(0)
+  reportedCount Int     @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@unique([courseId, userId])
+  @@index([courseId])
+}
+
+model CourseQuestion {
+  id            String    @id @default(cuid())
+  courseId      String
+  course        Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessonId      String?
+  askerId       String
+  asker         User      @relation("CourseQuestionAsker", fields: [askerId], references: [id], onDelete: Cascade)
+  question      String    @db.Text
+  answer        String?   @db.Text
+  answeredById  String?
+  answeredBy    User?     @relation("CourseQuestionAnswerer", fields: [answeredById], references: [id], onDelete: SetNull)
+  answeredAt    DateTime?
+  isPinned      Boolean   @default(false)
+  upvotes       Int       @default(0)
+  createdAt     DateTime  @default(now())
+  @@index([courseId])
+  @@index([askerId])
+}
+
+model CourseBookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  @@unique([userId, courseId])
+  @@index([userId])
+}
+
+model CourseAnnouncement {
+  id        String   @id @default(cuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title     String
+  body      String   @db.Text
+  createdAt DateTime @default(now())
+  @@index([courseId])
+}
+
+model CourseQuiz {
+  id                String   @id @default(cuid())
+  courseId          String
+  course            Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title             String
+  description       String?
+  passMarkPercent   Int      @default(60)
+  timeLimitMinutes  Int?
+  maxAttempts       Int?
+  shuffleQuestions  Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  questions         CourseQuizQuestion[]
+  attempts          CourseQuizAttempt[]
+  lessons           CourseLesson[] @relation("LessonQuiz")
+  @@index([courseId])
+}
+
+model CourseQuizQuestion {
+  id             String           @id @default(cuid())
+  quizId         String
+  quiz           CourseQuiz       @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  type           QuizQuestionType @default(MCQ)
+  question       String           @db.Text
+  options        Json
+  correctAnswers Json
+  points         Int              @default(1)
+  order          Int              @default(0)
+  createdAt      DateTime         @default(now())
+  @@index([quizId])
+}
+
+model CourseQuizAttempt {
+  id          String     @id @default(cuid())
+  quizId      String
+  quiz        CourseQuiz @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers     Json
+  score       Float      @default(0)
+  passed      Boolean    @default(false)
+  startedAt   DateTime   @default(now())
+  submittedAt DateTime?
+  @@index([quizId])
+  @@index([userId])
+}
+
+model CourseAssignment {
+  id           String   @id @default(cuid())
+  courseId     String
+  course       Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title        String
+  instructions String   @db.Text
+  dueDays      Int?
+  maxMarks     Int      @default(100)
+  fields       Json
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  submissions  CourseAssignmentSubmission[]
+  lessons      CourseLesson[] @relation("LessonAssignment")
+  @@index([courseId])
+}
+
+model CourseAssignmentSubmission {
+  id           String                     @id @default(cuid())
+  assignmentId String
+  assignment   CourseAssignment           @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers      Json
+  fileUrls     String[]                   @default([])
+  status       AssignmentSubmissionStatus @default(PENDING)
+  marks        Int?
+  feedback     String?                    @db.Text
+  gradedById   String?
+  gradedBy     User?                      @relation("AssignmentGrader", fields: [gradedById], references: [id], onDelete: SetNull)
+  submittedAt  DateTime                   @default(now())
+  gradedAt     DateTime?
+  @@index([assignmentId])
+  @@index([userId])
+}
+
+model CourseLiveClass {
+  id                String          @id @default(cuid())
+  courseId          String
+  course            Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title             String
+  scheduledAt       DateTime
+  durationMinutes   Int             @default(60)
+  meetingUrl        String
+  meetingPassword   String?
+  status            LiveClassStatus @default(UPCOMING)
+  recordingUrl      String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  lessons           CourseLesson[]  @relation("LessonLive")
+  @@index([courseId])
+}
+
+model CourseCertificate {
+  id        String   @id @default(cuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  serial    String   @unique
+  sharedUrl String   @unique
+  pdfUrl    String?
+  issuedAt  DateTime @default(now())
+  @@unique([courseId, userId])
+  @@index([userId])
+}
+
+model CourseCoupon {
+  id               String      @id @default(cuid())
+  code             String      @unique
+  type             CouponType  @default(PERCENT)
+  value            Float
+  scope            CouponScope @default(ALL)
+  categoryIds      String[]    @default([])
+  courseIds        String[]    @default([])
+  minPurchase      Float?
+  maxRedemptions   Int?
+  redemptionsCount Int         @default(0)
+  perUserLimit     Int         @default(1)
+  validFrom        DateTime    @default(now())
+  validUntil       DateTime?
+  isActive         Boolean     @default(true)
+  createdById      String?
+  createdBy        User?       @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+  @@index([isActive])
+}
+
+model CourseRefundRequest {
+  id              String              @id @default(cuid())
+  enrollmentId    String
+  enrollment      CourseEnrollment    @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  courseId        String
+  course          Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User                @relation("CourseRefundUser", fields: [userId], references: [id], onDelete: Cascade)
+  reason          String              @db.Text
+  status          CourseRefundStatus  @default(PENDING)
+  adminNote       String?
+  refundedAmount  Float?
+  processedById   String?
+  processedBy     User?               @relation("CourseRefundAdmin", fields: [processedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime            @default(now())
+  processedAt     DateTime?
+  @@index([status])
+  @@index([userId])
+}
+
+model CourseListingView {
+  id          String   @id @default(cuid())
+  courseId    String
+  course      Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sessionHash String
+  source      String?
+  viewedAt    DateTime @default(now())
+  @@index([courseId])
+  @@index([viewedAt])
+  @@index([courseId, sessionHash])
+}
+
+model TutorApplication {
+  id              String                 @id @default(cuid())
+  userId          String
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  bio             String                 @db.Text
+  expertise       String[]               @default([])
+  sampleOutline   String?                @db.Text
+  portfolioUrl    String?
+  idDocumentUrl   String?
+  status          TutorApplicationStatus @default(PENDING)
+  adminNote       String?
+  reviewedById    String?
+  reviewedBy      User?                  @relation("TutorAppReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime               @default(now())
+  reviewedAt      DateTime?
+  @@index([userId])
+  @@index([status])
+}
+
+model TutorProfile {
+  id                  String   @id @default(cuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  headline            String?
+  bio                 String   @db.Text
+  expertise           String[] @default([])
+  avatarUrl           String?
+  websiteUrl          String?
+  twitterUrl          String?
+  linkedinUrl         String?
+  youtubeUrl          String?
+  totalStudents       Int      @default(0)
+  totalCourses        Int      @default(0)
+  totalRatings        Int      @default(0)
+  avgRating           Float    @default(0)
+  totalEarningsCents  Int      @default(0)
+  payoutMethod        String?
+  payoutDetails       Json?
+  isSuspended         Boolean  @default(false)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  @@index([isSuspended])
 }
 
 model Lottery {

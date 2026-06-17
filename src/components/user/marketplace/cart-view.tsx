@@ -7,8 +7,6 @@ import {
   ShoppingCart,
   Trash2,
   Loader2,
-  Plus,
-  Minus,
   CreditCard,
   ChevronLeft,
 } from "lucide-react";
@@ -23,6 +21,8 @@ interface CartItem {
   price: number;
   currency: string;
   thumbnail: string | null;
+  // Stored on CartItem but ignored at checkout — marketplace listings are
+  // unique assets, so every cart row resolves to exactly one purchase.
   quantity: number;
   available: boolean;
   sellerId: string;
@@ -55,26 +55,6 @@ export function CartView() {
     load();
   }, []);
 
-  const updateQty = async (item: CartItem, next: number) => {
-    if (next < 1 || next > 99) return;
-    setBusyId(item.id);
-    try {
-      const res = await fetch(`/api/cart/${item.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quantity: next }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      setItems((prev) =>
-        prev.map((i) => (i.id === item.id ? { ...i, quantity: next } : i))
-      );
-    } catch {
-      toast.error("Couldn't update quantity");
-    } finally {
-      setBusyId(null);
-    }
-  };
-
   const remove = async (item: CartItem) => {
     setBusyId(item.id);
     try {
@@ -94,7 +74,26 @@ export function CartView() {
     try {
       const res = await fetch("/api/cart/checkout", { method: "POST" });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 402) {
+          toast.error("Not enough in your wallet", {
+            description: data.details ?? data.error ?? "Top up and try again.",
+            action: {
+              label: "Top up",
+              onClick: () => router.push("/wallet"),
+            },
+          });
+          return;
+        }
+        if (res.status === 409) {
+          toast.error("Some listings were just bought", {
+            description: data.error ?? "Refresh and try again.",
+          });
+          router.refresh();
+          return;
+        }
+        throw new Error(data.error ?? data.details ?? `HTTP ${res.status}`);
+      }
       toast.success(`Checkout complete · $${data.total.toFixed(2)} charged`);
       setItems([]);
       router.push("/marketplace/orders");
@@ -108,9 +107,10 @@ export function CartView() {
     }
   };
 
-  const subtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
-  const fees = subtotal * 0.05;
-  const total = subtotal;
+  // Each cart row = one purchase regardless of stored quantity (listings are
+  // unique assets). The buyer pays the listing price; the platform fee is
+  // cut from the seller's payout, not added to the buyer.
+  const total = items.reduce((s, i) => s + i.price, 0);
   const hasUnavailable = items.some((i) => !i.available);
 
   return (
@@ -169,7 +169,7 @@ export function CartView() {
                     {i.title}
                   </Link>
                   <p className="text-xs text-gray-500 tabular-nums">
-                    ${i.price.toFixed(2)} each
+                    ${i.price.toFixed(2)}
                   </p>
                   {!i.available && (
                     <p className="text-[11px] text-red-400 mt-0.5">
@@ -177,29 +177,11 @@ export function CartView() {
                     </p>
                   )}
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    disabled={busyId === i.id || i.quantity <= 1}
-                    onClick={() => updateQty(i, i.quantity - 1)}
-                    className="p-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
-                  >
-                    <Minus className="w-3 h-3 text-white" />
-                  </button>
-                  <span className="text-sm font-bold text-white tabular-nums w-6 text-center">
-                    {i.quantity}
-                  </span>
-                  <button
-                    disabled={busyId === i.id || i.quantity >= 99}
-                    onClick={() => updateQty(i, i.quantity + 1)}
-                    className="p-1.5 rounded bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
-                  >
-                    <Plus className="w-3 h-3 text-white" />
-                  </button>
-                </div>
                 <button
                   disabled={busyId === i.id}
                   onClick={() => remove(i)}
                   className="p-1.5 rounded text-gray-400 hover:text-red-400 hover:bg-gray-800 disabled:opacity-50"
+                  title="Remove from cart"
                 >
                   {busyId === i.id ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -213,17 +195,19 @@ export function CartView() {
 
           <div className="rounded-xl bg-gray-900 border border-gray-800 p-4 space-y-2">
             <div className="flex justify-between text-sm text-gray-400">
-              <span>Subtotal</span>
-              <span className="tabular-nums">${subtotal.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between text-xs text-gray-500">
-              <span>Platform fee (5% deducted from each seller)</span>
-              <span className="tabular-nums">${fees.toFixed(2)}</span>
+              <span>
+                {items.length} listing{items.length === 1 ? "" : "s"}
+              </span>
+              <span className="tabular-nums">${total.toFixed(2)}</span>
             </div>
             <div className="border-t border-gray-800 pt-2 flex justify-between text-base font-bold text-white">
               <span>You pay</span>
               <span className="tabular-nums">${total.toFixed(2)}</span>
             </div>
+            <p className="text-[11px] text-gray-500">
+              Charged from your wallet. The platform commission is deducted
+              from each seller&apos;s payout.
+            </p>
           </div>
 
           <button

@@ -22,14 +22,10 @@ export async function GET(
             avatar: true,
             level: true,
             createdAt: true,
-            _count: {
-              select: { marketplaceListings: true },
-            },
+            _count: { select: { marketplaceListings: true } },
           },
         },
-        _count: {
-          select: { purchases: true },
-        },
+        _count: { select: { purchases: true, watches: true } },
       },
     });
 
@@ -40,7 +36,6 @@ export async function GET(
       );
     }
 
-    // Only show non-active listings to the owner
     if (
       listing.status !== MarketplaceListingStatus.ACTIVE &&
       listing.sellerId !== session?.user?.id
@@ -51,25 +46,69 @@ export async function GET(
       );
     }
 
-    // Increment view count
+    // Increment lightweight `views` counter on every fetch. Unique-viewer
+    // tracking with sessionHash dedupe lives in `/api/marketplace/listings/[id]/view`.
     await prisma.marketplaceListing.update({
       where: { id },
       data: { views: { increment: 1 } },
     });
+
+    // Is the viewer watching this listing?
+    let isWatched = false;
+    if (session?.user?.id) {
+      const w = await prisma.marketplaceWatch.findUnique({
+        where: { userId_listingId: { userId: session.user.id, listingId: id } },
+      });
+      isWatched = !!w;
+    }
+
+    // NDA-gated financials: hide revenue numbers from non-owners until signed.
+    const isOwner = session?.user?.id === listing.sellerId;
+    const hideFinancials = listing.ndaGated && !isOwner;
 
     return NextResponse.json({
       listing: {
         id: listing.id,
         title: listing.title,
         description: listing.description,
+        richDescription: listing.richDescription,
         images: listing.images,
+        screenshots: listing.screenshots,
+        attachments: listing.attachments,
         files: listing.files,
         category: listing.category,
+        assetType: listing.assetType,
+        subType: listing.subType,
+        details: listing.details,
         price: listing.price,
         currency: listing.currency,
         status: listing.status,
         views: listing.views + 1,
+        uniqueViewers: listing.uniqueViewers,
         salesCount: listing._count.purchases,
+        watchCount: listing._count.watches,
+        directPurchasesCount: listing.directPurchasesCount,
+        bidsCount: listing.bidsCount,
+        bidderCount: listing.bidderCount,
+        monthlyRevenue: hideFinancials ? null : listing.monthlyRevenue,
+        monthlyProfit: hideFinancials ? null : listing.monthlyProfit,
+        monthlyExpenses: hideFinancials ? null : listing.monthlyExpenses,
+        monthlyTraffic: listing.monthlyTraffic,
+        assetAgeMonths: listing.assetAgeMonths,
+        niche: listing.niche,
+        reasonsForSelling: listing.reasonsForSelling,
+        whatsIncluded: listing.whatsIncluded,
+        whatsNotIncluded: listing.whatsNotIncluded,
+        verifiedMetrics: listing.verifiedMetrics,
+        nsfw: listing.nsfw,
+        ndaGated: listing.ndaGated,
+        auctionMode: listing.auctionMode,
+        startingBid: listing.startingBid,
+        reservePrice: hideFinancials ? null : listing.reservePrice,
+        buyNowPrice: listing.buyNowPrice,
+        auctionEndsAt: listing.auctionEndsAt,
+        isFeatured: listing.isFeatured,
+        isPromoted: listing.isPromoted,
         createdAt: listing.createdAt,
         expiresAt: listing.expiresAt,
       },
@@ -81,7 +120,8 @@ export async function GET(
         memberSince: listing.seller.createdAt,
         totalListings: listing.seller._count.marketplaceListings,
       },
-      isOwner: session?.user?.id === listing.sellerId,
+      isOwner,
+      isWatched,
     });
   } catch (error) {
     console.error("Error fetching listing:", error);

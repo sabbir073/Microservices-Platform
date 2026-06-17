@@ -5,6 +5,7 @@
 // This should match the enum in prisma/schema.prisma
 export type UserRole =
   | "USER"
+  | "TUTOR"
   | "SUPER_ADMIN"
   | "FINANCE_ADMIN"
   | "CONTENT_ADMIN"
@@ -103,6 +104,11 @@ export type Permission =
   // Courses
   | "courses.view"
   | "courses.manage"
+  | "courses.approve"
+  // Tutor (separate from admin courses — own-course management)
+  | "tutor.dashboard"
+  | "tutor.courses.manage"
+  | "tutor.applications.review"
   // Missions
   | "missions.view"
   | "missions.manage"
@@ -159,6 +165,15 @@ export type Permission =
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   USER: [], // No admin permissions
 
+  TUTOR: [
+    // Tutors get access to their tutor dashboard and can manage their own courses.
+    // Per-course ownership is enforced at the API layer (tutorId === session.user.id).
+    "tutor.dashboard",
+    "tutor.courses.manage",
+    "courses.view",
+    "media.view",
+  ],
+
   SUPER_ADMIN: [
     // Full access to everything
     "dashboard.view",
@@ -174,7 +189,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "packages.view", "packages.edit",
     "referrals.view", "referrals.configure",
     "lottery.view", "lottery.manage",
-    "courses.view", "courses.manage",
+    "courses.view", "courses.manage", "courses.approve",
+    "tutor.dashboard", "tutor.courses.manage", "tutor.applications.review",
     "missions.view", "missions.manage",
     "quizzes.view", "quizzes.manage",
     "offerwalls.view", "offerwalls.manage",
@@ -212,7 +228,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "tasks.view", "tasks.create", "tasks.edit",
     "boards.view", "boards.manage",
     "submissions.view", "submissions.approve", "submissions.reject",
-    "courses.view", "courses.manage",
+    "courses.view", "courses.manage", "courses.approve",
+    "tutor.applications.review",
     "missions.view", "missions.manage",
     "quizzes.view", "quizzes.manage",
     "lottery.view", "lottery.manage",
@@ -282,6 +299,12 @@ export function isAdmin(role: UserRole | undefined): boolean {
 // Check if a user is a super admin
 export function isSuperAdmin(role: UserRole | undefined): boolean {
   return role === "SUPER_ADMIN";
+}
+
+// Check if a user is a tutor (also true for admins via permission inheritance,
+// but distinct from ADMIN_ROLES — used to decide "show the /tutor entry point").
+export function isTutor(role: UserRole | undefined): boolean {
+  return role === "TUTOR";
 }
 
 // Admin navigation modules with their required permissions
@@ -397,6 +420,20 @@ export const ADMIN_MODULES: AdminModule[] = [
     href: "/admin/courses",
     icon: "GraduationCap",
     permissions: ["courses.view"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Course Categories",
+    href: "/admin/courses/categories",
+    icon: "FolderTree",
+    permissions: ["courses.manage"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Tutors",
+    href: "/admin/tutors",
+    icon: "UserCog",
+    permissions: ["tutor.applications.review"],
     category: "PLATFORM",
   },
   {
@@ -587,6 +624,7 @@ export function getGroupedModules(
 // Role display names and colors
 export const ROLE_CONFIG: Record<UserRole, { label: string; color: string; bgColor: string }> = {
   USER: { label: "User", color: "text-gray-400", bgColor: "bg-gray-500/10" },
+  TUTOR: { label: "Tutor", color: "text-teal-300", bgColor: "bg-teal-500/10" },
   SUPER_ADMIN: { label: "Super Admin", color: "text-purple-400", bgColor: "bg-purple-500/10" },
   FINANCE_ADMIN: { label: "Finance Admin", color: "text-emerald-400", bgColor: "bg-emerald-500/10" },
   CONTENT_ADMIN: { label: "Content Admin", color: "text-blue-400", bgColor: "bg-blue-500/10" },

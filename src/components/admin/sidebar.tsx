@@ -39,6 +39,8 @@ import {
   Sparkles,
   ChevronLeft,
   ChevronRight,
+  FolderTree,
+  UserCog,
   type LucideIcon,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
@@ -96,6 +98,8 @@ const iconMap: Record<string, LucideIcon> = {
   Sparkles,
   Settings,
   Shield,
+  FolderTree,
+  UserCog,
 };
 
 // Extract SidebarContent as a separate component

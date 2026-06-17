@@ -11,6 +11,11 @@ import {
   Edit,
   Trash2,
   X,
+  Sparkles,
+  Megaphone,
+  TrendingUp,
+  Gavel,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -18,16 +23,92 @@ import { toast } from "sonner";
 interface ListingActionsProps {
   listingId: string;
   listingTitle: string;
+  isFeatured: boolean;
+  isPromoted: boolean;
+  isAuction: boolean;
+  isActive: boolean;
+  auctionEndsAt: Date | null;
 }
 
-export function ListingActions({ listingId, listingTitle }: ListingActionsProps) {
+export function ListingActions({
+  listingId,
+  listingTitle,
+  isFeatured,
+  isPromoted,
+  isAuction,
+  isActive,
+  auctionEndsAt,
+}: ListingActionsProps) {
   const router = useRouter();
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [featBusy, setFeatBusy] = useState<"feature" | "promote" | "close" | null>(null);
   const [error, setError] = useState("");
+
+  const toggleFeature = async (kind: "feature" | "promote") => {
+    setFeatBusy(kind);
+    try {
+      const body =
+        kind === "feature"
+          ? { isFeatured: !isFeatured }
+          : { isPromoted: !isPromoted };
+      const res = await fetch(`/api/admin/marketplace/${listingId}/feature`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      toast.success(
+        kind === "feature"
+          ? !isFeatured ? "Listing featured" : "Featured flag removed"
+          : !isPromoted ? "Listing promoted" : "Promoted flag removed"
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error("Failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setFeatBusy(null);
+    }
+  };
+
+  const closeAuction = async () => {
+    if (
+      !confirm(
+        "Close this auction now? Picks the highest bidder above reserve, settles the sale, and notifies everyone."
+      )
+    )
+      return;
+    setFeatBusy("close");
+    try {
+      const res = await fetch(
+        `/api/marketplace/listings/${listingId}/close-auction`,
+        { method: "POST" }
+      );
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      toast.success(
+        d.winner
+          ? `Auction closed — winner: $${d.winner.amount.toLocaleString()}`
+          : `Auction closed — ${d.reason ?? "no winner"}`
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error("Close failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setFeatBusy(null);
+    }
+  };
+
+  const auctionEnded =
+    !!auctionEndsAt && new Date(auctionEndsAt).getTime() < Date.now();
 
   const handleCancel = async () => {
     if (!reason.trim()) {
@@ -97,6 +178,83 @@ export function ListingActions({ listingId, listingTitle }: ListingActionsProps)
       )}
 
       <div className="space-y-3">
+        {/* Analytics */}
+        <Link
+          href={`/admin/marketplace/${listingId}/analytics`}
+          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 rounded-lg hover:bg-indigo-500/20 transition-colors"
+        >
+          <TrendingUp className="w-4 h-4" />
+          View analytics
+        </Link>
+
+        {/* Feature toggle */}
+        <button
+          type="button"
+          onClick={() => toggleFeature("feature")}
+          disabled={featBusy !== null || !isActive}
+          className={`w-full inline-flex items-center justify-between gap-2 px-4 py-2.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+            isFeatured
+              ? "bg-amber-500/15 text-amber-300 border-amber-500/40 hover:bg-amber-500/25"
+              : "bg-gray-800 text-white border-gray-700 hover:bg-gray-700"
+          }`}
+        >
+          <span className="inline-flex items-center gap-2">
+            {featBusy === "feature" ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4" />
+            )}
+            {isFeatured ? "Featured" : "Feature listing"}
+          </span>
+          {isFeatured && (
+            <span className="text-[10px] uppercase tracking-wider font-bold">ON</span>
+          )}
+        </button>
+
+        {/* Promote toggle */}
+        <button
+          type="button"
+          onClick={() => toggleFeature("promote")}
+          disabled={featBusy !== null || !isActive}
+          className={`w-full inline-flex items-center justify-between gap-2 px-4 py-2.5 rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+            isPromoted
+              ? "bg-blue-500/15 text-blue-300 border-blue-500/40 hover:bg-blue-500/25"
+              : "bg-gray-800 text-white border-gray-700 hover:bg-gray-700"
+          }`}
+        >
+          <span className="inline-flex items-center gap-2">
+            {featBusy === "promote" ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Megaphone className="w-4 h-4" />
+            )}
+            {isPromoted ? "Promoted" : "Promote listing"}
+          </span>
+          {isPromoted && (
+            <span className="text-[10px] uppercase tracking-wider font-bold">ON</span>
+          )}
+        </button>
+
+        {/* Close auction */}
+        {isAuction && isActive && (
+          <button
+            type="button"
+            onClick={closeAuction}
+            disabled={featBusy !== null}
+            className="w-full inline-flex items-center justify-between gap-2 px-4 py-2.5 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/40 hover:bg-purple-500/25 transition-colors disabled:opacity-50"
+          >
+            <span className="inline-flex items-center gap-2">
+              {featBusy === "close" ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Gavel className="w-4 h-4" />
+              )}
+              Close auction {auctionEnded ? "(expired)" : "now"}
+            </span>
+            <ShieldCheck className="w-4 h-4" />
+          </button>
+        )}
+
         {/* Edit Button */}
         <Link
           href={`/admin/marketplace/${listingId}/edit`}

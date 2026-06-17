@@ -36,7 +36,7 @@ import {
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
-import { isAdmin, type UserRole } from "@/lib/rbac";
+import { isAdmin, isTutor, type UserRole } from "@/lib/rbac";
 
 interface SidebarProps {
   user: {
@@ -80,6 +80,7 @@ const navigationGroups = [
     section: "Grow",
     items: [
       { name: "Courses", href: "/courses", icon: GraduationCap },
+      { name: "My Learning", href: "/my-learning", icon: GraduationCap },
       { name: "Marketplace", href: "/marketplace", icon: Store },
       { name: "Lottery", href: "/lottery", icon: Ticket },
       { name: "Social", href: "/social", icon: MessageSquare },
@@ -101,6 +102,10 @@ const navigationGroups = [
 
 const adminNavigation = [
   { name: "Admin Panel", href: "/admin", icon: Shield },
+];
+
+const tutorNavigation = [
+  { name: "Tutor Hub", href: "/tutor/dashboard", icon: GraduationCap },
 ];
 
 // Extract SidebarContent as a separate component
@@ -191,6 +196,37 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarConten
           </div>
         ))}
       </nav>
+
+      {/* Tutor Navigation - Show for users with TUTOR role */}
+      {isTutor(user.role as UserRole | undefined) && (
+        <div className="border-t border-gray-800 px-3 py-4">
+          <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Teaching
+          </p>
+          <ul className="space-y-1">
+            {tutorNavigation.map((item) => {
+              const isActive = pathname.startsWith(item.href);
+              return (
+                <li key={item.name}>
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-indigo-500/10 text-indigo-300"
+                        : "text-gray-400 hover:text-indigo-300 hover:bg-gray-800"
+                    )}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    {item.name}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
 
       {/* Admin Navigation - Show for all admin roles */}
       {isAdmin(user.role as UserRole | undefined) && (

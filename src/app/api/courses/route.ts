@@ -3,129 +3,257 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { CourseStatus } from "@/generated/prisma";
 
-// GET /api/courses - List available courses
+// GET /api/courses
+//   q                — full-text-ish search across title / subtitle / description
+//   categoryId       — filter by CourseCategory.id
+//   skillLevel       — BEGINNER | INTERMEDIATE | ADVANCED | ALL_LEVELS
+//   language         — ISO code
+//   price            — "free" | "paid"
+//   priceMin, priceMax — numeric range
+//   minRating        — min avgRating
+//   sort             — "newest" | "popular" | "rating" | "price-asc" | "price-desc"
+//   page, limit
+//
+// Returns: { rows, total, totalPages, facets: { categories, skillLevels, languages, freeCount, paidCount } }
 export async function GET(request: NextRequest) {
   try {
     const session = await auth();
-
     const { searchParams } = new URL(request.url);
-    const category = searchParams.get("category");
-    const difficulty = searchParams.get("difficulty");
-    const search = searchParams.get("search");
-    const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "20");
+
+    const q = (searchParams.get("q") ?? searchParams.get("search") ?? "").trim();
+    const categoryId = searchParams.get("categoryId");
+    const skillLevel = searchParams.get("skillLevel");
+    const language = searchParams.get("language");
+    const priceParam = searchParams.get("price"); // "free" | "paid"
+    const priceMin = parseFloatOrNull(searchParams.get("priceMin"));
+    const priceMax = parseFloatOrNull(searchParams.get("priceMax"));
+    const minRating = parseFloatOrNull(searchParams.get("minRating"));
+    const sort = (searchParams.get("sort") ?? "newest").toLowerCase();
+    const featuredOnly = searchParams.get("featured") === "true";
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
+    const limit = Math.min(60, Math.max(1, parseInt(searchParams.get("limit") || "20")));
     const skip = (page - 1) * limit;
 
-    // Build query
     const where: Record<string, unknown> = {
       status: CourseStatus.PUBLISHED,
+      nsfw: false,
     };
-
-    if (category) {
-      where.category = category;
-    }
-
-    if (difficulty) {
-      where.difficulty = difficulty;
-    }
-
-    if (search) {
+    if (q) {
       where.OR = [
-        { title: { contains: search, mode: "insensitive" } },
-        { description: { contains: search, mode: "insensitive" } },
+        { title: { contains: q, mode: "insensitive" } },
+        { subtitle: { contains: q, mode: "insensitive" } },
+        { description: { contains: q, mode: "insensitive" } },
       ];
     }
+    if (categoryId) where.categoryId = categoryId;
+    if (skillLevel) where.skillLevel = skillLevel;
+    if (language) where.language = language;
+    if (priceParam === "free") where.isFree = true;
+    if (priceParam === "paid") where.isFree = false;
+    if (priceMin !== null || priceMax !== null) {
+      const range: Record<string, number> = {};
+      if (priceMin !== null) range.gte = priceMin;
+      if (priceMax !== null) range.lte = priceMax;
+      where.price = range;
+    }
+    if (minRating !== null) where.avgRating = { gte: minRating };
+    if (featuredOnly) where.isFeatured = true;
 
-    // Get courses
-    const [courses, total] = await Promise.all([
+    const orderBy: Record<string, "asc" | "desc"> = (() => {
+      switch (sort) {
+        case "popular":
+          return { enrollmentCount: "desc" } as Record<string, "asc" | "desc">;
+        case "rating":
+          return { avgRating: "desc" } as Record<string, "asc" | "desc">;
+        case "price-asc":
+          return { price: "asc" } as Record<string, "asc" | "desc">;
+        case "price-desc":
+          return { price: "desc" } as Record<string, "asc" | "desc">;
+        case "newest":
+        default:
+          return { publishedAt: "desc" } as Record<string, "asc" | "desc">;
+      }
+    })();
+
+    const [rowsRaw, total, facets] = await Promise.all([
       prisma.course.findMany({
         where,
-        include: {
-          _count: {
-            select: { lessons: true, enrollments: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
+        orderBy: [orderBy, { id: "desc" }],
         skip,
         take: limit,
+        include: {
+          tutor: { select: { id: true, name: true, avatar: true } },
+          _count: { select: { lessons: true, enrollments: true, reviews: true } },
+        },
       }),
       prisma.course.count({ where }),
+      // Facets — counts from the published, non-NSFW pool (ignore current filters)
+      buildFacets(),
     ]);
 
-    // Get user's enrollments if authenticated
-    const userEnrollments: Record<string, { progress: number; completedAt: Date | null }> = {};
+    const rows = rowsRaw as unknown as Array<{
+      id: string;
+      slug: string | null;
+      title: string;
+      subtitle: string | null;
+      description: string;
+      thumbnail: string | null;
+      promoVideoUrl: string | null;
+      category: string;
+      categoryId: string | null;
+      skillLevel: string;
+      language: string;
+      price: number;
+      originalPrice: number | null;
+      discountPrice: number | null;
+      isFree: boolean;
+      totalLessons: number;
+      totalDuration: number;
+      enrollmentCount: number;
+      avgRating: number;
+      totalReviews: number;
+      isFeatured: boolean;
+      publishedAt: Date | null;
+      tutor: { id: string; name: string | null; avatar: string | null } | null;
+      _count: { lessons: number; enrollments: number; reviews: number };
+    }>;
 
-    if (session?.user?.id) {
-      const enrollments = await prisma.courseEnrollment.findMany({
-        where: {
-          userId: session.user.id,
-          courseId: { in: courses.map((c) => c.id) },
-        },
-        select: {
-          courseId: true,
-          progress: true,
-          completedAt: true,
-        },
-      });
-
-      enrollments.forEach((e) => {
-        userEnrollments[e.courseId] = {
-          progress: e.progress,
-          completedAt: e.completedAt,
-        };
-      });
+    // Pull the user's enrollments + bookmarks for these courses, in one round-trip
+    let enrolled: Set<string> = new Set();
+    let bookmarked: Set<string> = new Set();
+    if (session?.user?.id && rows.length > 0) {
+      const ids = rows.map((r) => r.id);
+      const [enrolls, marks] = await Promise.all([
+        prisma.courseEnrollment.findMany({
+          where: { userId: session.user.id, courseId: { in: ids } },
+          select: { courseId: true },
+        }),
+        prisma.courseBookmark.findMany({
+          where: { userId: session.user.id, courseId: { in: ids } },
+          select: { courseId: true },
+        }),
+      ]);
+      enrolled = new Set(enrolls.map((e) => e.courseId));
+      bookmarked = new Set(marks.map((m) => m.courseId));
     }
 
-    // Format courses
-    const formattedCourses = courses.map((course) => ({
-      id: course.id,
-      title: course.title,
-      description: course.description,
-      thumbnailUrl: course.thumbnail,
-      category: course.category,
-      difficulty: course.difficulty,
-      duration: course.totalDuration,
-      lessonsCount: course.totalLessons,
-      enrollmentsCount: course.enrollmentCount,
-      price: course.price,
-      isFree: course.isFree,
-      rating: course.rating,
-      isEnrolled: !!userEnrollments[course.id],
-      progress: userEnrollments[course.id]?.progress || 0,
-      isCompleted: !!userEnrollments[course.id]?.completedAt,
-    }));
-
-    // Get unique categories
-    const allCourses = await prisma.course.findMany({
-      where: { status: CourseStatus.PUBLISHED },
-      select: { category: true },
-    });
-
-    const categoryCount = allCourses.reduce((acc: Record<string, number>, course) => {
-      acc[course.category] = (acc[course.category] || 0) + 1;
-      return acc;
-    }, {});
-
-    const categoryList = Object.entries(categoryCount).map(([name, count]) => ({
-      name,
-      count,
+    const cards = rows.map((r) => ({
+      id: r.id,
+      slug: r.slug,
+      title: r.title,
+      subtitle: r.subtitle,
+      thumbnail: r.thumbnail,
+      promoVideoUrl: r.promoVideoUrl,
+      categoryId: r.categoryId,
+      category: r.category,
+      skillLevel: r.skillLevel,
+      language: r.language,
+      isFree: r.isFree,
+      price: r.price,
+      originalPrice: r.originalPrice,
+      discountPrice: r.discountPrice,
+      totalLessons: r._count.lessons,
+      totalDuration: r.totalDuration,
+      enrollmentCount: r.enrollmentCount,
+      avgRating: r.avgRating,
+      totalReviews: r.totalReviews,
+      isFeatured: r.isFeatured,
+      tutor: r.tutor,
+      isEnrolled: enrolled.has(r.id),
+      isBookmarked: bookmarked.has(r.id),
+      href: `/courses/${r.slug ?? r.id}`,
     }));
 
     return NextResponse.json({
-      courses: formattedCourses,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-      categories: categoryList,
+      rows: cards,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+      facets,
     });
   } catch (error) {
     console.error("Error fetching courses:", error);
     return NextResponse.json(
-      { error: "Failed to fetch courses" },
+      { error: error instanceof Error ? error.message : "Failed to fetch courses" },
       { status: 500 }
     );
   }
+}
+
+function parseFloatOrNull(s: string | null): number | null {
+  if (!s) return null;
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function buildFacets() {
+  const baseWhere = { status: CourseStatus.PUBLISHED, nsfw: false };
+  const [categoryRows, skillLevels, languages, freeCount, paidCount, total] =
+    await Promise.all([
+      prisma.course.groupBy({
+        by: ["categoryId"],
+        where: baseWhere,
+        _count: { _all: true },
+      }),
+      prisma.course.groupBy({
+        by: ["skillLevel"],
+        where: baseWhere,
+        _count: { _all: true },
+      }),
+      prisma.course.groupBy({
+        by: ["language"],
+        where: baseWhere,
+        _count: { _all: true },
+      }),
+      prisma.course.count({ where: { ...baseWhere, isFree: true } }),
+      prisma.course.count({ where: { ...baseWhere, isFree: false } }),
+      prisma.course.count({ where: baseWhere }),
+    ]);
+
+  const catRows = categoryRows as unknown as Array<{
+    categoryId: string | null;
+    _count: { _all: number };
+  }>;
+  const catIds = catRows.map((c) => c.categoryId).filter(Boolean) as string[];
+  const cats = catIds.length
+    ? ((await prisma.courseCategory.findMany({
+        where: { id: { in: catIds } },
+        select: { id: true, slug: true, name: true, color: true, iconKey: true },
+      })) as Array<{
+        id: string;
+        slug: string;
+        name: string;
+        color: string | null;
+        iconKey: string | null;
+      }>)
+    : [];
+  const catMap = new Map(cats.map((c) => [c.id, c]));
+
+  return {
+    total,
+    categories: catRows
+      .map((c) => {
+        const meta = c.categoryId ? catMap.get(c.categoryId) : null;
+        return {
+          id: c.categoryId,
+          slug: meta?.slug ?? null,
+          name: meta?.name ?? "Uncategorised",
+          color: meta?.color ?? null,
+          iconKey: meta?.iconKey ?? null,
+          count: c._count._all,
+        };
+      })
+      .filter((c) => c.id !== null),
+    skillLevels: (skillLevels as Array<{ skillLevel: string; _count: { _all: number } }>).map((s) => ({
+      value: s.skillLevel,
+      count: s._count._all,
+    })),
+    languages: (languages as Array<{ language: string; _count: { _all: number } }>).map((s) => ({
+      value: s.language,
+      count: s._count._all,
+    })),
+    freeCount,
+    paidCount,
+  };
 }

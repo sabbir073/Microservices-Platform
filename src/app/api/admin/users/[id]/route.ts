@@ -87,6 +87,7 @@ const updateUserSchema = z.object({
   phone: z.string().optional().nullable(),
   role: z.enum([
     "USER",
+    "TUTOR",
     "SUPER_ADMIN",
     "FINANCE_ADMIN",
     "CONTENT_ADMIN",
@@ -297,6 +298,14 @@ export async function PATCH(
         kycStatus: true,
       },
     });
+
+    // If admin flipped the role to TUTOR, make sure a TutorProfile exists so
+    // the tutor dashboard renders right away (no need to go through the
+    // tutor-application flow when admin grants the role directly).
+    if (data.role === "TUTOR") {
+      const { ensureTutorProfile } = await import("@/lib/tutor-application");
+      await ensureTutorProfile(id);
+    }
 
     // Audit log
     await prisma.auditLog.create({

@@ -1,105 +1,277 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import {
+  MarketplaceListingStatus,
+  MarketplaceOfferStatus,
+  MarketplaceBidStatus,
+  NotificationType,
+  TransactionType,
+  TransactionStatus,
+} from "@/generated/prisma";
+import {
+  resolveCommissionBps,
+  splitPrice,
+} from "@/lib/marketplace-commission";
 
+// POST /api/marketplace/:id/checkout
+//
+// Direct-buy a single listing from the wallet.
+//
+// Atomicity note: the status check + flip-to-SOLD lives INSIDE the transaction
+// via `updateMany({ where: { id, status: ACTIVE } })`. If two requests race,
+// the second one updates 0 rows and we throw → its transaction rolls back.
+// This is the only race-safe pattern for "buy this exact listing" on Postgres
+// short of an explicit `SELECT … FOR UPDATE`, which Prisma can't easily express.
 export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-  const { id } = await params;
-  const userId = session.user.id;
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { id } = await params;
+    const userId = session.user.id;
 
-  const listing = await prisma.marketplaceListing.findUnique({ where: { id } });
-  if (!listing) {
-    return NextResponse.json({ error: "Listing not found" }, { status: 404 });
-  }
-  if (listing.status !== "ACTIVE") {
-    return NextResponse.json(
-      { error: "Listing is not active" },
-      { status: 400 }
-    );
-  }
-  if (listing.sellerId === userId) {
-    return NextResponse.json(
-      { error: "Cannot purchase your own listing" },
-      { status: 400 }
-    );
-  }
-
-  const buyer = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { cashBalance: true },
-  });
-  if (!buyer) {
-    return NextResponse.json({ error: "User not found" }, { status: 404 });
-  }
-
-  if (buyer.cashBalance < listing.price) {
-    return NextResponse.json(
-      {
-        error: "Insufficient cash balance",
-        details: `Need $${listing.price.toFixed(2)}, have $${buyer.cashBalance.toFixed(2)}`,
-      },
-      { status: 400 }
-    );
-  }
-
-  const fee = listing.price * 0.05; // 5% platform fee
-  const sellerAmount = listing.price - fee;
-
-  // Create purchase, debit buyer, credit seller (in transaction)
-  const purchase = await prisma.$transaction(async (tx) => {
-    const p = await tx.marketplacePurchase.create({
-      data: {
-        listingId: id,
-        buyerId: userId,
-        amount: listing.price,
-        fee,
-        sellerAmount,
-        status: "COMPLETED",
+    const listing = await prisma.marketplaceListing.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        sellerId: true,
+        title: true,
+        price: true,
+        status: true,
+        assetType: true,
+        auctionMode: true,
+        commissionRateBps: true,
       },
     });
-    await tx.user.update({
+    if (!listing) {
+      return NextResponse.json({ error: "Listing not found" }, { status: 404 });
+    }
+    if (listing.status !== MarketplaceListingStatus.ACTIVE) {
+      return NextResponse.json(
+        { error: `Listing is ${listing.status.toLowerCase()}, not available for purchase.` },
+        { status: 400 }
+      );
+    }
+    if (listing.auctionMode) {
+      return NextResponse.json(
+        { error: "Auction listings can't be direct-bought — place a bid instead." },
+        { status: 400 }
+      );
+    }
+    if (listing.sellerId === userId) {
+      return NextResponse.json(
+        { error: "Cannot purchase your own listing" },
+        { status: 400 }
+      );
+    }
+    if (!Number.isFinite(listing.price) || listing.price <= 0) {
+      return NextResponse.json(
+        { error: "This listing has no valid price." },
+        { status: 400 }
+      );
+    }
+
+    const buyer = await prisma.user.findUnique({
       where: { id: userId },
-      data: { cashBalance: { decrement: listing.price } },
+      select: { cashBalance: true },
     });
-    await tx.user.update({
-      where: { id: listing.sellerId },
-      data: {
-        cashBalance: { increment: sellerAmount },
-        totalEarnings: { increment: sellerAmount },
-      },
-    });
-    await tx.transaction.create({
-      data: {
-        userId,
-        type: "PURCHASE",
-        status: "COMPLETED",
-        amount: listing.price,
-        description: `Purchased: ${listing.title}`,
-        reference: p.id,
-      },
-    });
-    await tx.transaction.create({
-      data: {
-        userId: listing.sellerId,
-        type: "EARNING",
-        status: "COMPLETED",
-        amount: sellerAmount,
-        description: `Sold: ${listing.title} (after 5% fee)`,
-        reference: p.id,
-      },
-    });
-    return p;
-  });
+    if (!buyer) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    if (buyer.cashBalance < listing.price) {
+      return NextResponse.json(
+        {
+          error: "Insufficient wallet balance",
+          shortBy: listing.price - buyer.cashBalance,
+          details: `Need $${listing.price.toFixed(2)}, have $${buyer.cashBalance.toFixed(2)}.`,
+        },
+        { status: 402 }
+      );
+    }
 
-  return NextResponse.json({
-    success: true,
-    purchaseId: purchase.id,
-    checkoutUrl: null, // direct purchase from cash balance, no redirect needed
-  });
+    // Resolve commission via the same path offers + auctions use.
+    const bps = await resolveCommissionBps({
+      assetType: listing.assetType,
+      perListingOverride: listing.commissionRateBps,
+    });
+    const { fee, sellerAmount } = splitPrice(listing.price, bps);
+
+    const purchase = await prisma.$transaction(async (tx) => {
+      // Atomic status flip — bails out (count: 0) if a concurrent request
+      // already took the listing.
+      const flipped = await tx.marketplaceListing.updateMany({
+        where: { id, status: MarketplaceListingStatus.ACTIVE },
+        data: {
+          status: MarketplaceListingStatus.SOLD,
+          directPurchasesCount: { increment: 1 },
+        },
+      });
+      if (flipped.count === 0) {
+        throw new Error("Listing was just purchased by someone else.");
+      }
+
+      const p = await tx.marketplacePurchase.create({
+        data: {
+          listingId: id,
+          buyerId: userId,
+          amount: listing.price,
+          fee,
+          sellerAmount,
+          status: "COMPLETED",
+        },
+      });
+
+      // Withdraw any competing pending / countered offers — the listing is gone.
+      await tx.marketplaceOffer.updateMany({
+        where: {
+          listingId: id,
+          status: {
+            in: [
+              MarketplaceOfferStatus.PENDING,
+              MarketplaceOfferStatus.COUNTERED,
+            ],
+          },
+        },
+        data: { status: MarketplaceOfferStatus.WITHDRAWN },
+      });
+
+      // Defensive: cancel any stray active bids (a properly-typed listing won't
+      // have any since auctionMode is false, but rows could exist from a past
+      // mode change).
+      await tx.marketplaceBid.updateMany({
+        where: {
+          listingId: id,
+          status: {
+            in: [MarketplaceBidStatus.ACTIVE, MarketplaceBidStatus.OUTBID],
+          },
+        },
+        data: { status: MarketplaceBidStatus.LOST },
+      });
+
+      // Wallet movements
+      await tx.user.update({
+        where: { id: userId },
+        data: { cashBalance: { decrement: listing.price } },
+      });
+      await tx.user.update({
+        where: { id: listing.sellerId },
+        data: {
+          cashBalance: { increment: sellerAmount },
+          totalEarnings: { increment: sellerAmount },
+        },
+      });
+
+      // Ledger
+      await tx.transaction.create({
+        data: {
+          userId,
+          type: TransactionType.PURCHASE,
+          status: TransactionStatus.COMPLETED,
+          amount: -listing.price,
+          points: 0,
+          description: `Marketplace — "${listing.title}"`,
+          reference: `marketplace_${id}_${p.id}`,
+          metadata: {
+            listingId: id,
+            purchaseId: p.id,
+            commissionBps: bps,
+            platformFee: fee,
+            sellerAmount,
+          },
+        },
+      });
+      await tx.transaction.create({
+        data: {
+          userId: listing.sellerId,
+          type: TransactionType.EARNING,
+          status: TransactionStatus.COMPLETED,
+          amount: sellerAmount,
+          points: 0,
+          description: `Marketplace sale — "${listing.title}"`,
+          reference: `marketplace_${id}_${p.id}`,
+          metadata: {
+            listingId: id,
+            purchaseId: p.id,
+            commissionBps: bps,
+            platformFee: fee,
+            fromUserId: userId,
+          },
+        },
+      });
+
+      return p;
+    });
+
+    // Best-effort post-commit fanout (notifications + audit). If any of these
+    // fail we don't want to roll the purchase back — log + continue.
+    await Promise.all([
+      prisma.notification.create({
+        data: {
+          userId,
+          type: NotificationType.SYSTEM,
+          title: "Purchase complete 🎉",
+          message: `You bought "${listing.title}" for $${listing.price.toLocaleString()}.`,
+          data: { listingId: id, purchaseId: purchase.id, amount: listing.price },
+        },
+      }),
+      prisma.notification.create({
+        data: {
+          userId: listing.sellerId,
+          type: NotificationType.SYSTEM,
+          title: "You made a sale 💸",
+          message: `"${listing.title}" sold for $${listing.price.toLocaleString()}. You earned $${sellerAmount.toLocaleString()}.`,
+          data: {
+            listingId: id,
+            purchaseId: purchase.id,
+            amount: listing.price,
+            sellerAmount,
+          },
+        },
+      }),
+      prisma.auditLog.create({
+        data: {
+          userId,
+          action: "MARKETPLACE_PURCHASE",
+          entity: "MarketplacePurchase",
+          entityId: purchase.id,
+          newData: {
+            listingId: id,
+            amount: listing.price,
+            fee,
+            sellerAmount,
+            commissionBps: bps,
+          },
+        },
+      }),
+    ]).catch((err) => {
+      console.error("Marketplace purchase post-commit fanout failed:", err);
+    });
+
+    return NextResponse.json({
+      success: true,
+      purchaseId: purchase.id,
+      amount: listing.price,
+      fee,
+      sellerAmount,
+      checkoutUrl: null,
+    });
+  } catch (error) {
+    // Race-loss messages should surface to the user, not as a 500.
+    if (
+      error instanceof Error &&
+      /just purchased by someone else/i.test(error.message)
+    ) {
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    console.error("Marketplace checkout failed:", error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed" },
+      { status: 500 }
+    );
+  }
 }

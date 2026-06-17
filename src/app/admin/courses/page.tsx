@@ -13,7 +13,18 @@ import {
   Archive,
   ChevronLeft,
   ChevronRight,
+  Clock,
+  UserCog,
+  BarChart3,
+  Star,
+  Wallet,
+  Tag,
+  RefreshCcw,
+  Percent,
 } from "lucide-react";
+import { ApproveRejectButtons } from "./_components/ApproveRejectButtons";
+import { CourseRowFeatureMenu } from "./_components/CourseRowFeatureMenu";
+import { AdminBroadcastDialog } from "./_components/AdminBroadcastDialog";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 
@@ -38,26 +49,74 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
 
   const where = statusFilter ? { status: statusFilter as never } : {};
 
-  const [coursesRaw, total, draftCount, publishedCount, archivedCount, enrollmentTotal] =
-    await Promise.all([
-      prisma.course.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: pageSize,
-        include: { _count: { select: { lessons: true, enrollments: true } } },
-      }),
-      prisma.course.count({ where }),
-      prisma.course.count({ where: { status: "DRAFT" } }),
-      prisma.course.count({ where: { status: "PUBLISHED" } }),
-      prisma.course.count({ where: { status: "ARCHIVED" } }),
-      prisma.courseEnrollment.count(),
-    ]);
+  const [
+    coursesRaw,
+    total,
+    _draftCount,
+    pendingCount,
+    publishedCount,
+    suspendedCount,
+    archivedCount,
+    enrollmentTotal,
+    pendingRefunds,
+    revenueAgg,
+    tutorCount,
+    activeStudentsCount,
+    completionAgg,
+  ] = await Promise.all([
+    prisma.course.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: pageSize,
+      include: {
+        _count: { select: { lessons: true, enrollments: true } },
+        tutor: { select: { id: true, name: true, email: true, avatar: true } },
+      },
+    }),
+    prisma.course.count({ where }),
+    prisma.course.count({ where: { status: "DRAFT" } }),
+    prisma.course.count({ where: { status: "PENDING_REVIEW" } }),
+    prisma.course.count({ where: { status: "PUBLISHED" } }),
+    prisma.course.count({ where: { status: "SUSPENDED" } }),
+    prisma.course.count({ where: { status: "ARCHIVED" } }),
+    prisma.courseEnrollment.count(),
+    prisma.courseRefundRequest.count({ where: { status: "PENDING" } }),
+    prisma.courseEnrollment.aggregate({ _sum: { pricePaid: true } }),
+    prisma.tutorProfile.count(),
+    prisma.courseEnrollment.count({
+      where: { progress: { gt: 0 }, completedAt: null },
+    }),
+    prisma.courseEnrollment.aggregate({
+      _count: { _all: true },
+      where: { completedAt: { not: null } },
+    }),
+  ]);
+  const totalRevenue = revenueAgg._sum.pricePaid ?? 0;
+  const completionRate =
+    enrollmentTotal === 0
+      ? 0
+      : ((completionAgg._count._all ?? 0) / enrollmentTotal) * 100;
 
-  type CourseRow = (typeof coursesRaw)[0] & {
+  type CourseRow = {
+    id: string;
+    title: string;
+    category: string;
+    difficulty: string;
+    status: string;
+    createdAt: Date;
+    isFeatured: boolean;
+    isPromoted: boolean;
+    avgRating: number;
     _count: { lessons: number; enrollments: number };
+    tutor: {
+      id: string;
+      name: string | null;
+      email: string | null;
+      avatar: string | null;
+    } | null;
   };
-  const courses = coursesRaw as CourseRow[];
+  const courses = coursesRaw as unknown as CourseRow[];
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const canManage = hasPermission(adminRole, "courses.manage");
@@ -71,25 +130,73 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
-            <GraduationCap className="w-6 h-6 text-blue-400" />
-            Course Management
-          </h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Create and publish courses with lessons and enrollment tracking
-          </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
+              <GraduationCap className="w-6 h-6 text-blue-400" />
+              Course Management
+            </h1>
+            <p className="text-slate-400 text-sm mt-1">
+              Listings, tutors, refunds, coupons and settings — all in one place.
+            </p>
+          </div>
+          {canManage && (
+            <div className="flex flex-wrap items-center gap-2">
+              <AdminBroadcastDialog />
+              <Link
+                href="/admin/courses/new"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-bold"
+              >
+                <Plus className="w-4 h-4" />
+                Create Course
+              </Link>
+            </div>
+          )}
         </div>
-        {canManage && (
+
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           <Link
-            href="/admin/courses/new"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            href="/admin/courses/categories"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 font-bold"
           >
-            <Plus className="w-4 h-4" />
-            Create Course
+            <FileText className="w-3.5 h-3.5" />
+            Categories
           </Link>
-        )}
+          <Link
+            href="/admin/coupons"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 font-bold"
+          >
+            <Tag className="w-3.5 h-3.5" />
+            Coupons
+          </Link>
+          <Link
+            href="/admin/courses/refunds"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 font-bold"
+          >
+            <RefreshCcw className="w-3.5 h-3.5" />
+            Refunds
+            {pendingRefunds > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-rose-500 text-white text-[10px]">
+                {pendingRefunds}
+              </span>
+            )}
+          </Link>
+          <Link
+            href="/admin/courses/settings"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 font-bold"
+          >
+            <Percent className="w-3.5 h-3.5" />
+            Commission settings
+          </Link>
+          <Link
+            href="/admin/tutors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 font-bold"
+          >
+            <UserCog className="w-3.5 h-3.5" />
+            Tutors
+          </Link>
+        </div>
       </div>
 
       {/* Stats */}
@@ -101,31 +208,57 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
           label="Published"
         />
         <Stat
-          icon={<FileText className="w-5 h-5" />}
+          icon={<Users className="w-5 h-5" />}
+          tone="blue"
+          value={activeStudentsCount}
+          label="Active students"
+        />
+        <Stat
+          icon={<UserCog className="w-5 h-5" />}
+          tone="slate"
+          value={tutorCount}
+          label="Total tutors"
+        />
+        <Stat
+          icon={<Wallet className="w-5 h-5" />}
+          tone="emerald"
+          value={`$${totalRevenue.toFixed(2)}`}
+          label="Lifetime revenue"
+        />
+        <Stat
+          icon={<Star className="w-5 h-5" />}
           tone="amber"
-          value={draftCount}
-          label="Drafts"
+          value={`${completionRate.toFixed(0)}%`}
+          label="Completion rate"
+        />
+        <Stat
+          icon={<Clock className="w-5 h-5" />}
+          tone="amber"
+          value={pendingCount}
+          label="Pending review"
+        />
+        <Stat
+          icon={<RefreshCcw className="w-5 h-5" />}
+          tone="rose"
+          value={pendingRefunds}
+          label="Refund requests"
         />
         <Stat
           icon={<Archive className="w-5 h-5" />}
           tone="slate"
-          value={archivedCount}
-          label="Archived"
-        />
-        <Stat
-          icon={<Users className="w-5 h-5" />}
-          tone="blue"
-          value={enrollmentTotal}
-          label="Total Enrollments"
+          value={archivedCount + suspendedCount}
+          label="Archived + suspended"
         />
       </div>
 
       {/* Tabs */}
-      <div className="border-b border-slate-800 flex gap-1">
+      <div className="border-b border-slate-800 flex gap-1 overflow-x-auto">
         {[
           { id: "", label: "All" },
           { id: "PUBLISHED", label: "Published" },
+          { id: "PENDING_REVIEW", label: `Pending${pendingCount > 0 ? ` (${pendingCount})` : ""}` },
           { id: "DRAFT", label: "Drafts" },
+          { id: "SUSPENDED", label: "Suspended" },
           { id: "ARCHIVED", label: "Archived" },
         ].map((t) => (
           <Link
@@ -172,10 +305,10 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
                     Course
                   </th>
                   <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Category
+                    Tutor
                   </th>
                   <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Difficulty
+                    Category
                   </th>
                   <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
                     Lessons
@@ -202,13 +335,33 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
                         {formatDistanceToNow(c.createdAt, { addSuffix: true })}
                       </p>
                     </td>
+                    <td className="py-4 px-6 text-sm">
+                      {c.tutor ? (
+                        <div className="flex items-center gap-2 min-w-0">
+                          {c.tutor.avatar ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={c.tutor.avatar}
+                              alt=""
+                              className="w-7 h-7 rounded-full object-cover bg-slate-800"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-[10px] text-white font-bold">
+                              {(c.tutor.name ?? c.tutor.email ?? "?").slice(0, 1).toUpperCase()}
+                            </div>
+                          )}
+                          <span className="text-slate-300 truncate">
+                            {c.tutor.name ?? c.tutor.email}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-slate-500 text-xs">
+                          <UserCog className="w-3.5 h-3.5" /> Admin-built
+                        </span>
+                      )}
+                    </td>
                     <td className="py-4 px-6 text-sm text-slate-300">
                       {c.category}
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className="px-2 py-1 rounded-full text-xs bg-slate-800 text-slate-300">
-                        {c.difficulty}
-                      </span>
                     </td>
                     <td className="py-4 px-6 tabular-nums">
                       {c._count.lessons}
@@ -217,17 +370,7 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
                       {c._count.enrollments}
                     </td>
                     <td className="py-4 px-6">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          c.status === "PUBLISHED"
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : c.status === "DRAFT"
-                            ? "bg-amber-500/10 text-amber-400"
-                            : "bg-slate-700/40 text-slate-500"
-                        }`}
-                      >
-                        {c.status}
-                      </span>
+                      <StatusBadge status={c.status} />
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex items-center gap-1">
@@ -247,6 +390,25 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
                             <Edit className="w-4 h-4" />
                           </Link>
                         )}
+                        <Link
+                          href={`/admin/courses/${c.id}/analytics`}
+                          className="p-1.5 rounded hover:bg-slate-700 text-indigo-300"
+                          title="Analytics"
+                        >
+                          <BarChart3 className="w-4 h-4" />
+                        </Link>
+                        {canManage && c.status === "PENDING_REVIEW" && (
+                          <ApproveRejectButtons courseId={c.id} />
+                        )}
+                        {canManage &&
+                          (c.status === "PUBLISHED" || c.status === "SUSPENDED") && (
+                            <CourseRowFeatureMenu
+                              courseId={c.id}
+                              isFeatured={c.isFeatured}
+                              isPromoted={c.isPromoted}
+                              status={c.status}
+                            />
+                          )}
                       </div>
                     </td>
                   </tr>
@@ -298,8 +460,8 @@ function Stat({
   label,
 }: {
   icon: React.ReactNode;
-  tone: "emerald" | "amber" | "slate" | "blue";
-  value: number;
+  tone: "emerald" | "amber" | "slate" | "blue" | "rose";
+  value: number | string;
   label: string;
 }) {
   const cls = {
@@ -307,18 +469,35 @@ function Stat({
     amber: "bg-amber-500/10 text-amber-400",
     slate: "bg-slate-700/40 text-slate-300",
     blue: "bg-blue-500/10 text-blue-400",
+    rose: "bg-rose-500/10 text-rose-400",
   }[tone];
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800 p-4">
       <div className="flex items-center gap-3">
         <div className={`p-2 rounded-lg ${cls}`}>{icon}</div>
-        <div>
-          <p className="text-2xl font-bold text-white tabular-nums">
-            {value.toLocaleString()}
+        <div className="min-w-0">
+          <p className="text-2xl font-bold text-white tabular-nums truncate">
+            {typeof value === "number" ? value.toLocaleString() : value}
           </p>
           <p className="text-sm text-slate-500">{label}</p>
         </div>
       </div>
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const cfg: Record<string, { label: string; cls: string }> = {
+    PUBLISHED: { label: "Published", cls: "bg-emerald-500/10 text-emerald-400" },
+    PENDING_REVIEW: { label: "Pending review", cls: "bg-amber-500/15 text-amber-300" },
+    DRAFT: { label: "Draft", cls: "bg-slate-700/40 text-slate-300" },
+    SUSPENDED: { label: "Suspended", cls: "bg-rose-500/15 text-rose-300" },
+    ARCHIVED: { label: "Archived", cls: "bg-slate-700/40 text-slate-500" },
+  };
+  const c = cfg[status] ?? cfg.DRAFT;
+  return (
+    <span className={`px-2 py-1 rounded-full text-xs font-medium ${c.cls}`}>
+      {c.label}
+    </span>
   );
 }

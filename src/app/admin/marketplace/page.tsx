@@ -23,6 +23,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { CreateListingButton } from "@/components/admin/marketplace-actions";
 import { DisputeResolveButton } from "@/components/admin/marketplace/dispute-resolve-button";
 import { cn } from "@/lib/utils";
+import { ASSET_TYPE_LABEL } from "@/lib/marketplace-categories";
 
 interface PageProps {
   searchParams: Promise<{
@@ -30,6 +31,7 @@ interface PageProps {
     page?: string;
     status?: string;
     category?: string;
+    assetType?: string;
     search?: string;
   }>;
 }
@@ -112,6 +114,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
   const skip = (page - 1) * pageSize;
   const statusFilter = params.status || "";
   const categoryFilter = params.category || "";
+  const assetTypeFilter = params.assetType || "";
   const searchQuery = params.search || "";
 
   // Stats — always fetched for the top row
@@ -155,6 +158,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
       where: {
         ...(statusFilter && { status: statusFilter as never }),
         ...(categoryFilter && { category: categoryFilter }),
+        ...(assetTypeFilter && { assetType: assetTypeFilter }),
         ...(searchQuery && {
           OR: [
             { title: { contains: searchQuery, mode: "insensitive" as const } },
@@ -193,7 +197,12 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
       : 0;
   const totalPages = total > 0 ? Math.ceil(total / pageSize) : 0;
 
-  const buildHref = (next: { tab?: TabId; page?: number; status?: string }) => {
+  const buildHref = (next: {
+    tab?: TabId;
+    page?: number;
+    status?: string;
+    assetType?: string;
+  }) => {
     const sp = new URLSearchParams();
     sp.set("tab", next.tab ?? tab);
     if (next.page) sp.set("page", String(next.page));
@@ -204,6 +213,11 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
     }
     if (categoryFilter && (next.tab ?? tab) === "listings")
       sp.set("category", categoryFilter);
+    if (next.assetType !== undefined) {
+      if (next.assetType) sp.set("assetType", next.assetType);
+    } else if (assetTypeFilter && (next.tab ?? tab) === "listings") {
+      sp.set("assetType", assetTypeFilter);
+    }
     if (searchQuery && (next.tab ?? tab) === "listings")
       sp.set("search", searchQuery);
     return `/admin/marketplace?${sp.toString()}`;
@@ -308,6 +322,9 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                 {categoryFilter && (
                   <input type="hidden" name="category" value={categoryFilter} />
                 )}
+                {assetTypeFilter && (
+                  <input type="hidden" name="assetType" value={assetTypeFilter} />
+                )}
               </div>
             </form>
             <div className="flex flex-wrap gap-2">
@@ -332,6 +349,31 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                   }`}
                 >
                   {cfg.label}
+                </Link>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              <Link
+                href={buildHref({ tab: "listings", page: 1, assetType: "" })}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-colors ${
+                  !assetTypeFilter
+                    ? "bg-indigo-500/15 text-indigo-200 border-indigo-500/40"
+                    : "bg-slate-900 text-slate-400 border-slate-700 hover:border-slate-600"
+                }`}
+              >
+                All types
+              </Link>
+              {Object.entries(ASSET_TYPE_LABEL).map(([slug, label]) => (
+                <Link
+                  key={slug}
+                  href={buildHref({ tab: "listings", page: 1, assetType: slug })}
+                  className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-colors ${
+                    assetTypeFilter === slug
+                      ? "bg-indigo-500/15 text-indigo-200 border-indigo-500/40"
+                      : "bg-slate-900 text-slate-400 border-slate-700 hover:border-slate-600"
+                  }`}
+                >
+                  {label}
                 </Link>
               ))}
             </div>
@@ -378,8 +420,29 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                           className="hover:bg-slate-800/40 transition-colors"
                         >
                           <td className="py-4 px-6">
-                            <p className="font-medium text-white truncate max-w-65">
+                            <p className="font-medium text-white truncate max-w-65 inline-flex items-center gap-1.5">
                               {listing.title}
+                              {listing.isFeatured && (
+                                <span title="Featured" className="text-amber-400">
+                                  ★
+                                </span>
+                              )}
+                              {listing.verifiedMetrics && (
+                                <span
+                                  title="Verified metrics"
+                                  className="text-[10px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+                                >
+                                  ✓
+                                </span>
+                              )}
+                              {listing.auctionMode && (
+                                <span
+                                  title="Auction mode"
+                                  className="text-[10px] font-bold uppercase tracking-wider px-1 py-0.5 rounded bg-indigo-500/15 text-indigo-300 border border-indigo-500/30"
+                                >
+                                  Auction
+                                </span>
+                              )}
                             </p>
                             <p className="text-xs text-slate-500">
                               {formatDistanceToNow(listing.createdAt, {
@@ -396,9 +459,20 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                             </Link>
                           </td>
                           <td className="py-4 px-6">
-                            <span className="px-2 py-1 bg-slate-800 rounded text-xs text-slate-400">
-                              {listing.category}
-                            </span>
+                            <div className="flex flex-col gap-1">
+                              <span className="px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 w-fit">
+                                {ASSET_TYPE_LABEL[listing.assetType] ??
+                                  listing.assetType}
+                              </span>
+                              {listing.subType && (
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {listing.subType}
+                                </span>
+                              )}
+                              <span className="text-[10px] text-slate-600">
+                                {listing.category}
+                              </span>
+                            </div>
                           </td>
                           <td className="py-4 px-6 text-white font-semibold">
                             ${listing.price.toFixed(2)}
@@ -862,11 +936,16 @@ async function fetchListings({
     id: string;
     title: string;
     category: string;
+    assetType: string;
+    subType: string | null;
     price: number;
     status: string;
     views: number;
     createdAt: Date;
     purchases: number;
+    isFeatured: boolean;
+    verifiedMetrics: boolean;
+    auctionMode: boolean;
     seller: { id: string; name: string | null; email: string };
   };
 
@@ -875,10 +954,15 @@ async function fetchListings({
       id: string;
       title: string;
       category: string;
+      assetType: string;
+      subType: string | null;
       price: number;
       status: string;
       views: number;
       createdAt: Date;
+      isFeatured: boolean;
+      verifiedMetrics: boolean;
+      auctionMode: boolean;
       seller: { id: string; name: string | null; email: string };
       _count: { purchases: number };
     }>
@@ -886,11 +970,16 @@ async function fetchListings({
     id: l.id,
     title: l.title,
     category: l.category,
+    assetType: l.assetType,
+    subType: l.subType,
     price: l.price,
     status: l.status,
     views: l.views,
     createdAt: l.createdAt,
     purchases: l._count.purchases,
+    isFeatured: l.isFeatured,
+    verifiedMetrics: l.verifiedMetrics,
+    auctionMode: l.auctionMode,
     seller: l.seller,
   }));
 
