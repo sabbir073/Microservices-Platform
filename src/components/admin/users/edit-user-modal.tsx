@@ -449,6 +449,7 @@ export function UserEditForm({
                     disabled={!isSuperAdmin && user.role === "SUPER_ADMIN"}
                   >
                     <option value="USER">User</option>
+                    <option value="TUTOR">Tutor</option>
                     <option value="MODERATOR">Moderator</option>
                     <option value="SUPPORT_ADMIN">Support Admin</option>
                     <option value="CONTENT_ADMIN">Content Admin</option>

@@ -66,6 +66,7 @@ import {
   type AnalyticsResp,
 } from "@/components/user/profile/analytics-panel";
 import { VerifiedBadge } from "@/components/user/profile/verified-badge";
+import { BecomeTutorCard } from "@/components/user/profile/become-tutor-card";
 
 interface CompletionItem {
   key: string;
@@ -1733,6 +1734,8 @@ function ProfileTabBody({
               </div>
             </div>
           </Card>
+
+          <BecomeTutorCard />
 
           <Card
             title="Connected Social Accounts"

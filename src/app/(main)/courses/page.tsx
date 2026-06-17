@@ -1,39 +1,75 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { CoursesBrowse } from "@/components/user/courses/CoursesBrowse";
 import { GraduationCap } from "lucide-react";
 
 export default async function CoursesPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
 
+  // Featured strip — server-rendered for fast first paint
+  const featuredRaw = await prisma.course.findMany({
+    where: {
+      status: "PUBLISHED",
+      isFeatured: true,
+      nsfw: false,
+    },
+    orderBy: { publishedAt: "desc" },
+    take: 6,
+    include: {
+      tutor: { select: { id: true, name: true, avatar: true } },
+      _count: { select: { lessons: true } },
+    },
+  });
+  const featured = featuredRaw as unknown as Array<{
+    id: string;
+    slug: string | null;
+    title: string;
+    subtitle: string | null;
+    thumbnail: string | null;
+    isFree: boolean;
+    price: number;
+    discountPrice: number | null;
+    avgRating: number;
+    enrollmentCount: number;
+    totalDuration: number;
+    tutor: { id: string; name: string | null; avatar: string | null } | null;
+    _count: { lessons: number };
+  }>;
+
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Courses</h1>
-        <p className="text-gray-400 mt-1">Learn and earn with our courses</p>
-      </div>
-
-      {/* Categories */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {["All", "Earning", "Crypto", "Marketing", "Skills"].map((cat, i) => (
-          <button
-            key={cat}
-            className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-              i === 0 ? "bg-indigo-500 text-white" : "bg-gray-900 text-gray-400 hover:text-white hover:bg-gray-800"
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      <div className="flex items-center justify-center py-16 text-gray-500">
-        <div className="text-center">
-          <GraduationCap className="w-16 h-16 mx-auto mb-4 opacity-50" />
-          <p className="text-lg">No courses available yet</p>
-          <p className="text-sm mt-2">Courses will be added soon!</p>
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
+            <GraduationCap className="w-6 h-6 text-indigo-300" />
+            Courses
+          </h1>
+          <p className="text-sm text-gray-400 mt-1">
+            Earn from learning. Hands-on courses by tutors across the platform.
+          </p>
         </div>
       </div>
+
+      <CoursesBrowse
+        initialFeatured={featured.map((c) => ({
+          id: c.id,
+          slug: c.slug,
+          title: c.title,
+          subtitle: c.subtitle,
+          thumbnail: c.thumbnail,
+          isFree: c.isFree,
+          price: c.price,
+          discountPrice: c.discountPrice,
+          avgRating: c.avgRating,
+          enrollmentCount: c.enrollmentCount,
+          totalDuration: c.totalDuration,
+          tutor: c.tutor,
+          totalLessons: c._count.lessons,
+          href: `/courses/${c.slug ?? c.id}`,
+        }))}
+      />
     </div>
   );
 }

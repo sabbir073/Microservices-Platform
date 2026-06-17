@@ -9,47 +9,74 @@ import {
   Package,
   ListChecks,
   ShoppingCart,
+  ShieldCheck,
+  Sparkles,
+  Gavel,
+  Heart,
+  Eye,
+  TrendingUp,
+  X,
 } from "lucide-react";
-import { ListingCard } from "@/components/user/primitives/listing-card";
-import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { ASSET_TYPE_LABEL } from "@/lib/marketplace-categories";
+import { cn } from "@/lib/utils";
 
 interface Listing {
   id: string;
   title: string;
+  description: string;
   category: string;
+  assetType: string;
+  subType: string | null;
   price: number;
+  currency: string;
   images: string[];
+  screenshots: string[];
   views: number;
+  uniqueViewers: number;
+  watchCount: number;
+  isWatched: boolean;
+  monthlyRevenue: number | null;
+  monthlyProfit: number | null;
+  monthlyTraffic: number | null;
+  assetAgeMonths: number | null;
+  niche: string | null;
+  verifiedMetrics: boolean;
+  isFeatured: boolean;
+  isPromoted: boolean;
+  auctionMode: boolean;
+  buyNowPrice: number | null;
+  startingBid: number | null;
+  auctionEndsAt: string | null;
   createdAt: string;
   seller: { name: string | null; avatar: string | null };
 }
 
-const CATEGORIES = [
-  "ALL",
-  "DIGITAL_PRODUCT",
-  "SERVICE",
-  "TEMPLATE",
-  "GUIDE",
-  "COURSE",
-  "OTHER",
-];
+interface Facet {
+  assetType: string;
+  count: number;
+}
 
-const CAT_LABEL: Record<string, string> = {
-  ALL: "All",
-  DIGITAL_PRODUCT: "Digital",
-  SERVICE: "Services",
-  TEMPLATE: "Templates",
-  GUIDE: "Guides",
-  COURSE: "Courses",
-  OTHER: "Other",
-};
+const SORT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "createdAt-desc", label: "Newest" },
+  { value: "price-asc", label: "Price ↑" },
+  { value: "price-desc", label: "Price ↓" },
+  { value: "revenue-desc", label: "Revenue ↓" },
+  { value: "views-desc", label: "Most viewed" },
+];
 
 export function MarketplaceView() {
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("ALL");
+  const [assetType, setAssetType] = useState<string>("");
+  const [verifiedOnly, setVerifiedOnly] = useState(false);
+  const [monetizedOnly, setMonetizedOnly] = useState(false);
+  const [auctionOnly, setAuctionOnly] = useState(false);
+  const [minPrice, setMinPrice] = useState("");
+  const [maxPrice, setMaxPrice] = useState("");
+  const [sort, setSort] = useState("createdAt-desc");
   const [listings, setListings] = useState<Listing[]>([]);
+  const [facets, setFacets] = useState<Facet[]>([]);
   const [loading, setLoading] = useState(true);
   const [cartCount, setCartCount] = useState(0);
 
@@ -65,22 +92,68 @@ export function MarketplaceView() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     const params = new URLSearchParams();
-    if (category !== "ALL") params.set("category", category);
-    if (search) params.set("q", search);
-    fetch(`/api/marketplace?${params}`)
-      .then((r) => (r.ok ? r.json() : { listings: [] }))
-      .then((d) => !cancelled && setListings(d.listings ?? []))
+    if (assetType) params.set("assetType", assetType);
+    if (search) params.set("search", search);
+    if (verifiedOnly) params.set("verified", "true");
+    if (monetizedOnly) params.set("monetized", "true");
+    if (auctionOnly) params.set("auction", "true");
+    if (minPrice) params.set("minPrice", minPrice);
+    if (maxPrice) params.set("maxPrice", maxPrice);
+    const [sortBy, sortOrder] = sort.split("-");
+    params.set("sortBy", sortBy);
+    params.set("sortOrder", sortOrder);
+    fetch(`/api/marketplace/listings?${params}`)
+      .then((r) => (r.ok ? r.json() : { listings: [], facets: { assetTypes: [] } }))
+      .then((d) => {
+        if (cancelled) return;
+        setListings(d.listings ?? []);
+        setFacets(d.facets?.assetTypes ?? []);
+      })
       .catch(() => {})
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
     };
-  }, [category, search]);
+  }, [
+    assetType,
+    search,
+    verifiedOnly,
+    monetizedOnly,
+    auctionOnly,
+    minPrice,
+    maxPrice,
+    sort,
+  ]);
+
+  const anyFilterActive =
+    assetType ||
+    search ||
+    verifiedOnly ||
+    monetizedOnly ||
+    auctionOnly ||
+    minPrice ||
+    maxPrice;
+
+  const clearAll = () => {
+    setAssetType("");
+    setSearch("");
+    setVerifiedOnly(false);
+    setMonetizedOnly(false);
+    setAuctionOnly(false);
+    setMinPrice("");
+    setMaxPrice("");
+  };
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <h1 className="text-xl font-bold text-white flex-1">🛒 Marketplace</h1>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <h1 className="text-xl sm:text-2xl font-bold text-white flex-1 inline-flex items-center gap-2">
+          🛒 Marketplace
+          <span className="text-xs font-mono uppercase tracking-wider text-slate-500">
+            digital assets
+          </span>
+        </h1>
         <Link
           href="/marketplace/cart"
           className="relative p-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700"
@@ -109,35 +182,121 @@ export function MarketplaceView() {
         </Link>
       </div>
 
+      {/* Search + Sell */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search marketplace..."
+            placeholder="Search marketplace (title, description, niche)…"
             className="w-full pl-9 pr-3 py-2 bg-gray-900 border border-gray-800 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500"
           />
         </div>
+        <select
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+          className="px-3 py-2 bg-gray-900 border border-gray-800 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+        >
+          {SORT_OPTIONS.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}
+            </option>
+          ))}
+        </select>
         <Link
           href="/marketplace/create"
-          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold"
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold whitespace-nowrap"
         >
           <Plus className="w-4 h-4" />
           Sell
         </Link>
       </div>
 
-      <FilterChips
-        value={category}
-        onChange={setCategory}
-        options={CATEGORIES.map((c) => ({ value: c, label: CAT_LABEL[c] ?? c }))}
-      />
+      {/* Asset-type chips */}
+      <div className="flex flex-wrap gap-1.5">
+        <button
+          onClick={() => setAssetType("")}
+          className={chipClass(!assetType)}
+        >
+          All types
+          <span className="ml-1 text-[10px] opacity-70 tabular-nums">
+            {facets.reduce((s, f) => s + f.count, 0)}
+          </span>
+        </button>
+        {facets.map((f) => (
+          <button
+            key={f.assetType}
+            onClick={() => setAssetType(f.assetType)}
+            className={chipClass(assetType === f.assetType)}
+          >
+            {ASSET_TYPE_LABEL[f.assetType] ?? f.assetType}
+            <span className="ml-1 text-[10px] opacity-70 tabular-nums">
+              {f.count}
+            </span>
+          </button>
+        ))}
+      </div>
 
+      {/* Toggle filters + price range */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <ToggleChip
+          icon={<ShieldCheck className="w-3 h-3" />}
+          active={verifiedOnly}
+          label="Verified metrics"
+          onClick={() => setVerifiedOnly((v) => !v)}
+          tone="emerald"
+        />
+        <ToggleChip
+          icon={<TrendingUp className="w-3 h-3" />}
+          active={monetizedOnly}
+          label="Monetized only"
+          onClick={() => setMonetizedOnly((v) => !v)}
+          tone="amber"
+        />
+        <ToggleChip
+          icon={<Gavel className="w-3 h-3" />}
+          active={auctionOnly}
+          label="Auctions only"
+          onClick={() => setAuctionOnly((v) => !v)}
+          tone="purple"
+        />
+        <div className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-gray-800 bg-gray-900">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+            $
+          </span>
+          <input
+            type="number"
+            value={minPrice}
+            onChange={(e) => setMinPrice(e.target.value)}
+            placeholder="min"
+            className="w-16 bg-transparent text-white text-xs focus:outline-none tabular-nums"
+          />
+          <span className="text-gray-600">–</span>
+          <input
+            type="number"
+            value={maxPrice}
+            onChange={(e) => setMaxPrice(e.target.value)}
+            placeholder="max"
+            className="w-16 bg-transparent text-white text-xs focus:outline-none tabular-nums"
+          />
+        </div>
+        {anyFilterActive && (
+          <button
+            onClick={clearAll}
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-500/10 text-red-300 border border-red-500/30 font-bold hover:bg-red-500/20"
+          >
+            <X className="w-3 h-3" />
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Results */}
       {loading && (
-        <div className="grid grid-cols-2 gap-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <ListSkeleton key={i} rows={1} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <ListSkeleton key={i} rows={2} />
           ))}
         </div>
       )}
@@ -145,33 +304,226 @@ export function MarketplaceView() {
       {!loading && listings.length === 0 && (
         <EmptyState
           icon={ShoppingBag}
-          title="No listings found"
+          title="No listings match these filters"
           description={
-            search
-              ? `Nothing matches "${search}"`
-              : "Be the first to list a product."
+            anyFilterActive
+              ? "Try widening the search or clearing some filters."
+              : "Be the first to list a digital asset."
           }
           action={{ label: "Create Listing", href: "/marketplace/create" }}
         />
       )}
 
       {!loading && listings.length > 0 && (
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {listings.map((l) => (
-            <ListingCard
-              key={l.id}
-              href={`/marketplace/${l.id}`}
-              image={l.images[0]}
-              title={l.title}
-              sellerName={l.seller.name ?? "Anonymous"}
-              sellerAvatar={l.seller.avatar ?? undefined}
-              price={l.price}
-              unit="USD"
-              category={CAT_LABEL[l.category] ?? l.category}
-            />
+            <ListingCardV2 key={l.id} listing={l} />
           ))}
         </div>
       )}
     </div>
   );
+}
+
+function chipClass(active: boolean) {
+  return cn(
+    "inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-colors whitespace-nowrap",
+    active
+      ? "bg-indigo-500/15 text-indigo-200 border-indigo-500/40"
+      : "bg-gray-900 text-gray-400 border-gray-800 hover:border-gray-700"
+  );
+}
+
+function ToggleChip({
+  icon,
+  active,
+  label,
+  onClick,
+  tone,
+}: {
+  icon: React.ReactNode;
+  active: boolean;
+  label: string;
+  onClick: () => void;
+  tone: "emerald" | "amber" | "purple";
+}) {
+  const tones = {
+    emerald: "bg-emerald-500/15 text-emerald-300 border-emerald-500/40",
+    amber: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+    purple: "bg-purple-500/15 text-purple-300 border-purple-500/40",
+  };
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider border transition-colors",
+        active
+          ? tones[tone]
+          : "bg-gray-900 text-gray-400 border-gray-800 hover:border-gray-700"
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function ListingCardV2({ listing }: { listing: Listing }) {
+  const [watched, setWatched] = useState(listing.isWatched);
+  const [watchBusy, setWatchBusy] = useState(false);
+
+  const toggleWatch = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (watchBusy) return;
+    setWatchBusy(true);
+    try {
+      const res = await fetch(`/api/marketplace/listings/${listing.id}/watch`, {
+        method: watched ? "DELETE" : "POST",
+      });
+      if (res.ok) setWatched(!watched);
+    } finally {
+      setWatchBusy(false);
+    }
+  };
+
+  const cover = listing.images[0] ?? listing.screenshots[0];
+
+  return (
+    <Link
+      href={`/marketplace/${listing.id}`}
+      className="group block bg-gray-900 rounded-xl border border-gray-800 overflow-hidden hover:border-indigo-500/40 transition-colors"
+    >
+      <div className="relative aspect-video bg-gray-950 overflow-hidden">
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={cover}
+            alt=""
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <ShoppingBag className="w-10 h-10 text-gray-700" />
+          </div>
+        )}
+        {/* Top-left flags */}
+        <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+          {listing.isFeatured && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-white text-[10px] font-extrabold uppercase tracking-wider">
+              <Sparkles className="w-2.5 h-2.5" />
+              Featured
+            </span>
+          )}
+          {listing.verifiedMetrics && (
+            <span
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/90 text-white text-[10px] font-extrabold uppercase tracking-wider"
+              title="Admin-verified metrics"
+            >
+              <ShieldCheck className="w-2.5 h-2.5" />
+              Verified
+            </span>
+          )}
+          {listing.auctionMode && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-purple-500/90 text-white text-[10px] font-extrabold uppercase tracking-wider">
+              <Gavel className="w-2.5 h-2.5" />
+              Auction
+            </span>
+          )}
+        </div>
+        {/* Watch button */}
+        <button
+          onClick={toggleWatch}
+          disabled={watchBusy}
+          className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 backdrop-blur-md text-white hover:bg-black/80 disabled:opacity-50"
+          title={watched ? "Remove from watchlist" : "Add to watchlist"}
+        >
+          <Heart
+            className={cn(
+              "w-3.5 h-3.5",
+              watched ? "fill-rose-500 text-rose-500" : "text-white"
+            )}
+          />
+        </button>
+      </div>
+
+      <div className="p-3 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+            {ASSET_TYPE_LABEL[listing.assetType] ?? listing.assetType}
+          </span>
+          {listing.niche && (
+            <span className="text-[10px] text-gray-500 truncate">
+              {listing.niche}
+            </span>
+          )}
+        </div>
+
+        <p className="text-sm font-bold text-white truncate" title={listing.title}>
+          {listing.title}
+        </p>
+
+        {/* Metric chips: revenue / traffic / age */}
+        <div className="flex flex-wrap gap-1.5 text-[11px]">
+          {listing.monthlyRevenue && listing.monthlyRevenue > 0 ? (
+            <span className="inline-flex items-center gap-1 text-amber-300">
+              <span className="text-amber-500">$</span>
+              <span className="font-bold tabular-nums">
+                {compactMoney(listing.monthlyRevenue)}
+              </span>
+              <span className="text-gray-500">/mo rev</span>
+            </span>
+          ) : null}
+          {listing.monthlyTraffic && listing.monthlyTraffic > 0 ? (
+            <span className="inline-flex items-center gap-1 text-sky-300">
+              <span className="font-bold tabular-nums">
+                {compactNumber(listing.monthlyTraffic)}
+              </span>
+              <span className="text-gray-500">/mo visits</span>
+            </span>
+          ) : null}
+          {listing.assetAgeMonths ? (
+            <span className="inline-flex items-center gap-1 text-purple-300">
+              <span className="font-bold tabular-nums">
+                {listing.assetAgeMonths}
+              </span>
+              <span className="text-gray-500">mo old</span>
+            </span>
+          ) : null}
+        </div>
+
+        <div className="flex items-end justify-between pt-2 border-t border-gray-800">
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+              {listing.auctionMode ? "Current price" : "Asking"}
+            </p>
+            <p className="text-base font-extrabold text-white tabular-nums">
+              ${compactMoney(listing.price)}
+            </p>
+          </div>
+          <div className="text-right text-[10px] text-gray-500">
+            <p className="inline-flex items-center gap-1">
+              <Eye className="w-3 h-3" />
+              {compactNumber(listing.views)}
+            </p>
+            <p className="inline-flex items-center gap-1">
+              <Heart className="w-3 h-3" />
+              {compactNumber(listing.watchCount)}
+            </p>
+          </div>
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+function compactNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function compactMoney(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }

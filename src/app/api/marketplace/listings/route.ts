@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { MarketplaceListingStatus } from "@/generated/prisma";
+import { MarketplaceListingStatus, Prisma } from "@/generated/prisma";
+import {
+  validateDetails,
+  getCategory,
+} from "@/lib/marketplace-categories";
+import { z } from "zod";
 
 // GET /api/marketplace/listings - Get marketplace listings
 export async function GET(request: NextRequest) {
@@ -10,76 +15,77 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
+    const assetType = searchParams.get("assetType");
+    const subType = searchParams.get("subType");
     const search = searchParams.get("search");
     const minPrice = searchParams.get("minPrice");
     const maxPrice = searchParams.get("maxPrice");
+    const verifiedOnly = searchParams.get("verified") === "true";
+    const monetizedOnly = searchParams.get("monetized") === "true";
+    const auctionOnly = searchParams.get("auction") === "true";
+    const featuredOnly = searchParams.get("featured") === "true";
+    const includeNsfw = searchParams.get("nsfw") === "true";
     const sortBy = searchParams.get("sortBy") || "createdAt";
-    const sortOrder = searchParams.get("sortOrder") || "desc";
+    const sortOrderRaw = searchParams.get("sortOrder") || "desc";
+    const sortOrder: "asc" | "desc" = sortOrderRaw === "asc" ? "asc" : "desc";
     const sellerId = searchParams.get("sellerId");
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
     const skip = (page - 1) * limit;
 
-    // Build query
-    const where: Record<string, unknown> = {
+    const where: Prisma.MarketplaceListingWhereInput = {
       status: MarketplaceListingStatus.ACTIVE,
     };
 
     if (sellerId) {
       where.sellerId = sellerId;
-      // If viewing own listings, show all statuses
       if (session?.user?.id === sellerId) {
-        delete where.status;
+        delete (where as Record<string, unknown>).status;
       }
     }
+    if (category) where.category = category;
+    if (assetType) where.assetType = assetType;
+    if (subType) where.subType = subType;
+    if (verifiedOnly) where.verifiedMetrics = true;
+    if (auctionOnly) where.auctionMode = true;
+    if (featuredOnly) where.isFeatured = true;
+    if (!includeNsfw) where.nsfw = false;
 
-    if (category) {
-      where.category = category;
+    if (monetizedOnly) {
+      where.monthlyRevenue = { gt: 0 };
     }
 
     if (search) {
       where.OR = [
         { title: { contains: search, mode: "insensitive" } },
         { description: { contains: search, mode: "insensitive" } },
+        { niche: { contains: search, mode: "insensitive" } },
       ];
     }
 
     if (minPrice || maxPrice) {
       where.price = {};
-      if (minPrice) {
-        (where.price as Record<string, number>).gte = parseFloat(minPrice);
-      }
-      if (maxPrice) {
-        (where.price as Record<string, number>).lte = parseFloat(maxPrice);
-      }
+      if (minPrice) (where.price as Record<string, number>).gte = parseFloat(minPrice);
+      if (maxPrice) (where.price as Record<string, number>).lte = parseFloat(maxPrice);
     }
 
-    // Build orderBy
-    const orderBy: Record<string, string> = {};
-    if (sortBy === "price") {
-      orderBy.price = sortOrder;
-    } else if (sortBy === "views") {
-      orderBy.views = sortOrder;
-    } else {
-      orderBy.createdAt = sortOrder;
-    }
+    // Featured listings always float to the top; secondary sort = chosen sortBy
+    const orderBy: Prisma.MarketplaceListingOrderByWithRelationInput[] = [
+      { isFeatured: "desc" },
+    ];
+    if (sortBy === "price") orderBy.push({ price: sortOrder });
+    else if (sortBy === "views") orderBy.push({ views: sortOrder });
+    else if (sortBy === "revenue") orderBy.push({ monthlyRevenue: sortOrder });
+    else orderBy.push({ createdAt: sortOrder });
 
-    // Get listings
     const [listings, total] = await Promise.all([
       prisma.marketplaceListing.findMany({
         where,
         include: {
           seller: {
-            select: {
-              id: true,
-              name: true,
-              avatar: true,
-              level: true,
-            },
+            select: { id: true, name: true, avatar: true, level: true },
           },
-          _count: {
-            select: { purchases: true },
-          },
+          _count: { select: { purchases: true, watches: true } },
         },
         orderBy,
         skip,
@@ -88,48 +94,80 @@ export async function GET(request: NextRequest) {
       prisma.marketplaceListing.count({ where }),
     ]);
 
-    // Format listings
-    const formattedListings = listings.map((listing) => ({
-      id: listing.id,
-      title: listing.title,
-      description: listing.description?.substring(0, 200),
-      images: listing.images,
-      category: listing.category,
-      price: listing.price,
-      currency: listing.currency,
-      status: listing.status,
-      views: listing.views,
-      salesCount: listing._count.purchases,
-      createdAt: listing.createdAt,
-      seller: listing.seller,
-      isOwner: session?.user?.id === listing.sellerId,
+    type ListingWithCounts = (typeof listings)[number] & {
+      _count: { purchases: number; watches: number };
+    };
+
+    // Which of these has the current viewer watched?
+    let myWatchedIds = new Set<string>();
+    if (session?.user?.id && listings.length > 0) {
+      const watched = await prisma.marketplaceWatch.findMany({
+        where: {
+          userId: session.user.id,
+          listingId: { in: listings.map((l) => l.id) },
+        },
+        select: { listingId: true },
+      });
+      myWatchedIds = new Set(watched.map((w) => w.listingId));
+    }
+
+    const formatted = (listings as unknown as ListingWithCounts[]).map((l) => ({
+      id: l.id,
+      title: l.title,
+      description: l.description?.substring(0, 240),
+      images: l.images,
+      screenshots: l.screenshots,
+      category: l.category,
+      assetType: l.assetType,
+      subType: l.subType,
+      price: l.price,
+      currency: l.currency,
+      status: l.status,
+      views: l.views,
+      uniqueViewers: l.uniqueViewers,
+      salesCount: l._count.purchases,
+      watchCount: l._count.watches,
+      isWatched: myWatchedIds.has(l.id),
+      monthlyRevenue: l.monthlyRevenue,
+      monthlyProfit: l.monthlyProfit,
+      monthlyTraffic: l.monthlyTraffic,
+      assetAgeMonths: l.assetAgeMonths,
+      niche: l.niche,
+      verifiedMetrics: l.verifiedMetrics,
+      isFeatured: l.isFeatured,
+      isPromoted: l.isPromoted,
+      auctionMode: l.auctionMode,
+      buyNowPrice: l.buyNowPrice,
+      startingBid: l.startingBid,
+      auctionEndsAt: l.auctionEndsAt,
+      createdAt: l.createdAt,
+      seller: l.seller,
+      isOwner: session?.user?.id === l.sellerId,
     }));
 
-    // Get unique categories
-    const allListings = await prisma.marketplaceListing.findMany({
-      where: { status: MarketplaceListingStatus.ACTIVE },
-      select: { category: true },
+    // Asset-type facets (replace category facets for the new UI)
+    const assetTypeGroupsRaw = await prisma.marketplaceListing.groupBy({
+      by: ["assetType"],
+      where: { status: MarketplaceListingStatus.ACTIVE, nsfw: false },
+      _count: { _all: true },
     });
-
-    const categoryCount = allListings.reduce((acc: Record<string, number>, l) => {
-      acc[l.category] = (acc[l.category] || 0) + 1;
-      return acc;
-    }, {});
-
-    const categoryList = Object.entries(categoryCount).map(([name, count]) => ({
-      name,
-      count,
-    }));
+    const assetTypeGroups = assetTypeGroupsRaw as unknown as Array<{
+      assetType: string;
+      _count: { _all: number };
+    }>;
+    const assetTypeFacets = assetTypeGroups
+      .map((g) => ({ assetType: g.assetType, count: g._count._all }))
+      .sort((a, b) => b.count - a.count);
 
     return NextResponse.json({
-      listings: formattedListings,
+      listings: formatted,
       pagination: {
         page,
         limit,
         total,
         totalPages: Math.ceil(total / limit),
       },
-      categories: categoryList,
+      facets: { assetTypes: assetTypeFacets },
     });
   } catch (error) {
     console.error("Error fetching listings:", error);
@@ -140,61 +178,137 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST /api/marketplace/listings - Create a new listing
+const ASSET_TYPES = [
+  "DOMAIN",
+  "WEBSITE",
+  "SOCIAL_ACCOUNT",
+  "POD_ACCOUNT",
+  "PLAYSTORE_ACCOUNT",
+  "APPLE_DEV_ACCOUNT",
+  "MOBILE_APP",
+  "MOBILE_GAME",
+  "SAAS_PRODUCT",
+  "DIGITAL_PRODUCT",
+  "SERVICE",
+  "OTHER",
+] as const;
+
+const userCreateSchema = z.object({
+  title: z.string().min(3).max(100),
+  description: z.string().min(10).max(1000),
+  richDescription: z.string().max(20000).nullable().optional(),
+  category: z.string().min(1),
+  assetType: z.enum(ASSET_TYPES).default("DIGITAL_PRODUCT"),
+  subType: z.string().nullable().optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+  price: z.number().positive(),
+  currency: z.string().default("USD"),
+  images: z.array(z.string().url()).optional(),
+  screenshots: z.array(z.string().url()).optional(),
+  attachments: z.array(z.string().url()).optional(),
+  files: z.array(z.string().url()).optional(),
+  reasonsForSelling: z.string().max(2000).nullable().optional(),
+  whatsIncluded: z.string().max(2000).nullable().optional(),
+  whatsNotIncluded: z.string().max(2000).nullable().optional(),
+  monthlyRevenue: z.number().nullable().optional(),
+  monthlyProfit: z.number().nullable().optional(),
+  monthlyExpenses: z.number().nullable().optional(),
+  monthlyTraffic: z.number().int().nullable().optional(),
+  assetAgeMonths: z.number().int().nullable().optional(),
+  niche: z.string().max(120).nullable().optional(),
+  nsfw: z.boolean().optional(),
+  ndaGated: z.boolean().optional(),
+  auctionMode: z.boolean().optional(),
+  startingBid: z.number().nullable().optional(),
+  reservePrice: z.number().nullable().optional(),
+  buyNowPrice: z.number().nullable().optional(),
+  auctionEndsAt: z.string().nullable().optional(),
+});
+
+// POST /api/marketplace/listings — user-side listing creation. Listings start
+// in ACTIVE status; admin can still toggle to CANCELLED if it violates rules.
 export async function POST(request: NextRequest) {
   try {
     const session = await auth();
-
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
-    const { title, description, category, images, files, price } = body;
-
-    // Validate required fields
-    if (!title || !description || !category || !price) {
+    const v = userCreateSchema.safeParse(body);
+    if (!v.success) {
       return NextResponse.json(
-        { error: "Title, description, category, and price are required" },
+        { error: "Invalid input", details: v.error.issues },
+        { status: 400 }
+      );
+    }
+    const data = v.data;
+
+    if (data.subType) {
+      const cat = getCategory(data.assetType);
+      const ok = cat?.subTypes?.some((s) => s.slug === data.subType);
+      if (!ok) {
+        return NextResponse.json(
+          { error: `subType "${data.subType}" not valid for asset type "${data.assetType}"` },
+          { status: 400 }
+        );
+      }
+    }
+    const err = validateDetails(
+      data.assetType,
+      data.subType ?? null,
+      data.details ?? {}
+    );
+    if (err) return NextResponse.json({ error: err }, { status: 400 });
+
+    if (data.auctionMode && !data.auctionEndsAt) {
+      return NextResponse.json(
+        { error: "Auction mode needs an end date" },
         { status: 400 }
       );
     }
 
-    if (price < 1) {
-      return NextResponse.json(
-        { error: "Price must be at least $1" },
-        { status: 400 }
-      );
-    }
-
-    // Create listing
     const listing = await prisma.marketplaceListing.create({
       data: {
         sellerId: session.user.id,
-        title,
-        description,
-        category,
-        images: images || [],
-        files: files || [],
-        price,
-        currency: "USD",
+        title: data.title,
+        description: data.description,
+        richDescription: data.richDescription ?? null,
+        category: data.category,
+        assetType: data.assetType,
+        subType: data.subType ?? null,
+        details: data.details ? JSON.parse(JSON.stringify(data.details)) : null,
+        price: data.price,
+        currency: data.currency,
+        images: data.images ?? [],
+        screenshots: data.screenshots ?? [],
+        attachments: data.attachments ?? [],
+        files: data.files ?? [],
+        reasonsForSelling: data.reasonsForSelling ?? null,
+        whatsIncluded: data.whatsIncluded ?? null,
+        whatsNotIncluded: data.whatsNotIncluded ?? null,
+        monthlyRevenue: data.monthlyRevenue ?? null,
+        monthlyProfit: data.monthlyProfit ?? null,
+        monthlyExpenses: data.monthlyExpenses ?? null,
+        monthlyTraffic: data.monthlyTraffic ?? null,
+        assetAgeMonths: data.assetAgeMonths ?? null,
+        niche: data.niche ?? null,
+        nsfw: data.nsfw ?? false,
+        ndaGated: data.ndaGated ?? false,
+        auctionMode: data.auctionMode ?? false,
+        startingBid: data.startingBid ?? null,
+        reservePrice: data.reservePrice ?? null,
+        buyNowPrice: data.buyNowPrice ?? null,
+        auctionEndsAt: data.auctionEndsAt ? new Date(data.auctionEndsAt) : null,
         status: MarketplaceListingStatus.ACTIVE,
       },
     });
 
-    return NextResponse.json({
-      listing: {
-        id: listing.id,
-        title: listing.title,
-        status: listing.status,
-        createdAt: listing.createdAt,
-      },
-      message: "Listing created successfully",
-    });
+    return NextResponse.json({ listing }, { status: 201 });
   } catch (error) {
     console.error("Error creating listing:", error);
     return NextResponse.json(
-      { error: "Failed to create listing" },
+      { error: error instanceof Error ? error.message : "Failed to create listing" },
       { status: 500 }
     );
   }

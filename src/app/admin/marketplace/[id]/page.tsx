@@ -67,6 +67,10 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
 
   // Type assertion for Prisma Accelerate
   type ListingWithRelations = typeof listing & {
+    isFeatured?: boolean;
+    isPromoted?: boolean;
+    auctionMode?: boolean;
+    auctionEndsAt?: Date | null;
     seller: {
       id: string;
       name: string | null;
@@ -332,6 +336,11 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
             <ListingActions
               listingId={typedListing.id}
               listingTitle={typedListing.title}
+              isFeatured={typedListing.isFeatured ?? false}
+              isPromoted={typedListing.isPromoted ?? false}
+              isAuction={typedListing.auctionMode ?? false}
+              isActive={typedListing.status === "ACTIVE"}
+              auctionEndsAt={typedListing.auctionEndsAt ?? null}
             />
           )}
         </div>

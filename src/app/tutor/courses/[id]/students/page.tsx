@@ -1,0 +1,170 @@
+import { auth } from "@/lib/auth";
+import { redirect, notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import Link from "next/link";
+import { ChevronLeft, Users, Search } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
+
+export default async function TutorCourseStudentsPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const session = await auth();
+  if (!session?.user?.id) redirect("/login");
+  const { id } = await params;
+
+  const course = await prisma.course.findUnique({
+    where: { id },
+    select: { id: true, title: true, tutorId: true, enrollmentCount: true },
+  });
+  if (!course) notFound();
+  if (course.tutorId !== session.user.id) redirect("/tutor/courses");
+
+  const enrollmentsRaw = await prisma.courseEnrollment.findMany({
+    where: { courseId: id },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    include: {
+      user: {
+        select: { id: true, name: true, email: true, avatar: true, country: true },
+      },
+    },
+  });
+  const enrollments = enrollmentsRaw as unknown as Array<{
+    id: string;
+    progress: number;
+    completedAt: Date | null;
+    createdAt: Date;
+    pricePaid: number;
+    user: {
+      id: string;
+      name: string | null;
+      email: string | null;
+      avatar: string | null;
+      country: string | null;
+    };
+  }>;
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <Link
+          href={`/tutor/courses/${id}`}
+          className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-white"
+        >
+          <ChevronLeft className="w-3.5 h-3.5" />
+          Back to course
+        </Link>
+        <h1 className="text-2xl font-bold text-white mt-1 inline-flex items-center gap-2">
+          <Users className="w-6 h-6 text-emerald-300" />
+          Enrolled students
+        </h1>
+        <p className="text-slate-400 text-sm mt-1">
+          {course.title} — {course.enrollmentCount} total enrolment{course.enrollmentCount === 1 ? "" : "s"}.
+        </p>
+      </div>
+
+      {enrollments.length === 0 ? (
+        <div className="bg-slate-900 rounded-2xl border border-slate-800 p-12 text-center">
+          <Search className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+          <p className="text-white font-bold">No enrolments yet</p>
+          <p className="text-sm text-slate-400 mt-1">
+            Once a student enrols, they&apos;ll show up here with live progress.
+          </p>
+        </div>
+      ) : (
+        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-950 text-slate-400 text-xs uppercase">
+                <tr>
+                  <th className="text-left px-4 py-3">Student</th>
+                  <th className="text-left px-4 py-3">Country</th>
+                  <th className="text-left px-4 py-3">Progress</th>
+                  <th className="text-left px-4 py-3">Paid</th>
+                  <th className="text-left px-4 py-3">Enrolled</th>
+                  <th className="text-left px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {enrollments.map((e) => (
+                  <tr key={e.id} className="hover:bg-slate-800/40">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        {e.user.avatar ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={e.user.avatar}
+                            alt=""
+                            className="w-8 h-8 rounded-full object-cover bg-slate-800"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-[10px] font-bold text-white">
+                            {(e.user.name ?? e.user.email ?? "?").slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-white truncate font-medium">
+                            {e.user.name ?? "—"}
+                          </p>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {e.user.email}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-slate-400">
+                      {e.user.country ?? "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <ProgressBar value={e.progress} />
+                    </td>
+                    <td className="px-4 py-3 text-emerald-300 tabular-nums">
+                      ${e.pricePaid.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-3 text-slate-400 whitespace-nowrap">
+                      {formatDistanceToNow(e.createdAt, { addSuffix: true })}
+                    </td>
+                    <td className="px-4 py-3">
+                      {e.completedAt ? (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-medium">
+                          Completed
+                        </span>
+                      ) : e.progress > 0 ? (
+                        <span className="px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 text-xs font-medium">
+                          Learning
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded-full bg-slate-700/40 text-slate-400 text-xs font-medium">
+                          Not started
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ProgressBar({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(100, value));
+  return (
+    <div className="flex items-center gap-2 min-w-[140px]">
+      <div className="h-1.5 flex-1 bg-slate-800 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-gradient-to-r from-indigo-500 to-emerald-500"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-[11px] text-slate-400 tabular-nums w-9 text-right">
+        {pct}%
+      </span>
+    </div>
+  );
+}
