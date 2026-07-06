@@ -15,6 +15,7 @@ import {
   Smartphone,
 } from "lucide-react";
 import { TaskCard } from "@/components/user/primitives/task-card";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
@@ -161,6 +162,8 @@ export function TasksHubView() {
           </p>
         </div>
       </div>
+
+      <AdRenderer placement="TASK_LIST" />
 
       <section>
         <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2 px-1">

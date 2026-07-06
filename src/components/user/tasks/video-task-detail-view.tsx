@@ -15,6 +15,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import type { VideoConfig } from "@/lib/video-tasks";
 import { formatDuration } from "@/lib/video-tasks";
 import { VideoTaskPlayer } from "./video-task-player";
@@ -240,6 +241,8 @@ export function VideoTaskDetailView({ taskId }: { taskId: string }) {
           </div>
         </div>
       </div>
+
+      <AdRenderer placement="TASK_START" />
 
       {/* Instructions */}
       {task.instructions && (

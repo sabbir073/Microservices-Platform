@@ -37,6 +37,7 @@ const PLAN_PATCH = z
     dailyMissionEnabled: z.boolean().optional(),
     lotteryEnabled: z.boolean().optional(),
     coursesEnabled: z.boolean().optional(),
+    adFree: z.boolean().optional(),
 
     socialTasksEnabled: z.boolean().optional(),
     proxyTasksEnabled: z.boolean().optional(),

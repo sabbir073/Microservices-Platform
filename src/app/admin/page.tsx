@@ -251,7 +251,7 @@ export default async function AdminDashboardPage() {
   const revenueSeries = buildRevenueSeries(last30DaysRevenue);
 
   return (
-    <div className="space-y-6 max-w-400 mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto">
       {/* Stats row 1 — 5 cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatCard

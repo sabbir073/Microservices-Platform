@@ -7,6 +7,12 @@ import { cn } from "@/lib/utils";
 export type AdPlacement =
   | "IN_FEED"
   | "TASK_LIST"
+  | "TASK_START"
+  | "VIDEO_ABOVE"
+  | "VIDEO_BELOW"
+  | "TASK_COMPLETE"
+  | "DASHBOARD"
+  | "EARN_HUB"
   | "EARN_PROMOTE"
   | "WALLET_TOP"
   | "MARKETPLACE_TOP"

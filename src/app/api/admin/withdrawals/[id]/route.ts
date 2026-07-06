@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { deliverToUser } from "@/lib/notify";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -179,6 +180,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           entityId: id,
           newData: { transactionId, adminNote: adminNote ?? null },
         },
+      });
+
+      void deliverToUser({
+        userId: existingWithdrawal.userId,
+        title: "Withdrawal completed",
+        message: `Your withdrawal of $${existingWithdrawal.netAmount.toFixed(2)} via ${existingWithdrawal.method} has been paid.`,
+        link: "/wallet",
       });
 
       return NextResponse.json({

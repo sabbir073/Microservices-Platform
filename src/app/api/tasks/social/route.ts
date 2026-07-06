@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TaskStatus, TaskType } from "@/generated/prisma/client";
-import type { SocialConfig } from "@/lib/social-tasks";
+import { normalizeSocialConfig } from "@/lib/social-tasks";
 import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
 
 export async function GET(request: NextRequest) {
@@ -91,28 +91,35 @@ function mapTask(t: {
   instructions: string | null;
   instructionVideoUrl: string | null;
 }) {
-  const cfg = (t.socialConfig as SocialConfig | null) ?? null;
-  return {
-    id: t.id,
-    title: t.title,
-    description: t.description,
-    pointsReward: t.pointsReward,
-    difficulty: t.difficulty,
-    platform: (cfg?.platform ?? t.socialPlatform ?? "FACEBOOK").toUpperCase(),
-    action: (cfg?.action ?? t.socialAction ?? "FOLLOW").toUpperCase(),
-    targetUrl:
-      cfg?.fields?.targetUrl ??
-      cfg?.fields?.targetHandle ??
-      t.socialUrl ??
-      "",
-    proofRequirements: cfg?.proofRequirements ?? {
+  // Normalize any stored config (legacy v1 or v2 bundle) into ordered items.
+  const norm = normalizeSocialConfig(t.socialConfig);
+  const platform = (norm.platform ?? t.socialPlatform ?? "FACEBOOK").toUpperCase();
+  const items = norm.items.map((it) => ({
+    action: (it.action ?? "FOLLOW").toUpperCase(),
+    fields: it.fields ?? {},
+    points: it.points ?? 0,
+    proofRequirements: it.proofRequirements ?? {
       url: true,
       screenshot: true,
       username: false,
     },
-    aiPromptEnabled: cfg?.aiPromptEnabled ?? false,
-    aiPrompt: cfg?.aiPrompt ?? null,
-    fields: cfg?.fields ?? {},
+    aiPromptEnabled: it.aiPromptEnabled ?? false,
+    aiPrompt: it.aiPrompt ?? null,
+    watchSeconds: it.watchSeconds ?? null,
+    targetUrl: it.fields?.targetUrl ?? it.fields?.targetHandle ?? "",
+  }));
+  const first = items[0];
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description,
+    pointsReward: t.pointsReward, // task total (= Σ item points)
+    difficulty: t.difficulty,
+    platform,
+    // Top-level action/targetUrl kept for the card badge + "Open" button.
+    action: first?.action ?? (t.socialAction ?? "FOLLOW").toUpperCase(),
+    targetUrl: first?.targetUrl ?? t.socialUrl ?? "",
+    items,
     instructions: t.instructions,
     instructionVideoUrl: t.instructionVideoUrl,
   };

@@ -185,7 +185,7 @@ export function Header({ user }: HeaderProps) {
                     className="fixed inset-0 z-40"
                     onClick={() => setIsNotificationOpen(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-80 rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
+                  <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
                     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
                       <h3 className="text-sm font-semibold text-white">
                         Notifications
@@ -271,7 +271,7 @@ export function Header({ user }: HeaderProps) {
                     className="fixed inset-0 z-40"
                     onClick={() => setIsProfileOpen(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-56 rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
+                  <div className="absolute right-0 mt-2 w-56 max-w-[calc(100vw-1rem)] rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
                     <div className="px-4 py-3 border-b border-gray-800">
                       <p className="text-sm font-medium text-white truncate">
                         {user.name || "User"}

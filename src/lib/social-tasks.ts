@@ -1350,6 +1350,286 @@ export const SOCIAL_PLATFORMS: SocialPlatform[] = [
 ];
 
 // -----------------------------------------------------------------------------
+// Catalog enrichment (additive) — extra actions merged into the platforms above.
+// Kept here (rather than inline) so the merge is easy to audit. Every new action
+// key also has an ACTION_TIER entry so ordering + validation keep working.
+// -----------------------------------------------------------------------------
+
+const fieldDurationDays: SocialField = {
+  key: "durationDays",
+  label: "Keep live (days)",
+  type: "number",
+  required: false,
+  placeholder: "7",
+};
+
+const ta = (key: string, label: string, required = false, placeholder?: string): SocialField => ({
+  key,
+  label,
+  type: "textarea",
+  required,
+  placeholder,
+});
+
+const txt = (key: string, label: string, required = false, placeholder?: string): SocialField => ({
+  key,
+  label,
+  type: "text",
+  required,
+  placeholder,
+});
+
+const EXTRA_ACTIONS: Record<string, SocialAction[]> = {
+  FACEBOOK: [
+    {
+      key: "SAVE_POST",
+      label: "Save Post",
+      emoji: "🔖",
+      description: "Save a post to your collection",
+      adminFields: [fieldUrl("targetUrl", "Post URL")],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 2, max: 10 },
+    },
+    {
+      key: "WATCH_REEL",
+      label: "Watch Reel",
+      emoji: "🎬",
+      description: "Watch a reel for a minimum duration",
+      adminFields: [fieldUrl("targetUrl", "Reel URL"), fieldWatchSeconds],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 3, max: 15 },
+    },
+    {
+      key: "CREATE_STORY",
+      label: "Create Story",
+      emoji: "🌟",
+      description: "Post a 24-hour story",
+      adminFields: [fieldImageUrl, ta("storyText", "Story text", false, "Text overlay")],
+      aiGeneratableFields: ["storyText"],
+      proofFields: [fieldProofUrl("Story link"), fieldScreenshot],
+      supportsAiPrompt: true,
+      suggestedReward: { min: 4, max: 20 },
+    },
+    {
+      key: "CROSS_POST_PAGES",
+      label: "Cross-Post to Pages",
+      emoji: "📣",
+      description: "Share a post across multiple pages",
+      adminFields: [ta("pageList", "Page list", true, "One page URL per line"), txt("shareCaption", "Share caption")],
+      proofFields: [fieldProofUrl("Link to one share"), fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 10, max: 30 },
+    },
+    {
+      key: "KEEP_POST_LIVE",
+      label: "Keep Post Live",
+      emoji: "⏳",
+      description: "Keep a post public for N+ days",
+      adminFields: [fieldUrl("targetUrl", "Post URL"), fieldDurationDays],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 5, max: 15 },
+    },
+  ],
+  INSTAGRAM: [
+    {
+      key: "SAVE_POST",
+      label: "Save Post",
+      emoji: "🔖",
+      description: "Save a post",
+      adminFields: [fieldUrl("targetUrl", "Post URL")],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 2, max: 8 },
+    },
+    {
+      key: "CREATE_STORY",
+      label: "Create Story",
+      emoji: "🌟",
+      description: "Post a 24-hour story",
+      adminFields: [fieldImageUrl, ta("storyText", "Story text", false, "Text overlay"), txt("tagHandle", "Tag handle")],
+      aiGeneratableFields: ["storyText"],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: true,
+      suggestedReward: { min: 6, max: 20 },
+    },
+    {
+      key: "KEEP_POST_LIVE",
+      label: "Keep Post Live",
+      emoji: "⏳",
+      description: "Keep a post public for N+ days",
+      adminFields: [fieldUrl("targetUrl", "Post URL"), fieldDurationDays],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 5, max: 15 },
+    },
+  ],
+  YOUTUBE: [
+    {
+      key: "TURN_ON_BELL",
+      label: "Turn On Notifications",
+      emoji: "🔔",
+      description: "Enable the notification bell on a channel",
+      adminFields: [fieldUrl("targetUrl", "Channel URL")],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 2, max: 8 },
+    },
+    {
+      key: "CREATE_SHORT",
+      label: "Create Short",
+      emoji: "📱",
+      description: "Create a YouTube Short",
+      adminFields: [txt("title", "Title", true), ta("description", "Description", true), txt("hashtags", "Hashtags")],
+      aiGeneratableFields: ["description"],
+      proofFields: [fieldProofUrl("Short URL"), fieldScreenshot],
+      supportsAiPrompt: true,
+      suggestedReward: { min: 20, max: 60 },
+    },
+    {
+      key: "CREATE_COMMUNITY_POST",
+      label: "Create Community Post",
+      emoji: "📝",
+      description: "Post to the channel community tab",
+      adminFields: [ta("postText", "Post text", true), fieldImageUrl],
+      aiGeneratableFields: ["postText"],
+      proofFields: [fieldProofUrl("Post URL"), fieldScreenshot],
+      supportsAiPrompt: true,
+      suggestedReward: { min: 6, max: 20 },
+    },
+  ],
+  TWITTER: [
+    {
+      key: "BOOKMARK_TWEET",
+      label: "Bookmark Tweet",
+      emoji: "🔖",
+      description: "Bookmark a tweet",
+      adminFields: [fieldUrl("targetUrl", "Tweet URL")],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 2, max: 8 },
+    },
+    {
+      key: "CREATE_THREAD",
+      label: "Create Thread",
+      emoji: "🧵",
+      description: "Post a thread of 3+ tweets",
+      adminFields: [ta("threadText", "Thread content", true, "One tweet per line"), txt("hashtags", "Hashtags")],
+      aiGeneratableFields: ["threadText"],
+      proofFields: [fieldProofUrl("Thread URL"), fieldScreenshot],
+      supportsAiPrompt: true,
+      suggestedReward: { min: 15, max: 40 },
+    },
+  ],
+  PINTEREST: [
+    {
+      key: "CREATE_BOARD",
+      label: "Create Themed Board",
+      emoji: "🗂️",
+      description: "Create a new themed board",
+      adminFields: [txt("boardName", "Board name", true), ta("boardDescription", "Board description")],
+      proofFields: [fieldProofUrl("Board URL"), fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 5, max: 15 },
+    },
+    {
+      key: "PIN_TO_MULTI",
+      label: "Pin to 2+ Boards",
+      emoji: "📌",
+      description: "Pin to multiple boards",
+      adminFields: [fieldUrl("targetUrl", "Pin URL"), ta("boardNames", "Board names", true, "One board per line")],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 5, max: 15 },
+    },
+  ],
+  LINKEDIN: [
+    {
+      key: "REPOST_TO_FEED",
+      label: "Repost to Feed",
+      emoji: "🔁",
+      description: "Repost content to your feed",
+      adminFields: [fieldUrl("targetUrl", "Post URL")],
+      proofFields: [fieldProofUrl("Your repost URL"), fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 5, max: 15 },
+    },
+  ],
+  TIKTOK: [
+    {
+      key: "SAVE_TO_FAVORITES",
+      label: "Save to Favorites",
+      emoji: "🔖",
+      description: "Save a video to favorites",
+      adminFields: [fieldUrl("targetUrl", "Video URL")],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 2, max: 8 },
+    },
+    {
+      key: "KEEP_VIDEO_LIVE",
+      label: "Keep Video Live",
+      emoji: "⏳",
+      description: "Keep a video public for N+ days",
+      adminFields: [fieldUrl("targetUrl", "Video URL"), fieldDurationDays],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 8, max: 20 },
+    },
+  ],
+  REDDIT: [
+    {
+      key: "SAVE_POST",
+      label: "Save Post",
+      emoji: "🔖",
+      description: "Save a post",
+      adminFields: [fieldUrl("targetUrl", "Post URL")],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 2, max: 8 },
+    },
+    {
+      key: "FOLLOW_USER",
+      label: "Follow Redditor",
+      emoji: "👤",
+      description: "Follow a Reddit user",
+      adminFields: [fieldUrl("targetUrl", "Profile URL")],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 4, max: 10 },
+    },
+    {
+      key: "GIVE_AWARD",
+      label: "Give Award",
+      emoji: "🏅",
+      description: "Give an award to a post",
+      adminFields: [fieldUrl("targetUrl", "Post URL"), txt("awardType", "Award type")],
+      proofFields: [fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 6, max: 15 },
+    },
+    {
+      key: "CROSS_POST",
+      label: "Cross-Post",
+      emoji: "📣",
+      description: "Cross-post to 2+ subreddits",
+      adminFields: [fieldUrl("targetUrl", "Original post URL"), ta("subredditList", "Subreddit list", true, "One subreddit per line")],
+      proofFields: [fieldProofUrl("Link to one cross-post"), fieldScreenshot],
+      supportsAiPrompt: false,
+      suggestedReward: { min: 10, max: 25 },
+    },
+  ],
+};
+
+// Merge the extra actions into the platform definitions (runs once at load).
+for (const _platform of SOCIAL_PLATFORMS) {
+  const extra = EXTRA_ACTIONS[_platform.key];
+  if (extra) _platform.actions.push(...extra);
+}
+
+// -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
 
@@ -1408,4 +1688,304 @@ export function deriveProofType(cfg: SocialConfig): ProofType {
   if (url) return "URL";
   if (screenshot) return "SCREENSHOT";
   return "BOTH";
+}
+
+// =============================================================================
+// BUNDLE MODEL (v2) — one task = one platform + an ordered bundle of actions
+// -----------------------------------------------------------------------------
+// The persisted shape moved from a single-action `SocialConfig` to
+// `SocialBundleConfig`. Old single-action tasks are read lazily via
+// `normalizeSocialConfig` (wrapped as a 1-item bundle) so nothing needs a
+// backfill. `Task.pointsReward` stays the authoritative total (= Σ item points).
+// =============================================================================
+
+export interface ProofRequirements {
+  url: boolean;
+  screenshot: boolean;
+  username: boolean;
+}
+
+/** One chosen action inside a bundle, with its own points + proof + fields. */
+export interface BundleItem {
+  action: string;
+  /** Admin-filled values for the action's adminFields, keyed by field.key */
+  fields: Record<string, string>;
+  /** Per-item points (display / breakdown). Task total = Σ of these. */
+  points: number;
+  proofRequirements: ProofRequirements;
+  aiPromptEnabled: boolean;
+  aiPrompt: string | null;
+  /** Display-only (e.g. min watch seconds); no lock enforcement. */
+  watchSeconds?: number;
+}
+
+/** Persisted shape stored in Task.socialConfig (JSON), v2. */
+export interface SocialBundleConfig {
+  platform: string | null;
+  items: BundleItem[];
+  version: 2;
+}
+
+const DEFAULT_PROOF: ProofRequirements = {
+  url: true,
+  screenshot: true,
+  username: false,
+};
+
+function coerceProofRequirements(raw: unknown): ProofRequirements {
+  const r = (raw ?? {}) as Partial<ProofRequirements>;
+  return {
+    url: !!r.url,
+    screenshot: !!r.screenshot,
+    username: !!r.username,
+  };
+}
+
+function coerceBundleItem(raw: unknown): BundleItem | null {
+  const r = (raw ?? {}) as Partial<BundleItem>;
+  if (!r.action || typeof r.action !== "string") return null;
+  const pts = Number(r.points);
+  return {
+    action: r.action,
+    fields:
+      r.fields && typeof r.fields === "object"
+        ? (r.fields as Record<string, string>)
+        : {},
+    points: Number.isFinite(pts) && pts > 0 ? pts : 0,
+    proofRequirements: r.proofRequirements
+      ? coerceProofRequirements(r.proofRequirements)
+      : { ...DEFAULT_PROOF },
+    aiPromptEnabled: !!r.aiPromptEnabled,
+    aiPrompt: typeof r.aiPrompt === "string" ? r.aiPrompt : null,
+    watchSeconds:
+      typeof r.watchSeconds === "number" && Number.isFinite(r.watchSeconds)
+        ? r.watchSeconds
+        : undefined,
+  };
+}
+
+/**
+ * Read ANY stored socialConfig (null / legacy v1 single-action / v2 bundle /
+ * garbage) into a normalized bundle. Never throws. Used by every read path so
+ * legacy tasks and in-flight submissions keep working.
+ */
+export function normalizeSocialConfig(
+  raw: unknown
+): { platform: string | null; items: BundleItem[] } {
+  if (!raw || typeof raw !== "object") return { platform: null, items: [] };
+  const cfg = raw as Record<string, unknown>;
+
+  // v2 bundle
+  if (Array.isArray(cfg.items)) {
+    const items = cfg.items
+      .map(coerceBundleItem)
+      .filter((i): i is BundleItem => i !== null);
+    return {
+      platform: typeof cfg.platform === "string" ? cfg.platform : null,
+      items,
+    };
+  }
+
+  // legacy v1 single-action → wrap as a 1-item bundle
+  if (typeof cfg.action === "string" && cfg.action) {
+    return {
+      platform: typeof cfg.platform === "string" ? cfg.platform : null,
+      items: [
+        {
+          action: cfg.action,
+          fields:
+            cfg.fields && typeof cfg.fields === "object"
+              ? (cfg.fields as Record<string, string>)
+              : {},
+          // v1 points lived on Task.pointsReward, not in the config.
+          points: 0,
+          proofRequirements: coerceProofRequirements(cfg.proofRequirements),
+          aiPromptEnabled: !!cfg.aiPromptEnabled,
+          aiPrompt: typeof cfg.aiPrompt === "string" ? cfg.aiPrompt : null,
+        },
+      ],
+    };
+  }
+
+  return {
+    platform: typeof cfg.platform === "string" ? cfg.platform : null,
+    items: [],
+  };
+}
+
+/** A fresh empty bundle config for a new task. */
+export function emptyBundleConfig(): SocialBundleConfig {
+  return { platform: null, items: [], version: 2 };
+}
+
+// -----------------------------------------------------------------------------
+// Natural-flow ordering: watch → like → save → comment → share → follow → create
+// -----------------------------------------------------------------------------
+
+const ACTION_TIER: Record<string, number> = {
+  // 10 — passive consume (must be first)
+  WATCH_VIDEO: 10,
+  VIEW_STORY: 10,
+  LISTEN_FULL: 10,
+  // 20 — quick reactions
+  LIKE_PAGE: 20,
+  LIKE_POST: 20,
+  LIKE_TWEET: 20,
+  LIKE_VIDEO: 20,
+  LIKE_PIN: 20,
+  LIKE_TRACK: 20,
+  UPVOTE_POST: 20,
+  REACT_TO_MESSAGE: 20,
+  VOTE_IN_POLL: 20,
+  // 30 — save / add / collect
+  SAVE_PIN: 30,
+  ADD_TO_PLAYLIST: 30,
+  FOLLOW_PLAYLIST: 30,
+  FOLLOW_BOARD: 30,
+  // 40 — text engagement
+  COMMENT_POST: 40,
+  COMMENT_VIDEO: 40,
+  COMMENT_PIN: 40,
+  COMMENT_IN_GROUP: 40,
+  COMMENT: 40,
+  REPLY: 40,
+  // 50 — sharing
+  SHARE_POST: 50,
+  SHARE_VIDEO: 50,
+  SHARE_TO_STORY: 50,
+  RETWEET: 50,
+  QUOTE_TWEET: 50,
+  REPOST: 50,
+  REPIN: 50,
+  FORWARD_MESSAGE: 50,
+  // 60 — follow / join / connect
+  FOLLOW: 60,
+  FOLLOW_PAGE: 60,
+  FOLLOW_PROFILE: 60,
+  FOLLOW_COMPANY: 60,
+  FOLLOW_ARTIST: 60,
+  SUBSCRIBE: 60,
+  SUBSCRIBE_PUBLIC: 60,
+  CONNECT: 60,
+  ADD_FRIEND: 60,
+  JOIN_GROUP: 60,
+  JOIN_SERVER: 60,
+  JOIN_CHANNEL: 60,
+  JOIN_SUBREDDIT: 60,
+  // 80 — heavy creation (last)
+  CREATE_POST: 80,
+  POST_PHOTO: 80,
+  POST_REEL: 80,
+  POST_STORY: 80,
+  POST_TWEET: 80,
+  POST_VIDEO: 80,
+  POST_THREAD: 80,
+  POST_ARTICLE: 80,
+  POST_IN_GROUP: 80,
+  POST_IN_CHANNEL: 80,
+  SUBMIT_POST: 80,
+  CREATE_PIN: 80,
+  DUET_OR_STITCH: 80,
+  // 95 — keep-alive commitments (always last)
+  KEEP_POST_LIVE: 95,
+  KEEP_VIDEO_LIVE: 95,
+  // catalog-enrichment additions
+  WATCH_REEL: 10,
+  SAVE_POST: 30,
+  SAVE_TO_FAVORITES: 30,
+  BOOKMARK_TWEET: 30,
+  CROSS_POST_PAGES: 50,
+  CROSS_POST: 50,
+  REPOST_TO_FEED: 50,
+  TURN_ON_BELL: 60,
+  FOLLOW_USER: 60,
+  CREATE_STORY: 80,
+  CREATE_SHORT: 80,
+  CREATE_COMMUNITY_POST: 80,
+  CREATE_THREAD: 80,
+  CREATE_BOARD: 80,
+  PIN_TO_MULTI: 80,
+  GIVE_AWARD: 80,
+};
+
+/** Natural-flow tier for an action key (lower = earlier). Unknown → 90. */
+export function actionPriority(actionKey: string): number {
+  return ACTION_TIER[actionKey] ?? 90;
+}
+
+/** Watch/stream actions that can use a timed-lock player (see SocialWatchModal). */
+const WATCH_ACTIONS = new Set(["WATCH_VIDEO", "LISTEN_FULL", "WATCH_REEL"]);
+
+/** True if the action is a passive watch/stream type (eligible for a watch timer). */
+export function isWatchAction(actionKey: string | null | undefined): boolean {
+  return !!actionKey && WATCH_ACTIONS.has(actionKey);
+}
+
+/** Sort bundle items into the natural worker flow (stable within a tier). */
+export function sortBundleItems(items: BundleItem[]): BundleItem[] {
+  return [...items].sort(
+    (a, b) => actionPriority(a.action) - actionPriority(b.action)
+  );
+}
+
+/** Task-total points = Σ item points, floored at 0. */
+export function bundleTotalPoints(items: BundleItem[]): number {
+  const sum = items.reduce((acc, i) => acc + (Number(i.points) || 0), 0);
+  return sum > 0 ? Math.round(sum) : 0;
+}
+
+export interface BundleValidationResult {
+  ok: boolean;
+  error?: string;
+  /** Per-item errors keyed by item index. */
+  itemErrors?: Record<number, string>;
+}
+
+/**
+ * Validate a bundle: platform set, ≥1 item, each action resolves, required
+ * adminFields filled (skipping AI-generatable ones when AI mode is on for the
+ * item), points ≥ 0, and ≥1 proof requirement per item.
+ */
+export function validateSocialBundle(cfg: {
+  platform: string | null;
+  items: BundleItem[];
+}): BundleValidationResult {
+  if (!cfg.platform) return { ok: false, error: "Pick a platform." };
+  if (!getPlatform(cfg.platform)) {
+    return { ok: false, error: "Unknown platform." };
+  }
+  if (!cfg.items.length) {
+    return { ok: false, error: "Add at least one action to the bundle." };
+  }
+  const itemErrors: Record<number, string> = {};
+  cfg.items.forEach((item, idx) => {
+    const def = getAction(cfg.platform, item.action);
+    if (!def) {
+      itemErrors[idx] = `Unknown action "${item.action}".`;
+      return;
+    }
+    if (!(item.points >= 0) || !Number.isFinite(item.points)) {
+      itemErrors[idx] = "Points must be 0 or more.";
+      return;
+    }
+    const pr = item.proofRequirements;
+    if (!pr.url && !pr.screenshot && !pr.username) {
+      itemErrors[idx] = "Select at least one proof requirement.";
+      return;
+    }
+    const aiOn = item.aiPromptEnabled && !!(item.aiPrompt ?? "").trim();
+    const missing = def.adminFields.find((f) => {
+      if (!f.required) return false;
+      if (aiOn && def.aiGeneratableFields?.includes(f.key)) return false;
+      return !(item.fields[f.key] ?? "").trim();
+    });
+    if (missing) {
+      itemErrors[idx] = `Fill "${missing.label}" for ${def.label}.`;
+    }
+  });
+  if (Object.keys(itemErrors).length) {
+    const first = itemErrors[Number(Object.keys(itemErrors)[0])];
+    return { ok: false, error: first, itemErrors };
+  }
+  return { ok: true };
 }

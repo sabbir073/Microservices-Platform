@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import {
+  normalizeSocialConfig,
+  validateSocialBundle,
+  sortBundleItems,
+  bundleTotalPoints,
+} from "@/lib/social-tasks";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -132,6 +138,36 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       }
     }
 
+    // SOCIAL: normalize/validate/sort the bundle and make the server
+    // authoritative on points (Task.pointsReward = Σ item points).
+    let socialConfigOut = socialConfig
+      ? JSON.parse(JSON.stringify(socialConfig))
+      : null;
+    let socialPlatformOut = socialPlatform || null;
+    let socialActionOut = socialAction || null;
+    let socialUrlOut = socialUrl || null;
+    let pointsRewardOut = parseInt(pointsReward.toString());
+    if (type === "SOCIAL") {
+      const norm = normalizeSocialConfig(socialConfig);
+      const v = validateSocialBundle(norm);
+      if (!v.ok) {
+        return NextResponse.json(
+          { error: v.error || "Invalid social bundle" },
+          { status: 400 }
+        );
+      }
+      const items = sortBundleItems(norm.items);
+      pointsRewardOut = bundleTotalPoints(items);
+      socialConfigOut = { platform: norm.platform, items, version: 2 };
+      socialPlatformOut = norm.platform;
+      socialActionOut = items[0]?.action ?? null;
+      socialUrlOut =
+        items[0]?.fields?.targetUrl ??
+        items[0]?.fields?.targetHandle ??
+        socialUrl ??
+        null;
+    }
+
     // Update the task
     const task = await prisma.task.update({
       where: { id },
@@ -142,7 +178,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         instructionVideoUrl: instructionVideoUrl || null,
         type,
         status: status || existingTask.status,
-        pointsReward: parseInt(pointsReward.toString()),
+        pointsReward: pointsRewardOut,
         xpReward: parseInt(xpReward?.toString() || "0"),
         dailyLimit: dailyLimit ? parseInt(dailyLimit.toString()) : null,
         totalLimit: totalLimit ? parseInt(totalLimit.toString()) : null,
@@ -156,12 +192,10 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         thumbnailUrl: thumbnailUrl || null,
         duration: duration ? parseInt(duration.toString()) : null,
         questions: questions || null,
-        socialPlatform: socialPlatform || null,
-        socialAction: socialAction || null,
-        socialUrl: socialUrl || null,
-        socialConfig: socialConfig
-          ? JSON.parse(JSON.stringify(socialConfig))
-          : null,
+        socialPlatform: socialPlatformOut,
+        socialAction: socialActionOut,
+        socialUrl: socialUrlOut,
+        socialConfig: socialConfigOut,
         articleConfig: articleConfig
           ? JSON.parse(JSON.stringify(articleConfig))
           : null,

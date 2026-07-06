@@ -32,6 +32,9 @@ import {
   HelpCircle,
   FileText,
   Video,
+  Bell,
+  CreditCard,
+  ClipboardCheck,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -67,10 +70,12 @@ const navigationGroups = [
       { name: "Article Tasks", href: "/article-tasks", icon: FileText },
       { name: "Video Tasks", href: "/video-tasks", icon: Video },
       { name: "Quiz Tasks", href: "/quiz-tasks", icon: Brain },
+      { name: "Survey Tasks", href: "/survey-tasks", icon: ClipboardCheck },
       { name: "Social Tasks", href: "/social-tasks", icon: Send },
       { name: "Social Posts", href: "/social-posts", icon: Megaphone },
       { name: "Proxy Tasks", href: "/proxy-tasks", icon: Globe },
       { name: "Board Tasks", href: "/board-tasks", icon: Pin },
+      { name: "Watch & Earn", href: "/watch-ads", icon: Video },
       { name: "Milestones", href: "/milestones", icon: Target },
       { name: "Achievements", href: "/achievements", icon: Award },
       { name: "Leaderboard", href: "/leaderboard", icon: Trophy },
@@ -91,8 +96,11 @@ const navigationGroups = [
   {
     section: "Account",
     items: [
+      { name: "Add Funds", href: "/deposit", icon: CreditCard },
       { name: "Withdrawal", href: "/withdrawal", icon: ArrowUpRight },
+      { name: "Subscriptions", href: "/subscriptions", icon: CreditCard },
       { name: "My Package", href: "/my-package", icon: Package },
+      { name: "Notifications", href: "/notifications", icon: Bell },
       { name: "Chat", href: "/chat", icon: MessageSquare },
       { name: "Help", href: "/help", icon: HelpCircle },
       { name: "Settings", href: "/settings", icon: Settings },

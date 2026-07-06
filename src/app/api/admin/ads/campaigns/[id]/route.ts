@@ -1,0 +1,37 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
+import { hasPermission, type UserRole } from "@/lib/rbac";
+
+interface RouteParams {
+  params: Promise<{ id: string }>;
+}
+
+export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  const session = await auth();
+  const role = session?.user?.role as UserRole | undefined;
+  if (!session?.user || !hasPermission(role, "ads.manage")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const { id } = await params;
+  const body = await request.json().catch(() => ({}));
+  const data: Record<string, unknown> = {};
+  if (body.title !== undefined) data.title = String(body.title).trim();
+  if (body.description !== undefined) data.description = body.description ? String(body.description) : null;
+  if (body.budget !== undefined) data.budget = Number(body.budget) || 0;
+  if (body.status !== undefined && ["ACTIVE", "PAUSED", "ENDED"].includes(body.status))
+    data.status = body.status;
+  const campaign = await prisma.adCampaign.update({ where: { id }, data });
+  return NextResponse.json({ campaign });
+}
+
+export async function DELETE(_request: NextRequest, { params }: RouteParams) {
+  const session = await auth();
+  const role = session?.user?.role as UserRole | undefined;
+  if (!session?.user || !hasPermission(role, "ads.manage")) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const { id } = await params;
+  await prisma.adCampaign.delete({ where: { id } }); // cascades to its ads
+  return NextResponse.json({ success: true });
+}

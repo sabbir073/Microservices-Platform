@@ -17,6 +17,8 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsOtp, setNeedsOtp] = useState(false);
+  const [otp, setOtp] = useState("");
 
   const verified = searchParams.get("verified") === "true";
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
@@ -37,6 +39,7 @@ export default function LoginPage() {
       const result = await signIn("credentials", {
         email: data.email,
         password: data.password,
+        otp: needsOtp ? otp : "",
         redirect: false,
       });
 
@@ -45,6 +48,12 @@ export default function LoginPage() {
           setError("Please verify your email before logging in.");
         } else if (result.error === "ACCOUNT_DISABLED") {
           setError("Your account has been disabled. Please contact support.");
+        } else if (result.error === "TWO_FACTOR_REQUIRED") {
+          setNeedsOtp(true);
+          setError("Enter the 6-digit code from your authenticator app.");
+        } else if (result.error === "INVALID_2FA") {
+          setNeedsOtp(true);
+          setError("Invalid 2FA code. Try again.");
         } else {
           setError("Invalid email or password");
         }
@@ -127,6 +136,24 @@ export default function LoginPage() {
             {...register("password")}
           />
 
+          {needsOtp && (
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1.5">
+                Two-Factor Code
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                placeholder="123456"
+                className="w-full px-4 py-2.5 bg-gray-900 border border-gray-700 rounded-lg text-white text-center tracking-[0.4em] font-mono placeholder-gray-600 focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          )}
+
           <div className="flex justify-end">
             <Link
               href="/forgot-password"
@@ -137,7 +164,7 @@ export default function LoginPage() {
           </div>
 
           <Button type="submit" fullWidth size="lg" isLoading={isLoading}>
-            Sign In
+            {needsOtp ? "Verify & Sign In" : "Sign In"}
           </Button>
         </form>
 

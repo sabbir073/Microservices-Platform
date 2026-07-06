@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import type { VideoConfig } from "@/lib/video-tasks";
 import { formatDuration } from "@/lib/video-tasks";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -299,6 +300,18 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
             </div>
           </div>
         )}
+
+        {/* Sponsored slots above and below the video (opt-in; null when no ad) */}
+        <div className="absolute top-14 inset-x-0 z-30 px-3 pointer-events-none">
+          <div className="pointer-events-auto max-w-md mx-auto">
+            <AdRenderer placement="VIDEO_ABOVE" />
+          </div>
+        </div>
+        <div className="absolute bottom-28 inset-x-0 z-30 px-3 pointer-events-none">
+          <div className="pointer-events-auto max-w-md mx-auto">
+            <AdRenderer placement="VIDEO_BELOW" />
+          </div>
+        </div>
       </div>
 
       {/* Bottom HUD */}

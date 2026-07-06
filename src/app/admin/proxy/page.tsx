@@ -32,7 +32,7 @@ export default async function ProxyAdminPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <Stat
           icon={<Globe className="w-5 h-5" />}
           tone="blue"

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { processReferralCommissions } from "@/lib/referral-commissions";
 import { Prisma } from "@/generated/prisma/client";
+import { normalizeSocialConfig } from "@/lib/social-tasks";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -68,6 +69,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
     const body = await request.json();
     const { action, rejectionReason, adminNote } = body;
+    // SOCIAL bundles may send per-action decisions: { "0":"approved","2":"rejected" }
+    const itemDecisions = body.itemDecisions as
+      | Record<string, "approved" | "rejected">
+      | undefined;
     // Normalize legacy/new action names
     const normalized: "approved" | "rejected" | "revision_requested" | null =
       action === "approve" || action === "approved"
@@ -109,8 +114,61 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       // Tasks assigned to a Task Board don't grant individual rewards on
       // approval — the bundle pays out via /api/tasks/boards/[id]/claim.
       const isBoardTask = !!existingSubmission.task.boardId;
-      const earnedPoints = isBoardTask ? 0 : existingSubmission.task.pointsReward;
-      const earnedXp = isBoardTask ? 0 : existingSubmission.task.xpReward;
+      const task = existingSubmission.task;
+
+      // Default: whole-submission approval → full reward.
+      let earnedPoints = isBoardTask ? 0 : task.pointsReward;
+      let earnedXp = isBoardTask ? 0 : task.xpReward;
+      let referralPoints = task.pointsReward;
+      let finalStatus: "APPROVED" | "REJECTED" = "APPROVED";
+      let metadataUpdate: Prisma.InputJsonValue | undefined;
+
+      // SOCIAL per-action approval → award only the approved items' points.
+      if (
+        task.type === "SOCIAL" &&
+        itemDecisions &&
+        Object.keys(itemDecisions).length > 0
+      ) {
+        const norm = normalizeSocialConfig(task.socialConfig);
+        const total = norm.items.length || 1;
+        let approvedCount = 0;
+        let approvedPoints = 0;
+        let sumPoints = 0;
+        norm.items.forEach((it, i) => {
+          sumPoints += it.points || 0;
+          if (itemDecisions[String(i)] !== "rejected") {
+            approvedCount++;
+            approvedPoints += it.points || 0;
+          }
+        });
+        // If item points weren't set, split the task total proportionally.
+        if (sumPoints <= 0) {
+          approvedPoints = Math.round((task.pointsReward * approvedCount) / total);
+        }
+        earnedPoints = isBoardTask ? 0 : approvedPoints;
+        earnedXp = isBoardTask
+          ? 0
+          : Math.round((task.xpReward * approvedCount) / total);
+        referralPoints = approvedPoints;
+        finalStatus = approvedCount > 0 ? "APPROVED" : "REJECTED";
+
+        // Persist per-item review status alongside the existing proof metadata.
+        const meta =
+          (existingSubmission.metadata as Record<string, unknown> | null) ?? {};
+        const metaItems = Array.isArray(meta.items)
+          ? (meta.items as Array<Record<string, unknown>>)
+          : [];
+        const mergedItems = norm.items.map((it, i) => ({
+          ...(metaItems[i] ?? { action: it.action }),
+          reviewStatus:
+            itemDecisions[String(i)] === "rejected" ? "rejected" : "approved",
+        }));
+        metadataUpdate = JSON.parse(
+          JSON.stringify({ ...meta, items: mergedItems })
+        );
+      }
+
+      const awardsPoints = !isBoardTask && earnedPoints > 0;
 
       // Approve the submission. For non-board tasks award points/XP and write
       // a transaction; for board tasks just mark APPROVED and bump the
@@ -119,20 +177,26 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         prisma.taskSubmission.update({
           where: { id },
           data: {
-            status: "APPROVED",
+            status: finalStatus,
             reviewedBy: session.user.id,
             reviewedAt: new Date(),
             pointsEarned: earnedPoints,
             xpEarned: earnedXp,
+            ...(metadataUpdate ? { metadata: metadataUpdate } : {}),
           },
-        }),
-        prisma.task.update({
-          where: { id: existingSubmission.taskId },
-          data: { completedCount: { increment: 1 } },
         }),
       ];
 
-      if (!isBoardTask) {
+      if (finalStatus === "APPROVED") {
+        txnOps.push(
+          prisma.task.update({
+            where: { id: existingSubmission.taskId },
+            data: { completedCount: { increment: 1 } },
+          })
+        );
+      }
+
+      if (awardsPoints) {
         txnOps.push(
           prisma.user.update({
             where: { id: existingSubmission.userId },
@@ -149,7 +213,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
               status: "COMPLETED",
               points: earnedPoints,
               amount: earnedPoints * 0.001,
-              description: `Earned from task: ${existingSubmission.task.title}`,
+              description: `Earned from task: ${task.title}`,
               reference: existingSubmission.id,
             },
           })
@@ -159,11 +223,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       const [submission] = await prisma.$transaction(txnOps);
 
       // Process referral commissions (after transaction completes) — skip
-      // for board tasks since no points were minted.
-      if (!isBoardTask) {
+      // for board tasks and when no points were minted.
+      if (awardsPoints && referralPoints > 0) {
         await processReferralCommissions(
           existingSubmission.userId,
-          existingSubmission.task.pointsReward,
+          referralPoints,
           existingSubmission.taskId
         );
       }
@@ -175,14 +239,22 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           action: "SUBMISSION_APPROVED",
           entity: "TaskSubmission",
           entityId: id,
-          newData: { adminNote: adminNote ?? null },
+          newData: {
+            adminNote: adminNote ?? null,
+            pointsAwarded: earnedPoints,
+            finalStatus,
+          },
         },
       });
 
       return NextResponse.json({
         success: true,
         submission,
-        message: "Submission approved successfully",
+        pointsAwarded: earnedPoints,
+        message:
+          finalStatus === "APPROVED"
+            ? `Approved — ${earnedPoints} pts awarded`
+            : "All actions rejected — no points awarded",
       });
     } else if (normalized === "rejected") {
       if (!hasPermission(adminRole, "submissions.reject")) {

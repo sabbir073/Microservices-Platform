@@ -74,6 +74,7 @@ enum TransactionType {
   COURSE_PURCHASE
   COURSE_TUTOR_EARNING
   COURSE_REFUND
+  DEPOSIT
 }
 
 enum TransactionStatus {
@@ -308,11 +309,58 @@ model Ad {
   status      String      @default("ACTIVE")
   impressions Int         @default(0)
   clicks      Int         @default(0)
+  // Viewer-reward (watch-and-earn)
+  rewardPoints      Int    @default(0)
+  rewardCooldownSec Int    @default(3600)
+  watchSeconds      Int    @default(15)
+  views       AdView[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   @@index([campaignId])
   @@index([placementId])
+  @@index([status])
+}
+
+model AdView {
+  id             String   @id @default(cuid())
+  userId         String
+  adId           String
+  ad             Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  rewardedPoints Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([userId, adId])
+  @@index([userId, createdAt])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Deposit {
+  id         String   @id @default(cuid())
+  userId     String
+  amount     Float
+  method     String   // MANUAL_BKASH | MANUAL_NAGAD | SSLCOMMERZ | ...
+  status     String   @default("PENDING") // PENDING | APPROVED | REJECTED
+  gatewayRef String?
+  txnId      String?
+  proofUrl   String?
+  adminNote  String?
+  reviewedBy String?
+  reviewedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId])
   @@index([status])
 }
 
@@ -1102,6 +1150,7 @@ model Package {
   dailyMissionEnabled Boolean @default(true)
   lotteryEnabled      Boolean @default(true)
   coursesEnabled      Boolean @default(true)
+  adFree              Boolean @default(false)
 
   // Per-task-type toggles
   socialTasksEnabled    Boolean @default(true)

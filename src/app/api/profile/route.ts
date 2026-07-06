@@ -509,3 +509,39 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
+// Self-service account deletion. Soft-deletes without a schema change: blocks
+// login (status BANNED, which authorize() rejects) and anonymizes PII. Admin can
+// still see the record for audit/finance. Client signs the user out afterwards.
+export async function DELETE() {
+  try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const id = session.user.id;
+    await prisma.user.update({
+      where: { id },
+      data: {
+        status: "BANNED",
+        password: null,
+        email: `deleted+${id}@deleted.local`,
+        name: "Deleted User",
+        username: null,
+        avatar: null,
+        coverPhoto: null,
+        bio: null,
+        phone: null,
+        twoFactorEnabled: false,
+        twoFactorSecret: null,
+      },
+    });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting account:", error);
+    return NextResponse.json(
+      { error: "Failed to delete account" },
+      { status: 500 }
+    );
+  }
+}
+

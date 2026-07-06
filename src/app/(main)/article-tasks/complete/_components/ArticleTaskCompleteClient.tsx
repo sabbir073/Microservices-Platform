@@ -13,6 +13,7 @@ import {
   Copy,
   Check,
 } from "lucide-react";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 type State =
   | { phase: "loading" }
@@ -167,6 +168,8 @@ export default function ArticleTaskCompleteClient() {
                 </button>
               </div>
             </div>
+
+            <AdRenderer placement="TASK_COMPLETE" />
 
             <div className="flex gap-2">
               <Link

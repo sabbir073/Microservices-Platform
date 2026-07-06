@@ -1,6 +1,6 @@
 import { ExternalLink, AtSign, Sparkles, Info } from "lucide-react";
 import { ImageZoomGallery } from "@/components/admin/image-zoom-gallery";
-import { getPlatform, getAction, type SocialConfig } from "@/lib/social-tasks";
+import { getPlatform, getAction, normalizeSocialConfig } from "@/lib/social-tasks";
 import type { PanelSubmission, PanelTask } from "./types";
 
 interface Props {
@@ -8,31 +8,29 @@ interface Props {
   task: PanelTask;
 }
 
+interface ItemProof {
+  action?: string | null;
+  proofUrl?: string | null;
+  screenshotUrl?: string | null;
+  username?: string | null;
+  generatedContent?: string | null;
+  watched?: boolean | null;
+  reviewStatus?: "approved" | "rejected" | null;
+}
+
 interface SocialMetadata {
   socialUsername?: string | null;
   socialGeneratedContent?: string | null;
+  items?: ItemProof[];
 }
 
 export function SocialProofPanel({ submission, task }: Props) {
-  const cfg = (task.socialConfig as SocialConfig | null) ?? null;
+  const norm = normalizeSocialConfig(task.socialConfig);
   const meta = (submission.metadata as SocialMetadata | null) ?? null;
 
-  const platformKey = cfg?.platform ?? task.socialPlatform ?? null;
-  const actionKey = cfg?.action ?? task.socialAction ?? null;
+  const platformKey = norm.platform ?? task.socialPlatform ?? null;
   const platform = platformKey ? getPlatform(platformKey) : null;
-  const action =
-    platformKey && actionKey ? getAction(platformKey, actionKey) : null;
-
-  const targetUrl =
-    (cfg?.fields && cfg.fields.targetUrl) ||
-    task.socialUrl ||
-    null;
-
-  // Old SOCIAL submissions (pre-fix) had no metadata persisted — show a hint.
-  const isLegacy =
-    !submission.proof &&
-    (!submission.proofImages || submission.proofImages.length === 0) &&
-    !meta;
+  const bundleItems = Array.isArray(meta?.items) ? meta!.items : null;
 
   return (
     <div className="space-y-3">
@@ -42,6 +40,137 @@ export function SocialProofPanel({ submission, task }: Props) {
             {platform.label}
           </span>
         )}
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">
+          {norm.items.length} action{norm.items.length === 1 ? "" : "s"}
+        </span>
+      </div>
+
+      {bundleItems ? (
+        // v2 bundle — one proof block per action.
+        <div className="space-y-3">
+          {bundleItems.map((proof, idx) => {
+            const cfgItem = norm.items[idx];
+            const actionKey = proof.action ?? cfgItem?.action ?? null;
+            const action =
+              platformKey && actionKey
+                ? getAction(platformKey, actionKey)
+                : null;
+            const targetUrl = cfgItem?.fields?.targetUrl ?? null;
+            const screenshots = proof.screenshotUrl ? [proof.screenshotUrl] : [];
+            return (
+              <div
+                key={idx}
+                className="rounded-lg border border-gray-800 bg-gray-900/60 p-3 space-y-2"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="w-5 h-5 rounded-full bg-indigo-500/20 text-indigo-300 text-[11px] font-bold flex items-center justify-center shrink-0">
+                    {idx + 1}
+                  </span>
+                  <span className="text-sm font-semibold text-white">
+                    {action
+                      ? `${action.emoji} ${action.label}`
+                      : actionKey ?? "Action"}
+                  </span>
+                  {proof.watched && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/15 text-indigo-300">
+                      ✓ watched
+                    </span>
+                  )}
+                  {proof.reviewStatus && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.5 rounded ${
+                        proof.reviewStatus === "approved"
+                          ? "bg-emerald-500/15 text-emerald-400"
+                          : "bg-red-500/15 text-red-400"
+                      }`}
+                    >
+                      {proof.reviewStatus}
+                    </span>
+                  )}
+                  {targetUrl && (
+                    <a
+                      href={targetUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-white truncate max-w-xs"
+                    >
+                      <ExternalLink className="w-3 h-3 shrink-0" />
+                      <span className="truncate">Target</span>
+                    </a>
+                  )}
+                </div>
+
+                {proof.proofUrl && (
+                  <a
+                    href={proof.proofUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-sm text-indigo-400 hover:text-indigo-300 break-all max-w-full"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{proof.proofUrl}</span>
+                  </a>
+                )}
+
+                {proof.username && (
+                  <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-gray-800 border border-gray-700 text-gray-200">
+                    <AtSign className="w-3.5 h-3.5 text-pink-400" />
+                    <span className="font-mono">{proof.username}</span>
+                  </div>
+                )}
+
+                {proof.generatedContent && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-1 inline-flex items-center gap-1">
+                      <Sparkles className="w-3 h-3 text-purple-400" />
+                      AI-generated content:
+                    </p>
+                    <div className="rounded-lg bg-purple-500/5 border border-purple-500/20 p-3 text-sm text-gray-200 whitespace-pre-wrap">
+                      {proof.generatedContent}
+                    </div>
+                  </div>
+                )}
+
+                {screenshots.length > 0 && (
+                  <ImageZoomGallery images={screenshots} size={72} />
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        // Legacy single-action submission (pre-bundle).
+        <LegacyProof submission={submission} task={task} meta={meta} />
+      )}
+    </div>
+  );
+}
+
+function LegacyProof({
+  submission,
+  task,
+  meta,
+}: {
+  submission: PanelSubmission;
+  task: PanelTask;
+  meta: SocialMetadata | null;
+}) {
+  const norm = normalizeSocialConfig(task.socialConfig);
+  const platformKey = norm.platform ?? task.socialPlatform ?? null;
+  const actionKey = norm.items[0]?.action ?? task.socialAction ?? null;
+  const action =
+    platformKey && actionKey ? getAction(platformKey, actionKey) : null;
+  const targetUrl =
+    norm.items[0]?.fields?.targetUrl ?? task.socialUrl ?? null;
+
+  const isLegacy =
+    !submission.proof &&
+    (!submission.proofImages || submission.proofImages.length === 0) &&
+    !meta;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
         {action && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">
             {action.label}
