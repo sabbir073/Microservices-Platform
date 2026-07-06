@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import {
   Image as ImageIcon,
   X,
@@ -301,15 +302,17 @@ function FeedTab({
 
       {!loading && sortedPosts.length > 0 && (
         <div className="space-y-3">
-          {sortedPosts.map((post) => (
-            <FeedPostCard
-              key={post.id}
-              post={post}
-              currentUserId={user.id}
-              currentUserRole={user.role ?? null}
-              onUpdated={(patch) => handlePostUpdated(post.id, patch)}
-              onDeleted={() => handlePostDeleted(post.id)}
-            />
+          {sortedPosts.map((post, i) => (
+            <Fragment key={post.id}>
+              <FeedPostCard
+                post={post}
+                currentUserId={user.id}
+                currentUserRole={user.role ?? null}
+                onUpdated={(patch) => handlePostUpdated(post.id, patch)}
+                onDeleted={() => handlePostDeleted(post.id)}
+              />
+              {(i + 1) % 4 === 0 && <AdRenderer placement="IN_FEED" />}
+            </Fragment>
           ))}
         </div>
       )}
@@ -1360,7 +1363,7 @@ function PromoteModal({
               <p className="text-[11px] uppercase tracking-wider text-gray-500 font-bold mb-1.5">
                 Duration
               </p>
-              <div className="grid grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                 {(["1d", "7d", "30d", "forever"] as const).map((d) => (
                   <button
                     key={d}

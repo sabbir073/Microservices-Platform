@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Bell, X } from "lucide-react";
 import { toast } from "sonner";
+import { subscribeToPush } from "@/lib/push-client";
 
 const STORAGE_KEY = "push_prompt_dismissed_at";
 
@@ -37,6 +38,8 @@ export function PushPermissionPrompt() {
     try {
       const result = await Notification.requestPermission();
       if (result === "granted") {
+        // Register the SW + web-push subscription (no-op if VAPID unset).
+        void subscribeToPush();
         toast.success("Notifications enabled");
       }
     } catch {

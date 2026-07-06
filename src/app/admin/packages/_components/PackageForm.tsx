@@ -47,6 +47,7 @@ export interface PackageFormPkg {
   dailyMissionEnabled: boolean;
   lotteryEnabled: boolean;
   coursesEnabled: boolean;
+  adFree: boolean;
 
   // Per-task-type toggles
   socialTasksEnabled: boolean;
@@ -87,6 +88,7 @@ const SECTION_TOGGLES: Array<{ key: keyof PackageFormPkg; label: string; tooltip
   { key: "dailyMissionEnabled", label: "Daily Mission", tooltip: "Show today's daily mission card + claim rewards." },
   { key: "lotteryEnabled", label: "Lottery", tooltip: "Enter the daily lottery draw." },
   { key: "coursesEnabled", label: "Courses", tooltip: "Access the courses section." },
+  { key: "adFree", label: "Ad-Free", tooltip: "Hide all ads for users on this plan (Watch & Earn still works)." },
 ];
 
 // Per-task-type toggles (right grid). Each gates a TaskType in /api/tasks/*.

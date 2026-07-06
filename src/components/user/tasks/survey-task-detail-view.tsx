@@ -15,6 +15,7 @@ import {
   Info,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import {
   type SurveyConfig,
   type SurveyAnswers,
@@ -287,6 +288,8 @@ export function SurveyTaskDetailView({ taskId }: { taskId: string }) {
           </div>
         </div>
       </div>
+
+      <AdRenderer placement="TASK_START" />
 
       {cfg?.introMessage && (
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 text-sm text-gray-200 whitespace-pre-wrap">

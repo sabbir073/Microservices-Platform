@@ -10,7 +10,13 @@ import { ArticleTaskBuilder } from "./ArticleTaskBuilder";
 import { VideoTaskBuilder } from "./VideoTaskBuilder";
 import { SurveyTaskBuilder } from "./SurveyTaskBuilder";
 import { CustomTaskBuilder } from "./CustomTaskBuilder";
-import { emptySocialConfig, type SocialConfig } from "@/lib/social-tasks";
+import {
+  emptyBundleConfig,
+  normalizeSocialConfig,
+  validateSocialBundle,
+  bundleTotalPoints,
+  type SocialBundleConfig,
+} from "@/lib/social-tasks";
 import { emptyArticleConfig, validateArticleConfig, type ArticleConfig } from "@/lib/article-tasks";
 import { emptyVideoConfig, validateVideoConfig, type VideoConfig } from "@/lib/video-tasks";
 import {
@@ -79,7 +85,8 @@ interface TaskFormProps {
     socialPlatform: string | null;
     socialAction: string | null;
     socialUrl: string | null;
-    socialConfig?: SocialConfig | null;
+    // Stored config may be legacy v1 or v2 bundle; normalized on load.
+    socialConfig?: unknown;
     articleConfig?: ArticleConfig | null;
     videoConfig?: VideoConfig | null;
     surveyConfig?: SurveyConfig | null;
@@ -176,10 +183,13 @@ export function TaskForm({ task }: TaskFormProps) {
     ]
   );
 
-  // Social task config
-  const [socialConfig, setSocialConfig] = useState<SocialConfig>(
-    task?.socialConfig ?? emptySocialConfig()
-  );
+  // Social task config (bundle). Legacy single-action tasks load as a 1-item bundle.
+  const [socialConfig, setSocialConfig] = useState<SocialBundleConfig>(() => {
+    const norm = normalizeSocialConfig(task?.socialConfig);
+    return norm.platform || norm.items.length
+      ? { platform: norm.platform, items: norm.items, version: 2 }
+      : emptyBundleConfig();
+  });
 
   // Article task config
   const [articleConfig, setArticleConfig] = useState<ArticleConfig>(
@@ -246,19 +256,19 @@ export function TaskForm({ task }: TaskFormProps) {
       let socialPlatformOut = formData.socialPlatform;
       let socialActionOut = formData.socialAction;
       let socialUrlOut = formData.socialUrl;
-      let socialConfigOut: SocialConfig | null = null;
+      let socialConfigOut: SocialBundleConfig | null = null;
 
       if (formData.type === "SOCIAL") {
-        if (!socialConfig.platform || !socialConfig.action) {
-          throw new Error(
-            "Pick a platform and an action for this social task."
-          );
+        const v = validateSocialBundle(socialConfig);
+        if (!v.ok) {
+          throw new Error(v.error ?? "Invalid social bundle.");
         }
-        socialPlatformOut = socialConfig.platform;
-        socialActionOut = socialConfig.action;
+        const first = socialConfig.items[0];
+        socialPlatformOut = socialConfig.platform ?? "";
+        socialActionOut = first?.action ?? "";
         socialUrlOut =
-          socialConfig.fields.targetUrl ??
-          socialConfig.fields.targetHandle ??
+          first?.fields.targetUrl ??
+          first?.fields.targetHandle ??
           formData.socialUrl;
         socialConfigOut = socialConfig;
       }
@@ -320,6 +330,11 @@ export function TaskForm({ task }: TaskFormProps) {
       // Prepare the data
       const submitData = {
         ...formData,
+        // SOCIAL total = Σ item points (server re-computes authoritatively).
+        pointsReward:
+          formData.type === "SOCIAL"
+            ? bundleTotalPoints(socialConfig.items)
+            : formData.pointsReward,
         socialPlatform: socialPlatformOut,
         socialAction: socialActionOut,
         socialUrl: socialUrlOut,
@@ -505,7 +520,7 @@ export function TaskForm({ task }: TaskFormProps) {
       )}
 
       {/* Task Type Indicator */}
-      <div className="flex items-center justify-between p-4 bg-gray-900 rounded-xl border border-gray-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 p-4 bg-gray-900 rounded-xl border border-gray-800">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-lg bg-${selectedType?.color}-500/10`}>
             <TypeIcon className={`w-5 h-5 text-${selectedType?.color}-400`} />
@@ -917,16 +932,30 @@ export function TaskForm({ task }: TaskFormProps) {
             <label className="block text-sm font-medium text-gray-400 mb-2">
               Points Reward <span className="text-red-400">*</span>
             </label>
-            <input
-              type="number"
-              required
-              min="0"
-              value={formData.pointsReward}
-              onChange={(e) =>
-                setFormData({ ...formData, pointsReward: parseInt(e.target.value) || 0 })
-              }
-              className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
-            />
+            {formData.type === "SOCIAL" ? (
+              <>
+                <input
+                  type="number"
+                  readOnly
+                  value={bundleTotalPoints(socialConfig.items)}
+                  className="w-full px-4 py-2.5 bg-gray-800/60 border border-gray-700 rounded-lg text-gray-300 cursor-not-allowed focus:outline-none"
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Auto-calculated from the sum of each action&apos;s points.
+                </p>
+              </>
+            ) : (
+              <input
+                type="number"
+                required
+                min="0"
+                value={formData.pointsReward}
+                onChange={(e) =>
+                  setFormData({ ...formData, pointsReward: parseInt(e.target.value) || 0 })
+                }
+                className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
+              />
+            )}
           </div>
 
           <div>

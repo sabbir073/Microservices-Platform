@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { getEffectivePackage } from "@/lib/packages";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -7,6 +9,15 @@ export async function GET(request: NextRequest) {
 
   if (!placement) {
     return NextResponse.json({ error: "placement required" }, { status: 400 });
+  }
+
+  // Ad-free packages: hide passive placements (Watch & Earn is unaffected).
+  const session = await auth();
+  if (session?.user?.id) {
+    const pkg = await getEffectivePackage(session.user.id);
+    if (pkg?.adFree) {
+      return NextResponse.json({ ad: null });
+    }
   }
 
   // Find placement by name

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ClipboardCheck, Filter, Clock, CheckCircle, XCircle, RotateCcw, ChevronLeft, ChevronRight, Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Star, Layers, ChevronDown } from "lucide-react";
 import { SubmissionActions } from "@/components/admin/submissions/submission-actions";
+import { SocialReviewActions } from "@/components/admin/submissions/social-review-actions";
 import { SubmissionProofPanel } from "@/components/admin/submissions/proof-panels";
 import { DurationCard } from "@/components/admin/submissions/duration-card";
 import type { VideoConfig } from "@/lib/video-tasks";
@@ -503,14 +504,24 @@ export default async function AdminSubmissionsPage({ searchParams }: PageProps) 
                       {formatDistanceToNow(submission.createdAt, { addSuffix: true })}
                     </p>
 
-                    {submission.status === "PENDING" && (
-                      <SubmissionActions
-                        submissionId={submission.id}
-                        taskTitle={submission.task.title}
-                        canApprove={canApprove}
-                        canReject={canReject}
-                      />
-                    )}
+                    {submission.status === "PENDING" &&
+                      (submission.task.type === "SOCIAL" ? (
+                        <SocialReviewActions
+                          submissionId={submission.id}
+                          taskTitle={submission.task.title}
+                          taskPoints={submission.task.pointsReward}
+                          socialConfig={submission.task.socialConfig}
+                          canApprove={canApprove}
+                          canReject={canReject}
+                        />
+                      ) : (
+                        <SubmissionActions
+                          submissionId={submission.id}
+                          taskTitle={submission.task.title}
+                          canApprove={canApprove}
+                          canReject={canReject}
+                        />
+                      ))}
 
                     {(submission.status === "REJECTED" ||
                       submission.status === "REVISION_REQUESTED") &&

@@ -5,6 +5,7 @@ import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import speakeasy from "speakeasy";
 import { prisma } from "@/lib/prisma";
 import { authConfig } from "./config";
 
@@ -20,6 +21,7 @@ const providers: NextAuthConfig["providers"] = [
     credentials: {
       email: { label: "Email", type: "email" },
       password: { label: "Password", type: "password" },
+      otp: { label: "2FA Code", type: "text" },
     },
     async authorize(credentials) {
       const validatedFields = loginSchema.safeParse(credentials);
@@ -52,6 +54,24 @@ const providers: NextAuthConfig["providers"] = [
       // Check if account is active
       if (user.status === "BANNED" || user.status === "SUSPENDED") {
         throw new Error("ACCOUNT_DISABLED");
+      }
+
+      // Enforce 2FA when enabled: require a valid TOTP code.
+      if (user.twoFactorEnabled && user.twoFactorSecret) {
+        const otp =
+          typeof credentials?.otp === "string" ? credentials.otp.trim() : "";
+        if (!otp) {
+          throw new Error("TWO_FACTOR_REQUIRED");
+        }
+        const valid = speakeasy.totp.verify({
+          secret: user.twoFactorSecret,
+          encoding: "base32",
+          token: otp,
+          window: 2,
+        });
+        if (!valid) {
+          throw new Error("INVALID_2FA");
+        }
       }
 
       return {
@@ -96,3 +116,19 @@ export const {
     },
   },
 });
+
+/**
+ * Resilient wrapper around `auth()`. A stale/corrupt session cookie makes
+ * Auth.js throw `JWTSessionError: no matching decryption secret` (e.g. after a
+ * secret rotation or an @auth/core version bump). Treat that as "signed out"
+ * instead of crashing the page — the next successful sign-in overwrites the
+ * bad cookie and self-heals.
+ */
+export async function getSession() {
+  try {
+    return await auth();
+  } catch (error) {
+    console.warn("[auth] session decode failed; treating as signed out:", error);
+    return null;
+  }
+}

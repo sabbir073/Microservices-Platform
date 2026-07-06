@@ -37,6 +37,7 @@ export default async function NewPackagePage() {
     dailyMissionEnabled: true,
     lotteryEnabled: true,
     coursesEnabled: true,
+    adFree: false,
 
     socialTasksEnabled: true,
     proxyTasksEnabled: true,

@@ -372,6 +372,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     category: "FINANCE",
   },
   {
+    name: "Deposits",
+    href: "/admin/deposits",
+    icon: "Wallet",
+    permissions: ["withdrawals.view"],
+    category: "FINANCE",
+  },
+  {
     name: "Payment Methods",
     href: "/admin/payment-methods",
     icon: "CreditCard",

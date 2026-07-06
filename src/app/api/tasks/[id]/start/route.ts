@@ -221,6 +221,7 @@ export async function POST(
           socialPlatform: task.socialPlatform,
           socialAction: task.socialAction,
           socialUrl: task.socialUrl,
+          socialConfig: task.socialConfig,
           questions: task.questions,
           autoApprove: task.autoApprove,
         },

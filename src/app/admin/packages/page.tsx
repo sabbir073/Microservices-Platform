@@ -334,6 +334,7 @@ function countEnabledFlags(pkg: {
   dailyMissionEnabled: boolean;
   lotteryEnabled: boolean;
   coursesEnabled: boolean;
+  adFree: boolean;
   socialTasksEnabled: boolean;
   proxyTasksEnabled: boolean;
   articleTasksEnabled: boolean;

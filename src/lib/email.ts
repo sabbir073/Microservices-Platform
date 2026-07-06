@@ -218,3 +218,51 @@ export async function sendWelcomeEmail(email: string, name: string) {
     html,
   });
 }
+
+/** True when SMTP is configured (env). Used to skip email sends gracefully. */
+export function isSmtpConfigured(): boolean {
+  return !!(
+    process.env.SMTP_HOST &&
+    process.env.SMTP_USER &&
+    process.env.SMTP_PASSWORD
+  );
+}
+
+/**
+ * Generic transactional notification email (title + message) with the app's
+ * dark branded template. Best-effort — callers should catch/ignore errors.
+ */
+export async function sendNotificationEmail(
+  email: string,
+  title: string,
+  message: string,
+  link?: string
+) {
+  if (!isSmtpConfigured()) return;
+  const currentYear = new Date().getFullYear();
+  const cta = link
+    ? `<div style="text-align:center;margin:28px 0;">
+         <a href="${link.startsWith("http") ? link : `${APP_URL}${link}`}" style="display:inline-block;background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;text-decoration:none;padding:12px 32px;border-radius:8px;font-weight:600;">View</a>
+       </div>`
+    : "";
+  const html = `
+    <!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+    <body style="margin:0;padding:0;font-family:'Segoe UI',Tahoma,sans-serif;background-color:#0a0a0f;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;padding:40px 20px;">
+        <tr><td>
+          <div style="background:linear-gradient(145deg,#14141f,#1a1a25);border-radius:16px;padding:36px;border:1px solid #2a2a3a;">
+            <h1 style="color:#fff;font-size:22px;margin:0 0 12px 0;">${title}</h1>
+            <p style="color:#a0a0b0;font-size:15px;line-height:1.6;margin:0;">${message}</p>
+            ${cta}
+          </div>
+          <p style="color:#6a6a7a;font-size:12px;text-align:center;margin:20px 0 0 0;">&copy; ${currentYear} ${APP_NAME}. All rights reserved.</p>
+        </td></tr>
+      </table>
+    </body></html>`;
+  await transporter.sendMail({
+    from: `${APP_NAME} <${process.env.SMTP_FROM}>`,
+    to: email,
+    subject: `${title} · ${APP_NAME}`,
+    html,
+  });
+}

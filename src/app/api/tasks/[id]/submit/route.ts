@@ -49,6 +49,9 @@ export async function POST(
       screenshotUrl,
       username,
       generatedContent,
+      // SOCIAL bundle: per-action proof array
+      // [{action, proofUrl?, screenshotUrl?, username?, generatedContent?}]
+      items: socialItems,
       // CUSTOM-only proof field (admin-defined form answers)
       customAnswers,
     } = body;
@@ -291,10 +294,30 @@ export async function POST(
     // proof/proofImages columns and stash extras (username, AI-generated
     // content) in metadata so the admin panel can render them.
     const isSocial = task.type === "SOCIAL";
+    // Bundle submissions send an `items` array (one proof set per action).
+    const socialBundle: Array<Record<string, unknown>> | null =
+      isSocial && Array.isArray(socialItems) ? socialItems : null;
     const submissionMetadata: Record<string, unknown> = {};
     if (isSocial) {
-      submissionMetadata.socialUsername = username ?? null;
-      submissionMetadata.socialGeneratedContent = generatedContent ?? null;
+      if (socialBundle) {
+        // Store per-action proof; mirror item[0] into the legacy keys so any
+        // lagging consumer still shows something.
+        submissionMetadata.items = socialBundle.map((it) => ({
+          action: it.action ?? null,
+          proofUrl: it.proofUrl ?? null,
+          screenshotUrl: it.screenshotUrl ?? null,
+          username: it.username ?? null,
+          generatedContent: it.generatedContent ?? null,
+          watched: it.watched ?? null,
+        }));
+        submissionMetadata.socialUsername = socialBundle[0]?.username ?? null;
+        submissionMetadata.socialGeneratedContent =
+          socialBundle[0]?.generatedContent ?? null;
+      } else {
+        // Legacy single-action submission (old client / in-flight task).
+        submissionMetadata.socialUsername = username ?? null;
+        submissionMetadata.socialGeneratedContent = generatedContent ?? null;
+      }
     }
     // For ARTICLE: surface the unique-key mismatch flag so the admin sees
     // it during review (article submissions don't auto-reject on mismatch).
@@ -309,11 +332,19 @@ export async function POST(
     }
     const hasMetadata = Object.keys(submissionMetadata).length > 0;
 
-    const resolvedProof = isSocial ? (proofUrl ?? null) : (proof || null);
+    const resolvedProof = isSocial
+      ? socialBundle
+        ? ((socialBundle[0]?.proofUrl as string | undefined) ?? null)
+        : (proofUrl ?? null)
+      : proof || null;
     const resolvedProofImages = isSocial
-      ? screenshotUrl
-        ? [screenshotUrl]
-        : []
+      ? socialBundle
+        ? socialBundle
+            .map((it) => it.screenshotUrl as string | undefined)
+            .filter((s): s is string => !!s)
+        : screenshotUrl
+          ? [screenshotUrl]
+          : []
       : proofImages || [];
 
     // Update submission with proof

@@ -240,7 +240,7 @@ export function AdminHeader({ user }: AdminHeaderProps) {
                   className="fixed inset-0 z-40"
                   onClick={() => setIsNotificationOpen(false)}
                 />
-                <div className="absolute right-0 mt-2 w-80 rounded-lg bg-slate-900 border border-slate-700 shadow-xl z-50">
+                <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-lg bg-slate-900 border border-slate-700 shadow-xl z-50">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
                     <h3 className="text-sm font-semibold text-white">
                       Notifications
@@ -344,7 +344,7 @@ export function AdminHeader({ user }: AdminHeaderProps) {
                   className="fixed inset-0 z-40"
                   onClick={() => setIsProfileOpen(false)}
                 />
-                <div className="absolute right-0 mt-2 w-56 rounded-lg bg-slate-900 border border-slate-700 shadow-xl z-50">
+                <div className="absolute right-0 mt-2 w-56 max-w-[calc(100vw-1rem)] rounded-lg bg-slate-900 border border-slate-700 shadow-xl z-50">
                   <div className="px-4 py-3 border-b border-slate-700">
                     <p className="text-sm font-medium text-white truncate">
                       {user.name || "Admin"}

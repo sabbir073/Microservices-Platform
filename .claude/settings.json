@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -o /dev/null -w \"GET /login -> HTTP %{http_code}\\\\n\" http://localhost:3000/login)",
+      "Bash(npx eslint *)",
+      "Bash(ls src/app/api/profile/)",
+      "Bash(grep -nE \"export async function \\(GET|POST|PATCH|PUT|DELETE\\)\" src/app/api/profile/route.ts)",
+      "Bash(ls src/app/api/security/2fa/ src/app/api/2fa/)",
+      "Bash(node -e \"console.log\\(require\\('./package.json'\\).dependencies['web-push'] || 'MISSING'\\)\")"
+    ]
+  }
+}

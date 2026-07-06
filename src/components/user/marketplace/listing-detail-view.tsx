@@ -295,7 +295,7 @@ export function ListingDetailView({
             </div>
           </div>
           {listing.images.length > 1 && (
-            <div className="grid grid-cols-5 gap-2">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
               {listing.images.slice(0, 10).map((url, i) => (
                 <button
                   key={i}

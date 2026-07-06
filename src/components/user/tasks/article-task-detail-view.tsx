@@ -21,6 +21,7 @@ import {
   Info,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import type { ArticleConfig } from "@/lib/article-tasks";
 import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
 
@@ -322,6 +323,8 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
           </div>
         </div>
       </div>
+
+      <AdRenderer placement="TASK_START" />
 
       {/* Instructions */}
       {task.instructions && (

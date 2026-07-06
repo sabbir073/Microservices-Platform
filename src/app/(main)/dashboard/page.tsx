@@ -14,6 +14,7 @@ import {
   Trophy,
 } from "lucide-react";
 import Link from "next/link";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 // Stats Card Component
 function StatsCard({
@@ -239,6 +240,8 @@ export default async function DashboardPage() {
           />
         </div>
       </div>
+
+      <AdRenderer placement="DASHBOARD" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Activity */}

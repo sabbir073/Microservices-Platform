@@ -3,6 +3,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { validateCustomConfig, type CustomConfig } from "@/lib/custom-tasks";
+import {
+  normalizeSocialConfig,
+  validateSocialBundle,
+  sortBundleItems,
+  bundleTotalPoints,
+} from "@/lib/social-tasks";
 
 export async function POST(request: NextRequest) {
   try {
@@ -81,6 +87,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // SOCIAL: normalize (tolerates v1/v2), validate, natural-flow sort, and make
+    // the server authoritative on points (Task.pointsReward = Σ item points).
+    let socialConfigOut = socialConfig
+      ? JSON.parse(JSON.stringify(socialConfig))
+      : null;
+    let socialPlatformOut = socialPlatform || null;
+    let socialActionOut = socialAction || null;
+    let socialUrlOut = socialUrl || null;
+    let pointsRewardOut = parseInt(pointsReward.toString());
+    if (type === "SOCIAL") {
+      const norm = normalizeSocialConfig(socialConfig);
+      const v = validateSocialBundle(norm);
+      if (!v.ok) {
+        return NextResponse.json(
+          { error: v.error || "Invalid social bundle" },
+          { status: 400 }
+        );
+      }
+      const items = sortBundleItems(norm.items);
+      pointsRewardOut = bundleTotalPoints(items);
+      socialConfigOut = { platform: norm.platform, items, version: 2 };
+      socialPlatformOut = norm.platform;
+      socialActionOut = items[0]?.action ?? null;
+      socialUrlOut =
+        items[0]?.fields?.targetUrl ??
+        items[0]?.fields?.targetHandle ??
+        socialUrl ??
+        null;
+    }
+
     // Validate boardId references an existing active board, if provided
     if (boardId) {
       const board = await prisma.taskBoard.findUnique({
@@ -104,7 +140,7 @@ export async function POST(request: NextRequest) {
         instructionVideoUrl: instructionVideoUrl || null,
         type,
         status: status || "ACTIVE",
-        pointsReward: parseInt(pointsReward.toString()),
+        pointsReward: pointsRewardOut,
         xpReward: parseInt(xpReward?.toString() || "0"),
         dailyLimit: dailyLimit ? parseInt(dailyLimit.toString()) : null,
         totalLimit: totalLimit ? parseInt(totalLimit.toString()) : null,
@@ -118,12 +154,10 @@ export async function POST(request: NextRequest) {
         thumbnailUrl: thumbnailUrl || null,
         duration: duration ? parseInt(duration.toString()) : null,
         questions: questions || null,
-        socialPlatform: socialPlatform || null,
-        socialAction: socialAction || null,
-        socialUrl: socialUrl || null,
-        socialConfig: socialConfig
-          ? JSON.parse(JSON.stringify(socialConfig))
-          : null,
+        socialPlatform: socialPlatformOut,
+        socialAction: socialActionOut,
+        socialUrl: socialUrlOut,
+        socialConfig: socialConfigOut,
         articleConfig: articleConfig
           ? JSON.parse(JSON.stringify(articleConfig))
           : null,

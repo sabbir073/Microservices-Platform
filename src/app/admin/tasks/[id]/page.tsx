@@ -25,6 +25,11 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { YouTubePlayer } from "@/components/YouTubePlayer";
 import { TaskDetailActions } from "@/components/admin/task-actions";
 import { taskDisplayId } from "@/lib/display-id";
+import {
+  normalizeSocialConfig,
+  getPlatform,
+  getAction,
+} from "@/lib/social-tasks";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -255,34 +260,121 @@ export default async function TaskDetailPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Social/Proxy specific info */}
-          {task.type === "SOCIAL" && task.socialPlatform && (
-            <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
-              <h2 className="text-lg font-semibold text-white mb-4">Social Media Details</h2>
-              <div className="grid md:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Platform</p>
-                  <p className="text-white">{task.socialPlatform}</p>
+          {/* Social bundle info */}
+          {task.type === "SOCIAL" &&
+            (() => {
+              const norm = normalizeSocialConfig(task.socialConfig);
+              if (!norm.platform && norm.items.length === 0) return null;
+              const platform = getPlatform(norm.platform);
+              return (
+                <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-6">
+                  <div className="flex flex-wrap items-center gap-2 mb-4">
+                    <h2 className="text-lg font-semibold text-white">
+                      Social Media Bundle
+                    </h2>
+                    {platform && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-pink-500/10 border border-pink-500/30 text-pink-300">
+                        {platform.emoji} {platform.label}
+                      </span>
+                    )}
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-semibold bg-indigo-500/10 border border-indigo-500/30 text-indigo-300">
+                      {norm.items.length} action
+                      {norm.items.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {norm.items.map((item, idx) => {
+                      const action = getAction(norm.platform, item.action);
+                      const target =
+                        item.fields?.targetUrl || item.fields?.targetHandle;
+                      const pr = item.proofRequirements;
+                      const extraFields = action?.adminFields.filter(
+                        (f) =>
+                          f.key !== "targetUrl" &&
+                          f.key !== "targetHandle" &&
+                          (item.fields[f.key] ?? "").trim()
+                      );
+                      return (
+                        <div
+                          key={idx}
+                          className="rounded-lg border border-gray-800 bg-gray-950 p-3"
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-300 text-xs font-bold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <span className="text-sm font-semibold text-white">
+                              {action
+                                ? `${action.emoji} ${action.label}`
+                                : item.action}
+                            </span>
+                            <span className="text-amber-400 font-bold text-xs tabular-nums">
+                              +{item.points}
+                            </span>
+                            {item.watchSeconds ? (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
+                                ⏱ {item.watchSeconds}s
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {target && (
+                            <a
+                              href={target}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="mt-2 inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 break-all"
+                            >
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                              <span className="break-all">{target}</span>
+                            </a>
+                          )}
+
+                          {extraFields && extraFields.length > 0 && (
+                            <div className="mt-2 space-y-1">
+                              {extraFields.map((f) => (
+                                <p
+                                  key={f.key}
+                                  className="text-xs text-gray-400 wrap-break-word"
+                                >
+                                  <span className="text-gray-500">
+                                    {f.label}:
+                                  </span>{" "}
+                                  {item.fields[f.key]}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {item.aiPromptEnabled && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-300">
+                                AI prompt
+                              </span>
+                            )}
+                            {pr.url && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
+                                Proof URL
+                              </span>
+                            )}
+                            {pr.screenshot && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
+                                Screenshot
+                              </span>
+                            )}
+                            {pr.username && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
+                                Username
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Action</p>
-                  <p className="text-white">{task.socialAction}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-500 mb-1">Target</p>
-                  <a
-                    href={task.socialUrl || "#"}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1"
-                  >
-                    {task.socialUrl}
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </div>
-            </div>
-          )}
+              );
+            })()}
 
           {task.type === "PROXY" && (
             <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
