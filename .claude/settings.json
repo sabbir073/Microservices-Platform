@@ -9,7 +9,8 @@
       "Bash(node -e \"console.log\\(require\\('./package.json'\\).dependencies['web-push'] || 'MISSING'\\)\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/api/deposits/gateway/providers)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/api/offerwalls)",
-      "Bash(curl -s http://localhost:3002/api/deposits/gateway/providers)"
+      "Bash(curl -s http://localhost:3002/api/deposits/gateway/providers)",
+      "Bash(echo \"=== EXIT: $? ===\")"
     ]
   }
 }
