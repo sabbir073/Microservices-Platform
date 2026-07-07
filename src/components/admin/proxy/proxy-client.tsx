@@ -87,7 +87,7 @@ export function ProxyClient({ initial, canManage }: Props) {
           </p>
         </div>
       ) : (
-        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-800/50 border-b border-slate-800">
               <tr>
@@ -274,7 +274,7 @@ function ServerModal({
               className={inp}
             />
           </Field>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Field label="Host *">
               <input
                 value={form.host}

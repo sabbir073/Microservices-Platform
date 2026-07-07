@@ -6,6 +6,7 @@ import { Menu, Bell, Search, Wallet, X, Sparkles, Settings, LogOut, User, Chevro
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
+import { useMobileNav } from "@/lib/stores/mobile-nav-store";
 
 interface HeaderProps {
   user: {
@@ -42,7 +43,9 @@ const mobileNavigation = [
 ];
 
 export function Header({ user }: HeaderProps) {
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  // Shared with the bottom tab bar's "Menu" tab.
+  const isMobileMenuOpen = useMobileNav((s) => s.open);
+  const setIsMobileMenuOpen = useMobileNav((s) => s.setOpen);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -120,7 +123,7 @@ export function Header({ user }: HeaderProps) {
             >
               <Menu className="w-6 h-6" />
             </button>
-            <Link href="/dashboard" className="flex items-center gap-2">
+            <Link href="/social" className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
@@ -342,7 +345,7 @@ export function Header({ user }: HeaderProps) {
           {/* Header */}
           <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
             <Link
-              href="/dashboard"
+              href="/social"
               className="flex items-center gap-2"
               onClick={() => setIsMobileMenuOpen(false)}
             >

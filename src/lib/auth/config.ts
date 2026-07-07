@@ -51,7 +51,7 @@ export const authConfig: NextAuthConfig = {
     signOut: "/login",
     error: "/login",
     verifyRequest: "/verify-email",
-    newUser: "/dashboard",
+    newUser: "/social",
   },
   callbacks: {
     authorized({ auth, request: { nextUrl } }) {
@@ -97,7 +97,7 @@ export const authConfig: NextAuthConfig = {
         const userRole = auth?.user?.role as string;
         const isAdminUser = ADMIN_ROLES.includes(userRole as typeof ADMIN_ROLES[number]);
         if (!isAdminUser) {
-          return Response.redirect(new URL("/dashboard", nextUrl));
+          return Response.redirect(new URL("/social", nextUrl));
         }
       }
 

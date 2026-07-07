@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { deliverToUser } from "@/lib/notify";
 import { z } from "zod";
 
 const reviewSchema = z.object({
@@ -101,6 +102,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         },
       });
 
+      void deliverToUser({
+        userId: doc.userId,
+        title: "KYC verified ✅",
+        message: "Your identity has been verified — full withdrawal access unlocked.",
+        link: "/profile",
+      });
+
       return NextResponse.json({ success: true, message: "KYC approved" });
     } else if (action === "reject") {
       await prisma.$transaction([
@@ -140,6 +148,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             decisionNote: decisionNote ?? null,
           },
         },
+      });
+
+      void deliverToUser({
+        userId: doc.userId,
+        title: "KYC rejected",
+        message: `Your verification was rejected. Reason: ${rejectionReason}. You can resubmit anytime.`,
+        link: "/profile",
       });
 
       return NextResponse.json({ success: true, message: "KYC rejected" });

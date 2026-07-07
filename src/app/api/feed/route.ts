@@ -13,6 +13,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
     const userId = searchParams.get("userId"); // For user profile posts
+    const groupId = searchParams.get("groupId"); // For group-filtered feed
     const skip = (page - 1) * limit;
 
     // Build query
@@ -22,6 +23,9 @@ export async function GET(request: NextRequest) {
 
     if (userId) {
       where.userId = userId;
+    }
+    if (groupId) {
+      where.groupId = groupId;
     }
 
     // Get posts. Sort priority:
@@ -50,7 +54,7 @@ export async function GET(request: NextRequest) {
     type FeedPost = (typeof posts)[number];
     let announcements: FeedPost[] = [];
     let promoted: FeedPost[] = [];
-    if (page === 1 && !userId) {
+    if (page === 1 && !userId && !groupId) {
       [announcements, promoted] = await Promise.all([
         prisma.post.findMany({
           where: { ...where, isAnnouncement: true },

@@ -129,6 +129,56 @@ export function UsersTableClient({
     }
   };
 
+  const postBulk = async (body: Record<string, unknown>, okMsg: string) => {
+    try {
+      const res = await fetch("/api/admin/users/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Failed");
+      toast.success(okMsg);
+      setSelected(new Set());
+      router.refresh();
+    } catch (err) {
+      toast.error("Action failed", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const handleBulkEmail = async (ids: string[]) => {
+    const subject = window.prompt("Email subject:");
+    if (!subject) return;
+    const message = window.prompt("Email message:");
+    if (!message) return;
+    await postBulk({ action: "sendEmail", ids, subject, message }, `Emailed ${ids.length} user(s)`);
+  };
+
+  const handleBulkPoints = async (ids: string[]) => {
+    const raw = window.prompt("Points to add (use a negative number to deduct):");
+    if (raw === null) return;
+    const points = parseInt(raw, 10);
+    if (!Number.isInteger(points) || points === 0) {
+      toast.error("Enter a non-zero whole number");
+      return;
+    }
+    const reason = window.prompt("Reason (optional):") ?? undefined;
+    await postBulk(
+      { action: "adjustPoints", ids, points, reason },
+      `Adjusted points for ${ids.length} user(s)`
+    );
+  };
+
+  const handleBulkTier = async (ids: string[]) => {
+    const packageId = window.prompt("Package ID to assign (from /admin/packages):");
+    if (!packageId) return;
+    await postBulk(
+      { action: "changeTier", ids, packageId },
+      `Changed tier for ${ids.length} user(s)`
+    );
+  };
+
   // Login as user (impersonate) — opens new tab
   const handleImpersonate = async (id: string) => {
     try {
@@ -152,7 +202,9 @@ export function UsersTableClient({
         handlers={{
           banSelected: permissions.canBan ? handleBulkBan : undefined,
           deleteSelected: permissions.canDelete ? handleBulkDelete : undefined,
-          // Other bulk handlers (sendEmail / adjustPoints / changeTier) wired in Phase 2
+          sendEmail: handleBulkEmail,
+          adjustPoints: handleBulkPoints,
+          changeTier: handleBulkTier,
         }}
       />
 

@@ -147,7 +147,7 @@ export function CreateListingView() {
             </button>
           </div>
           {images.length > 0 && (
-            <div className="grid grid-cols-4 gap-1.5 mt-2">
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 mt-2">
               {images.map((img, i) => (
                 <div
                   key={i}

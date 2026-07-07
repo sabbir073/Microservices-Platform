@@ -14,6 +14,7 @@ import { Toaster } from "sonner";
 import { CookieConsent } from "@/components/user/primitives/cookie-consent";
 import { PushPermissionPrompt } from "@/components/user/primitives/push-permission-prompt";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
+import { SplashScreen } from "@/components/pwa/splash-screen";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -66,6 +67,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },
     { media: "(prefers-color-scheme: dark)", color: "#0a0a0f" },
@@ -83,6 +85,7 @@ export default function RootLayout({
         <ThemeProvider defaultTheme="dark" storageKey="earngpt-theme">
           {children}
           <ServiceWorkerRegister />
+          <SplashScreen />
           <CookieConsent />
           <PushPermissionPrompt />
           <Toaster

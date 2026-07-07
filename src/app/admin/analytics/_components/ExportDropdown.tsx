@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   Download,
   ChevronDown,
@@ -83,7 +84,7 @@ export function ExportDropdown({ period }: ExportDropdownProps) {
       document.body.removeChild(a);
     } catch (error) {
       console.error("Export error:", error);
-      alert("Failed to export report. Please try again.");
+      toast.error("Failed to export report. Please try again.");
     } finally {
       setLoading(null);
       setIsOpen(false);

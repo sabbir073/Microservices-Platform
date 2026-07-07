@@ -21,7 +21,7 @@ export default function LoginPage() {
   const [otp, setOtp] = useState("");
 
   const verified = searchParams.get("verified") === "true";
-  const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
+  const callbackUrl = searchParams.get("callbackUrl") || "/social";
 
   const {
     register,

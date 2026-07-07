@@ -131,7 +131,6 @@ export function EditListingForm({ listing }: EditListingFormProps) {
         status: formData.status,
       };
 
-      console.log("Updating marketplace listing:", requestData);
 
       const response = await fetch(`/api/admin/marketplace/listings/${listing.id}`, {
         method: "PUT",

@@ -430,7 +430,7 @@ function SegmentedThree<T extends string>({
   options: Array<{ value: T; label: string; count: number }>;
 }) {
   return (
-    <div className="grid grid-cols-3 gap-1">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1">
       {options.map((o) => (
         <button
           key={o.value}

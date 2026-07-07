@@ -100,7 +100,7 @@ export function MissionsClient({ initial, canManage }: Props) {
           </h3>
         </div>
       ) : (
-        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
           <table className="w-full">
             <thead className="bg-slate-800/50 border-b border-slate-800">
               <tr>
@@ -320,7 +320,7 @@ function EditModal({
               />
             </Field>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Field label="Points">
               <input
                 type="number"
@@ -539,7 +539,7 @@ function CreateModal({ onClose }: { onClose: () => void }) {
               />
             </Field>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Field label="Points">
               <input
                 type="number"

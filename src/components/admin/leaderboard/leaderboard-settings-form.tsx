@@ -534,7 +534,7 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
                     {(c.totalPrize ?? 0).toLocaleString()} pts
                   </span>
                 </summary>
-                <div className="border-t border-slate-800 p-3">
+                <div className="border-t border-slate-800 p-3 overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-[10px] uppercase tracking-wider text-slate-500">

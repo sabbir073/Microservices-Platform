@@ -72,8 +72,11 @@ export function AdvertiserDashboard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title, description, budget }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      toast.success("Campaign created");
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? `HTTP ${res.status}`);
+      }
+      toast.success(`Campaign created — $${budget.toFixed(2)} funded from wallet`);
       setCreating(false);
       setTitle("");
       setDescription("");
@@ -85,6 +88,33 @@ export function AdvertiserDashboard() {
       });
     } finally {
       setBusy(false);
+    }
+  };
+
+  const fundCampaign = async (id: string, title: string) => {
+    const input = window.prompt(`Add budget to "${title}" (USD, from your wallet):`, "20");
+    if (input == null) return;
+    const amount = Number(input);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    try {
+      const res = await fetch(`/api/advertiser/campaigns/${id}/fund`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error ?? `HTTP ${res.status}`);
+      }
+      toast.success(`$${amount.toFixed(2)} added`);
+      load();
+    } catch (err) {
+      toast.error("Funding failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
     }
   };
 
@@ -141,7 +171,7 @@ export function AdvertiserDashboard() {
 
       {!loading &&
         campaigns.map((c) => {
-          const pct = (c.spent / c.budget) * 100;
+          const pct = c.budget > 0 ? (c.spent / c.budget) * 100 : 0;
           return (
             <div
               key={c.id}
@@ -164,9 +194,20 @@ export function AdvertiserDashboard() {
                     {c.status}
                   </span>
                 </div>
-                <span className="text-xs text-gray-400 tabular-nums">
-                  ${c.spent.toFixed(2)} / ${c.budget.toFixed(2)}
-                </span>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="text-xs text-gray-400 tabular-nums">
+                    ${c.spent.toFixed(2)} / ${c.budget.toFixed(2)}
+                  </span>
+                  {c.status !== "ENDED" && (
+                    <button
+                      onClick={() => fundCampaign(c.id, c.title)}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-bold hover:bg-indigo-500/25"
+                    >
+                      <Plus className="w-3 h-3" />
+                      Fund
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="mt-2 h-1 rounded-full bg-gray-800 overflow-hidden">
                 <div

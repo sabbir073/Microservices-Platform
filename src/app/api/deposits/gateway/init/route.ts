@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getPaymentProvider } from "@/lib/payments";
 
 /**
- * Initiate an SSLCommerz hosted-checkout deposit. Creates a PENDING deposit and
- * returns the gateway redirect URL. Degrades to 400 when keys are unset so the
- * UI can fall back to the manual flow. Sibling providers (bKash/Nagad/Stripe)
- * can be added the same way.
+ * Initiate a hosted-checkout deposit through any configured provider
+ * (SSLCommerz, bKash, …). Creates a PENDING deposit, asks the provider for a
+ * redirect URL, and persists the provider's gatewayRef so the callback can
+ * settle it. Degrades to 400 when the chosen provider isn't configured so the
+ * UI can fall back to a manual method.
  */
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -14,19 +16,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const storeId = process.env.SSLCOMMERZ_STORE_ID;
-  const storePasswd = process.env.SSLCOMMERZ_STORE_PASSWD;
-  if (!storeId || !storePasswd) {
-    return NextResponse.json(
-      { error: "Online gateway not configured. Use a manual method." },
-      { status: 400 }
-    );
-  }
-
   const body = await request.json().catch(() => ({}));
   const amount = Number(body.amount);
   if (!Number.isFinite(amount) || amount <= 0) {
     return NextResponse.json({ error: "Enter a valid amount" }, { status: 400 });
+  }
+
+  const providerKey = String(body.provider ?? "sslcommerz").toLowerCase();
+  const provider = getPaymentProvider(providerKey);
+  if (!provider) {
+    return NextResponse.json({ error: "Unknown payment provider" }, { status: 400 });
+  }
+  if (!(await provider.isConfigured())) {
+    return NextResponse.json(
+      { error: `${provider.label} isn't available right now. Use a manual method.` },
+      { status: 400 }
+    );
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
@@ -36,51 +41,45 @@ export async function POST(request: NextRequest) {
     data: {
       userId: session.user.id,
       amount,
-      method: "SSLCOMMERZ",
+      method: provider.key.toUpperCase(),
       status: "PENDING",
       gatewayRef: tranId,
     },
   });
 
-  const sandbox = process.env.SSLCOMMERZ_SANDBOX !== "false";
-  const base = sandbox
-    ? "https://sandbox.sslcommerz.com"
-    : "https://securepay.sslcommerz.com";
-
-  const form = new URLSearchParams({
-    store_id: storeId,
-    store_passwd: storePasswd,
-    total_amount: String(amount),
-    currency: "USD",
-    tran_id: tranId,
-    success_url: `${appUrl}/api/deposits/gateway/callback?status=success`,
-    fail_url: `${appUrl}/api/deposits/gateway/callback?status=fail`,
-    cancel_url: `${appUrl}/api/deposits/gateway/callback?status=cancel`,
-    ipn_url: `${appUrl}/api/deposits/gateway/callback`,
-    cus_name: session.user.name ?? "User",
-    cus_email: session.user.email ?? "user@example.com",
-    cus_phone: "0000000000",
-    shipping_method: "NO",
-    product_name: "Wallet deposit",
-    product_category: "deposit",
-    product_profile: "general",
-  });
-
   try {
-    const res = await fetch(`${base}/gwprocess/v4/api.php`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: form.toString(),
+    const { redirectUrl, gatewayRef } = await provider.initCheckout({
+      amount,
+      depositId: deposit.id,
+      tranId,
+      appUrl,
+      user: {
+        id: session.user.id,
+        name: session.user.name,
+        email: session.user.email,
+      },
     });
-    const data = await res.json();
-    if (data?.GatewayPageURL) {
-      return NextResponse.json({ redirectUrl: data.GatewayPageURL, depositId: deposit.id });
+
+    // The provider may hand back its own reference (e.g. bKash paymentID) —
+    // persist it so the callback can match this deposit.
+    if (gatewayRef && gatewayRef !== tranId) {
+      await prisma.deposit.update({
+        where: { id: deposit.id },
+        data: { gatewayRef },
+      });
     }
+
+    return NextResponse.json({ redirectUrl, depositId: deposit.id });
+  } catch (err) {
+    await prisma.deposit
+      .update({
+        where: { id: deposit.id },
+        data: { status: "REJECTED", adminNote: "Gateway init failed" },
+      })
+      .catch(() => {});
     return NextResponse.json(
-      { error: data?.failedreason || "Gateway init failed" },
+      { error: err instanceof Error ? err.message : "Gateway unreachable" },
       { status: 502 }
     );
-  } catch {
-    return NextResponse.json({ error: "Gateway unreachable" }, { status: 502 });
   }
 }

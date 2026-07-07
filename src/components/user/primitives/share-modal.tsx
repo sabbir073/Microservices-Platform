@@ -124,7 +124,7 @@ export function ShareModal({
           <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">
             Or share to
           </p>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
             {PLATFORMS.map((p) => (
               <a
                 key={p.key}

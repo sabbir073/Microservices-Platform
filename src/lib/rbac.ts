@@ -525,6 +525,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     category: "MARKETING",
   },
   {
+    name: "Splash Screen",
+    href: "/admin/splash-screen",
+    icon: "Layout",
+    permissions: ["banners.view"],
+    category: "MARKETING",
+  },
+  {
     name: "Ads Manager",
     href: "/admin/ads",
     icon: "Newspaper",
