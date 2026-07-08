@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { drawLottery } from "@/lib/lottery";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -153,98 +154,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     }
 
     if (action === "draw") {
-      if (lottery.status !== "ACTIVE") {
-        return NextResponse.json(
-          { error: "Only active lotteries can be drawn" },
-          { status: 400 }
-        );
+      const result = await drawLottery(id);
+      if (!result.ok) {
+        const message =
+          result.reason === "not_active"
+            ? "Only active lotteries can be drawn"
+            : result.reason === "no_tickets"
+              ? "Cannot draw winners with no tickets sold"
+              : "Lottery not found";
+        return NextResponse.json({ error: message }, { status: 400 });
       }
-
-      if (lottery.tickets.length === 0) {
-        return NextResponse.json(
-          { error: "Cannot draw winners with no tickets sold" },
-          { status: 400 }
-        );
-      }
-
-      const prizes = lottery.prizes as { position: number; amount: number; description: string }[];
-      const ticketIds = lottery.tickets.map((t) => t.id);
-
-      // Shuffle tickets for random selection
-      const shuffled = [...ticketIds].sort(() => Math.random() - 0.5);
-
-      // Select winners for each prize position
-      const winners: { position: number; ticketId: string; userId: string; amount: number }[] = [];
-      const winnerUpdates: Promise<unknown>[] = [];
-      const notificationUpdates: Promise<unknown>[] = [];
-
-      for (let i = 0; i < Math.min(prizes.length, shuffled.length); i++) {
-        const ticket = lottery.tickets.find((t) => t.id === shuffled[i]);
-        if (ticket) {
-          winners.push({
-            position: prizes[i].position,
-            ticketId: ticket.id,
-            userId: ticket.userId,
-            amount: prizes[i].amount,
-          });
-
-          // Update ticket as winner
-          winnerUpdates.push(
-            prisma.lotteryTicket.update({
-              where: { id: ticket.id },
-              data: {
-                isWinner: true,
-                prizeAmount: prizes[i].amount,
-              },
-            })
-          );
-
-          // Award prize points
-          winnerUpdates.push(
-            prisma.user.update({
-              where: { id: ticket.userId },
-              data: {
-                pointsBalance: { increment: prizes[i].amount },
-              },
-            })
-          );
-
-          // Create winner notification
-          notificationUpdates.push(
-            prisma.notification.create({
-              data: {
-                userId: ticket.userId,
-                type: "LOTTERY",
-                title: `You Won ${prizes[i].description}!`,
-                message: `Congratulations! You won ${prizes[i].amount.toLocaleString()} points in the "${lottery.title}" lottery!`,
-                data: {
-                  lotteryId: id,
-                  position: prizes[i].position,
-                  prizeAmount: prizes[i].amount,
-                },
-              },
-            })
-          );
-        }
-      }
-
-      // Update lottery as completed with winners
-      await Promise.all([
-        prisma.lottery.update({
-          where: { id },
-          data: {
-            status: "COMPLETED",
-            winners: winners as unknown as object,
-          },
-        }),
-        ...winnerUpdates,
-        ...notificationUpdates,
-      ]);
 
       return NextResponse.json({
         success: true,
-        winners,
-        message: `Draw completed. ${winners.length} winner(s) selected.`,
+        winners: result.winners,
+        message: `Draw completed. ${result.winners.length} winner(s) selected.`,
       });
     }
 

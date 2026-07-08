@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { NotificationType, LiveClassStatus } from "@/generated/prisma";
+import { isCronAuthorized } from "@/lib/cron";
 
 // POST /api/cron/course-live-classes
 // 1-hour-before reminder for every enrolled student of a live class.
@@ -8,7 +9,7 @@ import { NotificationType, LiveClassStatus } from "@/generated/prisma";
 // crosses the start / end.
 export async function POST(req: NextRequest) {
   try {
-    if (!authorized(req)) {
+    if (!isCronAuthorized(req)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const now = new Date();
@@ -101,9 +102,5 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const auth = req.headers.get("authorization") ?? "";
-  return auth === `Bearer ${secret}`;
-}
+// Vercel Cron issues GET requests — delegate so either verb works.
+export const GET = POST;

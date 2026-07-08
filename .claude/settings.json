@@ -10,7 +10,13 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/api/deposits/gateway/providers)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/api/offerwalls)",
       "Bash(curl -s http://localhost:3002/api/deposits/gateway/providers)",
-      "Bash(echo \"=== EXIT: $? ===\")"
+      "Bash(echo \"=== EXIT: $? ===\")",
+      "Bash(cat vercel.json)",
+      "Bash(grep -niE \"cron|smtp|vapid|bkash|sslcommerz|onesignal\" .env.example)",
+      "Bash(tail -15 .env.example)",
+      "Bash(echo \"=== EXIT $? ===\")",
+      "Bash(echo \"=== lint EXIT $? ===\")",
+      "Bash(grep -E \"\\\\.env$\")"
     ]
   }
 }

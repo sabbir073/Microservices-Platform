@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { NotificationType } from "@/generated/prisma";
+import { isCronAuthorized } from "@/lib/cron";
 
 // POST /api/cron/course-reminders
 // Sends an in-app reminder to students who haven't touched their enrolment in
@@ -12,7 +13,7 @@ import { NotificationType } from "@/generated/prisma";
 // cron provider (Vercel cron, GitHub Actions, etc.).
 export async function POST(req: NextRequest) {
   try {
-    if (!authorized(req)) {
+    if (!isCronAuthorized(req)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -88,9 +89,5 @@ export async function POST(req: NextRequest) {
   }
 }
 
-function authorized(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const auth = req.headers.get("authorization") ?? "";
-  return auth === `Bearer ${secret}`;
-}
+// Vercel Cron issues GET requests — delegate so either verb works.
+export const GET = POST;
