@@ -235,6 +235,8 @@ function ProviderModal({
   const cfg = (provider?.config ?? {}) as {
     testMode?: boolean;
     rewardMultiplier?: number;
+    iframeUrl?: string;
+    autoCredit?: boolean;
   };
   const [form, setForm] = useState({
     provider: provider?.provider ?? KNOWN_PROVIDERS[0],
@@ -244,12 +246,14 @@ function ProviderModal({
     isActive: provider?.isActive ?? false,
     testMode: cfg.testMode ?? false,
     rewardMultiplier: cfg.rewardMultiplier ?? 1,
+    iframeUrl: cfg.iframeUrl ?? "",
+    autoCredit: cfg.autoCredit ?? false,
   });
 
   const autoCallback =
     typeof window !== "undefined"
-      ? `${window.location.origin}/api/offerwalls/callback?provider=${form.provider}`
-      : `/api/offerwalls/callback?provider=${form.provider}`;
+      ? `${window.location.origin}/api/offerwall/${form.provider}/callback`
+      : `/api/offerwall/${form.provider}/callback`;
 
   const submit = async () => {
     if (!form.provider.trim()) {
@@ -269,6 +273,8 @@ function ProviderModal({
           rewardMultiplier: Number.isFinite(form.rewardMultiplier)
             ? form.rewardMultiplier
             : 1,
+          iframeUrl: form.iframeUrl.trim() || undefined,
+          autoCredit: form.autoCredit,
         },
       };
       const res = await fetch(
@@ -451,6 +457,38 @@ function ProviderModal({
               </span>
             </div>
           </Field>
+
+          <Field label="Offerwall URL (shown to users)">
+            <input
+              value={form.iframeUrl}
+              onChange={(e) => setForm({ ...form, iframeUrl: e.target.value })}
+              className={inp + " font-mono text-xs"}
+              placeholder="https://wall.provider.com/?appid=…&userid={userId}"
+            />
+            <p className="text-[11px] text-slate-500 mt-1">
+              Embedded in the user offerwall page. Use{" "}
+              <span className="font-mono text-slate-400">{"{userId}"}</span> as a
+              placeholder for the signed-in user&apos;s id.
+            </p>
+          </Field>
+
+          <label className="flex items-center gap-3 px-4 py-3 rounded-lg bg-slate-950/50 border border-slate-700 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.autoCredit}
+              onChange={(e) =>
+                setForm({ ...form, autoCredit: e.target.checked })
+              }
+              className="rounded bg-slate-800 border-slate-600 text-emerald-500"
+            />
+            <div className="flex-1">
+              <p className="text-sm text-white">Auto-credit postbacks</p>
+              <p className="text-xs text-slate-500">
+                Credit points immediately on a verified postback. Off = queue each
+                callback for manual review.
+              </p>
+            </div>
+          </label>
 
           <label className="flex items-center gap-3 px-4 py-3 rounded-lg bg-slate-950/50 border border-slate-700 cursor-pointer">
             <input

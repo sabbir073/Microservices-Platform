@@ -7,6 +7,7 @@ import {
   sendPushToAll,
   isOneSignalConfigured,
 } from "@/lib/onesignal";
+import { sendNotificationEmail, isSmtpConfigured } from "@/lib/email";
 import { Prisma } from "@/generated/prisma/client";
 
 interface SendNotificationBody {
@@ -277,15 +278,36 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Email channel — placeholder; full implementation is Phase 2 (uses lib/email.ts)
+    // Email channel — batched, best-effort. Skips opted-out + deleted accounts.
     let emailResult: { success: boolean; sent?: number; error?: string } | null = null;
     if (sendEmail) {
-      // For now we audit the request but don't actually send mass emails here.
-      emailResult = {
-        success: true,
-        sent: 0,
-        error: "Email channel queued (mass send wiring pending)",
-      };
+      if (!isSmtpConfigured()) {
+        emailResult = { success: false, sent: 0, error: "SMTP not configured" };
+      } else {
+        const recipients = await prisma.user.findMany({
+          where: {
+            id: { in: targetUserIds },
+            emailNotifications: true,
+            email: { not: { endsWith: "@deleted.local" } },
+          },
+          select: { email: true },
+        });
+        const emails = recipients
+          .map((r) => r.email)
+          .filter((e): e is string => !!e);
+        let sent = 0;
+        const BATCH = 40;
+        for (let i = 0; i < emails.length; i += BATCH) {
+          const slice = emails.slice(i, i + BATCH);
+          const results = await Promise.allSettled(
+            slice.map((email) =>
+              sendNotificationEmail(email, title, message, actionUrl ?? url)
+            )
+          );
+          sent += results.filter((r) => r.status === "fulfilled").length;
+        }
+        emailResult = { success: true, sent };
+      }
     }
 
     // Audit

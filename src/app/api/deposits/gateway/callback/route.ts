@@ -2,43 +2,47 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { TransactionType, TransactionStatus } from "@/generated/prisma/client";
 import { deliverToUser } from "@/lib/notify";
+import { getPaymentProvider } from "@/lib/payments";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
 /**
- * SSLCommerz success/fail/cancel + IPN callback. On a successful, still-pending
- * deposit it credits the user's cash balance exactly once (status guard) and
- * redirects back to the wallet. Real deployments should additionally call the
- * SSLCommerz validation API with val_id before crediting.
+ * Hosted-checkout success/fail/IPN callback for any provider. Merges query +
+ * form params, asks the provider to verify (bKash runs "execute" here), then
+ * credits the matching PENDING deposit exactly once (status guard + unique
+ * `deposit_<id>` reference). Real SSLCommerz deployments should also validate
+ * val_id against their API before crediting.
  */
 export async function POST(request: NextRequest) {
   const url = new URL(request.url);
-  const statusParam = url.searchParams.get("status");
-
-  let tranId = "";
-  let gatewayStatus = "";
+  const params: Record<string, string> = {};
+  for (const [k, v] of url.searchParams.entries()) params[k] = v;
   try {
     const form = await request.formData();
-    tranId = String(form.get("tran_id") ?? "");
-    gatewayStatus = String(form.get("status") ?? "");
+    for (const [k, v] of form.entries()) params[k] = String(v);
   } catch {
-    // IPN may send JSON or query — fall back below
+    // IPN may send JSON or query only — query params already captured.
   }
-  if (!tranId) tranId = url.searchParams.get("tran_id") ?? "";
 
-  const isSuccess =
-    statusParam === "success" || gatewayStatus === "VALID" || gatewayStatus === "VALIDATED";
-
-  if (!tranId) {
+  const provider = getPaymentProvider(params.provider ?? "sslcommerz");
+  if (!provider) {
     return NextResponse.redirect(`${APP_URL}/wallet?deposit=error`);
   }
 
-  const deposit = await prisma.deposit.findFirst({ where: { gatewayRef: tranId } });
+  const { success, gatewayRef } = await provider
+    .verifyCallback({ params })
+    .catch(() => ({ success: false, gatewayRef: params.tran_id ?? params.paymentID ?? "" }));
+
+  if (!gatewayRef) {
+    return NextResponse.redirect(`${APP_URL}/wallet?deposit=error`);
+  }
+
+  const deposit = await prisma.deposit.findFirst({ where: { gatewayRef } });
   if (!deposit) {
     return NextResponse.redirect(`${APP_URL}/wallet?deposit=notfound`);
   }
 
-  if (!isSuccess) {
+  if (!success) {
     if (deposit.status === "PENDING") {
       await prisma.deposit.update({
         where: { id: deposit.id },
@@ -66,7 +70,7 @@ export async function POST(request: NextRequest) {
           status: TransactionStatus.COMPLETED,
           points: 0,
           amount: deposit.amount,
-          description: "Deposit via SSLCommerz",
+          description: `Deposit via ${provider.label}`,
           reference: `deposit_${deposit.id}`,
         },
       }),

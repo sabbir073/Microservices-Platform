@@ -996,7 +996,7 @@ function SampleTable({
           </>
         )}
       </p>
-      <div className="rounded-lg border border-gray-800 bg-gray-950 overflow-hidden">
+      <div className="rounded-lg border border-gray-800 bg-gray-950 overflow-x-auto">
         <table className="w-full text-xs">
           <thead className="bg-gray-900 text-gray-500">
             <tr>

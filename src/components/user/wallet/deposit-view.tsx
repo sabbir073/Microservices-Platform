@@ -33,6 +33,7 @@ export function DepositView() {
   const [proofUrl, setProofUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
+  const [gateways, setGateways] = useState<{ key: string; label: string }[]>([]);
 
   const load = () => {
     fetch("/api/deposits")
@@ -42,6 +43,10 @@ export function DepositView() {
   };
   useEffect(() => {
     load();
+    fetch("/api/deposits/gateway/providers")
+      .then((r) => r.json())
+      .then((d) => setGateways(d.providers ?? []))
+      .catch(() => setGateways([]));
   }, []);
 
   const submitManual = async () => {
@@ -77,7 +82,7 @@ export function DepositView() {
     }
   };
 
-  const payOnline = async () => {
+  const payOnline = async (provider?: string) => {
     const amt = Number(amount);
     if (!Number.isFinite(amt) || amt <= 0) {
       toast.error("Enter a valid amount");
@@ -88,7 +93,7 @@ export function DepositView() {
       const res = await fetch("/api/deposits/gateway/init", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: amt }),
+        body: JSON.stringify({ amount: amt, provider }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok || !d.redirectUrl) throw new Error(d.error ?? "Gateway unavailable");
@@ -177,19 +182,33 @@ export function DepositView() {
           <button
             onClick={submitManual}
             disabled={busy}
-            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold disabled:opacity-50"
+            className="flex-1 min-w-35 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold disabled:opacity-50"
           >
             {busy && <Loader2 className="w-4 h-4 animate-spin" />}
             Submit manual deposit
           </button>
-          <button
-            onClick={payOnline}
-            disabled={busy}
-            className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold disabled:opacity-50"
-          >
-            <ExternalLink className="w-4 h-4" />
-            Pay online
-          </button>
+          {gateways.length === 0 ? (
+            <button
+              onClick={() => payOnline()}
+              disabled={busy}
+              className="flex-1 min-w-35 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold disabled:opacity-50"
+            >
+              <ExternalLink className="w-4 h-4" />
+              Pay online
+            </button>
+          ) : (
+            gateways.map((g) => (
+              <button
+                key={g.key}
+                onClick={() => payOnline(g.key)}
+                disabled={busy}
+                className="flex-1 min-w-35 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold disabled:opacity-50"
+              >
+                <ExternalLink className="w-4 h-4" />
+                {g.label}
+              </button>
+            ))
+          )}
         </div>
       </div>
 

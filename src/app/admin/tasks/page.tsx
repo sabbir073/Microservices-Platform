@@ -138,6 +138,11 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
     prisma.taskSubmission.count({ where: { status: "PENDING" } }),
   ]);
 
+  const boards = await prisma.taskBoard.findMany({
+    orderBy: { order: "asc" },
+    select: { id: true, title: true },
+  });
+
   // Type assertion for Prisma Accelerate
   type TaskWithCount = typeof tasksRaw[0] & {
     _count: { submissions: number };
@@ -314,11 +319,14 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
           name="board"
           defaultValue={params.board || "all"}
           className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
-          title="Board boards module is queued for Phase 4"
-          disabled
         >
-          <option value="all">All Boards (soon)</option>
+          <option value="all">All Boards</option>
           <option value="none">No Board</option>
+          {boards.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.title}
+            </option>
+          ))}
         </select>
         <div className="lg:col-span-6 flex items-center justify-between gap-3 pt-2 border-t border-slate-800 mt-1">
           <Link href="/admin/tasks" className="text-sm text-slate-400 hover:text-white">

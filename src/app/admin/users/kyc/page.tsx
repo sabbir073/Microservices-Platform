@@ -18,6 +18,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { ImageZoomGallery } from "@/components/admin/image-zoom-gallery";
 import { KycReviewActions } from "@/components/admin/kyc/kyc-review-actions";
 import { KycAppealsList } from "@/components/admin/users/kyc-appeals-list";
+import { parseDocumentImages } from "@/lib/kyc";
 
 interface PageProps {
   searchParams: Promise<{
@@ -366,7 +367,7 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
                             Documents
                           </p>
                           <ImageZoomGallery
-                            images={[doc.documentUrl].filter(Boolean)}
+                            images={parseDocumentImages(doc.documentUrl)}
                             size={96}
                           />
                           <p className="text-xs text-slate-500 mt-1.5">

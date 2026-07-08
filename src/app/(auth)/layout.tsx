@@ -8,9 +8,9 @@ export default async function AuthLayout({
 }) {
   const session = await getSession();
 
-  // Redirect to dashboard if already logged in
+  // Redirect to the social feed (app home) if already logged in
   if (session?.user) {
-    redirect("/dashboard");
+    redirect("/social");
   }
 
   return <>{children}</>;

@@ -17,6 +17,16 @@ import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
+interface GroupPost {
+  id: string;
+  content: string;
+  images: string[];
+  likesCount: number;
+  commentsCount: number;
+  createdAt: string;
+  user?: { name?: string | null; username?: string | null; avatar?: string | null } | null;
+}
+
 interface PendingRequest {
   id: string;
   userId: string;
@@ -54,6 +64,7 @@ export function GroupDetailView({ groupId }: Props) {
   const [data, setData] = useState<GroupDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [groupPosts, setGroupPosts] = useState<GroupPost[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -75,6 +86,21 @@ export function GroupDetailView({ groupId }: Props) {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupId]);
+
+  // Load the group-filtered feed once we know the viewer is a member.
+  useEffect(() => {
+    if (!data?.isMember) return;
+    let active = true;
+    fetch(`/api/feed?groupId=${groupId}&limit=20`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (active) setGroupPosts(d.posts ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [data?.isMember, groupId]);
 
   const join = async () => {
     setBusy(true);
@@ -294,14 +320,72 @@ export function GroupDetailView({ groupId }: Props) {
         </div>
       )}
 
-      {/* Group feed placeholder — group-filtered post feed */}
-      <div className="rounded-xl border border-dashed border-gray-800 p-8 text-center">
-        <p className="text-sm text-gray-400">
-          {isMember
-            ? "Group-filtered post feed coming up. For now, posts to this group appear in the main Feed tab tagged with the group."
-            : "Join this group to see posts and contribute."}
-        </p>
-      </div>
+      {/* Group-filtered feed */}
+      {!isMember ? (
+        <div className="rounded-xl border border-dashed border-gray-800 p-8 text-center">
+          <p className="text-sm text-gray-400">
+            Join this group to see posts and contribute.
+          </p>
+        </div>
+      ) : groupPosts.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-gray-800 p-8 text-center">
+          <p className="text-sm text-gray-400">
+            No posts in this group yet. Create a post in the{" "}
+            <Link href="/social" className="text-indigo-400 hover:text-indigo-300">
+              feed
+            </Link>{" "}
+            and tag this group.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {groupPosts.map((p) => (
+            <div
+              key={p.id}
+              className="rounded-xl border border-gray-800 bg-gray-900 p-3"
+            >
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden">
+                  {p.user?.avatar ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.user.avatar} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    (p.user?.name || p.user?.username || "U").charAt(0)
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-white truncate">
+                    {p.user?.name || p.user?.username || "User"}
+                  </p>
+                  <p className="text-[11px] text-gray-500">
+                    {format(new Date(p.createdAt), "MMM d, h:mm a")}
+                  </p>
+                </div>
+              </div>
+              {p.content && (
+                <p className="mt-2 text-sm text-gray-200 whitespace-pre-wrap wrap-break-word">
+                  {p.content}
+                </p>
+              )}
+              {p.images?.[0] && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={p.images[0]}
+                  alt=""
+                  className="mt-2 w-full max-h-80 object-cover rounded-lg border border-gray-800"
+                />
+              )}
+              <div className="mt-2 flex items-center gap-4 text-xs text-gray-500">
+                <span>❤ {p.likesCount}</span>
+                <span>💬 {p.commentsCount}</span>
+                <Link href="/social" className="ml-auto text-indigo-400 hover:text-indigo-300">
+                  Open in feed
+                </Link>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

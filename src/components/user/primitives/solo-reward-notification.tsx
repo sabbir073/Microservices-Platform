@@ -48,7 +48,7 @@ export function SoloRewardNotification({
   return (
     <div
       className={cn(
-        "fixed bottom-20 left-1/2 -translate-x-1/2 z-40 max-w-[calc(100%-2rem)] w-[400px]",
+        "fixed bottom-20 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-2rem)] max-w-100",
         "animate-in slide-in-from-bottom-4 fade-in"
       )}
     >

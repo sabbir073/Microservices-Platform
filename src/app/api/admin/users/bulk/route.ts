@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { TransactionType, TransactionStatus } from "@/generated/prisma/client";
+import { sendNotificationEmail, isSmtpConfigured } from "@/lib/email";
 import { z } from "zod";
 
 // Bulk action schema
 const bulkActionSchema = z.object({
-  action: z.enum(["ban", "delete", "unban"]),
+  action: z.enum(["ban", "delete", "unban", "sendEmail", "adjustPoints", "changeTier"]),
   ids: z.array(z.string()).min(1).max(500),
   reason: z.string().optional(),
+  // sendEmail
+  subject: z.string().max(160).optional(),
+  message: z.string().max(4000).optional(),
+  // adjustPoints
+  points: z.number().int().optional(),
+  // changeTier
+  packageId: z.string().optional(),
 });
 
 // POST /api/admin/users/bulk - Apply a bulk action to selected users
@@ -31,7 +40,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { action, ids, reason } = validation.data;
+    const { action, ids, reason, subject, message, points, packageId } = validation.data;
 
     // Permission check per action
     if (action === "ban" || action === "unban") {
@@ -42,6 +51,9 @@ export async function POST(request: NextRequest) {
       if (!hasPermission(adminRole, "users.delete")) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
+    } else if (!hasPermission(adminRole, "users.edit")) {
+      // sendEmail / adjustPoints / changeTier
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     // Never let admin act on themselves
@@ -69,6 +81,67 @@ export async function POST(request: NextRequest) {
       await prisma.user.updateMany({
         where: { id: { in: targetIds } },
         data: { status: "BANNED" },
+      });
+    } else if (action === "sendEmail") {
+      if (!subject || !message) {
+        return NextResponse.json({ error: "Subject and message required" }, { status: 400 });
+      }
+      if (isSmtpConfigured()) {
+        const recipients = await prisma.user.findMany({
+          where: {
+            id: { in: targetIds },
+            emailNotifications: true,
+            email: { not: { endsWith: "@deleted.local" } },
+          },
+          select: { email: true },
+        });
+        const emails = recipients.map((r) => r.email).filter((e): e is string => !!e);
+        for (let i = 0; i < emails.length; i += 40) {
+          await Promise.allSettled(
+            emails.slice(i, i + 40).map((email) =>
+              sendNotificationEmail(email, subject, message)
+            )
+          );
+        }
+      }
+    } else if (action === "adjustPoints") {
+      if (!Number.isInteger(points) || points === 0) {
+        return NextResponse.json({ error: "Non-zero integer points required" }, { status: 400 });
+      }
+      const delta = points as number;
+      for (const uid of targetIds) {
+        await prisma.$transaction([
+          prisma.user.update({
+            where: { id: uid },
+            data: {
+              pointsBalance: { increment: delta },
+              ...(delta > 0 ? { totalEarnings: { increment: delta * 0.001 } } : {}),
+            },
+          }),
+          prisma.transaction.create({
+            data: {
+              userId: uid,
+              type: delta > 0 ? TransactionType.BONUS : TransactionType.PENALTY,
+              status: TransactionStatus.COMPLETED,
+              points: delta,
+              amount: delta * 0.001,
+              description: reason || `Admin ${delta > 0 ? "credit" : "debit"}`,
+              reference: `admin_adjust_${uid}_${targetIds.length}`,
+            },
+          }),
+        ]);
+      }
+    } else if (action === "changeTier") {
+      if (!packageId) {
+        return NextResponse.json({ error: "packageId required" }, { status: 400 });
+      }
+      const pkg = await prisma.package.findUnique({ where: { id: packageId }, select: { id: true } });
+      if (!pkg) {
+        return NextResponse.json({ error: "Package not found" }, { status: 400 });
+      }
+      await prisma.user.updateMany({
+        where: { id: { in: targetIds } },
+        data: { packageId },
       });
     }
 

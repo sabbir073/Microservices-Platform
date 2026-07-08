@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { getEffectivePackage } from "@/lib/packages";
+import { getAdClickCost } from "@/lib/ad-billing";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -28,12 +29,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ad: null });
   }
 
-  // Get active ads for this placement, weighted random selection
+  // Get active ads for this placement, weighted random selection. Exclude
+  // campaigns whose remaining budget can't cover another billed click so we
+  // never show an ad we can't charge for.
+  const cost = await getAdClickCost();
   const ads = await prisma.ad.findMany({
     where: {
       placementId: placementRow.id,
       status: "ACTIVE",
-      campaign: { status: "ACTIVE" },
+      campaign: { status: "ACTIVE", budget: { gte: cost } },
     },
     include: { campaign: { select: { title: true } } },
   });

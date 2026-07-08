@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { TransactionType, TransactionStatus, NotificationType } from "@/generated/prisma";
+import { notifyUser } from "@/lib/notify";
 
 /**
  * Process referral commissions for a user's task completion.
@@ -130,20 +131,19 @@ export async function processReferralCommissions(
             },
           });
 
-          await prisma.notification.create({
+          await notifyUser({
+            userId: currentUser.referredById,
+            type: NotificationType.REFERRAL,
+            title: "Referral Commission!",
+            message: `You earned ${commission} points from your level ${level} referral's activity!`,
             data: {
-              userId: currentUser.referredById,
-              type: NotificationType.REFERRAL,
-              title: "Referral Commission!",
-              message: `You earned ${commission} points from your level ${level} referral's activity!`,
-              data: {
-                commission,
-                level,
-                referredUserId: userId,
-                commissionType: referrerConfig.commissionType,
-                commissionValue: referrerConfig.commissionValue,
-              },
+              commission,
+              level,
+              referredUserId: userId,
+              commissionType: referrerConfig.commissionType,
+              commissionValue: referrerConfig.commissionValue,
             },
+            link: "/referrals",
           });
         }
       }

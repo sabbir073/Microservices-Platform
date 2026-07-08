@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { TransactionType, TransactionStatus } from "@/generated/prisma/client";
+import { getAdClickCost } from "@/lib/ad-billing";
 
 export async function GET() {
   const session = await auth();
@@ -48,20 +50,20 @@ export async function GET() {
     0
   );
 
+  const cpc = await getAdClickCost();
   const enriched = campaigns.map((c) => {
     const m = metricsByCampaign.get(c.id) ?? { impressions: 0, clicks: 0 };
     const ctr = m.impressions > 0 ? (m.clicks / m.impressions) * 100 : 0;
-    // Spent ≈ budget * (clicks / max(1, totalCampaignClicks)) — simplified estimate
-    const spent = Math.min(
-      c.budget,
-      m.clicks * 0.05 // $0.05 per click estimate
-    );
+    // Each billed click decrements the campaign's remaining budget by exactly the
+    // CPC, so consumed spend = clicks × CPC and total funded = remaining + spent.
+    const spent = m.clicks * cpc;
     return {
       id: c.id,
       title: c.title,
       description: c.description,
       status: c.status as "ACTIVE" | "PAUSED" | "ENDED" | "DRAFT",
-      budget: c.budget,
+      budget: c.budget + spent,
+      remaining: c.budget,
       spent,
       impressions: m.impressions,
       clicks: m.clicks,
@@ -102,15 +104,61 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const campaign = await prisma.adCampaign.create({
-    data: {
-      title: v.data.title,
-      description: v.data.description ?? null,
-      budget: v.data.budget,
-      advertiserId: session.user.id,
-      status: "ACTIVE",
-    },
-  });
+  const advertiserId = session.user.id;
+  const amount = v.data.budget;
+
+  // Fund the campaign from the advertiser's wallet, atomically. The conditional
+  // decrement (cashBalance >= amount) is the no-overspend guard; if it matches
+  // zero rows the balance was insufficient and we abort before creating anything.
+  let campaign;
+  try {
+    campaign = await prisma.$transaction(async (tx) => {
+      const debit = await tx.user.updateMany({
+        where: { id: advertiserId, cashBalance: { gte: amount } },
+        data: { cashBalance: { decrement: amount } },
+      });
+      if (debit.count === 0) {
+        throw new Error("INSUFFICIENT_FUNDS");
+      }
+      const c = await tx.adCampaign.create({
+        data: {
+          title: v.data.title,
+          description: v.data.description ?? null,
+          budget: amount,
+          advertiserId,
+          status: "ACTIVE",
+        },
+      });
+      await tx.transaction.create({
+        data: {
+          userId: advertiserId,
+          type: TransactionType.PURCHASE,
+          status: TransactionStatus.COMPLETED,
+          amount: -amount,
+          points: 0,
+          description: `Ad campaign budget — "${c.title}"`,
+          reference: `campaign_create_${c.id}`,
+          metadata: { campaignId: c.id, kind: "campaign_fund" },
+        },
+      });
+      return c;
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message === "INSUFFICIENT_FUNDS") {
+      const me = await prisma.user.findUnique({
+        where: { id: advertiserId },
+        select: { cashBalance: true },
+      });
+      return NextResponse.json(
+        {
+          error: `Wallet balance is $${(me?.cashBalance ?? 0).toFixed(2)} — need $${amount.toFixed(2)} to fund this campaign. Top up your wallet, then try again.`,
+          shortBy: amount - (me?.cashBalance ?? 0),
+        },
+        { status: 402 }
+      );
+    }
+    throw err;
+  }
 
   return NextResponse.json(
     {

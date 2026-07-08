@@ -8,6 +8,7 @@ import {
   NotificationType,
 } from "@/generated/prisma";
 import { processReferralCommissions } from "@/lib/referral-commissions";
+import { notifyUser } from "@/lib/notify";
 import {
   compareUniqueKey,
   type ArticleConfig,
@@ -330,6 +331,16 @@ export async function POST(
     if (task.type === "CUSTOM" && customAnswers) {
       submissionMetadata.customAnswers = customAnswers;
     }
+    // For PROXY: record the submit IP so the admin fraud surface can verify the
+    // user actually browsed through the assigned proxy region.
+    if (task.type === "PROXY") {
+      const submitIp = (
+        request.headers.get("x-forwarded-for")?.split(",")[0] ??
+        request.headers.get("x-real-ip") ??
+        ""
+      ).trim();
+      submissionMetadata.submitIp = submitIp || null;
+    }
     const hasMetadata = Object.keys(submissionMetadata).length > 0;
 
     const resolvedProof = isSocial
@@ -425,31 +436,24 @@ export async function POST(
           data: { level: newLevel },
         });
 
-        // Create level up notification
-        await prisma.notification.create({
-          data: {
-            userId: session.user.id,
-            type: NotificationType.ACHIEVEMENT,
-            title: "Level Up!",
-            message: `Congratulations! You've reached level ${newLevel}!`,
-            data: { newLevel, previousLevel: user.level },
-          },
+        // Level up notification (in-app + email + push)
+        await notifyUser({
+          userId: session.user.id,
+          type: NotificationType.ACHIEVEMENT,
+          title: "Level Up!",
+          message: `Congratulations! You've reached level ${newLevel}!`,
+          data: { newLevel, previousLevel: user.level },
         });
       }
 
-      // Create success notification
-      await prisma.notification.create({
-        data: {
-          userId: session.user.id,
-          type: NotificationType.TASK,
-          title: "Task Completed!",
-          message: `You earned ${effectivePoints} points from "${task.title}"`,
-          data: {
-            taskId: task.id,
-            points: effectivePoints,
-            xp: effectiveXp,
-          },
-        },
+      // Task completed notification (in-app + email + push)
+      await notifyUser({
+        userId: session.user.id,
+        type: NotificationType.TASK,
+        title: "Task Completed!",
+        message: `You earned ${effectivePoints} points from "${task.title}"`,
+        data: { taskId: task.id, points: effectivePoints, xp: effectiveXp },
+        link: "/wallet",
       });
 
       // Process referral commissions on the effective (multiplied) reward.

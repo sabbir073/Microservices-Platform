@@ -129,7 +129,7 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarConten
     <>
       {/* Logo */}
       <div className="flex h-16 shrink-0 items-center px-6 border-b border-gray-800">
-        <Link href="/dashboard" className="flex items-center gap-2">
+        <Link href="/social" className="flex items-center gap-2">
           <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
             <Sparkles className="w-4 h-4 text-white" />
           </div>
