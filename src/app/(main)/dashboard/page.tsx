@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { taskRunHref } from "@/lib/task-routes";
 
 // Stats Card Component
 function StatsCard({
@@ -138,28 +139,42 @@ export default async function DashboardPage() {
   }
 
   // Fetch user data from database
-  const [userData, tasksCompleted, referralsCount] = await Promise.all([
-    prisma.user.findUnique({
-      where: { id: session.user.id },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        pointsBalance: true,
-        cashBalance: true,
-        xp: true,
-        level: true,
-        streak: true,
-        referralCode: true,
-      },
-    }),
-    prisma.taskSubmission.count({
-      where: { userId: session.user.id, status: "APPROVED" },
-    }),
-    prisma.user.count({
-      where: { referredById: session.user.id },
-    }),
-  ]);
+  const [userData, tasksCompleted, referralsCount, availableTasks] =
+    await Promise.all([
+      prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          pointsBalance: true,
+          cashBalance: true,
+          xp: true,
+          level: true,
+          streak: true,
+          referralCode: true,
+        },
+      }),
+      prisma.taskSubmission.count({
+        where: { userId: session.user.id, status: "APPROVED" },
+      }),
+      prisma.user.count({
+        where: { referredById: session.user.id },
+      }),
+      prisma.task.findMany({
+        where: { status: "ACTIVE" },
+        orderBy: { createdAt: "desc" },
+        take: 6,
+        select: {
+          id: true,
+          title: true,
+          type: true,
+          pointsReward: true,
+          xpReward: true,
+          difficulty: true,
+        },
+      }),
+    ]);
 
   const user = session.user;
   const points = userData?.pointsBalance ?? 0;
@@ -326,13 +341,46 @@ export default async function DashboardPage() {
             View all tasks
           </Link>
         </div>
-        <div className="flex items-center justify-center py-12 text-gray-500">
-          <div className="text-center">
-            <Star className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>No tasks available right now</p>
-            <p className="text-sm mt-1">Check back soon for new tasks!</p>
+        {availableTasks.length === 0 ? (
+          <div className="flex items-center justify-center py-12 text-gray-500">
+            <div className="text-center">
+              <Star className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p>No tasks available right now</p>
+              <p className="text-sm mt-1">Check back soon for new tasks!</p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {availableTasks.map((t) => (
+              <Link
+                key={t.id}
+                href={taskRunHref(t.type, t.id)}
+                className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-950 p-3 hover:border-indigo-500/40 transition-colors group"
+              >
+                <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center shrink-0">
+                  <Star className="w-5 h-5 text-indigo-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white truncate group-hover:text-indigo-400 transition-colors">
+                    {t.title}
+                  </p>
+                  <p className="text-[11px] text-gray-500 capitalize">
+                    {t.type.toLowerCase()}
+                    {t.difficulty ? ` · ${t.difficulty.toLowerCase()}` : ""}
+                  </p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-bold text-amber-400 tabular-nums">
+                    +{t.pointsReward.toLocaleString()}
+                  </p>
+                  {t.xpReward > 0 && (
+                    <p className="text-[10px] text-gray-500">+{t.xpReward} XP</p>
+                  )}
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

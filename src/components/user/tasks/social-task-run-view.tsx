@@ -1,0 +1,614 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import {
+  ArrowLeft,
+  ExternalLink,
+  Upload,
+  Loader2,
+  Sparkles,
+  Copy,
+  Check,
+  PlayCircle,
+  CheckCircle2,
+} from "lucide-react";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
+import {
+  SOCIAL_PLATFORMS,
+  getAction,
+  isWatchAction,
+  mapSocialTaskRow,
+  type SocialTaskView,
+  type SocialTaskItemView,
+} from "@/lib/social-tasks";
+import { ProofImageUpload } from "@/components/user/tasks/proof-image-upload";
+import { SocialWatchModal } from "@/components/user/tasks/social-watch-modal";
+import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
+
+type ItemProof = { url: string; screenshot: string; username: string };
+const EMPTY_PROOF: ItemProof = { url: "", screenshot: "", username: "" };
+
+const PLATFORM_LOOKUP = Object.fromEntries(
+  SOCIAL_PLATFORMS.map((p) => [p.key, p])
+);
+
+/** True when this item uses the timed watch-lock (watch action + duration set). */
+function isWatchLocked(item: SocialTaskItemView): boolean {
+  return isWatchAction(item.action) && !!item.watchSeconds && item.watchSeconds > 0;
+}
+
+export function SocialTaskRunView({ taskId }: { taskId: string }) {
+  const [task, setTask] = useState<SocialTaskView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const [proofByIndex, setProofByIndex] = useState<Record<number, ItemProof>>({});
+  const [aiOutputByIndex, setAiOutputByIndex] = useState<Record<number, string>>({});
+  const [watchedByIndex, setWatchedByIndex] = useState<Record<number, boolean>>({});
+  const [watchModal, setWatchModal] = useState<
+    { idx: number; url: string; seconds: number; title: string } | null
+  >(null);
+  const [busy, setBusy] = useState(false);
+  const [generatingAi, setGeneratingAi] = useState<number | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/tasks/${taskId}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((d) => {
+        if (cancelled) return;
+        if (!d?.task) {
+          setNotFound(true);
+          return;
+        }
+        setTask(mapSocialTaskRow(d.task));
+      })
+      .catch(() => !cancelled && setNotFound(true))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId]);
+
+  const platform = task ? PLATFORM_LOOKUP[task.platform] : null;
+
+  const setProof = (idx: number, patch: Partial<ItemProof>) => {
+    setProofByIndex((prev) => ({
+      ...prev,
+      [idx]: { ...(prev[idx] ?? EMPTY_PROOF), ...patch },
+    }));
+  };
+
+  const isItemReady = (item: SocialTaskItemView, idx: number): boolean => {
+    const p = proofByIndex[idx] ?? EMPTY_PROOF;
+    const req = item.proofRequirements;
+    if (isWatchLocked(item) && !watchedByIndex[idx]) return false;
+    if (req.url && !p.url.trim()) return false;
+    if (req.screenshot && !p.screenshot.trim()) return false;
+    if (req.username && !p.username.trim()) return false;
+    return true;
+  };
+
+  const generateAi = async (idx: number, prompt: string) => {
+    setGeneratingAi(idx);
+    try {
+      const res = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!res.ok) {
+        toast.info("AI not available — write your post manually using the prompt above");
+        return;
+      }
+      const d = await res.json();
+      setAiOutputByIndex((prev) => ({ ...prev, [idx]: d.text ?? d.content ?? "" }));
+      toast.success("Generated — review and post it");
+    } catch {
+      toast.info("Use the prompt to write your post manually");
+    } finally {
+      setGeneratingAi(null);
+    }
+  };
+
+  const copyToClipboard = async (text: string, key: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {
+      // ignore
+    }
+  };
+
+  const submit = async () => {
+    if (!task) return;
+    const items = task.items;
+    for (let idx = 0; idx < items.length; idx++) {
+      const item = items[idx];
+      const req = item.proofRequirements;
+      const p = proofByIndex[idx] ?? EMPTY_PROOF;
+      const def = getAction(task.platform, item.action);
+      const label = def?.label ?? `Action ${idx + 1}`;
+      if (isWatchLocked(item) && !watchedByIndex[idx]) {
+        toast.error(`${label}: watch to unlock first`);
+        return;
+      }
+      if (req.url && !p.url.trim()) {
+        toast.error(`${label}: proof URL is required`);
+        return;
+      }
+      if (req.screenshot && !p.screenshot.trim()) {
+        toast.error(`${label}: screenshot is required`);
+        return;
+      }
+      if (req.username && !p.username.trim()) {
+        toast.error(`${label}: your username is required`);
+        return;
+      }
+    }
+    setBusy(true);
+    try {
+      const payloadItems = items.map((item, idx) => {
+        const req = item.proofRequirements;
+        const p = proofByIndex[idx] ?? EMPTY_PROOF;
+        const ai = aiOutputByIndex[idx];
+        const out: Record<string, string | boolean> = { action: item.action };
+        if (req.url) out.proofUrl = p.url;
+        if (req.screenshot) out.screenshotUrl = p.screenshot;
+        if (req.username) out.username = p.username;
+        if (ai && ai.trim()) out.generatedContent = ai;
+        if (isWatchLocked(item) && watchedByIndex[idx]) out.watched = true;
+        return out;
+      });
+
+      const res = await fetch(`/api/tasks/${task.id}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: payloadItems }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setSubmitted(true);
+      toast.success("Submitted! Awaiting verification.");
+    } catch (err) {
+      toast.error("Failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ── States ────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto py-20 flex justify-center">
+        <Loader2 className="w-6 h-6 text-gray-500 animate-spin" />
+      </div>
+    );
+  }
+
+  if (notFound || !task || !platform) {
+    return (
+      <div className="max-w-lg mx-auto py-16 text-center space-y-3">
+        <p className="text-white font-semibold">This social task isn&apos;t available.</p>
+        <Link
+          href="/social-tasks"
+          className="inline-flex items-center gap-1 text-sm text-indigo-400 hover:text-indigo-300"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back to social tasks
+        </Link>
+      </div>
+    );
+  }
+
+  if (submitted) {
+    return (
+      <div className="max-w-lg mx-auto py-16 text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-emerald-500/15 flex items-center justify-center mx-auto">
+          <CheckCircle2 className="w-9 h-9 text-emerald-400" />
+        </div>
+        <div>
+          <h1 className="text-xl font-bold text-white">Submitted!</h1>
+          <p className="text-sm text-gray-400 mt-1">
+            Your proof is awaiting verification.{" "}
+            <span className="text-amber-400 font-semibold">
+              +{task.pointsReward.toLocaleString()} pts
+            </span>{" "}
+            pending.
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row gap-2 justify-center pt-2">
+          <Link
+            href="/social-tasks"
+            className="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back to social tasks
+          </Link>
+          <Link
+            href="/social-tasks?tab=submitted"
+            className="inline-flex items-center justify-center px-5 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold"
+          >
+            View my submissions
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const readyCount = task.items.filter((it, idx) => isItemReady(it, idx)).length;
+  const total = task.items.length;
+  const pct = total > 0 ? (readyCount / total) * 100 : 0;
+
+  // ── Run page ──────────────────────────────────────────────────────────────
+  return (
+    <div className="max-w-2xl mx-auto space-y-4 pb-28">
+      <Link
+        href="/social-tasks"
+        className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-white"
+      >
+        <ArrowLeft className="w-3.5 h-3.5" /> Back to social tasks
+      </Link>
+
+      {/* Header */}
+      <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <div
+            className={cn(
+              "w-12 h-12 rounded-xl flex items-center justify-center text-2xl shrink-0",
+              platform.brandColor
+            )}
+          >
+            {platform.emoji}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+              {platform.label} · Social Task
+            </p>
+            <h1 className="text-lg sm:text-xl font-bold text-white mt-0.5">
+              {task.title}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-2">
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-500/15 text-indigo-300">
+                {total} action{total > 1 ? "s" : ""}
+              </span>
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-500/15 text-amber-400">
+                +{task.pointsReward.toLocaleString()} pts
+              </span>
+              {task.difficulty && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-800 text-gray-300 capitalize">
+                  {task.difficulty.toLowerCase()}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Progress */}
+        <div className="mt-4">
+          <div className="flex items-center justify-between text-xs mb-1.5">
+            <span className="text-gray-400 font-medium">Your progress</span>
+            <span className="text-white font-bold tabular-nums">
+              {readyCount} / {total} ready
+            </span>
+          </div>
+          <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+            <div
+              className="h-full bg-linear-to-r from-indigo-500 to-emerald-500 transition-[width] duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Intro */}
+      {task.description && (
+        <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">
+            About this task
+          </p>
+          <p className="text-sm text-gray-300 whitespace-pre-wrap">
+            {task.description}
+          </p>
+        </div>
+      )}
+
+      {task.instructions && (
+        <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">
+            Steps
+          </p>
+          <ol className="space-y-1 text-sm text-gray-300 list-decimal pl-4">
+            {task.instructions
+              .split("\n")
+              .filter(Boolean)
+              .map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+          </ol>
+        </div>
+      )}
+
+      {task.instructionVideoUrl && (
+        <div className="space-y-2">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+            Instruction video
+          </p>
+          <InlineVideoEmbed
+            url={task.instructionVideoUrl}
+            title={`Instruction video — ${task.title}`}
+          />
+        </div>
+      )}
+
+      {total === 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-300">
+          This task has no actions configured yet. Please check back later or
+          contact support.
+        </div>
+      )}
+
+      {/* Ordered action cards */}
+      {task.items.map((item, idx) => {
+        const def = getAction(task.platform, item.action);
+        const proof = proofByIndex[idx] ?? EMPTY_PROOF;
+        const aiOutput = aiOutputByIndex[idx] ?? "";
+        const req = item.proofRequirements;
+        const ready = isItemReady(item, idx);
+        return (
+          <div
+            key={idx}
+            className={cn(
+              "rounded-xl border bg-gray-900 p-4 space-y-3 transition-colors",
+              ready ? "border-emerald-500/40" : "border-gray-800"
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center shrink-0",
+                  ready
+                    ? "bg-emerald-500 text-white"
+                    : "bg-indigo-500/20 text-indigo-300"
+                )}
+              >
+                {ready ? <Check className="w-4 h-4" /> : idx + 1}
+              </span>
+              <p className="text-sm font-bold text-white">
+                {def ? `${def.emoji} ${def.label}` : item.action}
+              </p>
+              <span className="ml-auto text-amber-400 font-bold text-xs tabular-nums">
+                +{item.points}
+              </span>
+            </div>
+
+            {isWatchLocked(item) ? (
+              watchedByIndex[idx] ? (
+                <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Watched
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setWatchModal({
+                      idx,
+                      url: item.targetUrl,
+                      seconds: item.watchSeconds ?? 30,
+                      title: def?.label ?? "Watch",
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold"
+                >
+                  <PlayCircle className="w-3.5 h-3.5" />
+                  Watch {item.watchSeconds}s to unlock
+                </button>
+              )
+            ) : (
+              item.targetUrl && (
+                <a
+                  href={item.targetUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  Open target
+                </a>
+              )
+            )}
+
+            {/* AI prompt */}
+            {item.aiPromptEnabled && item.aiPrompt && (
+              <div className="rounded-lg bg-purple-500/5 border border-purple-500/30 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <p className="text-sm font-bold text-purple-300">
+                    Generate content with AI
+                  </p>
+                </div>
+                <div className="rounded bg-gray-950 border border-purple-500/20 p-2 text-xs text-purple-200 whitespace-pre-wrap">
+                  {item.aiPrompt}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => generateAi(idx, item.aiPrompt!)}
+                  disabled={generatingAi === idx}
+                  className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-xs font-bold disabled:opacity-50"
+                >
+                  {generatingAi === idx ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  )}
+                  Generate with AI
+                </button>
+                {aiOutput && (
+                  <div className="rounded bg-gray-950 border border-emerald-500/30 p-2 space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">
+                        Generated content
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => copyToClipboard(aiOutput, `ai-${idx}`)}
+                        className="inline-flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300"
+                      >
+                        {copied === `ai-${idx}` ? (
+                          <Check className="w-3 h-3" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                        Copy
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-200 whitespace-pre-wrap">
+                      {aiOutput}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Static admin-provided template fields */}
+            {!item.aiPromptEnabled &&
+              def?.adminFields
+                .filter((f) => {
+                  if (f.key === "targetUrl" || f.key === "targetHandle")
+                    return false;
+                  const v = item.fields[f.key];
+                  return v && v.trim();
+                })
+                .map((f) => {
+                  const v = item.fields[f.key];
+                  return (
+                    <div
+                      key={f.key}
+                      className="rounded-lg bg-gray-950 border border-gray-800 p-3 space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                          {f.label}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(v, `${idx}-${f.key}`)}
+                          className="inline-flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300"
+                        >
+                          {copied === `${idx}-${f.key}` ? (
+                            <Check className="w-3 h-3" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                          Copy
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-200 whitespace-pre-wrap wrap-break-word">
+                        {v}
+                      </p>
+                    </div>
+                  );
+                })}
+
+            {/* Proof inputs */}
+            <div className="space-y-3 pt-1 border-t border-gray-800">
+              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+                Submit your proof
+              </p>
+
+              {req.url && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                    Proof URL <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    type="url"
+                    value={proof.url}
+                    onChange={(e) => setProof(idx, { url: e.target.value })}
+                    placeholder="https://..."
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                  />
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    URL of your post / comment / share / profile.
+                  </p>
+                </div>
+              )}
+
+              {req.screenshot && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                    Screenshot <span className="text-red-400">*</span>
+                  </label>
+                  <ProofImageUpload
+                    value={proof.screenshot}
+                    onChange={(url) => setProof(idx, { screenshot: url })}
+                  />
+                </div>
+              )}
+
+              {req.username && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                    Your {platform.label} username{" "}
+                    <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    value={proof.username}
+                    onChange={(e) => setProof(idx, { username: e.target.value })}
+                    placeholder="@yourhandle"
+                    className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Sticky submit bar */}
+      {total > 0 && (
+        <div className="fixed bottom-0 inset-x-0 z-30 border-t border-gray-800 bg-gray-950/95 backdrop-blur px-4 py-3">
+          <div className="max-w-2xl mx-auto flex items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-gray-400">
+                {readyCount}/{total} ready ·{" "}
+                <span className="text-amber-400 font-bold">
+                  +{task.pointsReward.toLocaleString()} pts
+                </span>
+              </p>
+            </div>
+            <button
+              onClick={submit}
+              disabled={busy}
+              className="inline-flex items-center justify-center gap-1.5 px-6 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold disabled:opacity-50"
+            >
+              {busy ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Upload className="w-4 h-4" />
+              )}
+              Submit
+            </button>
+          </div>
+        </div>
+      )}
+
+      {watchModal && (
+        <SocialWatchModal
+          url={watchModal.url}
+          watchSeconds={watchModal.seconds}
+          title={watchModal.title}
+          onComplete={() =>
+            setWatchedByIndex((prev) => ({ ...prev, [watchModal.idx]: true }))
+          }
+          onClose={() => setWatchModal(null)}
+        />
+      )}
+    </div>
+  );
+}

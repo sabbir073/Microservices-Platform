@@ -167,8 +167,7 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
             ? "Submitted for review."
             : "Watched & rewarded.",
       });
-      // Auto-close after 2.5s
-      setTimeout(() => onClose(true), 2500);
+      // Stay on the success screen — the user leaves via the "Done" button.
     } catch (err) {
       submittedRef.current = false;
       toast.error("Couldn't submit", {
@@ -316,6 +315,15 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
 
       {/* Bottom HUD */}
       <div className="absolute bottom-0 inset-x-0 z-20 bg-linear-to-t from-black via-black/90 to-transparent px-4 pt-6 pb-4 space-y-3">
+        {phase === "submitted" && (
+          <button
+            onClick={() => onClose(true)}
+            className="w-full py-3 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold inline-flex items-center justify-center gap-1.5"
+          >
+            Done — back to tasks
+          </button>
+        )}
+
         {phase === "watch" && (
           <>
             <div className="flex items-center justify-between text-sm">

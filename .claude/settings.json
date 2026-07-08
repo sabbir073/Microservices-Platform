@@ -16,7 +16,13 @@
       "Bash(tail -15 .env.example)",
       "Bash(echo \"=== EXIT $? ===\")",
       "Bash(echo \"=== lint EXIT $? ===\")",
-      "Bash(grep -E \"\\\\.env$\")"
+      "Bash(grep -E \"\\\\.env$\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:3002/dashboard\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" \"http://localhost:3002/social-tasks\")",
+      "Bash(printf '\\\\n# Google AI Studio \\(Gemini\\) — powers AI quiz/content generation.\\\\n# Get a free key: https://aistudio.google.com/apikey\\\\nGEMINI_API_KEY=\"\"\\\\n')",
+      "Bash(printf '\\\\n# ─────────────────────────────────────────────────────────────────────────────\\\\n# Google AI Studio / Gemini \\(optional — AI quiz & content generation\\)\\\\n# Get a free key at https://aistudio.google.com/apikey ; model: gemini-1.5-flash\\\\n# ─────────────────────────────────────────────────────────────────────────────\\\\nGEMINI_API_KEY=\"\"\\\\n')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -X POST http://localhost:3002/api/ai/generate -H 'Content-Type: application/json' -d '{\"prompt\":\"hi\"}')",
+      "Bash(echo \"$\\(curl -s -o /dev/null -w \"%{http_code}\" -X POST http://localhost:3002/api/ai/generate -H 'Content-Type: application/json' -d '{\"prompt\":\"hi\"}' \\) <- POST /api/ai/generate \\(expect 401 unauth = route exists, not 404\\)\")"
     ]
   }
 }
