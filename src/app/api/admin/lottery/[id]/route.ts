@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { drawLottery } from "@/lib/lottery";
+import { inngest, EVENTS } from "@/lib/inngest/client";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -93,6 +94,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       const updatedLottery = await prisma.lottery.update({
         where: { id },
         data: { status: "ACTIVE" },
+      });
+
+      // Schedule the draw at the exact drawDate via Inngest.
+      void inngest.send({
+        name: EVENTS.LOTTERY_ACTIVATED,
+        data: { lotteryId: id, drawDate: updatedLottery.drawDate.toISOString() },
       });
 
       return NextResponse.json({

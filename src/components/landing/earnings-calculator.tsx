@@ -126,7 +126,7 @@ export function EarningsCalculator(props: Props) {
   return (
     <section
       id="calculator"
-      className="relative py-16 sm:py-24 px-4 scroll-mt-20"
+      className="relative py-16 sm:py-24 px-4 scroll-mt-20 overflow-hidden"
     >
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-8 sm:mb-12">
@@ -160,8 +160,8 @@ export function EarningsCalculator(props: Props) {
                     </span>
                   </div>
 
-                  <div className="-mx-5 sm:mx-0 px-5 sm:px-0 overflow-x-auto sm:overflow-visible scrollbar-thin">
-                    <div className="flex sm:grid gap-2 sm:gap-2 snap-x snap-mandatory pb-1 sm:pb-0"
+                  <div className="-mx-5 lg:mx-0 px-5 lg:px-0 overflow-x-auto lg:overflow-visible scrollbar-thin">
+                    <div className="flex lg:grid gap-2 snap-x snap-mandatory pb-1 lg:pb-0"
                       style={{
                         gridTemplateColumns: `repeat(${Math.max(v.plans.length, 1)}, minmax(0, 1fr))`,
                       }}
@@ -175,7 +175,7 @@ export function EarningsCalculator(props: Props) {
                             key={p.name}
                             onClick={() => setPlan(p.name)}
                             aria-pressed={active}
-                            className={`group relative shrink-0 sm:shrink snap-start min-w-[7rem] sm:min-w-0 rounded-xl p-3 text-left transition-all duration-200 border ${
+                            className={`group relative shrink-0 lg:shrink snap-start min-w-[7rem] lg:min-w-0 rounded-xl p-3 text-left transition-all duration-200 border ${
                               active
                                 ? `bg-linear-to-br ${gradient} border-white/30 shadow-lg shadow-black/30 scale-[1.02]`
                                 : "bg-white/[0.04] border-white/10 hover:bg-white/[0.08] hover:border-white/20"
@@ -439,7 +439,7 @@ export function EarningsCalculator(props: Props) {
                       <TrendingUp className="w-3.5 h-3.5" />
                       Monthly Potential
                     </p>
-                    <p className="mt-2 text-[2.75rem] sm:text-6xl font-extrabold bg-linear-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent tabular-nums leading-none">
+                    <p className="mt-2 text-[clamp(2rem,11vw,3.75rem)] font-extrabold bg-linear-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent tabular-nums leading-none break-all">
                       ${formatCurrency(animatedMonthly)}
                     </p>
                     <p className="text-xs sm:text-sm text-slate-400 mt-2 tabular-nums">
@@ -483,7 +483,7 @@ export function EarningsCalculator(props: Props) {
 
                   {/* Stat cards */}
                   <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-5">
-                    <div className="rounded-xl bg-white/[0.04] border border-white/10 p-2.5 sm:p-3 text-center">
+                    <div className="min-w-0 rounded-xl bg-white/4 border border-white/10 p-2.5 sm:p-3 text-center">
                       <ListChecks className="w-4 h-4 text-blue-300 mx-auto mb-1" />
                       <p className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                         From Tasks
@@ -493,7 +493,7 @@ export function EarningsCalculator(props: Props) {
                       </p>
                       <p className="text-[9px] text-slate-500 mt-0.5">/mo</p>
                     </div>
-                    <div className="rounded-xl bg-white/[0.04] border border-white/10 p-2.5 sm:p-3 text-center">
+                    <div className="min-w-0 rounded-xl bg-white/4 border border-white/10 p-2.5 sm:p-3 text-center">
                       <Users className="w-4 h-4 text-purple-300 mx-auto mb-1" />
                       <p className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                         From Team
@@ -503,7 +503,7 @@ export function EarningsCalculator(props: Props) {
                       </p>
                       <p className="text-[9px] text-slate-500 mt-0.5">/mo</p>
                     </div>
-                    <div className="rounded-xl bg-white/[0.04] border border-white/10 p-2.5 sm:p-3 text-center">
+                    <div className="min-w-0 rounded-xl bg-white/4 border border-white/10 p-2.5 sm:p-3 text-center">
                       <Coins className="w-4 h-4 text-amber-300 mx-auto mb-1" />
                       <p className="text-[9px] sm:text-[10px] uppercase font-bold text-slate-400 tracking-wider">
                         Daily

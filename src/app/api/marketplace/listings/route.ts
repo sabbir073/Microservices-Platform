@@ -6,6 +6,7 @@ import {
   validateDetails,
   getCategory,
 } from "@/lib/marketplace-categories";
+import { inngest, EVENTS } from "@/lib/inngest/client";
 import { z } from "zod";
 
 // GET /api/marketplace/listings - Get marketplace listings
@@ -303,6 +304,17 @@ export async function POST(request: NextRequest) {
         status: MarketplaceListingStatus.ACTIVE,
       },
     });
+
+    // Schedule an exact-time auction close via Inngest (fires at auctionEndsAt).
+    if (listing.auctionMode && listing.auctionEndsAt) {
+      void inngest.send({
+        name: EVENTS.AUCTION_CREATED,
+        data: {
+          listingId: listing.id,
+          auctionEndsAt: listing.auctionEndsAt.toISOString(),
+        },
+      });
+    }
 
     return NextResponse.json({ listing }, { status: 201 });
   } catch (error) {

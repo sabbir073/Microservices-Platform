@@ -16,7 +16,14 @@
       "Bash(tasklist:*)",
       "Bash(npx tsc:*)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/admin/tasks/new)",
-      "Bash(echo \"$\\(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/admin/tasks/new \\) <- /admin/tasks/new\")"
+      "Bash(echo \"$\\(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/admin/tasks/new \\) <- /admin/tasks/new\")",
+      "Bash(node -e \"console.log\\('inngest', require\\('inngest/package.json'\\).version\\)\")",
+      "Bash(rm -rf \"src/app/api/cron\" \"src/lib/cron.ts\")",
+      "Bash(ls src/app/api/cron)",
+      "Bash(curl -s -w \"\\\\n[HTTP %{http_code}]\" \"http://localhost:3002/api/inngest\")",
+      "Bash(curl -s -X PUT \"http://localhost:3002/api/inngest\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/)",
+      "Bash(echo \"$\\(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/ \\) <- / \\(landing\\)\")"
     ]
   }
 }
