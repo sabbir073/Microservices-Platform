@@ -73,7 +73,10 @@ export default async function AIContentPage() {
           </div>
           <p className="text-xs text-slate-500">
             Provider: <span className="text-slate-300">Google Gemini</span> ·
-            Model: <span className="text-slate-300 font-mono">gemini-1.5-flash</span>
+            Model:{" "}
+            <span className="text-slate-300 font-mono">
+              {process.env.GEMINI_MODEL || "gemini-2.5-flash-lite"}
+            </span>
           </p>
           <Link
             href="/admin/settings?tab=integrations"

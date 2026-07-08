@@ -95,14 +95,12 @@ export function SocialWatchModal({
     return () => clearInterval(id);
   }, [phase, target]);
 
-  // Fire onComplete once when done
+  // Fire onComplete once when done — the user then leaves via the Continue button.
   useEffect(() => {
     if (phase !== "complete" || doneRef.current) return;
     doneRef.current = true;
     onComplete();
-    const t = setTimeout(() => onClose(), 1400);
-    return () => clearTimeout(t);
-  }, [phase, onComplete, onClose]);
+  }, [phase, onComplete]);
 
   const handleCancel = () => {
     if (phase !== "complete" && watched < target) {
@@ -179,11 +177,17 @@ export function SocialWatchModal({
         )}
 
         {phase === "complete" && (
-          <div className="absolute inset-0 z-20 grid place-items-center bg-emerald-950/90 pointer-events-none">
-            <div className="text-center">
+          <div className="absolute inset-0 z-20 grid place-items-center bg-emerald-950/90">
+            <div className="text-center pointer-events-auto">
               <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
               <p className="text-lg text-white font-bold">Done!</p>
               <p className="text-sm text-emerald-200 mt-1">Action unlocked.</p>
+              <button
+                onClick={onClose}
+                className="mt-5 inline-flex items-center justify-center gap-1.5 px-8 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold"
+              >
+                Continue
+              </button>
             </div>
           </div>
         )}

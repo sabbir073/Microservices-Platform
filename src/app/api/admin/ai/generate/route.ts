@@ -6,8 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const schema = z.object({
   type: z.enum([

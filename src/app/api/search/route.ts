@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { taskRunHref } from "@/lib/task-routes";
 
 interface SearchResult {
   id: string;
@@ -47,7 +48,7 @@ export async function GET(request: NextRequest) {
         title: t.title,
         subtitle: t.type,
         imageUrl: t.thumbnailUrl ?? undefined,
-        href: `/tasks/${t.id}`,
+        href: taskRunHref(t.type, t.id),
       });
     }
   }

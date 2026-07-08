@@ -34,6 +34,7 @@ import { EmptyState } from "@/components/user/primitives/empty-state";
 import { GlobalSearch } from "@/components/user/primitives/global-search";
 import { cn } from "@/lib/utils";
 import { calculateLevel, calculateXpProgress } from "@/lib/utils";
+import { taskRunHref } from "@/lib/task-routes";
 
 type TabKey =
   | "tasks"
@@ -253,7 +254,7 @@ function TasksTab() {
               }
               durationMin={t.duration ?? undefined}
               thumbnail={t.thumbnailUrl ?? undefined}
-              href={`/tasks/${t.id}`}
+              href={taskRunHref(t.type, t.id)}
               actionLabel="Start"
             />
           ))}

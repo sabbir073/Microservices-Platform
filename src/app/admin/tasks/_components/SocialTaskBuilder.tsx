@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo } from "react";
 import {
-  SOCIAL_PLATFORMS,
   getPlatform,
   getAction,
+  getPlatformGroups,
   emptyBundleConfig,
   sortBundleItems,
   bundleTotalPoints,
@@ -106,25 +106,37 @@ export function SocialTaskBuilder({ value, onChange }: Props) {
         <label className="block text-sm font-medium text-gray-400 mb-2">
           Platform <span className="text-red-400">*</span>
         </label>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
-          {SOCIAL_PLATFORMS.map((p) => {
-            const selected = value.platform === p.key;
-            return (
-              <button
-                key={p.key}
-                type="button"
-                onClick={() => setPlatform(p.key)}
-                className={`flex flex-col items-center gap-1 p-3 rounded-lg border transition-colors ${
-                  selected
-                    ? `${p.brandColor} border-transparent shadow-lg`
-                    : "bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600"
-                }`}
-              >
-                <span className="text-2xl leading-none">{p.emoji}</span>
-                <span className="text-[11px] font-semibold">{p.label}</span>
-              </button>
-            );
-          })}
+        <div className="space-y-4">
+          {getPlatformGroups().map((group) => (
+            <div key={group.key}>
+              <p className="text-[11px] uppercase tracking-wider text-gray-500 font-bold mb-2">
+                {group.label}
+                <span className="ml-1.5 text-gray-600 font-semibold">
+                  ({group.platforms.length})
+                </span>
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                {group.platforms.map((p) => {
+                  const selected = value.platform === p.key;
+                  return (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => setPlatform(p.key)}
+                      className={`flex flex-col items-center gap-1 p-3 rounded-lg border transition-colors ${
+                        selected
+                          ? `${p.brandColor} border-transparent shadow-lg`
+                          : "bg-gray-800 border-gray-700 text-gray-300 hover:border-gray-600"
+                      }`}
+                    >
+                      <span className="text-2xl leading-none">{p.emoji}</span>
+                      <span className="text-[11px] font-semibold">{p.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 

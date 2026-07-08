@@ -1282,6 +1282,1211 @@ export const SOCIAL_PLATFORMS: SocialPlatform[] = [
     ],
   },
 
+  // ── Apple Music ───────────────────────────────────────────────────────────
+  {
+    key: "APPLE_MUSIC",
+    label: "Apple Music",
+    emoji: "🎵",
+    brandColor: "bg-[#fa243c] text-white",
+    websiteUrl: "https://music.apple.com",
+    actions: [
+      {
+        key: "FOLLOW_ARTIST",
+        label: "Follow Artist",
+        emoji: "🎤",
+        description: "Follow an artist on Apple Music",
+        adminFields: [fieldUrl("targetUrl", "Artist URL")],
+        proofFields: [fieldProofUsername, fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "LIKE_TRACK",
+        label: "Love Song",
+        emoji: "❤️",
+        description: "Love a song / add to your library",
+        adminFields: [fieldUrl("targetUrl", "Song URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "ADD_TO_PLAYLIST",
+        label: "Add to Playlist",
+        emoji: "📌",
+        description: "Add a song to one of your playlists",
+        adminFields: [fieldUrl("targetUrl", "Song URL")],
+        proofFields: [
+          {
+            key: "playlistName",
+            label: "Playlist name",
+            type: "text",
+            required: true,
+          },
+          fieldScreenshot,
+        ],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "LISTEN_FULL",
+        label: "Listen Full Song",
+        emoji: "🎶",
+        description: "Listen to a song in full",
+        adminFields: [fieldUrl("targetUrl", "Song URL"), fieldWatchSeconds],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 20 },
+      },
+    ],
+  },
+
+  // ── Amazon Music ──────────────────────────────────────────────────────────
+  {
+    key: "AMAZON_MUSIC",
+    label: "Amazon Music",
+    emoji: "🎧",
+    brandColor: "bg-[#232f3e] text-white",
+    websiteUrl: "https://music.amazon.com",
+    actions: [
+      {
+        key: "FOLLOW_ARTIST",
+        label: "Follow Artist",
+        emoji: "🎤",
+        description: "Follow an artist on Amazon Music",
+        adminFields: [fieldUrl("targetUrl", "Artist URL")],
+        proofFields: [fieldProofUsername, fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "LIKE_TRACK",
+        label: "Like Song",
+        emoji: "❤️",
+        description: "Like / thumbs-up a song",
+        adminFields: [fieldUrl("targetUrl", "Song URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "ADD_TO_PLAYLIST",
+        label: "Add to Playlist",
+        emoji: "📌",
+        description: "Add a song to one of your playlists",
+        adminFields: [fieldUrl("targetUrl", "Song URL")],
+        proofFields: [
+          {
+            key: "playlistName",
+            label: "Playlist name",
+            type: "text",
+            required: true,
+          },
+          fieldScreenshot,
+        ],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "LISTEN_FULL",
+        label: "Listen Full Song",
+        emoji: "🎶",
+        description: "Listen to a song in full",
+        adminFields: [fieldUrl("targetUrl", "Song URL"), fieldWatchSeconds],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 20 },
+      },
+    ],
+  },
+
+  // ── Google Reviews ────────────────────────────────────────────────────────
+  {
+    key: "GOOGLE_REVIEWS",
+    label: "Google Reviews",
+    emoji: "⭐",
+    brandColor: "bg-[#4285f4] text-white",
+    websiteUrl: "https://maps.google.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Leave a Rating",
+        emoji: "⭐",
+        description: "Leave a star rating on a Google business listing",
+        adminFields: [
+          fieldUrl("targetUrl", "Business / Maps URL"),
+          {
+            key: "requestedRating",
+            label: "Requested rating",
+            type: "select",
+            required: false,
+            options: ["5 stars", "4 stars", "Any"],
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a text review for a Google business listing",
+        adminFields: [
+          fieldUrl("targetUrl", "Business / Maps URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldProofUrl("Link to your review"), fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+      {
+        key: "MARK_HELPFUL",
+        label: "Mark Review Helpful",
+        emoji: "👍",
+        description: "Mark an existing review as helpful",
+        adminFields: [fieldUrl("targetUrl", "Review URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+    ],
+  },
+
+  // ── Trustpilot ────────────────────────────────────────────────────────────
+  {
+    key: "TRUSTPILOT",
+    label: "Trustpilot",
+    emoji: "🌟",
+    brandColor: "bg-[#00b67a] text-white",
+    websiteUrl: "https://www.trustpilot.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Leave a Rating",
+        emoji: "⭐",
+        description: "Leave a star rating for a company on Trustpilot",
+        adminFields: [
+          fieldUrl("targetUrl", "Company URL"),
+          {
+            key: "requestedRating",
+            label: "Requested rating",
+            type: "select",
+            required: false,
+            options: ["5 stars", "4 stars", "Any"],
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a text review for a company on Trustpilot",
+        adminFields: [
+          fieldUrl("targetUrl", "Company URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldProofUrl("Link to your review"), fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+    ],
+  },
+
+  // ── App Store ─────────────────────────────────────────────────────────────
+  {
+    key: "APP_STORE",
+    label: "App Store",
+    emoji: "🍏",
+    brandColor: "bg-[#0d96f6] text-white",
+    websiteUrl: "https://apps.apple.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Rate the App",
+        emoji: "⭐",
+        description: "Leave a star rating on the App Store",
+        adminFields: [
+          fieldUrl("targetUrl", "App Store URL"),
+          {
+            key: "requestedRating",
+            label: "Requested rating",
+            type: "select",
+            required: false,
+            options: ["5 stars", "4 stars", "Any"],
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a text review on the App Store",
+        adminFields: [
+          fieldUrl("targetUrl", "App Store URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+    ],
+  },
+
+  // ── Play Store ────────────────────────────────────────────────────────────
+  {
+    key: "PLAY_STORE",
+    label: "Play Store",
+    emoji: "▶️",
+    brandColor: "bg-[#01875f] text-white",
+    websiteUrl: "https://play.google.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Rate the App",
+        emoji: "⭐",
+        description: "Leave a star rating on Google Play",
+        adminFields: [
+          fieldUrl("targetUrl", "Play Store URL"),
+          {
+            key: "requestedRating",
+            label: "Requested rating",
+            type: "select",
+            required: false,
+            options: ["5 stars", "4 stars", "Any"],
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a text review on Google Play",
+        adminFields: [
+          fieldUrl("targetUrl", "Play Store URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+      {
+        key: "MARK_HELPFUL",
+        label: "Mark Review Helpful",
+        emoji: "👍",
+        description: "Mark an existing review as helpful",
+        adminFields: [fieldUrl("targetUrl", "Review URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+    ],
+  },
+
+  // ── TIDAL ─────────────────────────────────────────────────────────────────
+  {
+    key: "TIDAL",
+    label: "TIDAL",
+    emoji: "🎵",
+    brandColor: "bg-black text-white",
+    websiteUrl: "https://tidal.com",
+    actions: [
+      {
+        key: "LISTEN_FULL",
+        label: "HiFi Stream",
+        emoji: "🎶",
+        description: "Stream a track in full (HiFi)",
+        adminFields: [fieldUrl("targetUrl", "Track URL"), fieldWatchSeconds],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 20 },
+      },
+      {
+        key: "LIKE_TRACK",
+        label: "Like Track",
+        emoji: "❤️",
+        description: "Like a track",
+        adminFields: [fieldUrl("targetUrl", "Track URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "ADD_TO_PLAYLIST",
+        label: "Add to Playlist",
+        emoji: "📌",
+        description: "Add a track to your playlist",
+        adminFields: [fieldUrl("targetUrl", "Track URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "FOLLOW_ARTIST",
+        label: "Follow Artist",
+        emoji: "🎤",
+        description: "Follow an artist on TIDAL",
+        adminFields: [fieldUrl("targetUrl", "Artist URL")],
+        proofFields: [fieldProofUsername, fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+    ],
+  },
+
+  // ── Deezer ────────────────────────────────────────────────────────────────
+  {
+    key: "DEEZER",
+    label: "Deezer",
+    emoji: "🎧",
+    brandColor: "bg-[#a238ff] text-white",
+    websiteUrl: "https://www.deezer.com",
+    actions: [
+      {
+        key: "LISTEN_FULL",
+        label: "Stream Track",
+        emoji: "🎶",
+        description: "Stream a track in full",
+        adminFields: [fieldUrl("targetUrl", "Track URL"), fieldWatchSeconds],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 20 },
+      },
+      {
+        key: "LIKE_TRACK",
+        label: "Add to Favorites",
+        emoji: "❤️",
+        description: "Add a track to favorites",
+        adminFields: [fieldUrl("targetUrl", "Track URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "ADD_TO_PLAYLIST",
+        label: "Add to Playlist",
+        emoji: "📌",
+        description: "Add a track to your playlist",
+        adminFields: [fieldUrl("targetUrl", "Track URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "FOLLOW_ARTIST",
+        label: "Follow Artist",
+        emoji: "🎤",
+        description: "Follow an artist on Deezer",
+        adminFields: [fieldUrl("targetUrl", "Artist URL")],
+        proofFields: [fieldProofUsername, fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+    ],
+  },
+
+  // ── Bandcamp ──────────────────────────────────────────────────────────────
+  {
+    key: "BANDCAMP",
+    label: "Bandcamp",
+    emoji: "💿",
+    brandColor: "bg-[#629aa9] text-white",
+    websiteUrl: "https://bandcamp.com",
+    actions: [
+      {
+        key: "LISTEN_FULL",
+        label: "Stream Full Track",
+        emoji: "🎶",
+        description: "Stream a track in full",
+        adminFields: [fieldUrl("targetUrl", "Track URL"), fieldWatchSeconds],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 20 },
+      },
+      {
+        key: "LIKE_TRACK",
+        label: "Add to Wishlist",
+        emoji: "⭐",
+        description: "Add a track to your wishlist",
+        adminFields: [fieldUrl("targetUrl", "Track URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "FOLLOW_ARTIST",
+        label: "Follow Artist",
+        emoji: "🎤",
+        description: "Follow an artist on Bandcamp",
+        adminFields: [fieldUrl("targetUrl", "Artist URL")],
+        proofFields: [fieldProofUsername, fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "BUY_TRACK",
+        label: "Buy Track",
+        emoji: "🛒",
+        description: "Buy a track (pay-what-you-want)",
+        adminFields: [
+          fieldUrl("targetUrl", "Track URL"),
+          {
+            key: "suggestedAmount",
+            label: "Suggested amount",
+            type: "text",
+            required: false,
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 20, max: 60 },
+      },
+      {
+        key: "COMMENT",
+        label: "Leave Comment",
+        emoji: "💬",
+        description: "Leave a public comment on a track",
+        adminFields: [
+          fieldUrl("targetUrl", "Track URL"),
+          fieldComment("Comment (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 5, max: 20 },
+      },
+    ],
+  },
+
+  // ── Yelp ──────────────────────────────────────────────────────────────────
+  {
+    key: "YELP",
+    label: "Yelp",
+    emoji: "⭐",
+    brandColor: "bg-[#ff1a1a] text-white",
+    websiteUrl: "https://www.yelp.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Leave a Rating",
+        emoji: "⭐",
+        description: "Leave a star rating for a business",
+        adminFields: [
+          fieldUrl("targetUrl", "Business URL"),
+          {
+            key: "requestedRating",
+            label: "Requested rating",
+            type: "select",
+            required: false,
+            options: ["5 stars", "4 stars", "Any"],
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a text review for a business",
+        adminFields: [
+          fieldUrl("targetUrl", "Business URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldProofUrl("Link to your review"), fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+      {
+        key: "UPLOAD_PHOTO",
+        label: "Add Photo",
+        emoji: "📷",
+        description: "Add a photo to a business listing",
+        adminFields: [
+          fieldUrl("targetUrl", "Business URL"),
+          {
+            key: "photoUrl",
+            label: "Reference photo (admin upload)",
+            type: "image-url",
+            required: false,
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "CHECK_IN",
+        label: "Check-In",
+        emoji: "📍",
+        description: "Check in at the location",
+        adminFields: [fieldUrl("targetUrl", "Location URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "MARK_HELPFUL",
+        label: "Mark Reviews Useful",
+        emoji: "👍",
+        description: "Mark existing reviews as useful",
+        adminFields: [fieldUrl("targetUrl", "Business URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+    ],
+  },
+
+  // ── Tripadvisor ───────────────────────────────────────────────────────────
+  {
+    key: "TRIPADVISOR",
+    label: "Tripadvisor",
+    emoji: "🧭",
+    brandColor: "bg-[#34e0a1] text-black",
+    websiteUrl: "https://www.tripadvisor.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Leave a Rating",
+        emoji: "⭐",
+        description: "Leave a star rating for a listing",
+        adminFields: [
+          fieldUrl("targetUrl", "Listing URL"),
+          {
+            key: "requestedRating",
+            label: "Requested rating",
+            type: "select",
+            required: false,
+            options: ["5 stars", "4 stars", "Any"],
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a travel review",
+        adminFields: [
+          fieldUrl("targetUrl", "Listing URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldProofUrl("Link to your review"), fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+      {
+        key: "UPLOAD_PHOTO",
+        label: "Upload Travel Photo",
+        emoji: "📷",
+        description: "Upload a photo to a listing",
+        adminFields: [
+          fieldUrl("targetUrl", "Listing URL"),
+          {
+            key: "photoUrl",
+            label: "Reference photo (admin upload)",
+            type: "image-url",
+            required: false,
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "SAVE_ITEM",
+        label: "Save to Trip",
+        emoji: "🔖",
+        description: "Save the listing to a trip",
+        adminFields: [fieldUrl("targetUrl", "Listing URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "MARK_HELPFUL",
+        label: "Mark Reviews Helpful",
+        emoji: "👍",
+        description: "Mark existing reviews as helpful",
+        adminFields: [fieldUrl("targetUrl", "Listing URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+    ],
+  },
+
+  // ── BBB ───────────────────────────────────────────────────────────────────
+  {
+    key: "BBB",
+    label: "BBB",
+    emoji: "🏛️",
+    brandColor: "bg-[#003595] text-white",
+    websiteUrl: "https://www.bbb.org",
+    actions: [
+      {
+        key: "RATE",
+        label: "Submit a Rating",
+        emoji: "⭐",
+        description: "Submit a high rating for a business",
+        adminFields: [fieldUrl("targetUrl", "Business URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a detailed review",
+        adminFields: [
+          fieldUrl("targetUrl", "Business URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+      {
+        key: "VERIFY",
+        label: "Verify Account",
+        emoji: "✅",
+        description: "Verify your account",
+        adminFields: [fieldUrl("targetUrl", "Business URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+    ],
+  },
+
+  // ── G2 ────────────────────────────────────────────────────────────────────
+  {
+    key: "G2",
+    label: "G2",
+    emoji: "🏆",
+    brandColor: "bg-[#ff492c] text-white",
+    websiteUrl: "https://www.g2.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Leave a Rating",
+        emoji: "⭐",
+        description: "Leave a star rating for a product",
+        adminFields: [fieldUrl("targetUrl", "Product URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "PROS_REVIEW",
+        label: "Pros Review",
+        emoji: "👍",
+        description: "Write the pros of the product",
+        adminFields: [
+          fieldUrl("targetUrl", "Product URL"),
+          fieldComment("Pros (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 15, max: 40 },
+      },
+      {
+        key: "CONS_REVIEW",
+        label: "Cons Review",
+        emoji: "👎",
+        description: "Write the cons of the product",
+        adminFields: [
+          fieldUrl("targetUrl", "Product URL"),
+          fieldComment("Cons (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "RECOMMEND",
+        label: "Recommend Product",
+        emoji: "💯",
+        description: "Mark the product as recommended",
+        adminFields: [fieldUrl("targetUrl", "Product URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+    ],
+  },
+
+  // ── Capterra ──────────────────────────────────────────────────────────────
+  {
+    key: "CAPTERRA",
+    label: "Capterra",
+    emoji: "🔎",
+    brandColor: "bg-[#ff9d28] text-black",
+    websiteUrl: "https://www.capterra.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Leave a Rating",
+        emoji: "⭐",
+        description: "Leave a star rating for a product",
+        adminFields: [fieldUrl("targetUrl", "Product URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a detailed review",
+        adminFields: [
+          fieldUrl("targetUrl", "Product URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+      {
+        key: "RECOMMEND",
+        label: "Would Recommend",
+        emoji: "💯",
+        description: "Mark that you would recommend it",
+        adminFields: [fieldUrl("targetUrl", "Product URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+    ],
+  },
+
+  // ── Sitejabber ────────────────────────────────────────────────────────────
+  {
+    key: "SITEJABBER",
+    label: "Sitejabber",
+    emoji: "👍",
+    brandColor: "bg-[#23a455] text-white",
+    websiteUrl: "https://www.sitejabber.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Leave a Rating",
+        emoji: "⭐",
+        description: "Leave a star rating for a business",
+        adminFields: [fieldUrl("targetUrl", "Business URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a text review",
+        adminFields: [
+          fieldUrl("targetUrl", "Business URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+      {
+        key: "UPLOAD_PHOTO",
+        label: "Add Product Photo",
+        emoji: "📷",
+        description: "Add a product photo",
+        adminFields: [
+          fieldUrl("targetUrl", "Business URL"),
+          {
+            key: "photoUrl",
+            label: "Reference photo (admin upload)",
+            type: "image-url",
+            required: false,
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+    ],
+  },
+
+  // ── Glassdoor ─────────────────────────────────────────────────────────────
+  {
+    key: "GLASSDOOR",
+    label: "Glassdoor",
+    emoji: "💼",
+    brandColor: "bg-[#0caa41] text-white",
+    websiteUrl: "https://www.glassdoor.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Rate the Company",
+        emoji: "⭐",
+        description: "Leave a company rating",
+        adminFields: [fieldUrl("targetUrl", "Company URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "PROS_REVIEW",
+        label: "Pros Section",
+        emoji: "👍",
+        description: "Write the pros of working there",
+        adminFields: [
+          fieldUrl("targetUrl", "Company URL"),
+          fieldComment("Pros (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 15, max: 40 },
+      },
+      {
+        key: "CONS_REVIEW",
+        label: "Cons Section",
+        emoji: "👎",
+        description: "Write the cons of working there",
+        adminFields: [
+          fieldUrl("targetUrl", "Company URL"),
+          fieldComment("Cons (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "RECOMMEND",
+        label: "Recommend to a Friend",
+        emoji: "💯",
+        description: "Mark that you'd recommend the company",
+        adminFields: [fieldUrl("targetUrl", "Company URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "APPROVE_CEO",
+        label: "Approve of CEO",
+        emoji: "✅",
+        description: "Mark approval of the CEO",
+        adminFields: [fieldUrl("targetUrl", "Company URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+    ],
+  },
+
+  // ── Facebook Reviews ──────────────────────────────────────────────────────
+  {
+    key: "FACEBOOK_REVIEWS",
+    label: "Facebook Reviews",
+    emoji: "⭐",
+    brandColor: "bg-[#1877f2] text-white",
+    websiteUrl: "https://www.facebook.com",
+    actions: [
+      {
+        key: "RECOMMEND",
+        label: "Recommend Page",
+        emoji: "💯",
+        description: "Mark 'Yes, recommend' on a page",
+        adminFields: [fieldUrl("targetUrl", "Page URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Review Text",
+        emoji: "📝",
+        description: "Write a recommendation review",
+        adminFields: [
+          fieldUrl("targetUrl", "Page URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 45 },
+      },
+      {
+        key: "UPLOAD_PHOTO",
+        label: "Add Photo",
+        emoji: "📷",
+        description: "Add a photo to your recommendation",
+        adminFields: [
+          fieldUrl("targetUrl", "Page URL"),
+          {
+            key: "photoUrl",
+            label: "Reference photo (admin upload)",
+            type: "image-url",
+            required: false,
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "FOLLOW_PAGE",
+        label: "Follow the Page",
+        emoji: "👥",
+        description: "Follow the Facebook page",
+        adminFields: [fieldUrl("targetUrl", "Page URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+    ],
+  },
+
+  // ── Quora ─────────────────────────────────────────────────────────────────
+  {
+    key: "QUORA",
+    label: "Quora",
+    emoji: "❓",
+    brandColor: "bg-[#b92b27] text-white",
+    websiteUrl: "https://www.quora.com",
+    actions: [
+      {
+        key: "UPVOTE_POST",
+        label: "Upvote Answer",
+        emoji: "⬆️",
+        description: "Upvote an answer",
+        adminFields: [fieldUrl("targetUrl", "Answer URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 3, max: 10 },
+      },
+      {
+        key: "COMMENT",
+        label: "Comment on Answer",
+        emoji: "💬",
+        description: "Comment on an answer",
+        adminFields: [
+          fieldUrl("targetUrl", "Answer URL"),
+          fieldComment("Comment (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "FOLLOW_USER",
+        label: "Follow User",
+        emoji: "👥",
+        description: "Follow a Quora user",
+        adminFields: [fieldUrl("targetUrl", "Profile URL")],
+        proofFields: [fieldProofUsername, fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "WRITE_ANSWER",
+        label: "Write Answer",
+        emoji: "📝",
+        description: "Write an answer to a question",
+        adminFields: [
+          fieldUrl("targetUrl", "Question URL"),
+          fieldComment("Answer (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldProofUrl("Link to your answer"), fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 25, max: 60 },
+      },
+    ],
+  },
+
+  // ── Google Maps ───────────────────────────────────────────────────────────
+  {
+    key: "GOOGLE_MAPS",
+    label: "Google Maps",
+    emoji: "📍",
+    brandColor: "bg-[#34a853] text-white",
+    websiteUrl: "https://maps.google.com",
+    actions: [
+      {
+        key: "RATE",
+        label: "Leave a Rating",
+        emoji: "⭐",
+        description: "Leave a star rating for a place",
+        adminFields: [
+          fieldUrl("targetUrl", "Location URL"),
+          {
+            key: "requestedRating",
+            label: "Requested rating",
+            type: "select",
+            required: false,
+            options: ["5 stars", "4 stars", "Any"],
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 30 },
+      },
+      {
+        key: "WRITE_REVIEW",
+        label: "Write a Review",
+        emoji: "📝",
+        description: "Write a review for a place",
+        adminFields: [
+          fieldUrl("targetUrl", "Location URL"),
+          fieldComment("Review text (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldProofUrl("Link to your review"), fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 20, max: 50 },
+      },
+      {
+        key: "UPLOAD_PHOTO",
+        label: "Add Photo of Place",
+        emoji: "📷",
+        description: "Add a photo of the place",
+        adminFields: [
+          fieldUrl("targetUrl", "Location URL"),
+          {
+            key: "photoUrl",
+            label: "Reference photo (admin upload)",
+            type: "image-url",
+            required: false,
+          },
+        ],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 10, max: 25 },
+      },
+      {
+        key: "SAVE_ITEM",
+        label: "Save the Place",
+        emoji: "🔖",
+        description: "Save the place to a list",
+        adminFields: [fieldUrl("targetUrl", "Location URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 5, max: 15 },
+      },
+      {
+        key: "ANSWER_QA",
+        label: "Answer Q&A",
+        emoji: "❓",
+        description: "Answer a question about the place",
+        adminFields: [
+          fieldUrl("targetUrl", "Location URL"),
+          fieldComment("Suggested answer (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 10, max: 25 },
+      },
+    ],
+  },
+
+  // ── Website ───────────────────────────────────────────────────────────────
+  {
+    key: "WEBSITE",
+    label: "Website",
+    emoji: "🌐",
+    brandColor: "bg-[#6366f1] text-white",
+    websiteUrl: "https://",
+    actions: [
+      {
+        key: "VISIT_PAGE",
+        label: "Visit Page",
+        emoji: "🖥️",
+        description: "Visit a page and stay for the required time",
+        adminFields: [fieldUrl("targetUrl", "Page URL"), fieldWatchSeconds],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 3, max: 12 },
+      },
+      {
+        key: "SCROLL_END",
+        label: "Scroll to End",
+        emoji: "⬇️",
+        description: "Scroll to the bottom of the page",
+        adminFields: [fieldUrl("targetUrl", "Page URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 3, max: 10 },
+      },
+      {
+        key: "COMMENT",
+        label: "Leave a Comment",
+        emoji: "💬",
+        description: "Leave a comment on the page",
+        adminFields: [
+          fieldUrl("targetUrl", "Page URL"),
+          fieldComment("Comment (template)"),
+        ],
+        aiGeneratableFields: ["commentTemplate"],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: true,
+        suggestedReward: { min: 8, max: 20 },
+      },
+      {
+        key: "SUBSCRIBE_NEWSLETTER",
+        label: "Subscribe to Newsletter",
+        emoji: "📧",
+        description: "Sign up for the newsletter",
+        adminFields: [fieldUrl("targetUrl", "Signup URL")],
+        proofFields: [fieldScreenshot],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 8, max: 20 },
+      },
+      {
+        key: "SHARE_LINK",
+        label: "Share Link",
+        emoji: "🔗",
+        description: "Share the link externally",
+        adminFields: [
+          fieldUrl("targetUrl", "Page URL"),
+          {
+            key: "shareDestination",
+            label: "Where to share",
+            type: "text",
+            required: false,
+          },
+        ],
+        proofFields: [fieldProofUrl("Link to your share")],
+        supportsAiPrompt: false,
+        suggestedReward: { min: 8, max: 20 },
+      },
+    ],
+  },
+
   // ── Snapchat ──────────────────────────────────────────────────────────────
   {
     key: "SNAPCHAT",
@@ -1637,6 +2842,69 @@ export function getPlatform(key: string | null | undefined): SocialPlatform | un
   return SOCIAL_PLATFORMS.find((p) => p.key === key);
 }
 
+// -----------------------------------------------------------------------------
+// Platform categories — group the flat platform list for the picker UI.
+// -----------------------------------------------------------------------------
+
+export interface PlatformGroup {
+  key: string;
+  label: string;
+  platforms: SocialPlatform[];
+}
+
+const PLATFORM_CATEGORY_MAP: { key: string; label: string; keys: string[] }[] = [
+  {
+    key: "social",
+    label: "Social Media",
+    keys: [
+      "FACEBOOK", "FB_GROUP", "TWITTER", "YOUTUBE", "INSTAGRAM", "TIKTOK",
+      "PINTEREST", "LINKEDIN", "THREADS", "DISCORD", "TELEGRAM", "REDDIT",
+      "QUORA", "SNAPCHAT",
+    ],
+  },
+  {
+    key: "music",
+    label: "Music",
+    keys: [
+      "SPOTIFY", "SOUNDCLOUD", "APPLE_MUSIC", "AMAZON_MUSIC", "TIDAL",
+      "DEEZER", "BANDCAMP",
+    ],
+  },
+  {
+    key: "reviews",
+    label: "Reviews",
+    keys: [
+      "GOOGLE_REVIEWS", "TRUSTPILOT", "GOOGLE_MAPS", "YELP", "TRIPADVISOR",
+      "BBB", "G2", "CAPTERRA", "SITEJABBER", "GLASSDOOR", "FACEBOOK_REVIEWS",
+      "APP_STORE", "PLAY_STORE",
+    ],
+  },
+  { key: "other", label: "Other", keys: ["WEBSITE"] },
+];
+
+/**
+ * Platforms grouped into Social Media / Music / Reviews / Other for the picker.
+ * Any platform not explicitly categorised is appended to "Other" so nothing
+ * silently disappears when a new platform is added to the taxonomy.
+ */
+export function getPlatformGroups(): PlatformGroup[] {
+  const assigned = new Set<string>();
+  const groups: PlatformGroup[] = PLATFORM_CATEGORY_MAP.map((c) => {
+    const platforms = c.keys
+      .map((k) => SOCIAL_PLATFORMS.find((p) => p.key === k))
+      .filter((p): p is SocialPlatform => !!p);
+    platforms.forEach((p) => assigned.add(p.key));
+    return { key: c.key, label: c.label, platforms };
+  });
+  const leftovers = SOCIAL_PLATFORMS.filter((p) => !assigned.has(p.key));
+  if (leftovers.length) {
+    const other = groups.find((g) => g.key === "other");
+    if (other) other.platforms.push(...leftovers);
+    else groups.push({ key: "other", label: "Other", platforms: leftovers });
+  }
+  return groups.filter((g) => g.platforms.length > 0);
+}
+
 export function getAction(
   platformKey: string | null | undefined,
   actionKey: string | null | undefined
@@ -1819,6 +3087,87 @@ export function emptyBundleConfig(): SocialBundleConfig {
 }
 
 // -----------------------------------------------------------------------------
+// Task row → normalized view shape (shared by the list API + the run page).
+// -----------------------------------------------------------------------------
+
+export interface SocialTaskItemView {
+  action: string;
+  fields: Record<string, string>;
+  points: number;
+  proofRequirements: ProofRequirements;
+  aiPromptEnabled: boolean;
+  aiPrompt: string | null;
+  watchSeconds: number | null;
+  targetUrl: string;
+}
+
+export interface SocialTaskView {
+  id: string;
+  title: string;
+  description: string;
+  pointsReward: number;
+  difficulty: string;
+  platform: string;
+  action: string;
+  targetUrl: string;
+  items: SocialTaskItemView[];
+  instructions: string | null;
+  instructionVideoUrl: string | null;
+}
+
+export interface SocialTaskRow {
+  id: string;
+  title: string;
+  description: string | null;
+  pointsReward: number;
+  difficulty: string | null;
+  socialPlatform: string | null;
+  socialAction: string | null;
+  socialUrl: string | null;
+  socialConfig: unknown;
+  instructions: string | null;
+  instructionVideoUrl: string | null;
+}
+
+/**
+ * Normalize a raw Task row (any stored socialConfig) into the ordered-bundle
+ * view the UI renders. Used by both the social list endpoint and the single
+ * task run page so they stay in sync.
+ */
+export function mapSocialTaskRow(t: SocialTaskRow): SocialTaskView {
+  const norm = normalizeSocialConfig(t.socialConfig);
+  const platform = (norm.platform ?? t.socialPlatform ?? "FACEBOOK").toUpperCase();
+  const items: SocialTaskItemView[] = norm.items.map((it) => ({
+    action: (it.action ?? "FOLLOW").toUpperCase(),
+    fields: it.fields ?? {},
+    points: it.points ?? 0,
+    proofRequirements: it.proofRequirements ?? {
+      url: true,
+      screenshot: true,
+      username: false,
+    },
+    aiPromptEnabled: it.aiPromptEnabled ?? false,
+    aiPrompt: it.aiPrompt ?? null,
+    watchSeconds: it.watchSeconds ?? null,
+    targetUrl: it.fields?.targetUrl ?? it.fields?.targetHandle ?? "",
+  }));
+  const first = items[0];
+  return {
+    id: t.id,
+    title: t.title,
+    description: t.description ?? "",
+    pointsReward: t.pointsReward,
+    difficulty: t.difficulty ?? "",
+    platform,
+    action: first?.action ?? (t.socialAction ?? "FOLLOW").toUpperCase(),
+    targetUrl: first?.targetUrl ?? t.socialUrl ?? "",
+    items,
+    instructions: t.instructions,
+    instructionVideoUrl: t.instructionVideoUrl,
+  };
+}
+
+// -----------------------------------------------------------------------------
 // Natural-flow ordering: watch → like → save → comment → share → follow → create
 // -----------------------------------------------------------------------------
 
@@ -1827,6 +3176,8 @@ const ACTION_TIER: Record<string, number> = {
   WATCH_VIDEO: 10,
   VIEW_STORY: 10,
   LISTEN_FULL: 10,
+  VISIT_PAGE: 10,
+  SCROLL_END: 10,
   // 20 — quick reactions
   LIKE_PAGE: 20,
   LIKE_POST: 20,
@@ -1837,11 +3188,14 @@ const ACTION_TIER: Record<string, number> = {
   UPVOTE_POST: 20,
   REACT_TO_MESSAGE: 20,
   VOTE_IN_POLL: 20,
+  RATE: 20,
+  MARK_HELPFUL: 20,
   // 30 — save / add / collect
   SAVE_PIN: 30,
   ADD_TO_PLAYLIST: 30,
   FOLLOW_PLAYLIST: 30,
   FOLLOW_BOARD: 30,
+  SAVE_ITEM: 30,
   // 40 — text engagement
   COMMENT_POST: 40,
   COMMENT_VIDEO: 40,
@@ -1858,6 +3212,7 @@ const ACTION_TIER: Record<string, number> = {
   REPOST: 50,
   REPIN: 50,
   FORWARD_MESSAGE: 50,
+  SHARE_LINK: 50,
   // 60 — follow / join / connect
   FOLLOW: 60,
   FOLLOW_PAGE: 60,
@@ -1872,6 +3227,14 @@ const ACTION_TIER: Record<string, number> = {
   JOIN_SERVER: 60,
   JOIN_CHANNEL: 60,
   JOIN_SUBREDDIT: 60,
+  SUBSCRIBE_NEWSLETTER: 60,
+  CHECK_IN: 60,
+  // 75 — review-flow enrichment (rating → written review → photo/verify/recommend)
+  UPLOAD_PHOTO: 75,
+  ANSWER_QA: 75,
+  VERIFY: 75,
+  RECOMMEND: 75,
+  APPROVE_CEO: 75,
   // 80 — heavy creation (last)
   CREATE_POST: 80,
   POST_PHOTO: 80,
@@ -1886,6 +3249,11 @@ const ACTION_TIER: Record<string, number> = {
   SUBMIT_POST: 80,
   CREATE_PIN: 80,
   DUET_OR_STITCH: 80,
+  WRITE_REVIEW: 80,
+  PROS_REVIEW: 80,
+  CONS_REVIEW: 80,
+  WRITE_ANSWER: 80,
+  BUY_TRACK: 80,
   // 95 — keep-alive commitments (always last)
   KEEP_POST_LIVE: 95,
   KEEP_VIDEO_LIVE: 95,

@@ -9,7 +9,10 @@
  */
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+// Model is configurable via GEMINI_MODEL. Default is a current, free-tier model
+// (the old gemini-1.5-flash was retired by Google and now 404s).
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 interface QuizQuestion {
   id: number;
@@ -37,6 +40,42 @@ interface ValidateAnswerOptions {
  */
 export function isGeminiConfigured(): boolean {
   return !!GEMINI_API_KEY;
+}
+
+/**
+ * Generic free-text generation from a prompt. Used by the user-facing
+ * /api/ai/generate (social task content) and any admin text generation.
+ * Returns { success, text } or { success:false, error }.
+ */
+export async function generateText(
+  prompt: string
+): Promise<{ success: boolean; text?: string; error?: string }> {
+  if (!GEMINI_API_KEY) return { success: false, error: "GEMINI_API_KEY not set" };
+  try {
+    const res = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        error: err?.error?.message ?? `HTTP ${res.status}`,
+      };
+    }
+    const data = await res.json();
+    const text: string =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    return text.trim()
+      ? { success: true, text: text.trim() }
+      : { success: false, error: "Empty response" };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "Request failed",
+    };
+  }
 }
 
 /**

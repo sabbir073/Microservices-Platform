@@ -19,6 +19,7 @@ import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { taskRunHref } from "@/lib/task-routes";
 
 interface ApiTask {
   id: string;
@@ -34,18 +35,6 @@ interface ApiTask {
   canStart?: boolean;
   reason?: string | null;
 }
-
-const TYPE_TO_ROUTE: Record<string, string> = {
-  ARTICLE: "/article-tasks",
-  VIDEO: "/video-tasks",
-  QUIZ: "/quiz-tasks",
-  SOCIAL: "/social-tasks",
-  PROXY: "/proxy-tasks",
-  MANUAL: "/manual-tasks",
-  BOARD: "/board-tasks",
-  OFFERWALL: "/earn#offerwall",
-  CUSTOM: "/custom-tasks",
-};
 
 const QUICK_ACCESS = [
   { name: "Articles", href: "/article-tasks", icon: FileText, gradient: "from-blue-500 to-cyan-500" },
@@ -224,31 +213,24 @@ export function TasksHubView() {
 
       {!loading && filtered.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {filtered.map((t) => {
-            const baseRoute = TYPE_TO_ROUTE[t.type] ?? "/manual-tasks";
-            // Custom tasks deep-link straight into the task detail page;
-            // others land on their listing page.
-            const route =
-              t.type === "CUSTOM" ? `${baseRoute}/${t.id}` : baseRoute;
-            return (
-              <TaskCard
-                key={t.id}
-                title={t.title}
-                description={t.description ?? undefined}
-                type={t.type.toLowerCase()}
-                reward={t.pointsReward}
-                xpReward={t.xpReward}
-                difficulty={
-                  (t.difficulty?.toUpperCase() as "EASY" | "MEDIUM" | "HARD") ??
-                  undefined
-                }
-                durationMin={t.duration ?? undefined}
-                thumbnail={t.thumbnailUrl ?? undefined}
-                href={route}
-                actionLabel="Open"
-              />
-            );
-          })}
+          {filtered.map((t) => (
+            <TaskCard
+              key={t.id}
+              title={t.title}
+              description={t.description ?? undefined}
+              type={t.type.toLowerCase()}
+              reward={t.pointsReward}
+              xpReward={t.xpReward}
+              difficulty={
+                (t.difficulty?.toUpperCase() as "EASY" | "MEDIUM" | "HARD") ??
+                undefined
+              }
+              durationMin={t.duration ?? undefined}
+              thumbnail={t.thumbnailUrl ?? undefined}
+              href={taskRunHref(t.type, t.id)}
+              actionLabel="Open"
+            />
+          ))}
         </div>
       )}
     </div>
