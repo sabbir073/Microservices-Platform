@@ -285,6 +285,25 @@ async function main() {
     console.log("Daily mission already exists — skipping");
   }
 
+  // Seed a few default Social banners (auto-sliding carousel at the top of /social).
+  // Idempotent: each is created only if a banner with that title is absent.
+  const defaultBanners = [
+    { title: "Community · Share & Win", subtitle: "Post, engage, and climb the leaderboard.", bgGradient: "from-indigo-600 to-purple-600", linkUrl: "/social", order: 0 },
+    { title: "Invite friends, earn 10% forever", subtitle: "Grow your team and earn passive referral income.", bgGradient: "from-emerald-500 to-teal-600", linkUrl: "/referrals", order: 1 },
+    { title: "Finish your Daily Mission", subtitle: "Complete today's tasks to collect a bonus.", bgGradient: "from-amber-500 to-red-500", linkUrl: "/daily-mission", order: 2 },
+    { title: "Climb the leaderboard", subtitle: "Top earners win rewards every week.", bgGradient: "from-cyan-500 to-blue-600", linkUrl: "/leaderboard", order: 3 },
+    { title: "Find Your Tribe", subtitle: "Join groups that match your vibe.", bgGradient: "from-pink-500 to-orange-500", linkUrl: "/social", order: 4 },
+  ];
+  for (const b of defaultBanners) {
+    const exists = await prisma.banner.findFirst({ where: { title: b.title }, select: { id: true } });
+    if (!exists) {
+      await prisma.banner.create({
+        data: { ...b, location: "HOME", isActive: true },
+      });
+    }
+  }
+  console.log("Seeded default social banners");
+
   // Create referral levels
   const referralLevels = await prisma.referralLevel.createMany({
     skipDuplicates: true,

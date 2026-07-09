@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Home, ListTodo, Wallet, Target, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMobileNav } from "@/lib/stores/mobile-nav-store";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
 // Left → right: two smaller page tabs, the bigger center Home, then Wallet + Menu.
 const TABS = [
@@ -21,18 +22,25 @@ export function BottomTabBar() {
   const setMenuOpen = useMobileNav((s) => s.setOpen);
   const [unread, setUnread] = useState(0);
 
+  // Fetch unread on mount + on focus/timer (not on every navigation).
+  const loadUnread = useCallback(async () => {
+    try {
+      const r = await fetch("/api/notifications?limit=1&unread=true", {
+        cache: "no-store",
+      });
+      const d = await r.json();
+      setUnread(d.unreadCount || 0);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
-    let active = true;
-    fetch("/api/notifications?limit=1&unread=true")
-      .then((r) => r.json())
-      .then((d) => {
-        if (active) setUnread(d.unreadCount || 0);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [pathname]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadUnread();
+  }, [loadUnread]);
+
+  useAutoRefresh(loadUnread);
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`);

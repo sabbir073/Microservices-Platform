@@ -22,6 +22,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (body.subtitle !== undefined) data.subtitle = body.subtitle ?? null;
   if (body.iconEmoji !== undefined) data.iconEmoji = body.iconEmoji ?? null;
   if (body.imageUrl !== undefined) data.imageUrl = body.imageUrl ?? null;
+  if (body.videoUrl !== undefined) data.videoUrl = body.videoUrl || null;
   if (body.bgGradient !== undefined) data.bgGradient = body.bgGradient ?? null;
   if (body.linkUrl !== undefined) data.linkUrl = body.linkUrl ?? null;
   if (body.location !== undefined) data.location = body.location;
