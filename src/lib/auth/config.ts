@@ -66,6 +66,9 @@ export const authConfig: NextAuthConfig = {
         "/forgot-password",
         "/reset-password",
         "/verify-email",
+        "/privacy",
+        "/terms",
+        "/refund",
       ];
 
       // Admin routes that require admin role

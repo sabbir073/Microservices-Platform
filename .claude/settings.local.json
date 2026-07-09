@@ -23,7 +23,15 @@
       "Bash(curl -s -w \"\\\\n[HTTP %{http_code}]\" \"http://localhost:3002/api/inngest\")",
       "Bash(curl -s -X PUT \"http://localhost:3002/api/inngest\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/)",
-      "Bash(echo \"$\\(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/ \\) <- / \\(landing\\)\")"
+      "Bash(echo \"$\\(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3002/ \\) <- / \\(landing\\)\")",
+      "Bash(npx --yes inngest-cli@latest dev -u http://localhost:3002/api/inngest)",
+      "Bash(curl -s \"http://localhost:8288/v0/apps\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:8288/)",
+      "Bash(echo \"dashboard: $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:8288/ \\)\")",
+      "Bash(curl -s http://localhost:3002/api/inngest)",
+      "Bash(echo \"app introspection \\(our endpoint\\): $\\(curl -s http://localhost:3002/api/inngest)",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:3002/)",
+      "Bash(echo \"$\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:3002/ \\) <- / \\(landing\\)\")"
     ]
   }
 }
