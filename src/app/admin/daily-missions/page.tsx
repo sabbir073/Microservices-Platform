@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { accessLevelToTier } from "@/lib/missions";
 import { DailyMissionsClient } from "@/components/admin/daily-missions/daily-missions-client";
 
 export default async function DailyMissionsAdminPage() {
@@ -43,7 +44,7 @@ export default async function DailyMissionsAdminPage() {
         id: m.id,
         name: m.name,
         description: m.description,
-        packageTier: `Level ${m.requiredAccessLevel}+` as ClientMission["packageTier"],
+        packageTier: accessLevelToTier(m.requiredAccessLevel),
         requiredLevel: m.requiredLevel,
         completionXpReward: m.completionXpReward,
         completionPointsReward: m.completionPointsReward,

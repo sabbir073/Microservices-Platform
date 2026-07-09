@@ -242,6 +242,49 @@ async function main() {
   });
   console.log("Seeded default plan");
 
+  // Seed one active FREE daily mission so users see a working Daily Mission out
+  // of the box. Idempotent: only create if a template with this name is absent.
+  const DAILY_MISSION_NAME = "Daily Mission";
+  const existingMission = await prisma.dailyMissionTemplate.findFirst({
+    where: { name: DAILY_MISSION_NAME },
+    select: { id: true },
+  });
+  if (!existingMission) {
+    await prisma.dailyMissionTemplate.create({
+      data: {
+        name: DAILY_MISSION_NAME,
+        description:
+          "Complete every task below to collect today's bonus and unlock your referral bonus claim.",
+        requiredAccessLevel: 0, // FREE — visible to everyone
+        requiredLevel: 1,
+        completionPointsReward: 1000,
+        completionXpReward: 200,
+        isActive: true,
+        autoRefresh: true,
+        linkReferralBonus: true,
+        order: 0,
+        // One item per distinct task-category bucket. MANUAL is omitted because
+        // it shares the CUSTOM bucket in buildDailyProgress (would double-count).
+        items: {
+          create: [
+            { taskType: "ARTICLE", description: "Read 5 articles", targetCount: 5, pointsPerComplete: 50, xpPerComplete: 10, order: 0 },
+            { taskType: "VIDEO", description: "Watch 5 videos", targetCount: 5, pointsPerComplete: 50, xpPerComplete: 10, order: 1 },
+            { taskType: "QUIZ", description: "Complete 3 quizzes", targetCount: 3, pointsPerComplete: 100, xpPerComplete: 20, order: 2 },
+            { taskType: "SURVEY", description: "Complete 2 surveys", targetCount: 2, pointsPerComplete: 150, xpPerComplete: 25, order: 3 },
+            { taskType: "SOCIAL", description: "Do 2 social tasks", targetCount: 2, pointsPerComplete: 40, xpPerComplete: 8, order: 4 },
+            { taskType: "OFFERWALL", description: "Complete 1 offer", targetCount: 1, pointsPerComplete: 200, xpPerComplete: 30, order: 5 },
+            { taskType: "PROXY", description: "Run 1 proxy session", targetCount: 1, pointsPerComplete: 60, xpPerComplete: 12, order: 6 },
+            { taskType: "BOARD", description: "Do 1 board task", targetCount: 1, pointsPerComplete: 80, xpPerComplete: 15, order: 7 },
+            { taskType: "CUSTOM", description: "Do 1 custom/manual task", targetCount: 1, pointsPerComplete: 80, xpPerComplete: 15, order: 8 },
+          ],
+        },
+      },
+    });
+    console.log("Seeded default daily mission");
+  } else {
+    console.log("Daily mission already exists — skipping");
+  }
+
   // Create referral levels
   const referralLevels = await prisma.referralLevel.createMany({
     skipDuplicates: true,

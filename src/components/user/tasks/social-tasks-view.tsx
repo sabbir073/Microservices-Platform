@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ExternalLink, ArrowRight, Sparkles } from "lucide-react";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { cn } from "@/lib/utils";
 import {
   SOCIAL_PLATFORMS,
@@ -31,17 +32,29 @@ export function SocialTasksView() {
   const [tasks, setTasks] = useState<SocialTaskView[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const r = await fetch(`/api/tasks/social?status=${status}`, {
+          cache: "no-store",
+        });
+        const d = await r.json();
+        setTasks(d.tasks ?? []);
+      } catch {
+        if (!silent) setTasks([]);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [status]
+  );
+
   useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/tasks/social?status=${status}`)
-      .then((r) => r.json())
-      .then((d) => !cancelled && setTasks(d.tasks ?? []))
-      .catch(() => !cancelled && setTasks([]))
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [status]);
+    load();
+  }, [load]);
+
+  useAutoRefresh(() => load(true));
 
   const changeStatus = (s: Status) => {
     if (s === status) return;

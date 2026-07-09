@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
 interface Notification {
   id: string;
@@ -110,8 +111,9 @@ export default function NotificationsPage() {
     totalPages: 0,
   });
 
-  const fetchNotifications = async (page: number = 1) => {
-    setLoading(true);
+  // `silent` skips the loading spinner so background auto-refreshes don't flash.
+  const fetchNotifications = async (page: number = 1, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const params = new URLSearchParams();
       if (selectedFilter) params.set("type", selectedFilter);
@@ -119,7 +121,9 @@ export default function NotificationsPage() {
       params.set("page", page.toString());
       params.set("limit", PAGE_SIZE.toString());
 
-      const response = await fetch(`/api/notifications?${params.toString()}`);
+      const response = await fetch(`/api/notifications?${params.toString()}`, {
+        cache: "no-store",
+      });
       if (response.ok) {
         const data = await response.json();
         setNotifications(data.notifications || []);
@@ -134,7 +138,7 @@ export default function NotificationsPage() {
     } catch (error) {
       console.error("Error fetching notifications:", error);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -149,6 +153,9 @@ export default function NotificationsPage() {
     fetchNotifications(currentPage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
+
+  // Live refresh: tab refocus + 15s timer (paused while tab hidden).
+  useAutoRefresh(() => fetchNotifications(currentPage, true));
 
   const handleMarkAsRead = async (notificationIds: string[]) => {
     try {

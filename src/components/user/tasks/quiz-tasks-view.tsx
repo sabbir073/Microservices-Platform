@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Brain, Clock, Coins, Trophy, ListChecks } from "lucide-react";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { QuizPlayer } from "./quiz-player";
 import { cn } from "@/lib/utils";
 
@@ -29,13 +30,24 @@ export function QuizTasksView() {
   const [loading, setLoading] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/tasks/quiz")
-      .then((r) => (r.ok ? r.json() : { quizzes: [] }))
-      .then((d) => setQuizzes(d.quizzes ?? []))
-      .catch(() => setQuizzes([]))
-      .finally(() => setLoading(false));
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const r = await fetch("/api/tasks/quiz", { cache: "no-store" });
+      const d = r.ok ? await r.json() : { quizzes: [] };
+      setQuizzes(d.quizzes ?? []);
+    } catch {
+      setQuizzes([]);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useAutoRefresh(() => load(true));
 
   return (
     <div className="space-y-3">

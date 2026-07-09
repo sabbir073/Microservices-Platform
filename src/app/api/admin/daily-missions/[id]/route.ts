@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { tierToAccessLevel } from "@/lib/missions";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -91,12 +92,17 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { items, ...rest } = v.data;
+  // `packageTier` is the admin-facing enum; the model stores `requiredAccessLevel`.
+  const { items, packageTier, ...rest } = v.data;
+  const data =
+    packageTier !== undefined
+      ? { ...rest, requiredAccessLevel: tierToAccessLevel(packageTier) }
+      : rest;
 
   const mission = await prisma.$transaction(async (tx) => {
     const updated = await tx.dailyMissionTemplate.update({
       where: { id },
-      data: rest,
+      data,
     });
     if (items) {
       // Replace items: delete-all then re-create. Simple and correct given small N.

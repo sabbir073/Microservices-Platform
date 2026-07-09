@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Megaphone, Share2, Upload, Loader2 } from "lucide-react";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { toast } from "sonner";
 
 type Tab = "available" | "submissions";
@@ -32,22 +33,40 @@ export function SocialPostsView() {
   const [screenshotUrl, setScreenshotUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        if (tab === "available") {
+          const r = await fetch("/api/tasks?type=SOCIAL_POST", {
+            cache: "no-store",
+          });
+          const d = await r.json();
+          setTasks(d.tasks ?? []);
+        } else {
+          const r = await fetch("/api/submissions?type=SOCIAL_POST", {
+            cache: "no-store",
+          });
+          const d = await r.json();
+          setSubmissions(d.submissions ?? []);
+        }
+      } catch {
+        if (!silent) {
+          if (tab === "available") setTasks([]);
+          else setSubmissions([]);
+        }
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [tab]
+  );
+
   useEffect(() => {
-    setLoading(true);
-    if (tab === "available") {
-      fetch("/api/tasks?type=SOCIAL_POST")
-        .then((r) => r.json())
-        .then((d) => setTasks(d.tasks ?? []))
-        .catch(() => setTasks([]))
-        .finally(() => setLoading(false));
-    } else {
-      fetch("/api/submissions?type=SOCIAL_POST")
-        .then((r) => r.json())
-        .then((d) => setSubmissions(d.submissions ?? []))
-        .catch(() => setSubmissions([]))
-        .finally(() => setLoading(false));
-    }
-  }, [tab]);
+    load();
+  }, [load]);
+
+  useAutoRefresh(() => load(true));
 
   const submit = async () => {
     if (!submitting) return;

@@ -5,7 +5,7 @@ import {
   LegalSection,
   LEGAL_CONTACT,
   LEGAL_GOVERNING,
-} from "../layout";
+} from "@/components/legal/legal-ui";
 
 export const metadata: Metadata = {
   title: "Terms of Service · EarnGPT",

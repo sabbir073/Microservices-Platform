@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Globe,
   ShieldCheck,
@@ -17,6 +17,7 @@ import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
 import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -101,13 +102,24 @@ export function ProxyTasksView() {
   const [submitting, setSubmitting] = useState(false);
   const tickRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    fetch("/api/tasks/proxy")
-      .then((r) => (r.ok ? r.json() : { tasks: [] }))
-      .then((d) => setTasks(d.tasks ?? []))
-      .catch(() => setTasks([]))
-      .finally(() => setLoading(false));
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const r = await fetch("/api/tasks/proxy", { cache: "no-store" });
+      const d = r.ok ? await r.json() : { tasks: [] };
+      setTasks(d.tasks ?? []);
+    } catch {
+      setTasks([]);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useAutoRefresh(() => load(true));
 
   // Single 1-second tick drives both timers.
   useEffect(() => {
