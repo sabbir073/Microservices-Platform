@@ -26,6 +26,7 @@ import {
   Bold as BoldIcon,
   Italic as ItalicIcon,
   Smile,
+  Palette,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -157,16 +158,9 @@ export function SocialFeedView({
   return (
     <div className="mx-auto w-full max-w-5xl flex justify-center gap-6">
       {/* Center feed column (FB/Twitter-width) */}
-      <div className="w-full max-w-xl min-w-0 space-y-6">
-        <header>
-          <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-indigo-400" />
-            Community
-          </h1>
-          <p className="text-gray-400 text-sm mt-0.5">
-            Share wins, ask questions, find your tribe.
-          </p>
-        </header>
+      <div className="w-full max-w-xl min-w-0 space-y-4">
+        {/* Banner — above the tabs, visible on both Feed and Groups */}
+        {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
 
         {/* Top tabs */}
         <nav className="flex gap-1 border-b border-gray-800">
@@ -198,7 +192,6 @@ export function SocialFeedView({
         {tab === "feed" && (
           <FeedTab
             user={user}
-            initialBanners={initialBanners}
             initialTicker={initialTicker}
             tickerConfig={tickerConfig}
             sort={sort}
@@ -230,14 +223,12 @@ export function SocialFeedView({
 
 function FeedTab({
   user,
-  initialBanners,
   initialTicker,
   tickerConfig,
   sort,
   onSortChange,
 }: {
   user: SessionUser;
-  initialBanners: BannerSlide[];
   initialTicker: WithdrawalTickerItem[];
   tickerConfig?: TickerConfig;
   sort: Sort;
@@ -287,7 +278,6 @@ function FeedTab({
 
   return (
     <div className="space-y-4">
-      {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
       {initialTicker.length > 0 && (
         <WithdrawalTicker
           items={initialTicker}
@@ -626,18 +616,69 @@ function CreatePostComposer({
   const initial = (user.name ?? "U").charAt(0).toUpperCase();
 
   if (!expanded) {
+    const firstName = user.name?.split(" ")[0] ?? "there";
+    const quickActions = [
+      {
+        label: "Photo",
+        icon: ImageIcon,
+        tone: "text-emerald-400",
+        onClick: () => {
+          setMode("text");
+          setExpanded(true);
+        },
+      },
+      {
+        label: "Poll",
+        icon: ListChecks,
+        tone: "text-amber-400",
+        onClick: () => {
+          setMode("poll");
+          setExpanded(true);
+        },
+      },
+      {
+        label: "Colored",
+        icon: Palette,
+        tone: "text-pink-400",
+        onClick: () => {
+          setMode("text");
+          setExpanded(true);
+        },
+      },
+    ];
     return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="w-full text-left rounded-xl border border-gray-800 bg-gray-900 p-4 flex items-center gap-3 hover:border-gray-700 transition-colors"
-      >
-        <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium shrink-0">
-          {initial}
+      <div className="rounded-2xl border border-indigo-500/30 bg-linear-to-br from-indigo-500/10 via-purple-500/5 to-gray-900 p-3 shadow-lg shadow-indigo-500/5">
+        {/* Top row — tap anywhere to open the composer */}
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-full flex items-center gap-3 group"
+        >
+          <div className="w-11 h-11 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shrink-0 ring-2 ring-indigo-500/30">
+            {initial}
+          </div>
+          <span className="flex-1 text-left rounded-full bg-gray-950/80 border border-gray-700 group-hover:border-indigo-500/50 px-4 py-2.5 text-sm text-gray-400 transition-colors truncate">
+            What&apos;s on your mind, {firstName}?
+          </span>
+          <span className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 text-white text-sm font-bold shrink-0">
+            <Send className="w-4 h-4" />
+            Post
+          </span>
+        </button>
+
+        {/* Quick actions */}
+        <div className="mt-2.5 pt-2.5 border-t border-white/5 grid grid-cols-3 gap-1">
+          {quickActions.map((a) => (
+            <button
+              key={a.label}
+              onClick={a.onClick}
+              className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-gray-300 hover:bg-white/5 transition-colors"
+            >
+              <a.icon className={cn("w-4 h-4", a.tone)} />
+              {a.label}
+            </button>
+          ))}
         </div>
-        <span className="text-gray-500 text-sm">
-          Share something with the community…
-        </span>
-      </button>
+      </div>
     );
   }
 

@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Save,
   Send,
+  MonitorSmartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -34,6 +35,7 @@ const TABS = [
   { id: "notifications", label: "Notifications", icon: Bell },
   { id: "integrations", label: "Integrations", icon: Plug },
   { id: "limits", label: "Limits", icon: SlidersHorizontal },
+  { id: "ui_toggles", label: "Popups", icon: MonitorSmartphone },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -99,6 +101,10 @@ const DEFAULTS: SettingsBag = {
   max_active_listings: 10,
   file_upload_max_mb: 5,
   api_rate_limit_per_min: 100,
+  // Popups / install (site-wide)
+  "ui.cookies_popup_enabled": true,
+  "ui.notification_popup_enabled": true,
+  "ui.pwa_install_prompt_enabled": true,
 };
 
 const CATEGORY_FOR_KEY: Record<string, string> = {
@@ -133,6 +139,10 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   max_tasks_per_day: "limits", max_withdrawals_per_day: "limits",
   max_referrals_per_user: "limits", max_active_listings: "limits",
   file_upload_max_mb: "limits", api_rate_limit_per_min: "limits",
+  // Popups / install
+  "ui.cookies_popup_enabled": "ui_toggles",
+  "ui.notification_popup_enabled": "ui_toggles",
+  "ui.pwa_install_prompt_enabled": "ui_toggles",
 };
 
 export function SystemSettingsForm({
@@ -806,6 +816,36 @@ export function SystemSettingsForm({
                 />
               </Field>
             </div>
+          </div>
+        )}
+
+        {tab === "ui_toggles" && (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Turn the site-wide popups on or off for all visitors.
+            </p>
+            <Toggle
+              label="Cookie consent popup"
+              description="Show the cookie consent banner to visitors"
+              checked={values["ui.cookies_popup_enabled"] !== false}
+              onChange={(v) => set("ui.cookies_popup_enabled", v)}
+              disabled={!canEdit}
+            />
+            <Toggle
+              label="Notification permission popup"
+              description="Show the “Enable notifications” prompt"
+              checked={values["ui.notification_popup_enabled"] !== false}
+              onChange={(v) => set("ui.notification_popup_enabled", v)}
+              disabled={!canEdit}
+            />
+            <Toggle
+              label="PWA install prompt"
+              description="Prompt users who haven't installed the app (Android & iOS); hidden once installed"
+              checked={values["ui.pwa_install_prompt_enabled"] !== false}
+              onChange={(v) => set("ui.pwa_install_prompt_enabled", v)}
+              disabled={!canEdit}
+              tone="purple"
+            />
           </div>
         )}
       </div>

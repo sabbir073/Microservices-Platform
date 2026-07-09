@@ -146,6 +146,24 @@ model Banner {
   @@index([isActive, location])
 }
 
+/// Admin-built marketing "offer" pages, viewable by anyone at /offer/[slug].
+model Offer {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  title        String
+  description  String?  @db.Text
+  thumbnailUrl String?
+  bgGradient   String?
+  blocks       Json     @default("[]")
+  status       String   @default("DRAFT") // DRAFT | PUBLISHED
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([slug])
+  @@index([status])
+}
+
 model Campaign {
   id              String   @id @default(cuid())
   title           String

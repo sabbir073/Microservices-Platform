@@ -17,10 +17,11 @@ const SUPPRESSED_PATHS = [
   "/proxy-tasks",
 ];
 
-export function PushPermissionPrompt() {
+export function PushPermissionPrompt({ enabled = true }: { enabled?: boolean }) {
   const [show, setShow] = useState(false);
 
   useEffect(() => {
+    if (!enabled) return;
     if (typeof window === "undefined") return;
     if (!("Notification" in window)) return;
     if (Notification.permission !== "default") return;
@@ -32,7 +33,7 @@ export function PushPermissionPrompt() {
     if (Date.now() - dismissed < 7 * 24 * 60 * 60 * 1000) return;
     const t = setTimeout(() => setShow(true), 6000);
     return () => clearTimeout(t);
-  }, []);
+  }, [enabled]);
 
   const enable = async () => {
     try {
