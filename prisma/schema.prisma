@@ -569,12 +569,14 @@ model QuizQuestion {
   id            String   @id @default(cuid())
   quizId        String
   quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  order         Int      @default(0)
-  question      String   @db.Text
-  options       String[]
-  correctIndex  Int
-  explanation   String?  @db.Text
-  pointsValue   Int      @default(10)
+  order            Int      @default(0)
+  question         String   @db.Text
+  questionImageUrl String?              // optional image shown as the question
+  options          String[]
+  optionImageUrls  String[] @default([]) // optional per-option images (index-aligned)
+  correctIndex     Int
+  explanation      String?  @db.Text
+  pointsValue      Int      @default(10)
 
   @@index([quizId])
 }

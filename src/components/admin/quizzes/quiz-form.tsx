@@ -5,17 +5,40 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2, Sparkles, Loader2, Save, X } from "lucide-react";
 // (icons all imported above)
 import { toast } from "sonner";
+import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 
 interface Question {
   question: string;
+  questionImageUrl?: string;
   options: string[];
+  optionImageUrls?: string[];
   correctIndex: number;
   explanation?: string;
   pointsValue?: number;
 }
 
+export interface QuizEditInitial {
+  title: string;
+  description: string | null;
+  category: string;
+  difficulty: "EASY" | "MEDIUM" | "HARD";
+  status: "DRAFT" | "PUBLISHED" | "ARCHIVED";
+  timeLimitSec: number;
+  passingScore: number;
+  pointsReward: number;
+  xpReward: number;
+  cashReward: number;
+  maxAttempts: number;
+  cooldownHours: number;
+  requiredLevel: number;
+  requiredAccessLevel: number | null;
+  questions: Question[];
+}
+
 interface QuizFormProps {
   canUseAI: boolean;
+  initial?: QuizEditInitial;
+  quizId?: string;
 }
 
 const CATEGORIES = [
@@ -29,35 +52,53 @@ const CATEGORIES = [
   "Geography",
 ];
 
-export function QuizForm({ canUseAI }: QuizFormProps) {
+export function QuizForm({ canUseAI, initial, quizId }: QuizFormProps) {
   const router = useRouter();
+  const isEdit = !!quizId;
 
   const [meta, setMeta] = useState({
-    title: "",
-    description: "",
-    category: "General",
-    difficulty: "MEDIUM" as "EASY" | "MEDIUM" | "HARD",
-    status: "DRAFT" as "DRAFT" | "PUBLISHED",
-    timeLimitSec: 180,
-    passingScore: 60,
-    pointsReward: 50,
-    xpReward: 25,
-    cashReward: 0,
-    maxAttempts: 3,
-    cooldownHours: 24,
-    requiredLevel: 1,
+    title: initial?.title ?? "",
+    description: initial?.description ?? "",
+    category: initial?.category ?? "General",
+    difficulty: (initial?.difficulty ?? "MEDIUM") as "EASY" | "MEDIUM" | "HARD",
+    status: (initial?.status === "PUBLISHED" ? "PUBLISHED" : "DRAFT") as
+      | "DRAFT"
+      | "PUBLISHED",
+    timeLimitSec: initial?.timeLimitSec ?? 180,
+    passingScore: initial?.passingScore ?? 60,
+    pointsReward: initial?.pointsReward ?? 50,
+    xpReward: initial?.xpReward ?? 25,
+    cashReward: initial?.cashReward ?? 0,
+    maxAttempts: initial?.maxAttempts ?? 3,
+    cooldownHours: initial?.cooldownHours ?? 24,
+    requiredLevel: initial?.requiredLevel ?? 1,
     requiredPackage: "" as "" | "FREE" | "STARTER" | "PRO" | "ELITE" | "VIP",
   });
 
-  const [questions, setQuestions] = useState<Question[]>([
-    {
-      question: "",
-      options: ["", "", "", ""],
-      correctIndex: 0,
-      explanation: "",
-      pointsValue: 10,
-    },
-  ]);
+  const [questions, setQuestions] = useState<Question[]>(
+    initial?.questions?.length
+      ? initial.questions.map((q) => ({
+          question: q.question,
+          questionImageUrl: q.questionImageUrl ?? "",
+          options: q.options,
+          optionImageUrls:
+            q.optionImageUrls ?? q.options.map(() => ""),
+          correctIndex: q.correctIndex,
+          explanation: q.explanation ?? "",
+          pointsValue: q.pointsValue ?? 10,
+        }))
+      : [
+          {
+            question: "",
+            questionImageUrl: "",
+            options: ["", "", "", ""],
+            optionImageUrls: ["", "", "", ""],
+            correctIndex: 0,
+            explanation: "",
+            pointsValue: 10,
+          },
+        ]
+  );
 
   const [aiOpen, setAiOpen] = useState(false);
   const [aiTopic, setAiTopic] = useState("");
@@ -75,7 +116,9 @@ export function QuizForm({ canUseAI }: QuizFormProps) {
       ...p,
       {
         question: "",
+        questionImageUrl: "",
         options: ["", "", "", ""],
+        optionImageUrls: ["", "", "", ""],
         correctIndex: 0,
         explanation: "",
         pointsValue: 10,
@@ -98,6 +141,18 @@ export function QuizForm({ canUseAI }: QuizFormProps) {
             }
           : q
       )
+    );
+
+  const updateOptionImage = (qi: number, oi: number, url: string) =>
+    setQuestions((p) =>
+      p.map((q, idx) => {
+        if (idx !== qi) return q;
+        // Pad to the option count so indices stay aligned with options.
+        const imgs = [...(q.optionImageUrls ?? [])];
+        while (imgs.length < q.options.length) imgs.push("");
+        imgs[oi] = url;
+        return { ...q, optionImageUrls: imgs };
+      })
     );
 
   const generateWithAI = async () => {
@@ -183,21 +238,30 @@ export function QuizForm({ canUseAI }: QuizFormProps) {
 
     setSubmitting(true);
     try {
-      const res = await fetch("/api/admin/quizzes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...meta,
-          status: publish ? "PUBLISHED" : "DRAFT",
-          requiredPackage: meta.requiredPackage || null,
-          questions,
-          aiGenerated,
-          aiPrompt: aiGenerated ? aiTopic : null,
-        }),
-      });
+      const res = await fetch(
+        isEdit ? `/api/admin/quizzes/${quizId}` : "/api/admin/quizzes",
+        {
+          method: isEdit ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...meta,
+            status: publish ? "PUBLISHED" : "DRAFT",
+            requiredPackage: meta.requiredPackage || null,
+            questions,
+            aiGenerated,
+            aiPrompt: aiGenerated ? aiTopic : null,
+          }),
+        }
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      toast.success(publish ? "Quiz published" : "Saved as draft");
+      toast.success(
+        isEdit
+          ? "Quiz updated"
+          : publish
+            ? "Quiz published"
+            : "Saved as draft"
+      );
       router.push("/admin/quizzes");
       router.refresh();
     } catch (err) {
@@ -441,35 +505,55 @@ export function QuizForm({ canUseAI }: QuizFormProps) {
                   className={inp + " resize-none"}
                 />
               </Field>
+              <Field label="Question image (optional — players answer from the image)">
+                <ImageUploadField
+                  value={q.questionImageUrl ?? ""}
+                  onChange={(url) => updateQuestion(qi, { questionImageUrl: url })}
+                  title="Question image"
+                  previewSize="md"
+                />
+              </Field>
               <div className="mt-3 space-y-2">
                 <p className="text-xs font-medium text-slate-400">
-                  Options (mark the correct one)
+                  Options (mark the correct one — add an image per option if you like)
                 </p>
                 {q.options.map((opt, oi) => (
-                  <label
+                  <div
                     key={oi}
-                    className={`flex items-center gap-2 p-2 rounded border ${
+                    className={`p-2 rounded border ${
                       q.correctIndex === oi
                         ? "border-emerald-500/50 bg-emerald-500/5"
                         : "border-slate-700 bg-slate-900"
                     }`}
                   >
-                    <input
-                      type="radio"
-                      checked={q.correctIndex === oi}
-                      onChange={() => updateQuestion(qi, { correctIndex: oi })}
-                      className="text-emerald-500"
-                    />
-                    <span className="text-xs font-bold text-slate-500 w-6">
-                      {String.fromCharCode(65 + oi)}.
-                    </span>
-                    <input
-                      value={opt}
-                      onChange={(e) => updateOption(qi, oi, e.target.value)}
-                      className="flex-1 bg-transparent outline-none text-sm text-white"
-                      placeholder={`Option ${String.fromCharCode(65 + oi)}`}
-                    />
-                  </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        checked={q.correctIndex === oi}
+                        onChange={() => updateQuestion(qi, { correctIndex: oi })}
+                        className="text-emerald-500"
+                        title="Mark as correct answer"
+                      />
+                      <span className="text-xs font-bold text-slate-500 w-6">
+                        {String.fromCharCode(65 + oi)}.
+                      </span>
+                      <input
+                        value={opt}
+                        onChange={(e) => updateOption(qi, oi, e.target.value)}
+                        className="flex-1 bg-transparent outline-none text-sm text-white"
+                        placeholder={`Option ${String.fromCharCode(65 + oi)}`}
+                      />
+                    </div>
+                    <div className="mt-2 pl-8">
+                      <ImageUploadField
+                        value={q.optionImageUrls?.[oi] ?? ""}
+                        onChange={(url) => updateOptionImage(qi, oi, url)}
+                        title={`Image for option ${String.fromCharCode(65 + oi)}`}
+                        previewSize="sm"
+                        hideUrlFallback
+                      />
+                    </div>
+                  </div>
                 ))}
               </div>
               <Field label="Explanation (shown after answer)">
@@ -511,7 +595,7 @@ export function QuizForm({ canUseAI }: QuizFormProps) {
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
-            Publish Quiz
+            {isEdit ? "Save & Publish" : "Publish Quiz"}
           </button>
         </div>
       </div>

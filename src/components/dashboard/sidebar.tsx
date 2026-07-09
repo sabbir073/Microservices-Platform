@@ -58,6 +58,7 @@ const navigationGroups = [
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { name: "Tasks", href: "/tasks", icon: ListTodo },
       { name: "Daily Mission", href: "/daily-mission", icon: Target },
+      { name: "Quizzes", href: "/quizzes", icon: Brain },
       { name: "Wallet", href: "/wallet", icon: Wallet },
       { name: "Referrals", href: "/referrals", icon: Users },
     ],

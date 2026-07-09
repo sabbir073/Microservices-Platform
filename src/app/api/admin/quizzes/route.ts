@@ -6,7 +6,9 @@ import { z } from "zod";
 
 const questionSchema = z.object({
   question: z.string().min(3),
+  questionImageUrl: z.string().optional().nullable(),
   options: z.array(z.string()).min(2).max(6),
+  optionImageUrls: z.array(z.string()).optional(),
   correctIndex: z.number().int().min(0),
   explanation: z.string().optional(),
   pointsValue: z.number().int().min(0).optional(),
@@ -126,7 +128,9 @@ export async function POST(request: NextRequest) {
           create: data.questions.map((q, i) => ({
             order: i,
             question: q.question,
+            questionImageUrl: q.questionImageUrl || null,
             options: q.options,
+            optionImageUrls: q.optionImageUrls ?? [],
             correctIndex: q.correctIndex,
             explanation: q.explanation ?? null,
             pointsValue: q.pointsValue ?? 10,
