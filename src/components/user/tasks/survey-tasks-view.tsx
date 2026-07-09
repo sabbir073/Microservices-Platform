@@ -7,6 +7,7 @@ import { TaskCard } from "@/components/user/primitives/task-card";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -47,16 +48,17 @@ export function SurveyTasksView() {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       if (tab === "available") {
-        const res = await fetch("/api/tasks?type=SURVEY");
+        const res = await fetch("/api/tasks?type=SURVEY", { cache: "no-store" });
         const d = await res.json();
         setTasks(d.tasks ?? []);
       } else {
         const res = await fetch(
-          `/api/submissions?status=${TAB_TO_STATUS[tab].join(",")}&type=SURVEY`
+          `/api/submissions?status=${TAB_TO_STATUS[tab].join(",")}&type=SURVEY`,
+          { cache: "no-store" }
         );
         const d = await res.json();
         setSubmissions(d.submissions ?? []);
@@ -64,7 +66,7 @@ export function SurveyTasksView() {
     } catch {
       // ignore
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -72,6 +74,8 @@ export function SurveyTasksView() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  useAutoRefresh(() => load(true));
 
   return (
     <div className="space-y-6">

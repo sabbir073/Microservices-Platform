@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LegalHeader, LegalSection, LEGAL_CONTACT } from "../layout";
+import { LegalHeader, LegalSection, LEGAL_CONTACT } from "@/components/legal/legal-ui";
 
 export const metadata: Metadata = {
   title: "Privacy Policy · EarnGPT",

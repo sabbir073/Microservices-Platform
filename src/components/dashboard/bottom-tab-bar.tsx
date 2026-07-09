@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Home, ListTodo, Wallet, Bell, Menu } from "lucide-react";
+import { Home, ListTodo, Wallet, Target, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMobileNav } from "@/lib/stores/mobile-nav-store";
 
+// Left → right: two smaller page tabs, the bigger center Home, then Wallet + Menu.
 const TABS = [
-  { name: "Home", href: "/social", icon: Home },
+  { name: "Mission", href: "/daily-mission", icon: Target },
   { name: "Tasks", href: "/tasks", icon: ListTodo },
+  { name: "Home", href: "/social", icon: Home, primary: true },
   { name: "Wallet", href: "/wallet", icon: Wallet },
-  { name: "Alerts", href: "/notifications", icon: Bell, badge: true },
 ] as const;
 
 /** App-style fixed bottom navigation for mobile (hidden on lg+). */
@@ -41,36 +42,52 @@ export function BottomTabBar() {
       className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-gray-800 bg-gray-900/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="grid grid-cols-5">
+      <div className="grid grid-cols-5 items-center">
         {TABS.map((tab) => {
           const activeTab = isActive(tab.href);
+          const primary = "primary" in tab && tab.primary;
           return (
             <Link
               key={tab.name}
               href={tab.href}
               className={cn(
-                "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium relative",
+                "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium",
                 activeTab ? "text-indigo-400" : "text-gray-400"
               )}
             >
-              <span className="relative">
+              {primary ? (
+                // Center Home: bigger icon inside a subtle rounded highlight.
+                <span
+                  className={cn(
+                    "flex items-center justify-center w-11 h-11 rounded-full transition-colors",
+                    activeTab
+                      ? "bg-indigo-500/15 text-indigo-400"
+                      : "bg-gray-800/60 text-gray-300"
+                  )}
+                >
+                  <tab.icon className="w-7 h-7" />
+                </span>
+              ) : (
                 <tab.icon className="w-5 h-5" />
-                {"badge" in tab && tab.badge && unread > 0 && (
-                  <span className="absolute -top-1.5 -right-2 px-1 min-w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold leading-4 text-center">
-                    {unread > 9 ? "9+" : unread}
-                  </span>
-                )}
-              </span>
-              {tab.name}
+              )}
+              <span className={cn(primary && "mt-0.5")}>{tab.name}</span>
             </Link>
           );
         })}
+
         <button
           type="button"
           onClick={() => setMenuOpen(true)}
           className="flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium text-gray-400"
         >
-          <Menu className="w-5 h-5" />
+          <span className="relative">
+            <Menu className="w-5 h-5" />
+            {unread > 0 && (
+              <span className="absolute -top-1.5 -right-2 px-1 min-w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold leading-4 text-center">
+                {unread > 9 ? "9+" : unread}
+              </span>
+            )}
+          </span>
           Menu
         </button>
       </div>

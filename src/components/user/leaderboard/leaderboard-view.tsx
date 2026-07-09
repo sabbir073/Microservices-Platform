@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Trophy, Medal, Crown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
 interface Row {
   rank: number;
@@ -35,28 +36,35 @@ export function LeaderboardView({ currentUserId }: { currentUserId: string }) {
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/leaderboard?type=${metric}&limit=50`)
-      .then((r) => (r.ok ? r.json() : { leaderboard: [], currentUser: null }))
-      .then((d) => {
-        if (cancelled) return;
+  // `silent` skips the loading state so background auto-refreshes don't flash.
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        const r = await fetch(`/api/leaderboard?type=${metric}&limit=50`, {
+          cache: "no-store",
+        });
+        const d = r.ok ? await r.json() : { leaderboard: [], currentUser: null };
         setRows(d.leaderboard ?? []);
         setMe(d.currentUser ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) {
+      } catch {
+        if (!silent) {
           setRows([]);
           setMe(null);
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [metric]);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [metric]
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Live refresh: tab refocus + 15s timer (paused while tab hidden).
+  useAutoRefresh(() => load(true));
 
   const suffix = METRICS.find((m) => m.key === metric)!.suffix;
   const fmt = (v: number) => `${v.toLocaleString()}${suffix ? ` ${suffix}` : ""}`;

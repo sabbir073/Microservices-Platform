@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ListTodo,
@@ -20,6 +20,7 @@ import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { taskRunHref } from "@/lib/task-routes";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
 interface ApiTask {
   id: string;
@@ -69,44 +70,60 @@ export function TasksHubView() {
     xpEarned: 0,
   });
 
-  useEffect(() => {
-    let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoading(true);
-    const url = filter === "ALL" ? "/api/tasks?limit=50" : `/api/tasks?type=${filter}&limit=50`;
-    fetch(url)
-      .then((r) => r.json())
-      .then((d) => {
-        if (cancelled) return;
+  // Fetch task list for the active filter. `silent` skips the skeleton so
+  // background auto-refreshes don't flash.
+  const loadTasks = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      const url =
+        filter === "ALL"
+          ? "/api/tasks?limit=50"
+          : `/api/tasks?type=${filter}&limit=50`;
+      try {
+        const r = await fetch(url, { cache: "no-store" });
+        const d = await r.json();
         setTasks(d.tasks ?? []);
         setStats((prev) => ({ ...prev, available: d.tasks?.length ?? 0 }));
-      })
-      .catch(() => {
-        if (!cancelled) setTasks([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [filter]);
+      } catch {
+        if (!silent) setTasks([]);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [filter]
+  );
 
-  // Pull today's submission stats (separate small fetch)
-  useEffect(() => {
-    fetch("/api/profile")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (!d?.todayStats) return;
-        setStats((prev) => ({
-          ...prev,
-          completedToday: d.todayStats.tasksCompleted ?? 0,
-          pointsEarned: d.todayStats.pointsEarned ?? 0,
-          xpEarned: d.todayStats.xpEarned ?? 0,
-        }));
-      })
-      .catch(() => {});
+  // Pull today's submission stats (separate small fetch).
+  const loadStats = useCallback(async () => {
+    try {
+      const r = await fetch("/api/profile", { cache: "no-store" });
+      if (!r.ok) return;
+      const d = await r.json();
+      if (!d?.todayStats) return;
+      setStats((prev) => ({
+        ...prev,
+        completedToday: d.todayStats.tasksCompleted ?? 0,
+        pointsEarned: d.todayStats.pointsEarned ?? 0,
+        xpEarned: d.todayStats.xpEarned ?? 0,
+      }));
+    } catch {
+      /* ignore */
+    }
   }, []);
+
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
+
+  // Live refresh: tab refocus + 15s timer (paused while tab hidden).
+  useAutoRefresh(() => {
+    loadTasks(true);
+    loadStats();
+  });
 
   const filtered = search.trim()
     ? tasks.filter(

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Menu, Bell, Search, Wallet, X, Sparkles, Settings, LogOut, User, ChevronDown, LayoutDashboard, ListTodo, Users, Gift, Trophy, GraduationCap, Store, Ticket, MessageSquare, FileText, Check } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import { useMobileNav } from "@/lib/stores/mobile-nav-store";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
 interface HeaderProps {
   user: {
@@ -53,34 +54,38 @@ export function Header({ user }: HeaderProps) {
   const [walletBalance, setWalletBalance] = useState(0);
   const pathname = usePathname();
 
-  // Fetch notifications and wallet balance
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch notifications
-        const notifRes = await fetch("/api/notifications?limit=5&unread=true");
-        if (notifRes.ok) {
-          const notifData = await notifRes.json();
-          setNotifications(notifData.notifications || []);
-          setUnreadCount(notifData.unreadCount || 0);
-        }
-
-        // Fetch wallet balance — endpoint returns { balance: { points, ... }, stats, ... }
-        const walletRes = await fetch("/api/wallet");
-        if (walletRes.ok) {
-          const walletData = await walletRes.json();
-          setWalletBalance(walletData?.balance?.points ?? 0);
-        }
-      } catch (error) {
-        console.error("Error fetching header data:", error);
+  // Fetch notifications + wallet balance. Kept fresh site-wide: on mount, on
+  // every route change, on tab refocus, and on a 15s timer (see useAutoRefresh).
+  const fetchData = useCallback(async () => {
+    try {
+      const notifRes = await fetch("/api/notifications?limit=5&unread=true", {
+        cache: "no-store",
+      });
+      if (notifRes.ok) {
+        const notifData = await notifRes.json();
+        setNotifications(notifData.notifications || []);
+        setUnreadCount(notifData.unreadCount || 0);
       }
-    };
 
-    fetchData();
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchData, 30000);
-    return () => clearInterval(interval);
+      // Wallet endpoint returns { balance: { points, ... }, stats, ... }
+      const walletRes = await fetch("/api/wallet", { cache: "no-store" });
+      if (walletRes.ok) {
+        const walletData = await walletRes.json();
+        setWalletBalance(walletData?.balance?.points ?? 0);
+      }
+    } catch (error) {
+      console.error("Error fetching header data:", error);
+    }
   }, []);
+
+  // Mount + refetch on navigation (header doesn't remount between pages).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    fetchData();
+  }, [fetchData, pathname]);
+
+  // Live refresh: tab refocus + 15s timer (paused while tab hidden).
+  useAutoRefresh(fetchData, { intervalMs: 15000 });
 
   const handleSignOut = () => {
     signOut({ callbackUrl: "/login" });
@@ -188,7 +193,7 @@ export function Header({ user }: HeaderProps) {
                     className="fixed inset-0 z-40"
                     onClick={() => setIsNotificationOpen(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-1rem)] rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
+                  <div className="fixed inset-x-2 top-16 sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
                     <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
                       <h3 className="text-sm font-semibold text-white">
                         Notifications

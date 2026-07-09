@@ -1,12 +1,12 @@
 import NextAuth from "next-auth";
 import type { NextAuthConfig } from "next-auth";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import speakeasy from "speakeasy";
 import { prisma } from "@/lib/prisma";
+import { generateReferralCode } from "@/lib/utils";
 import { authConfig } from "./config";
 
 const loginSchema = z.object({
@@ -101,18 +101,82 @@ export const {
   signIn,
   signOut,
 } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+  // JWT-only auth (no database sessions). We deliberately don't use an adapter:
+  // the User model uses `avatar` (not `image`) and requires a unique
+  // `referralCode`, so we find-or-create the app user ourselves in `jwt`.
   ...authConfig,
   providers,
+  callbacks: {
+    ...authConfig.callbacks,
+    async signIn({ user, account }) {
+      // Block banned/suspended users from signing in with Google.
+      if (account?.provider === "google" && user?.email) {
+        const existing = await prisma.user.findUnique({
+          where: { email: user.email.toLowerCase() },
+          select: { status: true },
+        });
+        if (
+          existing &&
+          (existing.status === "BANNED" || existing.status === "SUSPENDED")
+        ) {
+          return false;
+        }
+      }
+      return true;
+    },
+    async jwt({ token, user, account, trigger, session }) {
+      // First sign-in with Google: find the app user by email, or create one
+      // (with a unique referralCode) so the rest of the app has a real Prisma
+      // user. An existing email/password account with the same email is reused,
+      // which links the Google login to it.
+      if (account?.provider === "google" && user?.email) {
+        const email = user.email.toLowerCase();
+        let dbUser = await prisma.user.findUnique({ where: { email } });
+        if (!dbUser) {
+          let referral = generateReferralCode();
+          for (let i = 0; i < 5; i++) {
+            const clash = await prisma.user.findUnique({
+              where: { referralCode: referral },
+            });
+            if (!clash) break;
+            referral = generateReferralCode();
+          }
+          dbUser = await prisma.user.create({
+            data: {
+              email,
+              name: user.name ?? null,
+              avatar: typeof user.image === "string" ? user.image : null,
+              emailVerified: new Date(), // Google verifies the email
+              referralCode: referral,
+            },
+          });
+        }
+        token.id = dbUser.id;
+        token.role = dbUser.role;
+        token.name = dbUser.name;
+        token.picture = dbUser.avatar;
+      } else if (user) {
+        // Credentials sign-in: `user` is already the DB user from authorize().
+        token.id = user.id;
+        token.role = (user as { role?: string }).role;
+      }
+
+      if (trigger === "update" && session) {
+        const s = session as { name?: string; image?: string };
+        if (s.name) token.name = s.name;
+        if (s.image) token.picture = s.image;
+      }
+
+      return token;
+    },
+  },
   events: {
     async signIn({ user }) {
-      if (user.id) {
-        // Update last login timestamp
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { lastLoginAt: new Date() },
-        });
-      }
+      const email = user.email?.toLowerCase();
+      if (!email) return;
+      await prisma.user
+        .updateMany({ where: { email }, data: { lastLoginAt: new Date() } })
+        .catch(() => {});
     },
   },
 });

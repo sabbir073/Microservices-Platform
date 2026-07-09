@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Pin,
@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -126,19 +127,30 @@ export function BoardTasksView() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetch("/api/tasks/boards")
-      .then((r) => (r.ok ? r.json() : { boards: [] }))
-      .then((d) => setBoards(d.boards ?? []))
-      .catch(() => setBoards([]))
-      .finally(() => setLoading(false));
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const r = await fetch("/api/tasks/boards", { cache: "no-store" });
+      const d = r.ok ? await r.json() : { boards: [] };
+      setBoards(d.boards ?? []);
+    } catch {
+      setBoards([]);
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useAutoRefresh(() => load(true));
 
   const loadDetail = async (id: string) => {
     setDetailLoading(true);
     setDetail(null);
     try {
-      const res = await fetch(`/api/tasks/boards/${id}`);
+      const res = await fetch(`/api/tasks/boards/${id}`, { cache: "no-store" });
       if (!res.ok) throw new Error(await res.text());
       const d = (await res.json()) as BoardDetail;
       setDetail(d);

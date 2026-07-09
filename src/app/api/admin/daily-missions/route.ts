@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { tierToAccessLevel } from "@/lib/missions";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -80,10 +81,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { items, ...mission } = v.data;
+  // `packageTier` is the admin-facing enum; the model stores `requiredAccessLevel`.
+  const { items, packageTier, ...mission } = v.data;
   const created = await prisma.dailyMissionTemplate.create({
     data: {
       ...mission,
+      requiredAccessLevel: tierToAccessLevel(packageTier),
       createdById: session.user.id,
       items: {
         create: items.map((it, idx) => ({

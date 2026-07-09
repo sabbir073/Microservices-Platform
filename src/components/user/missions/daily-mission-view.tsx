@@ -19,6 +19,7 @@ import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
 const TYPE_TO_ROUTE: Record<string, string> = {
   ARTICLE: "/article-tasks",
@@ -84,25 +85,31 @@ export function DailyMissionView() {
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  // `silent` skips the loading skeleton so background auto-refreshes don't flash.
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const res = await fetch("/api/daily-mission/today");
+      const res = await fetch("/api/daily-mission/today", { cache: "no-store" });
       if (!res.ok) throw new Error(await res.text());
       const d = (await res.json()) as MissionResponse;
       setData(d);
     } catch (err) {
-      toast.error("Couldn't load mission", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
+      if (!silent) {
+        toast.error("Couldn't load mission", {
+          description: err instanceof Error ? err.message : "Try again",
+        });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     load();
   }, []);
+
+  // Live refresh: tab refocus + 15s timer (paused while tab hidden).
+  useAutoRefresh(() => load(true));
 
   const claim = async () => {
     setClaiming(true);

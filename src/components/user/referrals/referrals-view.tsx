@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Users,
   Copy,
@@ -21,6 +21,7 @@ import { ShareModal } from "@/components/user/primitives/share-modal";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { cn } from "@/lib/utils";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
 export interface ReferralUser {
   id: string;
@@ -76,12 +77,21 @@ export function ReferralsView({
   } | null>(null);
   const [claimingDaily, setClaimingDaily] = useState(false);
 
-  useEffect(() => {
-    fetch("/api/referrals/daily-claim")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setDailyClaim(d))
-      .catch(() => {});
+  const loadDailyClaim = useCallback(async () => {
+    try {
+      const r = await fetch("/api/referrals/daily-claim", { cache: "no-store" });
+      if (r.ok) setDailyClaim(await r.json());
+    } catch {
+      /* ignore */
+    }
   }, []);
+
+  useEffect(() => {
+    loadDailyClaim();
+  }, [loadDailyClaim]);
+
+  // Live refresh: tab refocus + 15s timer (paused while tab hidden).
+  useAutoRefresh(loadDailyClaim);
 
   const claimDaily = async () => {
     setClaimingDaily(true);

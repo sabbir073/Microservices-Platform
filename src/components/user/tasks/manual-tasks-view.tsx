@@ -8,6 +8,7 @@ import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
 import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
+import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -54,16 +55,17 @@ export function ManualTasksView() {
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       if (tab === "available") {
-        const res = await fetch("/api/tasks?type=MANUAL");
+        const res = await fetch("/api/tasks?type=MANUAL", { cache: "no-store" });
         const d = await res.json();
         setTasks(d.tasks ?? []);
       } else {
         const res = await fetch(
-          `/api/submissions?status=${TAB_TO_STATUS[tab].join(",")}&type=MANUAL`
+          `/api/submissions?status=${TAB_TO_STATUS[tab].join(",")}&type=MANUAL`,
+          { cache: "no-store" }
         );
         const d = await res.json();
         setSubmissions(d.submissions ?? []);
@@ -71,7 +73,7 @@ export function ManualTasksView() {
     } catch {
       // ignore
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -79,6 +81,8 @@ export function ManualTasksView() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  useAutoRefresh(() => load(true));
 
   const submit = async () => {
     if (!submitting) return;
