@@ -43,6 +43,15 @@ function formatCurrency(value: number, fractionDigits = 0): string {
   });
 }
 
+/** Compact currency (e.g. 12.3K, 1.2M) — always short so it can't overflow a
+ *  narrow box. Small values read naturally (e.g. 540, 2.5). */
+function formatCompact(value: number): string {
+  return value.toLocaleString("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 1,
+  });
+}
+
 function useCountUp(target: number, duration = 600): number {
   const [display, setDisplay] = useState(target);
   const fromRef = useRef(target);
@@ -160,27 +169,27 @@ export function EarningsCalculator(props: Props) {
                     </span>
                   </div>
 
-                  <div className="-mx-5 lg:mx-0 px-5 lg:px-0 overflow-x-auto lg:overflow-visible scrollbar-thin">
-                    <div className="flex lg:grid gap-2 snap-x snap-mandatory pb-1 lg:pb-0"
-                      style={{
-                        gridTemplateColumns: `repeat(${Math.max(v.plans.length, 1)}, minmax(0, 1fr))`,
-                      }}
-                    >
-                      {v.plans.map((p) => {
-                        const gradient =
-                          PLAN_GRADIENTS[p.name] ?? FALLBACK_GRADIENT;
-                        const active = plan === p.name;
-                        return (
-                          <button
-                            key={p.name}
-                            onClick={() => setPlan(p.name)}
-                            aria-pressed={active}
-                            className={`group relative shrink-0 lg:shrink snap-start min-w-[7rem] lg:min-w-0 rounded-xl p-3 text-left transition-all duration-200 border ${
-                              active
-                                ? `bg-linear-to-br ${gradient} border-white/30 shadow-lg shadow-black/30 scale-[1.02]`
-                                : "bg-white/[0.04] border-white/10 hover:bg-white/[0.08] hover:border-white/20"
-                            }`}
-                          >
+                  <div
+                    className="grid grid-cols-2 sm:grid-cols-3 gap-2 lg:[grid-template-columns:repeat(var(--ec-cols),minmax(0,1fr))]"
+                    style={{
+                      ["--ec-cols" as string]: Math.max(v.plans.length, 1),
+                    }}
+                  >
+                    {v.plans.map((p) => {
+                      const gradient =
+                        PLAN_GRADIENTS[p.name] ?? FALLBACK_GRADIENT;
+                      const active = plan === p.name;
+                      return (
+                        <button
+                          key={p.name}
+                          onClick={() => setPlan(p.name)}
+                          aria-pressed={active}
+                          className={`group relative rounded-xl p-3 text-left transition-all duration-200 border ${
+                            active
+                              ? `bg-linear-to-br ${gradient} border-white/30 shadow-lg shadow-black/30 scale-[1.02]`
+                              : "bg-white/4 border-white/10 hover:bg-white/8 hover:border-white/20"
+                          }`}
+                        >
                             <div className="flex items-center justify-between">
                               <span
                                 className={`text-[11px] sm:text-xs font-extrabold tracking-wide ${
@@ -213,7 +222,6 @@ export function EarningsCalculator(props: Props) {
                         );
                       })}
                     </div>
-                  </div>
 
                   <p className="text-[11px] text-slate-500 mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
                     <span className="inline-flex items-center gap-1">
@@ -439,13 +447,13 @@ export function EarningsCalculator(props: Props) {
                       <TrendingUp className="w-3.5 h-3.5" />
                       Monthly Potential
                     </p>
-                    <p className="mt-2 text-[clamp(2rem,11vw,3.75rem)] font-extrabold bg-linear-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent tabular-nums leading-none break-all">
+                    <p className="mt-2 text-[clamp(2rem,11vw,3.75rem)] font-extrabold bg-linear-to-r from-blue-300 via-purple-300 to-pink-300 bg-clip-text text-transparent tabular-nums leading-none">
                       ${formatCurrency(animatedMonthly)}
                     </p>
                     <p className="text-xs sm:text-sm text-slate-400 mt-2 tabular-nums">
                       ≈{" "}
                       <span className="text-slate-200 font-semibold">
-                        ${formatCurrency(dailyTotal, 2)}
+                        ${formatCompact(dailyTotal)}
                       </span>{" "}
                       per day
                     </p>
@@ -489,7 +497,7 @@ export function EarningsCalculator(props: Props) {
                         From Tasks
                       </p>
                       <p className="text-sm sm:text-base font-bold text-white tabular-nums mt-0.5">
-                        ${formatCurrency(dailyDirect * 30)}
+                        ${formatCompact(dailyDirect * 30)}
                       </p>
                       <p className="text-[9px] text-slate-500 mt-0.5">/mo</p>
                     </div>
@@ -499,7 +507,7 @@ export function EarningsCalculator(props: Props) {
                         From Team
                       </p>
                       <p className="text-sm sm:text-base font-bold text-white tabular-nums mt-0.5">
-                        ${formatCurrency(dailyTeam * 30)}
+                        ${formatCompact(dailyTeam * 30)}
                       </p>
                       <p className="text-[9px] text-slate-500 mt-0.5">/mo</p>
                     </div>
@@ -509,7 +517,7 @@ export function EarningsCalculator(props: Props) {
                         Daily
                       </p>
                       <p className="text-sm sm:text-base font-bold text-white tabular-nums mt-0.5">
-                        ${formatCurrency(dailyTotal, 2)}
+                        ${formatCompact(dailyTotal)}
                       </p>
                       <p className="text-[9px] text-slate-500 mt-0.5">/day</p>
                     </div>
@@ -524,8 +532,8 @@ export function EarningsCalculator(props: Props) {
                       <p className="text-[10px] uppercase tracking-wider font-bold text-amber-300/90">
                         Yearly Projection
                       </p>
-                      <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums truncate">
-                        ${formatCurrency(yearly)}
+                      <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+                        ${formatCompact(yearly)}
                       </p>
                     </div>
                   </div>
