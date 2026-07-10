@@ -45,6 +45,10 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
 
 // Edge-compatible config (no database operations)
 export const authConfig: NextAuthConfig = {
+  // Trust the deployment host (behind a proxy / custom port). Required by
+  // Auth.js in production — dev auto-trusts localhost. Set AUTH_TRUST_HOST or
+  // this flag; here we enable it so prod builds work across hosts.
+  trustHost: true,
   providers,
   pages: {
     signIn: "/login",
@@ -69,13 +73,17 @@ export const authConfig: NextAuthConfig = {
         "/privacy",
         "/terms",
         "/refund",
+        "/offer",
       ];
 
       // Admin routes that require admin role
       const adminRoutes = ["/admin"];
 
       const isPublicRoute = publicRoutes.some(
-        (route) => pathname === route || pathname.startsWith(`${route}?`)
+        (route) =>
+          pathname === route ||
+          pathname.startsWith(`${route}?`) ||
+          (route !== "/" && pathname.startsWith(`${route}/`))
       );
 
       const isAdminRoute = adminRoutes.some(

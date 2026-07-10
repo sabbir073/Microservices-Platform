@@ -139,6 +139,8 @@ export type Permission =
   | "notifications.send"
   | "banners.view"
   | "banners.manage"
+  | "offers.view"
+  | "offers.manage"
   | "ads.view"
   | "ads.manage"
   | "landing.view"
@@ -210,6 +212,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "settings.view", "settings.edit",
     "admins.view", "admins.manage",
     "media.view", "media.manage",
+    "offers.view", "offers.manage",
   ],
 
   FINANCE_ADMIN: [
@@ -237,6 +240,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "notifications.view", "notifications.send",
     "media.view", "media.manage",
     "ai.view", "ai.manage",
+    "offers.view", "offers.manage",
     "analytics.view",
   ],
 
@@ -262,6 +266,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "referrals.view",
     "social.post", "social.promote",
     "media.view",
+    "offers.view", "offers.manage",
   ],
 
   MODERATOR: [
@@ -522,6 +527,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     href: "/admin/banners",
     icon: "Image",
     permissions: ["banners.view"],
+    category: "MARKETING",
+  },
+  {
+    name: "Offers",
+    href: "/admin/offers",
+    icon: "Gift",
+    permissions: ["offers.view"],
     category: "MARKETING",
   },
   {

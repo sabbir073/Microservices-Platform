@@ -127,6 +127,7 @@ model Banner {
   title       String
   subtitle    String?
   imageUrl    String?
+  videoUrl    String?        // optional background video (takes precedence over imageUrl)
   iconEmoji   String?
   bgGradient  String?        // e.g. "from-blue-600 to-purple-600"
   linkUrl     String?
@@ -142,6 +143,25 @@ model Banner {
   @@index([location])
   @@index([isActive])
   @@index([order])
+  @@index([isActive, location])
+}
+
+/// Admin-built marketing "offer" pages, viewable by anyone at /offer/[slug].
+model Offer {
+  id           String   @id @default(cuid())
+  slug         String   @unique
+  title        String
+  description  String?  @db.Text
+  thumbnailUrl String?
+  bgGradient   String?
+  blocks       Json     @default("[]")
+  status       String   @default("DRAFT") // DRAFT | PUBLISHED
+  createdById  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([slug])
+  @@index([status])
 }
 
 model Campaign {
@@ -549,12 +569,14 @@ model QuizQuestion {
   id            String   @id @default(cuid())
   quizId        String
   quiz          Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
-  order         Int      @default(0)
-  question      String   @db.Text
-  options       String[]
-  correctIndex  Int
-  explanation   String?  @db.Text
-  pointsValue   Int      @default(10)
+  order            Int      @default(0)
+  question         String   @db.Text
+  questionImageUrl String?              // optional image shown as the question
+  options          String[]
+  optionImageUrls  String[] @default([]) // optional per-option images (index-aligned)
+  correctIndex     Int
+  explanation      String?  @db.Text
+  pointsValue      Int      @default(10)
 
   @@index([quizId])
 }
@@ -841,6 +863,8 @@ model User {
   @@index([referredById])
   @@index([status])
   @@index([role])
+  @@index([totalEarnings])
+  @@index([referredById, createdAt])
 }
 
 model Account {
@@ -987,6 +1011,7 @@ model Task {
   @@index([status])
   @@index([type])
   @@index([requiredAccessLevel])
+  @@index([status, createdAt])
 }
 
 model TaskCategory {
@@ -1030,6 +1055,8 @@ model TaskSubmission {
   @@index([userId])
   @@index([taskId])
   @@index([status])
+  @@index([userId, status])
+  @@index([userId, createdAt])
 }
 
 // Pool of one-time-use unique keys for an ARTICLE task. Keys are claimed
@@ -1090,6 +1117,7 @@ model Transaction {
   @@index([type])
   @@index([status])
   @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model Withdrawal {
@@ -1111,6 +1139,8 @@ model Withdrawal {
   @@index([userId])
   @@index([status])
   @@index([createdAt])
+  @@index([userId, status])
+  @@index([status, createdAt])
 }
 
 model UserPaymentMethod {
@@ -1241,6 +1271,7 @@ model ReferralEarning {
   createdAt       DateTime @default(now())
   @@index([userId])
   @@index([createdAt])
+  @@index([userId, createdAt])
 }
 
 model MarketplaceListing {
@@ -1931,6 +1962,9 @@ model Post {
   user        User      @relation(fields: [userId], references: [id])
   content     String    @db.Text
   images      String[]
+  // Facebook-style colored background for text-only posts. Stores a palette id
+  // from src/lib/post-backgrounds.ts (e.g. "ocean"); null = plain post.
+  backgroundStyle String?
   isPublic    Boolean   @default(true)
   isPinned    Boolean   @default(false)
   // Admin-set OFFICIAL announcement. Pinned to the very top of the feed
@@ -1967,6 +2001,7 @@ model Post {
   @@index([groupId])
   @@index([isAnnouncement])
   @@index([isPromoted, promotedUntil])
+  @@index([isPublic, createdAt])
 }
 
 model Follow {
@@ -2050,6 +2085,7 @@ model Vote {
   createdAt DateTime @default(now())
   @@unique([postId, userId])
   @@index([postId])
+  @@index([userId, postId])
 }
 
 model Donation {
@@ -2177,6 +2213,7 @@ model Like {
   createdAt DateTime @default(now())
   @@unique([postId, userId])
   @@index([postId])
+  @@index([userId, postId])
 }
 
 model Badge {

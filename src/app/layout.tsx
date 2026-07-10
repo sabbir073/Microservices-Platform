@@ -15,6 +15,8 @@ import { CookieConsent } from "@/components/user/primitives/cookie-consent";
 import { PushPermissionPrompt } from "@/components/user/primitives/push-permission-prompt";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { SplashScreen } from "@/components/pwa/splash-screen";
+import { PwaInstallPrompt } from "@/components/pwa/pwa-install-prompt";
+import { getUiToggles } from "@/lib/ui-toggles-server";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -74,11 +76,12 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const ui = await getUiToggles();
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="font-sans antialiased" suppressHydrationWarning>
@@ -86,8 +89,9 @@ export default function RootLayout({
           {children}
           <ServiceWorkerRegister />
           <SplashScreen />
-          <CookieConsent />
-          <PushPermissionPrompt />
+          <CookieConsent enabled={ui.cookiesPopup} />
+          <PushPermissionPrompt enabled={ui.notificationPopup} />
+          <PwaInstallPrompt enabled={ui.pwaInstallPrompt} />
           <Toaster
             position="top-right"
             theme="dark"

@@ -28,7 +28,7 @@ export default async function AdminSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-white">System Settings</h1>
         <p className="text-slate-400 text-sm mt-1">
-          Configure platform-wide settings across 7 categories.
+          Configure platform-wide settings across all categories.
           {!canEdit && (
             <span className="ml-2 text-amber-400">
               View-only — your role cannot edit settings.

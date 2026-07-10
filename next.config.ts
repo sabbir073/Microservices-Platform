@@ -2,10 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   experimental: {
-    // Don't reuse cached RSC payloads for dynamic (auth-gated) pages, so every
-    // navigation re-renders with fresh DB data. Static marketing/legal pages
-    // keep their default caching.
-    staleTimes: { dynamic: 0 },
+    // Keep the client Router Cache so revisiting a page within the window is
+    // instant (no server round-trip). Freshness is handled by the client
+    // useAutoRefresh hooks (focus + timer) on the live surfaces.
+    staleTimes: { dynamic: 60, static: 300 },
   },
 };
 

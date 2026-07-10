@@ -9,6 +9,7 @@ export interface BannerSlide {
   title?: string;
   subtitle?: string;
   imageUrl?: string;
+  videoUrl?: string;
   ctaLabel?: string;
   ctaHref?: string;
   bgGradient?: string;
@@ -47,7 +48,7 @@ export function BannerSlider({
 
   return (
     <div className={cn("relative", className)}>
-      <div className="relative h-32 sm:h-36 overflow-hidden rounded-2xl">
+      <div className="relative h-44 sm:h-52 lg:h-56 overflow-hidden rounded-2xl">
         {slides.map((s, i) => {
           const grad =
             s.bgGradient ?? FALLBACK_GRADIENTS[i % FALLBACK_GRADIENTS.length];
@@ -57,29 +58,48 @@ export function BannerSlider({
             grad,
             i === active ? "opacity-100" : "opacity-0 pointer-events-none"
           );
-          const style = s.imageUrl
-            ? {
-                backgroundImage: `linear-gradient(to right, rgba(15,23,42,.7), rgba(15,23,42,.3)), url(${s.imageUrl})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }
-            : undefined;
+          const hasVideo = !!s.videoUrl;
+          const style =
+            !hasVideo && s.imageUrl
+              ? {
+                  backgroundImage: `linear-gradient(to right, rgba(15,23,42,.7), rgba(15,23,42,.3)), url(${s.imageUrl})`,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
+                }
+              : undefined;
           const inner = (
-            <div className="text-white max-w-[70%]">
-              {s.title && (
-                <p className="text-base font-bold leading-tight">{s.title}</p>
+            <>
+              {hasVideo && (
+                <>
+                  <video
+                    src={s.videoUrl}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-linear-to-r from-slate-950/70 to-slate-950/30" />
+                </>
               )}
-              {s.subtitle && (
-                <p className="text-xs opacity-90 mt-1 line-clamp-2">
-                  {s.subtitle}
-                </p>
-              )}
-              {s.ctaLabel && (
-                <span className="inline-block mt-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur text-[11px] font-semibold">
-                  {s.ctaLabel} →
-                </span>
-              )}
-            </div>
+              <div className="relative z-10 text-white max-w-[70%]">
+                {s.title && (
+                  <p className="text-lg sm:text-xl font-bold leading-tight">
+                    {s.title}
+                  </p>
+                )}
+                {s.subtitle && (
+                  <p className="text-xs sm:text-sm opacity-90 mt-1 line-clamp-2">
+                    {s.subtitle}
+                  </p>
+                )}
+                {s.ctaLabel && (
+                  <span className="inline-block mt-2.5 px-3.5 py-1.5 rounded-full bg-white/20 backdrop-blur text-xs font-semibold">
+                    {s.ctaLabel} →
+                  </span>
+                )}
+              </div>
+            </>
           );
           if (s.ctaHref) {
             return (

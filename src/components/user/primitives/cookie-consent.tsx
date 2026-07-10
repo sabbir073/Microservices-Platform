@@ -20,17 +20,18 @@ const DEFAULT_PREFS: Prefs = {
   functional: true,
 };
 
-export function CookieConsent() {
+export function CookieConsent({ enabled = true }: { enabled?: boolean }) {
   const [show, setShow] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
 
   useEffect(() => {
+    if (!enabled) return;
     if (typeof window === "undefined") return;
     const saved = localStorage.getItem(STORAGE_KEY);
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!saved) setShow(true);
-  }, []);
+  }, [enabled]);
 
   const persist = (p: Prefs) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(p));

@@ -9,6 +9,7 @@ import {
   Edit,
   Loader2,
   Image as ImageIcon,
+  Film,
   Save,
   ChevronUp,
   ChevronDown,
@@ -16,12 +17,15 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
+import { MediaSelector } from "@/components/media/MediaSelector";
+import type { MediaItem } from "@/types/media";
 
 interface Banner {
   id: string;
   title: string;
   subtitle: string | null;
   imageUrl: string | null;
+  videoUrl: string | null;
   iconEmoji: string | null;
   bgGradient: string | null;
   linkUrl: string | null;
@@ -44,6 +48,9 @@ const GRADIENT_PRESETS = [
   "from-amber-500 to-red-500",
   "from-purple-600 to-pink-600",
   "from-cyan-500 to-blue-500",
+  "from-indigo-600 to-fuchsia-600",
+  "from-rose-500 to-red-600",
+  "from-lime-500 to-emerald-600",
 ];
 
 export function BannersClient({ initial, canManage }: Props) {
@@ -288,6 +295,7 @@ function EditBannerModal({
     subtitle: banner.subtitle ?? "",
     iconEmoji: banner.iconEmoji ?? "",
     imageUrl: banner.imageUrl ?? "",
+    videoUrl: banner.videoUrl ?? "",
     bgGradient: banner.bgGradient ?? gradients[0],
     linkUrl: banner.linkUrl ?? "",
     location: banner.location,
@@ -382,6 +390,12 @@ function EditBannerModal({
               title="Select Banner Image"
             />
           </Field>
+          <Field label="Banner Video (overrides image)">
+            <VideoUploadField
+              value={form.videoUrl}
+              onChange={(url) => setForm({ ...form, videoUrl: url })}
+            />
+          </Field>
           <Field label="Gradient Background">
             <div className="grid grid-cols-3 gap-2">
               {gradients.map((g) => (
@@ -400,12 +414,12 @@ function EditBannerModal({
               ))}
             </div>
           </Field>
-          <Field label="Link URL">
+          <Field label="Link URL (internal path or full URL)">
             <input
               value={form.linkUrl}
               onChange={(e) => setForm({ ...form, linkUrl: e.target.value })}
               className={inp}
-              placeholder="https://…"
+              placeholder="/lottery  or  https://…"
             />
           </Field>
           <div className="grid grid-cols-2 gap-3">
@@ -490,6 +504,7 @@ function CreateBannerModal({
     subtitle: "",
     iconEmoji: "🎉",
     imageUrl: "",
+    videoUrl: "",
     bgGradient: gradients[0],
     linkUrl: "",
     location: "HOME",
@@ -579,6 +594,12 @@ function CreateBannerModal({
               title="Select Banner Image"
             />
           </Field>
+          <Field label="Banner Video (overrides image)">
+            <VideoUploadField
+              value={form.videoUrl}
+              onChange={(url) => setForm({ ...form, videoUrl: url })}
+            />
+          </Field>
           <Field label="Gradient Background">
             <div className="grid grid-cols-3 gap-2">
               {gradients.map((g) => (
@@ -597,12 +618,12 @@ function CreateBannerModal({
               ))}
             </div>
           </Field>
-          <Field label="Link URL (optional)">
+          <Field label="Link URL (internal path or full URL)">
             <input
               value={form.linkUrl}
               onChange={(e) => setForm({ ...form, linkUrl: e.target.value })}
               className={inp}
-              placeholder="https://…"
+              placeholder="/lottery  or  https://…"
             />
           </Field>
           <div className="grid grid-cols-2 gap-3">
@@ -657,6 +678,72 @@ function CreateBannerModal({
 
 const inp =
   "w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500";
+
+function VideoUploadField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (url: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const handleSelect = (media: MediaItem | MediaItem[]) => {
+    const m = Array.isArray(media) ? media[0] : media;
+    if (m) onChange(m.cloudFrontUrl || m.s3Url);
+    setOpen(false);
+  };
+  return (
+    <>
+      <div className="flex items-start gap-3">
+        {value ? (
+          <div className="relative shrink-0">
+            <video
+              src={value}
+              muted
+              className="w-20 h-14 rounded-lg object-cover bg-slate-950 border border-slate-700"
+            />
+            <button
+              type="button"
+              onClick={() => onChange("")}
+              className="absolute -top-2 -right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600"
+              title="Remove video"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          </div>
+        ) : (
+          <div className="w-20 h-14 bg-slate-950 border border-slate-700 border-dashed rounded-lg flex items-center justify-center shrink-0">
+            <Film className="w-7 h-7 text-slate-600" />
+          </div>
+        )}
+        <div className="flex-1 space-y-2 min-w-0">
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-700 border border-slate-700"
+          >
+            <Film className="w-4 h-4" />
+            {value ? "Change Video" : "Upload / Pick Video"}
+          </button>
+          <input
+            type="url"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="…or paste a video URL"
+            className={inp}
+          />
+        </div>
+      </div>
+      <MediaSelector
+        isOpen={open}
+        onClose={() => setOpen(false)}
+        onSelect={handleSelect}
+        fileType="VIDEO"
+        title="Select Banner Video"
+      />
+    </>
+  );
+}
 
 function Field({
   label,

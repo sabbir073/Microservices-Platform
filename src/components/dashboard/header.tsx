@@ -78,14 +78,15 @@ export function Header({ user }: HeaderProps) {
     }
   }, []);
 
-  // Mount + refetch on navigation (header doesn't remount between pages).
+  // Fetch once on mount. We intentionally do NOT refetch on every navigation
+  // (that added an Accelerate round-trip per click); focus + timer keep it fresh.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
-  }, [fetchData, pathname]);
+  }, [fetchData]);
 
-  // Live refresh: tab refocus + 15s timer (paused while tab hidden).
-  useAutoRefresh(fetchData, { intervalMs: 15000 });
+  // Live refresh: tab refocus + timer (paused while tab hidden).
+  useAutoRefresh(fetchData);
 
   const handleSignOut = () => {
     signOut({ callbackUrl: "/login" });

@@ -23,11 +23,20 @@ import {
   Sparkles,
   BarChart3,
   CheckCircle,
+  Bold as BoldIcon,
+  Italic as ItalicIcon,
+  Smile,
+  Palette,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import {
+  POST_BACKGROUNDS,
+  getPostBackground,
+} from "@/lib/post-backgrounds";
+import { compressImageToTarget } from "@/lib/image-compress";
 import {
   BannerSlider,
   type BannerSlide,
@@ -40,6 +49,12 @@ import { ShareModal } from "@/components/user/primitives/share-modal";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { PostAnalyticsPanel } from "@/components/user/feed/post-analytics-panel";
+import {
+  FeedRightRail,
+  type RailEarner,
+  type RailFollowUser,
+  type RailPromo,
+} from "@/components/user/feed/feed-right-rail";
 
 interface SessionUser {
   id: string;
@@ -60,6 +75,7 @@ interface FeedPost {
   id: string;
   content: string;
   images: string[];
+  backgroundStyle?: string | null;
   isPinned: boolean;
   isAnnouncement?: boolean;
   isPromoted?: boolean;
@@ -117,6 +133,10 @@ interface Props {
   initialBanners: BannerSlide[];
   initialTicker: WithdrawalTickerItem[];
   tickerConfig?: TickerConfig;
+  bestEarners: RailEarner[];
+  whoToFollow: RailFollowUser[];
+  trendingHashtags: { tag: string; count: number }[];
+  promo?: RailPromo | null;
 }
 
 type ViewTab = "feed" | "groups";
@@ -127,61 +147,72 @@ export function SocialFeedView({
   initialBanners,
   initialTicker,
   tickerConfig,
+  bestEarners,
+  whoToFollow,
+  trendingHashtags,
+  promo,
 }: Props) {
   const [tab, setTab] = useState<ViewTab>("feed");
   const [sort, setSort] = useState<Sort>("recent");
 
   return (
-    <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
-          <Sparkles className="w-6 h-6 text-indigo-400" />
-          Community
-        </h1>
-        <p className="text-gray-400 text-sm mt-0.5">
-          Share wins, ask questions, find your tribe.
-        </p>
-      </header>
+    <div className="mx-auto w-full max-w-5xl flex justify-center gap-6">
+      {/* Center feed column (FB/Twitter-width) */}
+      <div className="w-full max-w-xl min-w-0 space-y-4">
+        {/* Banner — above the tabs, visible on both Feed and Groups */}
+        {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
 
-      {/* Top tabs */}
-      <nav className="flex gap-1 border-b border-gray-800">
-        {(
-          [
-            { key: "feed", label: "Feed", icon: Compass },
-            { key: "groups", label: "Groups", icon: Users },
-          ] as const
-        ).map((t) => {
-          const isActive = t.key === tab;
-          return (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors",
-                isActive
-                  ? "text-white border-indigo-500"
-                  : "text-gray-500 border-transparent hover:text-white"
-              )}
-            >
-              <t.icon className="w-4 h-4" />
-              {t.label}
-            </button>
-          );
-        })}
-      </nav>
+        {/* Top tabs */}
+        <nav className="flex gap-1 border-b border-gray-800">
+          {(
+            [
+              { key: "feed", label: "Feed", icon: Compass },
+              { key: "groups", label: "Groups", icon: Users },
+            ] as const
+          ).map((t) => {
+            const isActive = t.key === tab;
+            return (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors",
+                  isActive
+                    ? "text-white border-indigo-500"
+                    : "text-gray-500 border-transparent hover:text-white"
+                )}
+              >
+                <t.icon className="w-4 h-4" />
+                {t.label}
+              </button>
+            );
+          })}
+        </nav>
 
-      {tab === "feed" && (
-        <FeedTab
-          user={user}
-          initialBanners={initialBanners}
-          initialTicker={initialTicker}
-          tickerConfig={tickerConfig}
-          sort={sort}
-          onSortChange={setSort}
-        />
-      )}
+        {tab === "feed" && (
+          <FeedTab
+            user={user}
+            initialTicker={initialTicker}
+            tickerConfig={tickerConfig}
+            sort={sort}
+            onSortChange={setSort}
+          />
+        )}
 
-      {tab === "groups" && <GroupsTab />}
+        {tab === "groups" && <GroupsTab />}
+      </div>
+
+      {/* Right sidebar — desktop only (xl+). Mobile/tablet unchanged. */}
+      <aside className="hidden xl:block w-80 shrink-0">
+        <div className="sticky top-20 space-y-4">
+          <FeedRightRail
+            bestEarners={bestEarners}
+            whoToFollow={whoToFollow}
+            trendingHashtags={trendingHashtags}
+            promo={promo}
+          />
+        </div>
+      </aside>
     </div>
   );
 }
@@ -192,14 +223,12 @@ export function SocialFeedView({
 
 function FeedTab({
   user,
-  initialBanners,
   initialTicker,
   tickerConfig,
   sort,
   onSortChange,
 }: {
   user: SessionUser;
-  initialBanners: BannerSlide[];
   initialTicker: WithdrawalTickerItem[];
   tickerConfig?: TickerConfig;
   sort: Sort;
@@ -249,7 +278,6 @@ function FeedTab({
 
   return (
     <div className="space-y-4">
-      {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
       {initialTicker.length > 0 && (
         <WithdrawalTicker
           items={initialTicker}
@@ -326,6 +354,72 @@ function FeedTab({
 
 type ComposerMode = "text" | "poll" | "donation";
 
+const COMPOSER_EMOJIS = [
+  "😀", "😁", "😂", "🤣", "😊", "😍", "🥰", "😎",
+  "🤩", "😅", "😇", "🙂", "😉", "😌", "😴", "🤔",
+  "😐", "🙃", "😭", "😡", "👍", "👎", "🙏", "👏",
+  "🙌", "💪", "🤝", "✌️", "🤞", "👌", "🔥", "✨",
+  "🎉", "🎊", "💯", "⚡", "🌟", "❤️", "🧡", "💛",
+  "💚", "💙", "💜", "🖤", "💰", "💸", "🚀", "🏆",
+];
+
+function ComposerToolBtn({
+  title,
+  onClick,
+  active,
+  disabled,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  active?: boolean;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "p-2 rounded-lg transition-colors disabled:opacity-50",
+        active
+          ? "bg-indigo-500/20 text-indigo-300"
+          : "text-gray-400 hover:text-white hover:bg-gray-800"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function EmojiPopover({
+  onPick,
+  onClose,
+}: {
+  onPick: (emoji: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="absolute left-0 top-full mt-1 z-50 w-64 max-w-[calc(100vw-2rem)] p-2 rounded-xl bg-gray-900 border border-gray-800 shadow-xl grid grid-cols-8 gap-0.5">
+        {COMPOSER_EMOJIS.map((e) => (
+          <button
+            key={e}
+            type="button"
+            onClick={() => onPick(e)}
+            className="w-7 h-7 text-lg leading-none rounded hover:bg-gray-800 flex items-center justify-center"
+          >
+            {e}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function CreatePostComposer({
   user,
   onCreated,
@@ -338,11 +432,88 @@ function CreatePostComposer({
   const [content, setContent] = useState("");
   const [imageInput, setImageInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [bg, setBg] = useState<string>(""); // colored-background id ("" = none)
+  const [uploading, setUploading] = useState(false);
+  const [showEmoji, setShowEmoji] = useState(false);
   const [pollOptions, setPollOptions] = useState<string[]>(["", ""]);
   const [pollDuration, setPollDuration] = useState<24 | 48 | 72>(24);
   const [donationGoal, setDonationGoal] = useState<number>(1000);
   const [busy, setBusy] = useState(false);
   const [postAsAnnouncement, setPostAsAnnouncement] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // A colored background only applies to text-only posts.
+  const activeBg = images.length === 0 ? getPostBackground(bg) : null;
+
+  // Insert text at the textarea caret (used by the emoji picker).
+  const insertAtCaret = (text: string) => {
+    const el = textareaRef.current;
+    if (!el) {
+      setContent((c) => c + text);
+      return;
+    }
+    const start = el.selectionStart ?? content.length;
+    const end = el.selectionEnd ?? content.length;
+    const next = content.slice(0, start) + text + content.slice(end);
+    setContent(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + text.length;
+      el.setSelectionRange(pos, pos);
+    });
+  };
+
+  // Wrap the current selection in a markdown marker (** bold, * italic).
+  const wrapSelection = (marker: string) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const sel = content.slice(start, end) || "text";
+    const next =
+      content.slice(0, start) + marker + sel + marker + content.slice(end);
+    setContent(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + marker.length, start + marker.length + sel.length);
+    });
+  };
+
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = ""; // allow re-picking the same file
+    if (!f) return;
+    if (!f.type.startsWith("image/")) {
+      toast.error("Please pick an image");
+      return;
+    }
+    // Sanity cap on the SOURCE so we don't try to decode absurd files; the
+    // compressed output is tiny (~50–70 KB), so the 5 MB upload limit is moot.
+    if (f.size > 25 * 1024 * 1024) {
+      toast.error("Image too large (max 25MB)");
+      return;
+    }
+    setUploading(true);
+    try {
+      // Auto-compress to ~50–70 KB (WebP) before upload — quality stays crisp.
+      const out = await compressImageToTarget(f);
+      const fd = new FormData();
+      fd.append("file", out);
+      fd.append("folder", "posts");
+      const res = await fetch("/api/upload", { method: "PUT", body: fd });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok || !d.url) throw new Error(d.error ?? `HTTP ${res.status}`);
+      setImages((prev) => [...prev, d.url as string]);
+      setBg(""); // images and colored background are mutually exclusive
+    } catch (err) {
+      toast.error("Upload failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
 
   // Only admin-ish roles see the announcement toggle. We don't enforce
   // here — the server gates `social.post`.
@@ -353,6 +524,8 @@ function CreatePostComposer({
     setContent("");
     setImageInput("");
     setImages([]);
+    setBg("");
+    setShowEmoji(false);
     setPollOptions(["", ""]);
     setPollDuration(24);
     setDonationGoal(1000);
@@ -366,6 +539,7 @@ function CreatePostComposer({
     if (!v) return;
     setImages((prev) => [...prev, v]);
     setImageInput("");
+    setBg(""); // images and colored background are mutually exclusive
   };
 
   const removeImage = (idx: number) => {
@@ -407,6 +581,8 @@ function CreatePostComposer({
           content: content.trim(),
           images,
           isPublic: true,
+          backgroundStyle:
+            mode === "text" && images.length === 0 && bg ? bg : null,
           ...(cleanedPoll && {
             pollOptions: cleanedPoll.map((label) => ({ label })),
             pollEndsAt: new Date(
@@ -440,18 +616,69 @@ function CreatePostComposer({
   const initial = (user.name ?? "U").charAt(0).toUpperCase();
 
   if (!expanded) {
+    const firstName = user.name?.split(" ")[0] ?? "there";
+    const quickActions = [
+      {
+        label: "Photo",
+        icon: ImageIcon,
+        tone: "text-emerald-400",
+        onClick: () => {
+          setMode("text");
+          setExpanded(true);
+        },
+      },
+      {
+        label: "Poll",
+        icon: ListChecks,
+        tone: "text-amber-400",
+        onClick: () => {
+          setMode("poll");
+          setExpanded(true);
+        },
+      },
+      {
+        label: "Colored",
+        icon: Palette,
+        tone: "text-pink-400",
+        onClick: () => {
+          setMode("text");
+          setExpanded(true);
+        },
+      },
+    ];
     return (
-      <button
-        onClick={() => setExpanded(true)}
-        className="w-full text-left rounded-xl border border-gray-800 bg-gray-900 p-4 flex items-center gap-3 hover:border-gray-700 transition-colors"
-      >
-        <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium shrink-0">
-          {initial}
+      <div className="rounded-2xl border border-indigo-500/30 bg-linear-to-br from-indigo-500/10 via-purple-500/5 to-gray-900 p-3 shadow-lg shadow-indigo-500/5">
+        {/* Top row — tap anywhere to open the composer */}
+        <button
+          onClick={() => setExpanded(true)}
+          className="w-full flex items-center gap-3 group"
+        >
+          <div className="w-11 h-11 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shrink-0 ring-2 ring-indigo-500/30">
+            {initial}
+          </div>
+          <span className="flex-1 text-left rounded-full bg-gray-950/80 border border-gray-700 group-hover:border-indigo-500/50 px-4 py-2.5 text-sm text-gray-400 transition-colors truncate">
+            What&apos;s on your mind, {firstName}?
+          </span>
+          <span className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 text-white text-sm font-bold shrink-0">
+            <Send className="w-4 h-4" />
+            Post
+          </span>
+        </button>
+
+        {/* Quick actions */}
+        <div className="mt-2.5 pt-2.5 border-t border-white/5 grid grid-cols-3 gap-1">
+          {quickActions.map((a) => (
+            <button
+              key={a.label}
+              onClick={a.onClick}
+              className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-gray-300 hover:bg-white/5 transition-colors"
+            >
+              <a.icon className={cn("w-4 h-4", a.tone)} />
+              {a.label}
+            </button>
+          ))}
         </div>
-        <span className="text-gray-500 text-sm">
-          Share something with the community…
-        </span>
-      </button>
+      </div>
     );
   }
 
@@ -507,15 +734,37 @@ function CreatePostComposer({
 
       {mode === "text" && (
         <>
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="What's on your mind?"
-            rows={4}
-            maxLength={2000}
-            disabled={busy}
-            className="w-full bg-gray-950 border border-gray-800 rounded-lg px-3 py-2 text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-indigo-500 resize-none"
-          />
+          {/* Composer surface — a colored background applies to text-only posts */}
+          <div
+            className={cn(
+              "rounded-xl border transition-colors",
+              activeBg
+                ? cn("border-transparent", activeBg.className)
+                : "border-gray-800 bg-gray-950"
+            )}
+          >
+            <textarea
+              ref={textareaRef}
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="What's on your mind?"
+              rows={activeBg ? 5 : 4}
+              maxLength={2000}
+              disabled={busy}
+              className={cn(
+                "w-full bg-transparent px-3 py-3 focus:outline-none resize-none",
+                activeBg
+                  ? cn(
+                      "text-center text-lg font-semibold min-h-36 flex items-center justify-center",
+                      activeBg.textClass,
+                      activeBg.textClass === "text-white"
+                        ? "placeholder:text-white/70"
+                        : "placeholder:text-gray-900/60"
+                    )
+                  : "text-sm text-white placeholder:text-gray-500"
+              )}
+            />
+          </div>
 
           {images.length > 0 && (
             <div className="grid grid-cols-3 gap-1.5">
@@ -541,13 +790,90 @@ function CreatePostComposer({
             </div>
           )}
 
+          {/* Formatting toolbar */}
+          <div className="flex items-center gap-1">
+            <ComposerToolBtn title="Bold" onClick={() => wrapSelection("**")}>
+              <BoldIcon className="w-4 h-4" />
+            </ComposerToolBtn>
+            <ComposerToolBtn title="Italic" onClick={() => wrapSelection("*")}>
+              <ItalicIcon className="w-4 h-4" />
+            </ComposerToolBtn>
+            <div className="relative">
+              <ComposerToolBtn
+                title="Emoji"
+                active={showEmoji}
+                onClick={() => setShowEmoji((v) => !v)}
+              >
+                <Smile className="w-4 h-4" />
+              </ComposerToolBtn>
+              {showEmoji && (
+                <EmojiPopover
+                  onPick={(e) => insertAtCaret(e)}
+                  onClose={() => setShowEmoji(false)}
+                />
+              )}
+            </div>
+            <ComposerToolBtn
+              title="Add photo"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading || busy}
+            >
+              {uploading ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ImageIcon className="w-4 h-4" />
+              )}
+            </ComposerToolBtn>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFile}
+            />
+            <span className="ml-auto text-[10px] text-gray-500 hidden sm:inline">
+              **bold** · *italic*
+            </span>
+          </div>
+
+          {/* Colored background swatches (text-only posts) */}
+          {images.length === 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setBg("")}
+                title="No background"
+                className={cn(
+                  "w-7 h-7 rounded-full border border-gray-700 bg-gray-950 inline-flex items-center justify-center text-gray-500",
+                  !bg && "ring-2 ring-indigo-400"
+                )}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+              {POST_BACKGROUNDS.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  title={b.label}
+                  onClick={() => setBg(b.id)}
+                  className={cn(
+                    "w-7 h-7 rounded-full",
+                    b.className,
+                    bg === b.id && "ring-2 ring-white ring-offset-2 ring-offset-gray-900"
+                  )}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Optional: paste an image URL */}
           <div className="flex gap-2">
             <input
               type="url"
               value={imageInput}
               onChange={(e) => setImageInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addImage())}
-              placeholder="Paste image URL…"
+              placeholder="…or paste an image URL"
               disabled={busy}
               className="flex-1 bg-gray-950 border border-gray-800 rounded-lg px-3 py-1.5 text-xs text-white placeholder:text-gray-500 focus:outline-none focus:border-indigo-500"
             />
@@ -556,7 +882,7 @@ function CreatePostComposer({
               disabled={busy || !imageInput.trim()}
               className="inline-flex items-center gap-1 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white text-xs font-semibold rounded-lg disabled:opacity-50"
             >
-              <ImageIcon className="w-3.5 h-3.5" />
+              <Plus className="w-3.5 h-3.5" />
               Add
             </button>
           </div>
@@ -783,6 +1109,16 @@ function FeedPostCard({
     !!currentUserRole &&
     currentUserRole !== "USER" &&
     currentUserRole !== "user";
+
+  // Facebook-style colored background: only for short text-only posts (no
+  // images, poll, or donation).
+  const hasPoll = !!post.pollOptions && post.pollOptions.length > 0;
+  const hasDonation =
+    typeof post.donationGoal === "number" && post.donationGoal > 0;
+  const postBg =
+    post.images.length === 0 && !hasPoll && !hasDonation
+      ? getPostBackground(post.backgroundStyle)
+      : null;
 
   const promotionActive =
     !!post.isPromoted &&
@@ -1091,11 +1427,28 @@ function FeedPostCard({
         </div>
 
         {/* Content */}
-        {post.content && (
-          <p className="text-[15px] text-gray-200 leading-relaxed whitespace-pre-wrap mt-3">
-            <RenderedContent content={post.content} />
-          </p>
-        )}
+        {post.content &&
+          (postBg ? (
+            <div
+              className={cn(
+                "mt-3 rounded-xl px-4 py-10 min-h-40 flex items-center justify-center text-center",
+                postBg.className
+              )}
+            >
+              <p
+                className={cn(
+                  "text-xl font-bold leading-snug whitespace-pre-wrap break-words",
+                  postBg.textClass
+                )}
+              >
+                <RenderedContent content={post.content} />
+              </p>
+            </div>
+          ) : (
+            <p className="text-[15px] text-gray-200 leading-relaxed whitespace-pre-wrap mt-3">
+              <RenderedContent content={post.content} />
+            </p>
+          ))}
       </div>
 
       {/* Images */}
@@ -1431,6 +1784,39 @@ function PromoteModal({
 // ─────────────────────────────────────────────────────────────────────────────
 // RenderedContent — splits text by @mentions and turns them into Links to /u/<id>
 // ─────────────────────────────────────────────────────────────────────────────
+// Render **bold** and *italic* markdown within a plain-text chunk as React nodes
+// (no HTML injection). Used between @mention segments in RenderedContent.
+function renderFormatted(text: string, keyPrefix: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  const re = /\*\*([^*]+)\*\*|\*([^*]+)\*/g;
+  let last = 0;
+  let k = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) {
+      out.push(<span key={`${keyPrefix}-t${k++}`}>{text.slice(last, m.index)}</span>);
+    }
+    if (m[1] !== undefined) {
+      out.push(
+        <strong key={`${keyPrefix}-b${k++}`} className="font-bold">
+          {m[1]}
+        </strong>
+      );
+    } else if (m[2] !== undefined) {
+      out.push(
+        <em key={`${keyPrefix}-i${k++}`} className="italic">
+          {m[2]}
+        </em>
+      );
+    }
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) {
+    out.push(<span key={`${keyPrefix}-t${k++}`}>{text.slice(last)}</span>);
+  }
+  return out;
+}
+
 function RenderedContent({ content }: { content: string }) {
   const [mentionMap, setMentionMap] = useState<Record<string, string>>({});
 
@@ -1474,7 +1860,7 @@ function RenderedContent({ content }: { content: string }) {
     const start = m.index ?? 0;
     const username = m[1];
     if (start > lastIdx) {
-      parts.push(<span key={key++}>{content.slice(lastIdx, start)}</span>);
+      parts.push(...renderFormatted(content.slice(lastIdx, start), `p${key++}`));
     }
     const userId = mentionMap[username.toLowerCase()];
     if (userId) {
@@ -1493,7 +1879,7 @@ function RenderedContent({ content }: { content: string }) {
     lastIdx = start + m[0].length;
   }
   if (lastIdx < content.length) {
-    parts.push(<span key={key++}>{content.slice(lastIdx)}</span>);
+    parts.push(...renderFormatted(content.slice(lastIdx), `p${key++}`));
   }
   return <>{parts}</>;
 }

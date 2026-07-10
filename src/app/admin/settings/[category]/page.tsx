@@ -54,6 +54,11 @@ const CATEGORY_CONFIG: Record<
     description: "System maintenance and data management",
     icon: Database,
   },
+  ui_toggles: {
+    label: "Popups & Install",
+    description: "Turn the cookie, notification, and PWA install popups on/off",
+    icon: Bell,
+  },
 };
 
 // Default settings for each category
@@ -108,6 +113,11 @@ const DEFAULT_SETTINGS: Record<string, Array<{ key: string; label: string; descr
     { key: "maintenance_message", label: "Maintenance Message", description: "Message to show during maintenance", type: "textarea", defaultValue: "We are currently performing maintenance. Please check back soon." },
     { key: "allow_registration", label: "Allow Registrations", description: "Allow new user registrations", type: "boolean", defaultValue: true },
     { key: "allow_withdrawals", label: "Allow Withdrawals", description: "Allow withdrawal requests", type: "boolean", defaultValue: true },
+  ],
+  ui_toggles: [
+    { key: "ui.cookies_popup_enabled", label: "Cookie consent popup", description: "Show the cookie consent banner to visitors", type: "boolean", defaultValue: true },
+    { key: "ui.notification_popup_enabled", label: "Notification permission popup", description: "Show the “Enable notifications” prompt", type: "boolean", defaultValue: true },
+    { key: "ui.pwa_install_prompt_enabled", label: "PWA install prompt", description: "Show the “Install app” prompt to users who haven’t installed it (Android & iOS)", type: "boolean", defaultValue: true },
   ],
 };
 

@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 
 interface AutoRefreshOptions {
-  /** Poll interval in ms while the tab is visible. Default 15000. */
+  /** Poll interval in ms while the tab is visible. Default 30000. */
   intervalMs?: number;
   /** When false, no listeners/timers are attached. Default true. */
   enabled?: boolean;
@@ -25,7 +25,7 @@ interface AutoRefreshOptions {
  */
 export function useAutoRefresh(
   callback: () => void,
-  { intervalMs = 15000, enabled = true }: AutoRefreshOptions = {}
+  { intervalMs = 30000, enabled = true }: AutoRefreshOptions = {}
 ): void {
   const cbRef = useRef(callback);
   useEffect(() => {

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { awardSocialEarning } from "@/lib/social-earning";
 import { extractMentionUsernames, resolveMentionedUsers } from "@/lib/mentions";
+import { isValidPostBackground } from "@/lib/post-backgrounds";
 
 // GET /api/feed - Get feed posts
 export async function GET(request: NextRequest) {
@@ -140,6 +141,7 @@ export async function GET(request: NextRequest) {
       id: post.id,
       content: post.content,
       images: post.images,
+      backgroundStyle: post.backgroundStyle,
       isPublic: post.isPublic,
       isPinned: post.isPinned,
       isAnnouncement: post.isAnnouncement,
@@ -221,6 +223,7 @@ export async function POST(request: NextRequest) {
       pollEndsAt,
       donationGoal,
       groupId,
+      backgroundStyle,
     } = body as {
       content?: string;
       images?: string[];
@@ -229,7 +232,16 @@ export async function POST(request: NextRequest) {
       pollEndsAt?: string;
       donationGoal?: number;
       groupId?: string | null;
+      backgroundStyle?: string | null;
     };
+
+    // Facebook-style colored background — only valid for text-only posts.
+    const resolvedBackground =
+      backgroundStyle &&
+      isValidPostBackground(backgroundStyle) &&
+      (!Array.isArray(images) || images.length === 0)
+        ? backgroundStyle
+        : null;
 
     // Validate content
     if (!content || content.trim().length === 0) {
@@ -284,6 +296,7 @@ export async function POST(request: NextRequest) {
         userId: session.user.id,
         content: content.trim(),
         images: images || [],
+        backgroundStyle: resolvedBackground,
         isPublic: isPublic !== false,
         pollOptions: formattedPoll ?? undefined,
         pollEndsAt: pollEndsAt ? new Date(pollEndsAt) : null,
@@ -350,6 +363,7 @@ export async function POST(request: NextRequest) {
         id: post.id,
         content: post.content,
         images: post.images,
+        backgroundStyle: post.backgroundStyle,
         isPublic: post.isPublic,
         isPinned: post.isPinned,
         isAnnouncement: post.isAnnouncement,
