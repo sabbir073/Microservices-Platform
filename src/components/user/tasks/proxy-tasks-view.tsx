@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { confirmDialog } from "@/lib/confirm";
 import {
   Globe,
   ShieldCheck,
@@ -320,8 +321,16 @@ export function ProxyTasksView() {
             <div className="flex gap-2">
               <button
                 disabled={submitting}
-                onClick={() => {
-                  if (!connectedAt || confirm("Disconnect now? Reward will be forfeited.")) {
+                onClick={async () => {
+                  if (
+                    !connectedAt ||
+                    (await confirmDialog({
+                      title: "Disconnect now?",
+                      description: "Reward will be forfeited.",
+                      tone: "danger",
+                      confirmLabel: "Disconnect",
+                    }))
+                  ) {
                     reset();
                   }
                 }}

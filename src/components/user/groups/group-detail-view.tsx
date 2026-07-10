@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { confirmDialog } from "@/lib/confirm";
 import {
   ChevronLeft,
   Users,
@@ -120,7 +121,7 @@ export function GroupDetailView({ groupId }: Props) {
   };
 
   const leave = async () => {
-    if (!confirm("Leave this group?")) return;
+    if (!(await confirmDialog({ title: "Leave this group?", tone: "info", confirmLabel: "Leave" }))) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/groups/${groupId}/leave`, { method: "POST" });

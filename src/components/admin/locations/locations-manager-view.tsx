@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Globe,
@@ -466,9 +468,13 @@ function TreeRow({
 
   const remove = async () => {
     if (
-      !confirm(
-        `Disable "${row.name}" and all its descendants?\n\nIt will stop appearing in dropdowns. You can re-enable it later from the audit log if needed.`
-      )
+      !(await confirmDialog({
+        title: `Disable "${row.name}" and all its descendants?`,
+        description:
+          "It will stop appearing in dropdowns. You can re-enable it later from the audit log if needed.",
+        tone: "danger",
+        confirmLabel: "Disable",
+      }))
     ) {
       return;
     }

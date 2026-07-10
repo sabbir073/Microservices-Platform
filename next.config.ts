@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
     // instant (no server round-trip). Freshness is handled by the client
     // useAutoRefresh hooks (focus + timer) on the live surfaces.
     staleTimes: { dynamic: 60, static: 300 },
+    // Tree-shake big barrel packages so each page ships only the icons/helpers
+    // it actually uses — meaningful JS reduction across the whole app.
+    optimizePackageImports: ["lucide-react", "date-fns"],
   },
 };
 

@@ -85,7 +85,7 @@ export function LeaderboardView({ currentUserId }: { currentUserId: string }) {
       </div>
 
       {/* Metric filter */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <div className="flex gap-2 overflow-x-auto scrollbar-none">
         {METRICS.map((m) => (
           <button
             key={m.key}

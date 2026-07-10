@@ -173,6 +173,9 @@ export default async function DashboardPage() {
           xpReward: true,
           difficulty: true,
         },
+        // Shared, slow-changing list — serve from Accelerate cache to cut
+        // dashboard render time.
+        cacheStrategy: { ttl: 60, swr: 120 },
       }),
     ]);
 

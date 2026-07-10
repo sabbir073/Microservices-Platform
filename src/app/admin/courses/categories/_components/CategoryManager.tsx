@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -103,9 +105,13 @@ function CategoryRow({
 
   const remove = async () => {
     if (
-      !confirm(
-        `Delete category "${row.name}"? This cannot be undone. Existing courses must be moved off this category first.`
-      )
+      !(await confirmDialog({
+        title: `Delete category "${row.name}"?`,
+        description:
+          "This cannot be undone. Existing courses must be moved off this category first.",
+        tone: "danger",
+        confirmLabel: "Delete",
+      }))
     ) {
       return;
     }

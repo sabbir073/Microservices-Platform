@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
+import { promptDialog } from "@/lib/confirm";
 import {
   User,
   Bell,
@@ -161,7 +162,13 @@ export function SettingsView({
   };
 
   const disable2FA = async () => {
-    const code = window.prompt("Enter a current 6-digit code to disable 2FA (or leave blank):");
+    const code = await promptDialog({
+      title: "Disable two-factor auth",
+      description: "Enter a current 6-digit code to disable 2FA (or leave blank):",
+      tone: "danger",
+      placeholder: "6-digit code",
+      confirmLabel: "Disable 2FA",
+    });
     if (code === null) return;
     try {
       const res = await fetch("/api/security/2fa/disable", {

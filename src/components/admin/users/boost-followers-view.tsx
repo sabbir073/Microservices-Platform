@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -254,12 +256,15 @@ export function BoostFollowersView({
 
   const revertBatch = async (batch: BoostBatch) => {
     if (
-      !confirm(
-        `Revert this batch?\n\nThis will remove ${batch.addedCount.toLocaleString()} followers added on ${format(
+      !(await confirmDialog({
+        title: "Revert this batch?",
+        description: `This will remove ${batch.addedCount.toLocaleString()} followers added on ${format(
           new Date(batch.createdAt),
           "PP p"
-        )}. The Follow rows will be deleted and counters decremented.`
-      )
+        )}. The Follow rows will be deleted and counters decremented.`,
+        tone: "danger",
+        confirmLabel: "Revert",
+      }))
     ) {
       return;
     }

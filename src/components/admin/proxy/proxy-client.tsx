@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -44,7 +46,7 @@ export function ProxyClient({ initial, canManage }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const remove = async (s: ProxyServer) => {
-    if (!confirm(`Delete server "${s.name}" (${s.host}:${s.port})?`)) return;
+    if (!(await confirmDialog({ title: `Delete server "${s.name}"?`, description: `${s.host}:${s.port}`, tone: "danger", confirmLabel: "Delete" }))) return;
     setBusyId(s.id);
     try {
       const res = await fetch(`/api/admin/proxy/servers/${s.id}`, {

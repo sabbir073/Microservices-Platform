@@ -203,7 +203,7 @@ export function LessonPane({
 
       {/* Tabs */}
       <div className="bg-gray-900 rounded-2xl border border-gray-800">
-        <div className="flex border-b border-gray-800 overflow-x-auto">
+        <div className="flex border-b border-gray-800 overflow-x-auto scrollbar-none">
           <TabButton active={tab === "overview"} onClick={() => setTab("overview")} icon={<FileText className="w-3.5 h-3.5" />}>
             Overview
           </TabButton>

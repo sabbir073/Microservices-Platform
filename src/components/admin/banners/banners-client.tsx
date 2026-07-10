@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -126,7 +128,7 @@ export function BannersClient({ initial, canManage }: Props) {
   };
 
   const remove = async (id: string) => {
-    if (!confirm("Delete this banner?")) return;
+    if (!(await confirmDialog({ title: "Delete this banner?", tone: "danger", confirmLabel: "Delete" }))) return;
     try {
       const res = await fetch(`/api/admin/banners/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error();

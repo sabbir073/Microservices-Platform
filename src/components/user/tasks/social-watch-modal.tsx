@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { X, Loader2, PlayCircle, CheckCircle2 } from "lucide-react";
 import { formatDuration } from "@/lib/video-tasks";
+import { confirmDialog } from "@/lib/confirm";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -102,9 +103,14 @@ export function SocialWatchModal({
     onComplete();
   }, [phase, onComplete]);
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (phase !== "complete" && watched < target) {
-      const ok = window.confirm("Quit now? This action won't be counted.");
+      const ok = await confirmDialog({
+        title: "Quit now?",
+        description: "This action won't be counted.",
+        tone: "warning",
+        confirmLabel: "Quit",
+      });
       if (!ok) return;
     }
     onClose();

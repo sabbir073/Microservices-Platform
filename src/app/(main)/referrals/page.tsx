@@ -19,7 +19,7 @@ export default async function ReferralsPage() {
 
   const code =
     user.referralCode ?? `EARN${user.id.slice(0, 6).toUpperCase()}`;
-  const shareUrl = `https://earngpt.com/register?ref=${code}`;
+  const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.app"}/register?ref=${code}`;
 
   // Build the 3-level team
   const l1 = await prisma.user.findMany({

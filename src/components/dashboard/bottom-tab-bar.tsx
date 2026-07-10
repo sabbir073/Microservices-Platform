@@ -7,6 +7,7 @@ import { Home, ListTodo, Wallet, Target, Menu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useMobileNav } from "@/lib/stores/mobile-nav-store";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
+import { haptic } from "@/lib/haptics";
 
 // Left → right: two smaller page tabs, the bigger center Home, then Wallet + Menu.
 const TABS = [
@@ -58,8 +59,9 @@ export function BottomTabBar() {
             <Link
               key={tab.name}
               href={tab.href}
+              onClick={() => haptic("light")}
               className={cn(
-                "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium",
+                "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-transform active:scale-95",
                 activeTab ? "text-indigo-400" : "text-gray-400"
               )}
             >
@@ -85,8 +87,11 @@ export function BottomTabBar() {
 
         <button
           type="button"
-          onClick={() => setMenuOpen(true)}
-          className="flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium text-gray-400"
+          onClick={() => {
+            haptic("light");
+            setMenuOpen(true);
+          }}
+          className="flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium text-gray-400 transition-transform active:scale-95"
         >
           <span className="relative">
             <Menu className="w-5 h-5" />

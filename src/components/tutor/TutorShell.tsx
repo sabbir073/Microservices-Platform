@@ -7,9 +7,6 @@ import {
   GraduationCap,
   LayoutDashboard,
   BookOpen,
-  MessageSquare,
-  Star,
-  Wallet,
   Plus,
   Home,
   Menu,
@@ -30,9 +27,6 @@ interface Props {
 const NAV = [
   { href: "/tutor/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/tutor/courses", label: "My courses", icon: BookOpen },
-  { href: "/tutor/questions", label: "Student Q&A", icon: MessageSquare },
-  { href: "/tutor/reviews", label: "Reviews", icon: Star },
-  { href: "/tutor/earnings", label: "Earnings", icon: Wallet },
 ];
 
 export function TutorShell({ user, children }: Props) {

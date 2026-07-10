@@ -33,13 +33,13 @@ export function StatCard({
         className
       )}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0">
         {icon && (
           <div className={cn("p-2 rounded-lg shrink-0", TONE_CLASSES[tone])}>
             {icon}
           </div>
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-lg font-bold text-white tabular-nums truncate">
             {typeof value === "number" ? value.toLocaleString() : value}
           </p>

@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useEffect, useState } from "react";
 import { Loader2, Check, X, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
@@ -36,7 +38,7 @@ export function AdminDepositsView() {
   }, [status]);
 
   const review = async (id: string, action: "approve" | "reject") => {
-    if (action === "reject" && !window.confirm("Reject this deposit?")) return;
+    if (action === "reject" && !(await confirmDialog({ title: "Reject this deposit?", tone: "danger", confirmLabel: "Reject" }))) return;
     setBusyId(id);
     try {
       const res = await fetch(`/api/admin/deposits/${id}`, {

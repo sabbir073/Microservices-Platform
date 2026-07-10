@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Plus,
@@ -1579,7 +1581,7 @@ function KeyPoolManager({
 
   const clearUnused = async () => {
     if (!taskId) return;
-    if (!confirm("Delete all UNUSED keys for this task? Claimed keys are kept.")) return;
+    if (!(await confirmDialog({ title: "Delete all UNUSED keys for this task?", description: "Claimed keys are kept.", tone: "danger", confirmLabel: "Delete" }))) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/admin/tasks/${taskId}/article-keys`, {

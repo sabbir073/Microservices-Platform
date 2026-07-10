@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useEffect, useState } from "react";
 import {
   Newspaper,
@@ -113,7 +115,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   const ctr = totalImpr > 0 ? ((totalClicks / totalImpr) * 100).toFixed(2) : "0.00";
 
   const deletePlacement = async (id: string) => {
-    if (!confirm("Delete this placement?")) return;
+    if (!(await confirmDialog({ title: "Delete this placement?", tone: "danger", confirmLabel: "Delete" }))) return;
     const res = await fetch(`/api/admin/ads/placements/${id}`, { method: "DELETE" });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.error ?? "Failed");
@@ -141,13 +143,13 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
     loadAll();
   };
   const deleteAd = async (id: string) => {
-    if (!confirm("Delete this ad?")) return;
+    if (!(await confirmDialog({ title: "Delete this ad?", tone: "danger", confirmLabel: "Delete" }))) return;
     await fetch(`/api/admin/ads/${id}`, { method: "DELETE" });
     toast.success("Deleted");
     loadAll();
   };
   const deleteCampaign = async (id: string) => {
-    if (!confirm("Delete campaign and all its ads?")) return;
+    if (!(await confirmDialog({ title: "Delete campaign and all its ads?", tone: "danger", confirmLabel: "Delete" }))) return;
     await fetch(`/api/admin/ads/campaigns/${id}`, { method: "DELETE" });
     toast.success("Deleted");
     loadAll();

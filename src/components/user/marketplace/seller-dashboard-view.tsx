@@ -217,9 +217,9 @@ function StatCard({
         tones[tone]
       )}
     >
-      <div className="flex items-center gap-1.5">
-        <Icon className="w-3.5 h-3.5" />
-        <span className="text-[10px] uppercase tracking-wider font-bold opacity-90">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <Icon className="w-3.5 h-3.5 shrink-0" />
+        <span className="text-[10px] uppercase tracking-wider font-bold opacity-90 truncate">
           {label}
         </span>
       </div>

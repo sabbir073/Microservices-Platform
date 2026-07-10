@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -79,9 +81,13 @@ export function ListingActions({
 
   const closeAuction = async () => {
     if (
-      !confirm(
-        "Close this auction now? Picks the highest bidder above reserve, settles the sale, and notifies everyone."
-      )
+      !(await confirmDialog({
+        title: "Close this auction now?",
+        description:
+          "Picks the highest bidder above reserve, settles the sale, and notifies everyone.",
+        tone: "warning",
+        confirmLabel: "Close auction",
+      }))
     )
       return;
     setFeatBusy("close");

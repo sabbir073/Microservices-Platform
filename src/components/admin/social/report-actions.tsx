@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, X, AlertTriangle, Trash2, Ban, Clock } from "lucide-react";
@@ -27,7 +29,12 @@ export function ReportActions({ reportId, contentType }: Props) {
   const apply = async (resolution: string) => {
     if (
       (resolution === "BANNED" || resolution === "DELETED") &&
-      !window.confirm(`${resolution} this ${contentType}? This is hard to undo.`)
+      !(await confirmDialog({
+        title: `${resolution} this ${contentType}?`,
+        description: "This is hard to undo.",
+        tone: "danger",
+        confirmLabel: resolution === "BANNED" ? "Ban" : "Delete",
+      }))
     )
       return;
     setBusy(true);

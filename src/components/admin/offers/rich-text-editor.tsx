@@ -1,5 +1,7 @@
 "use client";
 
+import { promptDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -151,9 +153,9 @@ function Toolbar({
 }) {
   const [colorOpen, setColorOpen] = useState(false);
 
-  const setLink = () => {
+  const setLink = async () => {
     const prev = editor.getAttributes("link").href as string | undefined;
-    const url = window.prompt("Link URL", prev ?? "https://");
+    const url = await promptDialog({ title: "Link URL", defaultValue: prev ?? "https://", tone: "info", confirmLabel: "Set link" });
     if (url === null) return;
     if (url === "") {
       editor.chain().focus().extendMarkRange("link").unsetLink().run();
@@ -162,8 +164,8 @@ function Toolbar({
     editor.chain().focus().extendMarkRange("link").setLink({ href: url }).run();
   };
 
-  const insertImage = () => {
-    const url = window.prompt("Image URL", "https://");
+  const insertImage = async () => {
+    const url = await promptDialog({ title: "Image URL", defaultValue: "https://", tone: "info", confirmLabel: "Insert" });
     if (!url) return;
     editor.chain().focus().setImage({ src: url }).run();
   };

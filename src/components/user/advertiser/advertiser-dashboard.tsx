@@ -7,6 +7,7 @@ import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
 import { toast } from "sonner";
+import { promptDialog } from "@/lib/confirm";
 
 interface Campaign {
   id: string;
@@ -92,7 +93,14 @@ export function AdvertiserDashboard() {
   };
 
   const fundCampaign = async (id: string, title: string) => {
-    const input = window.prompt(`Add budget to "${title}" (USD, from your wallet):`, "20");
+    const input = await promptDialog({
+      title: "Add budget",
+      description: `Add budget to "${title}" (USD, from your wallet):`,
+      tone: "info",
+      defaultValue: "20",
+      placeholder: "Amount in USD",
+      confirmLabel: "Add budget",
+    });
     if (input == null) return;
     const amount = Number(input);
     if (!Number.isFinite(amount) || amount <= 0) {

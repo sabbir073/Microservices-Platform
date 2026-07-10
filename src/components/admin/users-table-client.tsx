@@ -1,5 +1,7 @@
 "use client";
 
+import { promptDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -148,22 +150,22 @@ export function UsersTableClient({
   };
 
   const handleBulkEmail = async (ids: string[]) => {
-    const subject = window.prompt("Email subject:");
+    const subject = await promptDialog({ title: "Email subject", tone: "info", required: true, confirmLabel: "Next" });
     if (!subject) return;
-    const message = window.prompt("Email message:");
+    const message = await promptDialog({ title: "Email message", tone: "info", multiline: true, required: true, confirmLabel: "Send" });
     if (!message) return;
     await postBulk({ action: "sendEmail", ids, subject, message }, `Emailed ${ids.length} user(s)`);
   };
 
   const handleBulkPoints = async (ids: string[]) => {
-    const raw = window.prompt("Points to add (use a negative number to deduct):");
+    const raw = await promptDialog({ title: "Adjust points", description: "Points to add (use a negative number to deduct):", tone: "info", placeholder: "e.g. 100 or -50", confirmLabel: "Next" });
     if (raw === null) return;
     const points = parseInt(raw, 10);
     if (!Number.isInteger(points) || points === 0) {
       toast.error("Enter a non-zero whole number");
       return;
     }
-    const reason = window.prompt("Reason (optional):") ?? undefined;
+    const reason = (await promptDialog({ title: "Reason", description: "Optional — shown in the audit log.", tone: "info", confirmLabel: "Apply" })) ?? undefined;
     await postBulk(
       { action: "adjustPoints", ids, points, reason },
       `Adjusted points for ${ids.length} user(s)`
@@ -171,7 +173,7 @@ export function UsersTableClient({
   };
 
   const handleBulkTier = async (ids: string[]) => {
-    const packageId = window.prompt("Package ID to assign (from /admin/packages):");
+    const packageId = await promptDialog({ title: "Change tier", description: "Package ID to assign (from /admin/packages):", tone: "info", required: true, confirmLabel: "Assign" });
     if (!packageId) return;
     await postBulk(
       { action: "changeTier", ids, packageId },

@@ -284,7 +284,7 @@ export function PublicProfileView({ userId, viewerId }: Props) {
       )}
 
       {/* Tab nav */}
-      <nav className="flex gap-1 border-b border-gray-800">
+      <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
         {(
           [
             { key: "posts", label: "Posts" },

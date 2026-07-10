@@ -583,7 +583,7 @@ export function BoardTasksView() {
       </h1>
 
       {!loading && availableCategories.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mx-1 px-1 no-scrollbar">
+        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none -mx-1 px-1">
           <button
             onClick={() => setCategoryFilter(null)}
             className={cn(

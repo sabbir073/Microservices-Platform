@@ -4,9 +4,14 @@ import { forwardRef } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 import { Loader2 } from "lucide-react";
+import { haptic } from "@/lib/haptics";
+
+// Meaningful action variants get a light tap haptic (native feel); quiet
+// variants (ghost/link/outline) don't, to avoid buzzing on every minor tap.
+const HAPTIC_VARIANTS = new Set(["primary", "danger", "success", "gold"]);
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
@@ -65,6 +70,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       rightIcon,
       children,
       disabled,
+      onClick,
       ...props
     },
     ref
@@ -74,6 +80,10 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         className={cn(buttonVariants({ variant, size, fullWidth, className }))}
         ref={ref}
         disabled={disabled || isLoading}
+        onClick={(e) => {
+          if (HAPTIC_VARIANTS.has(variant ?? "primary")) haptic("light");
+          onClick?.(e);
+        }}
         {...props}
       >
         {isLoading ? (

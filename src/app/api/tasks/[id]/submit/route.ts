@@ -83,12 +83,19 @@ export async function POST(
       );
     }
 
-    // Check if task duration was met (for video/article tasks)
-    if (task.duration) {
+    // Check if the required time was met (for video/article tasks).
+    // VIDEO tasks are gated on videoConfig.watchSeconds (what the player enforces),
+    // NOT task.duration — the two can diverge (duration is often the full video
+    // length), which would otherwise make a fully-watched video impossible to submit.
+    const requiredSeconds =
+      task.type === "VIDEO"
+        ? (task.videoConfig as VideoConfig | null)?.watchSeconds ?? task.duration ?? 0
+        : task.duration ?? 0;
+    if (requiredSeconds) {
       const elapsedSeconds = Math.floor(
         (Date.now() - submission.createdAt.getTime()) / 1000
       );
-      const requiredDuration = Math.floor(task.duration * 0.8); // 80% of duration required
+      const requiredDuration = Math.floor(requiredSeconds * 0.8); // 80% of required time
 
       if (elapsedSeconds < requiredDuration) {
         return NextResponse.json(

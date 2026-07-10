@@ -24,60 +24,59 @@ export function FilterChips<T extends string>({
   variant = "pill",
 }: FilterChipsProps<T>) {
   return (
-    <div
-      className={cn(
-        "flex items-center gap-2 overflow-x-auto scrollbar-none -mx-4 px-4",
-        className
-      )}
-    >
-      {options.map((opt) => {
-        const active = opt.value === value;
-        if (variant === "underline") {
+    <div className={cn("relative -mx-4", className)}>
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-none px-4">
+        {options.map((opt) => {
+          const active = opt.value === value;
+          if (variant === "underline") {
+            return (
+              <button
+                key={opt.value}
+                onClick={() => onChange(opt.value)}
+                className={cn(
+                  "shrink-0 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                  active
+                    ? "border-indigo-500 text-indigo-400"
+                    : "border-transparent text-gray-400 hover:text-gray-200"
+                )}
+              >
+                {opt.label}
+                {opt.count !== undefined && (
+                  <span className="ml-1.5 text-xs text-gray-500">
+                    {opt.count}
+                  </span>
+                )}
+              </button>
+            );
+          }
           return (
             <button
               key={opt.value}
               onClick={() => onChange(opt.value)}
               className={cn(
-                "shrink-0 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap",
+                "shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-all",
                 active
-                  ? "border-indigo-500 text-indigo-400"
-                  : "border-transparent text-gray-400 hover:text-gray-200"
+                  ? "bg-linear-to-r from-indigo-500 to-purple-500 text-white shadow-md shadow-indigo-500/25"
+                  : "bg-gray-800 text-gray-300 border border-gray-700/60 hover:bg-gray-700 hover:text-white"
               )}
             >
               {opt.label}
               {opt.count !== undefined && (
-                <span className="ml-1.5 text-xs text-gray-500">
+                <span
+                  className={cn(
+                    "px-1.5 rounded-full text-[10px] tabular-nums",
+                    active ? "bg-white/20 text-white" : "bg-gray-900 text-gray-400"
+                  )}
+                >
                   {opt.count}
                 </span>
               )}
             </button>
           );
-        }
-        return (
-          <button
-            key={opt.value}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              "shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-colors whitespace-nowrap",
-              active
-                ? "bg-indigo-500 text-white"
-                : "bg-gray-800 text-gray-300 hover:bg-gray-700"
-            )}
-          >
-            {opt.label}
-            {opt.count !== undefined && (
-              <span
-                className={cn(
-                  "px-1.5 rounded-full text-[10px] tabular-nums",
-                  active ? "bg-indigo-700" : "bg-gray-900 text-gray-400"
-                )}
-              >
-                {opt.count}
-              </span>
-            )}
-          </button>
-        );
-      })}
+        })}
+      </div>
+      {/* Right-edge fade — hints there's more to scroll without an ugly scrollbar */}
+      <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-gray-950 to-transparent" />
     </div>
   );
 }

@@ -212,7 +212,7 @@ export default async function TutorDashboardPage() {
           )}
         </Section>
 
-        <Section title="Pending student questions" href="/tutor/questions">
+        <Section title="Pending student questions" href={null}>
           {pendingQuestions.length === 0 ? (
             <Empty
               icon={<MessageSquare />}

@@ -93,7 +93,7 @@ export function WalletView(props: WalletViewProps) {
       />
 
       {/* Tabs */}
-      <nav className="flex gap-1 border-b border-gray-800">
+      <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
         {(
           [
             { key: "balance", label: "Balance", icon: Coins },
