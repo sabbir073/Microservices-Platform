@@ -13,6 +13,9 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // (the old gemini-1.5-flash was retired by Google and now 404s).
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+// Image generation needs an image-capable model (the text model above cannot
+// produce images). Overridable via GEMINI_IMAGE_MODEL.
+const GEMINI_IMAGE_MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-2.5-flash-image";
 
 interface QuizQuestion {
   id: number;
@@ -70,6 +73,57 @@ export async function generateText(
     return text.trim()
       ? { success: true, text: text.trim() }
       : { success: false, error: "Empty response" };
+  } catch (e) {
+    return {
+      success: false,
+      error: e instanceof Error ? e.message : "Request failed",
+    };
+  }
+}
+
+/**
+ * Generate an image from a text prompt using an image-capable Gemini model
+ * (default `gemini-2.5-flash-image`, overridable via GEMINI_IMAGE_MODEL).
+ * Returns the raw base64 image data + its mime type, or an error string.
+ * NOTE: image generation may require billing enabled on the Google AI project;
+ * when the key lacks access the API's message is passed through in `error`.
+ */
+export async function generateImage(
+  prompt: string
+): Promise<{ success: boolean; imageBase64?: string; mimeType?: string; error?: string }> {
+  if (!GEMINI_API_KEY) return { success: false, error: "GEMINI_API_KEY not set" };
+  try {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseModalities: ["IMAGE"] },
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return {
+        success: false,
+        error: err?.error?.message ?? `HTTP ${res.status}`,
+      };
+    }
+    const data = await res.json();
+    const parts: Array<{ inlineData?: { data?: string; mimeType?: string } }> =
+      data?.candidates?.[0]?.content?.parts ?? [];
+    const imgPart = parts.find((p) => p.inlineData?.data);
+    const imageBase64 = imgPart?.inlineData?.data;
+    if (!imageBase64) {
+      // Some refusals come back as a text part instead of an image.
+      const textPart = (parts as Array<{ text?: string }>).find((p) => p.text)?.text;
+      return { success: false, error: textPart?.trim() || "No image returned by the model" };
+    }
+    return {
+      success: true,
+      imageBase64,
+      mimeType: imgPart?.inlineData?.mimeType || "image/png",
+    };
   } catch (e) {
     return {
       success: false,
