@@ -194,7 +194,7 @@ export function WithdrawalView({
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-semibold text-white">Payment Method</p>
               <Link
-                href="/profile?tab=payment"
+                href="/payment-methods"
                 className="inline-flex items-center gap-1 text-xs text-indigo-400"
               >
                 <Plus className="w-3 h-3" />

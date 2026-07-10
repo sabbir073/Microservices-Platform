@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -103,9 +105,12 @@ export function BoardDetailClient({
 
   const removeTask = async (task: Task) => {
     if (
-      !window.confirm(
-        `Remove "${task.title}" from this board? It will return to the unassigned pool.`
-      )
+      !(await confirmDialog({
+        title: `Remove "${task.title}" from this board?`,
+        description: "It will return to the unassigned pool.",
+        tone: "info",
+        confirmLabel: "Remove",
+      }))
     )
       return;
     try {

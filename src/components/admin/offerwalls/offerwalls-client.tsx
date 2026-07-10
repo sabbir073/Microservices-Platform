@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -69,7 +71,14 @@ export function OfferwallsClient({ initial, canManage }: Props) {
   };
 
   const remove = async (o: Offerwall) => {
-    if (!confirm(`Delete ${o.provider} integration? This cannot be undone.`))
+    if (
+      !(await confirmDialog({
+        title: `Delete ${o.provider} integration?`,
+        description: "This cannot be undone.",
+        tone: "danger",
+        confirmLabel: "Delete",
+      }))
+    )
       return;
     setBusyId(o.id);
     try {

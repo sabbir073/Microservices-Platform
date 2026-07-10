@@ -120,19 +120,38 @@ export async function GET() {
     };
     const u = user as typeof user & CountRel;
 
+    // Auxiliary stats. These are NON-critical: if any one sub-query fails (e.g. a
+    // subsystem's table/column is momentarily out of sync), the profile must still
+    // load with core identity + stats rather than 500. Each degrades to a safe default.
+    const safe = async <T>(p: Promise<T>, fallback: T): Promise<T> => {
+      try {
+        return await p;
+      } catch (e) {
+        console.error("Profile aux query failed (degraded):", e);
+        return fallback;
+      }
+    };
+
     // Counts that aren't direct User relations
     const [coursesCreatedCount, marketplaceSalesCount, marketplaceTotalSalesAmount] =
       await Promise.all([
-        prisma.course.count({
-          where: { createdById: session.user.id },
-        }),
-        prisma.marketplacePurchase.count({
-          where: { listing: { sellerId: session.user.id } },
-        }),
-        prisma.marketplacePurchase.aggregate({
-          where: { listing: { sellerId: session.user.id }, status: "COMPLETED" },
-          _sum: { sellerAmount: true },
-        }),
+        safe(
+          prisma.course.count({ where: { createdById: session.user.id } }),
+          0
+        ),
+        safe(
+          prisma.marketplacePurchase.count({
+            where: { listing: { sellerId: session.user.id } },
+          }),
+          0
+        ),
+        safe(
+          prisma.marketplacePurchase.aggregate({
+            where: { listing: { sellerId: session.user.id }, status: "COMPLETED" },
+            _sum: { sellerAmount: true },
+          }),
+          { _sum: { sellerAmount: null } }
+        ),
       ]);
 
     const pkg = u.package;
@@ -141,21 +160,25 @@ export async function GET() {
     const xpProgress = u.xp - calculateXpForLevel(u.level);
     const xpNeeded = Math.max(1, xpForNextLevel - calculateXpForLevel(u.level));
 
-    const achievementsCount = await prisma.userAchievement.count({
-      where: { userId: session.user.id },
-    });
+    const achievementsCount = await safe(
+      prisma.userAchievement.count({ where: { userId: session.user.id } }),
+      0
+    );
 
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const todaySubmissions = await prisma.taskSubmission.findMany({
-      where: {
-        userId: session.user.id,
-        createdAt: { gte: todayStart },
-        status: { in: ["APPROVED", "AUTO_APPROVED"] },
-      },
-      select: { pointsEarned: true, xpEarned: true },
-    });
+    const todaySubmissions = await safe(
+      prisma.taskSubmission.findMany({
+        where: {
+          userId: session.user.id,
+          createdAt: { gte: todayStart },
+          status: { in: ["APPROVED", "AUTO_APPROVED"] },
+        },
+        select: { pointsEarned: true, xpEarned: true },
+      }),
+      [] as { pointsEarned: number | null; xpEarned: number | null }[]
+    );
 
     const todayStats = {
       count: todaySubmissions.length,
@@ -163,10 +186,16 @@ export async function GET() {
       xpEarned: todaySubmissions.reduce((sum, s) => sum + (s.xpEarned || 0), 0),
     };
 
-    const socialAccounts = await prisma.socialAccount.findMany({
-      where: { userId: session.user.id },
-      orderBy: { connectedAt: "asc" },
-    });
+    const socialAccounts = await safe(
+      prisma.socialAccount.findMany({
+        where: { userId: session.user.id },
+        orderBy: { connectedAt: "asc" },
+      }),
+      []
+    );
+
+    // XP rank — also non-critical; default to 0 (unranked) on failure.
+    const xpRank = await safe(getXpRank(u.id, u.xp), 0);
 
     const completion = calculateProfileCompletion({
       avatar: u.avatar,
@@ -256,7 +285,7 @@ export async function GET() {
           totalEarnedPoints: Math.round(u.totalEarnings * 1000),
           totalEarnedUsd: u.totalEarnings,
           tasksCompleted: u._count.taskSubmissions,
-          rank: await getXpRank(u.id, u.xp),
+          rank: xpRank,
           totalXp: u.xp,
           level: u.level,
           team: u._count.referrals,
@@ -271,7 +300,7 @@ export async function GET() {
       },
       referral: {
         code: u.referralCode,
-        link: `${process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.com"}/register?ref=${u.referralCode}`,
+        link: `${process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.app"}/register?ref=${u.referralCode}`,
       },
       verification: {
         kycStatus: u.kycStatus,

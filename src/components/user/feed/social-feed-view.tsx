@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { confirmDialog } from "@/lib/confirm";
+import { PullToRefresh } from "@/components/user/primitives/pull-to-refresh";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
@@ -163,7 +165,7 @@ export function SocialFeedView({
         {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
 
         {/* Top tabs */}
-        <nav className="flex gap-1 border-b border-gray-800">
+        <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
           {(
             [
               { key: "feed", label: "Feed", icon: Compass },
@@ -277,6 +279,7 @@ function FeedTab({
   };
 
   return (
+    <PullToRefresh onRefresh={load}>
     <div className="space-y-4">
       {initialTicker.length > 0 && (
         <WithdrawalTicker
@@ -345,6 +348,7 @@ function FeedTab({
         </div>
       )}
     </div>
+    </PullToRefresh>
   );
 }
 
@@ -1164,9 +1168,12 @@ function FeedPostCard({
   const forceDelete = async () => {
     if (busy) return;
     if (
-      !window.confirm(
-        "Force-delete this post? This action is logged and cannot be undone."
-      )
+      !(await confirmDialog({
+        title: "Force-delete this post?",
+        description: "This action is logged and cannot be undone.",
+        tone: "danger",
+        confirmLabel: "Delete",
+      }))
     ) {
       return;
     }
@@ -1467,7 +1474,17 @@ function FeedPostCard({
               key={i}
               src={url}
               alt=""
-              className="w-full aspect-square object-cover bg-gray-950"
+              onError={(e) => {
+                // Hide broken images so a bad URL doesn't leave a giant empty box.
+                e.currentTarget.style.display = "none";
+              }}
+              className={cn(
+                "w-full bg-gray-950",
+                // A lone image keeps its natural shape (capped height); grids stay square.
+                post.images.length === 1
+                  ? "max-h-[70vh] object-contain"
+                  : "aspect-square object-cover"
+              )}
             />
           ))}
         </div>
@@ -1523,9 +1540,12 @@ function FeedPostCard({
           <button
             onClick={async () => {
               if (
-                !confirm(
-                  "Boost this post for 100 pts? Boosted posts pin to the top of the feed."
-                )
+                !(await confirmDialog({
+                  title: "Boost this post for 100 pts?",
+                  description: "Boosted posts pin to the top of the feed.",
+                  tone: "info",
+                  confirmLabel: "Boost",
+                }))
               )
                 return;
               try {

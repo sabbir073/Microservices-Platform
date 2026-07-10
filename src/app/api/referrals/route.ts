@@ -164,7 +164,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       referralCode: user.referralCode,
-      referralLink: `${process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.com"}/register?ref=${user.referralCode}`,
+      referralLink: `${process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.app"}/register?ref=${user.referralCode}`,
       commissionRates,
       stats: {
         totalReferrals,

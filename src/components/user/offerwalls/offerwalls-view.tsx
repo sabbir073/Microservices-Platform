@@ -14,7 +14,7 @@ export function OfferwallsView({ walls }: { walls: Wall[] }) {
   return (
     <div className="space-y-3">
       {walls.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="flex gap-2 overflow-x-auto scrollbar-none">
           {walls.map((w, i) => (
             <button
               key={w.provider}

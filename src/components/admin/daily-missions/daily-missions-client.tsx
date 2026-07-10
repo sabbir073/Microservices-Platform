@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -214,7 +216,14 @@ export function DailyMissionsClient({ initial, canManage }: Props) {
   };
 
   const remove = async (m: Mission) => {
-    if (!confirm(`Delete mission "${m.name}"? All claims associated with it will be deleted.`))
+    if (
+      !(await confirmDialog({
+        title: `Delete mission "${m.name}"?`,
+        description: "All claims associated with it will be deleted.",
+        tone: "danger",
+        confirmLabel: "Delete",
+      }))
+    )
       return;
     setBusyDeleteId(m.id);
     try {

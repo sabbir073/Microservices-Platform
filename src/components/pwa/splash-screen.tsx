@@ -6,9 +6,25 @@ import type { SplashConfig } from "@/lib/splash";
 
 const SEEN_KEY = "splash_seen_v1";
 
+// Branded fallback shown when a slide has no image (or the image fails to load) —
+// matches the sidebar/app logo instead of a bare icon.
+function BrandLogo() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4">
+      <div className="w-24 h-24 rounded-3xl bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30">
+        <Sparkles className="w-12 h-12 text-white" />
+      </div>
+      <span className="text-2xl font-black bg-linear-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+        EarnGPT
+      </span>
+    </div>
+  );
+}
+
 export function SplashScreen() {
   const [cfg, setCfg] = useState<SplashConfig | null>(null);
   const [active, setActive] = useState(0);
+  const [imgFailed, setImgFailed] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -36,6 +52,12 @@ export function SplashScreen() {
     };
   }, []);
 
+  // Give each slide's image a fresh try.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setImgFailed(false);
+  }, [active]);
+
   // Auto-advance.
   useEffect(() => {
     if (!cfg || cfg.slides.length <= 1) return;
@@ -58,7 +80,7 @@ export function SplashScreen() {
   const isLast = active === cfg.slides.length - 1;
 
   return (
-    <div className="fixed inset-0 z-100 bg-gray-950 flex flex-col">
+    <div className="fixed inset-0 z-100 bg-[#0a0a0f] flex flex-col">
       {/* Skip */}
       <button
         onClick={dismiss}
@@ -70,11 +92,16 @@ export function SplashScreen() {
       <div className="flex-1 flex flex-col items-center justify-center px-6 text-center">
         <div className="w-full max-w-sm">
           <div className="aspect-square w-full max-w-xs mx-auto rounded-3xl overflow-hidden bg-gray-900 border border-gray-800 flex items-center justify-center mb-8">
-            {slide.imageUrl ? (
+            {slide.imageUrl && !imgFailed ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={slide.imageUrl} alt={slide.title} className="w-full h-full object-cover" />
+              <img
+                src={slide.imageUrl}
+                alt={slide.title}
+                onError={() => setImgFailed(true)}
+                className="w-full h-full object-cover"
+              />
             ) : (
-              <Sparkles className="w-16 h-16 text-indigo-400" />
+              <BrandLogo />
             )}
           </div>
           <h1 className="text-2xl font-bold text-white">{slide.title}</h1>

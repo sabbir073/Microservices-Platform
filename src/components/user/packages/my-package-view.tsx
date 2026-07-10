@@ -166,7 +166,7 @@ export function MyPackageView({
       </div>
 
       {/* Tabs */}
-      <nav className="flex gap-1 border-b border-gray-800">
+      <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
         {(
           [
             { key: "overview", label: "Overview", icon: TrendingUp },

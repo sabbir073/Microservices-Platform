@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -143,9 +145,12 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
 
   const triggerReset = async (period: Period) => {
     if (
-      !window.confirm(
-        `Reset ${period} leaderboard now? This selects winners and credits prizes.`
-      )
+      !(await confirmDialog({
+        title: `Reset ${period} leaderboard now?`,
+        description: "This selects winners and credits prizes.",
+        tone: "warning",
+        confirmLabel: "Reset",
+      }))
     )
       return;
     setResetting(period);

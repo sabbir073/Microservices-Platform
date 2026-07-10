@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ShieldCheck, Loader2, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
+import { confirmDialog } from "@/lib/confirm";
 
 interface SetupData {
   qrCodeDataUrl: string;
@@ -51,7 +52,7 @@ export function TwoFactorSetup() {
   };
 
   const disable = async () => {
-    if (!confirm("Disable 2FA? Your account will be less secure.")) return;
+    if (!(await confirmDialog({ title: "Disable 2FA?", description: "Your account will be less secure.", tone: "danger", confirmLabel: "Disable" }))) return;
     setBusy(true);
     try {
       const res = await fetch("/api/security/2fa/disable", {

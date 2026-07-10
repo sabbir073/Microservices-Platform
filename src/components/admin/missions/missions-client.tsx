@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, Loader2, Save, Target, Pencil, Trash2 } from "lucide-react";
@@ -60,7 +62,7 @@ export function MissionsClient({ initial, canManage }: Props) {
   };
 
   const remove = async (m: Mission) => {
-    if (!confirm(`Delete "${m.title}"? This cannot be undone.`)) return;
+    if (!(await confirmDialog({ title: `Delete "${m.title}"?`, description: "This cannot be undone.", tone: "danger", confirmLabel: "Delete" }))) return;
     setBusyId(m.id);
     try {
       const res = await fetch(`/api/admin/missions/${m.id}`, {

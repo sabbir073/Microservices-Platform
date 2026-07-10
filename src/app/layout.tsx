@@ -16,6 +16,7 @@ import { PushPermissionPrompt } from "@/components/user/primitives/push-permissi
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { SplashScreen } from "@/components/pwa/splash-screen";
 import { PwaInstallPrompt } from "@/components/pwa/pwa-install-prompt";
+import { ConfirmHost } from "@/components/providers/confirm-host";
 import { getUiToggles } from "@/lib/ui-toggles-server";
 import "./globals.css";
 
@@ -48,7 +49,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://earngpt.com",
+    url: "https://earngpt.app",
     siteName: "EarnGPT",
     title: "EarnGPT - Earn Money Online",
     description: "Complete tasks, watch videos, and earn real money with EarnGPT.",
@@ -92,8 +93,9 @@ export default async function RootLayout({
           <CookieConsent enabled={ui.cookiesPopup} />
           <PushPermissionPrompt enabled={ui.notificationPopup} />
           <PwaInstallPrompt enabled={ui.pwaInstallPrompt} />
+          <ConfirmHost />
           <Toaster
-            position="top-right"
+            position="top-center"
             theme="dark"
             richColors
             closeButton
@@ -102,6 +104,7 @@ export default async function RootLayout({
                 background: "rgb(15 23 42)",
                 border: "1px solid rgb(51 65 85)",
                 color: "white",
+                marginTop: "env(safe-area-inset-top)",
               },
             }}
           />

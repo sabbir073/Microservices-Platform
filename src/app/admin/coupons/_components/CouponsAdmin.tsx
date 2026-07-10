@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -143,7 +145,7 @@ function CouponRow({
   };
 
   const remove = async () => {
-    if (!confirm(`Delete coupon "${coupon.code}"? Past redemptions stay intact.`)) {
+    if (!(await confirmDialog({ title: `Delete coupon "${coupon.code}"?`, description: "Past redemptions stay intact.", tone: "danger", confirmLabel: "Delete" }))) {
       return;
     }
     setBusy(true);

@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -91,11 +93,14 @@ export function KycReviewActions({
     }
   };
 
-  const approve = () => {
+  const approve = async () => {
     if (!allChecked) {
-      const ok = window.confirm(
-        "Not all checklist items are checked. Approve anyway?"
-      );
+      const ok = await confirmDialog({
+        title: "Approve anyway?",
+        description: "Not all checklist items are checked.",
+        tone: "warning",
+        confirmLabel: "Approve",
+      });
       if (!ok) return;
     }
     submit("approve", { decisionNote });

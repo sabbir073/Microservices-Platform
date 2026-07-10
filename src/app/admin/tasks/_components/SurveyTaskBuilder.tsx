@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import {
   Plus,
@@ -74,11 +76,14 @@ export function SurveyTaskBuilder({ value, onChange }: Props) {
     onChange({ ...value, questions: next });
   };
 
-  const removeQuestion = (id: string) => {
+  const removeQuestion = async (id: string) => {
     if (
-      !confirm(
-        "Delete this question? Any existing responses to it will be discarded from analytics."
-      )
+      !(await confirmDialog({
+        title: "Delete this question?",
+        description: "Any existing responses to it will be discarded from analytics.",
+        tone: "danger",
+        confirmLabel: "Delete",
+      }))
     ) {
       return;
     }

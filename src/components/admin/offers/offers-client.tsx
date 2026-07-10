@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -55,7 +57,7 @@ export function OffersClient({
   };
 
   const remove = async (o: OfferRow) => {
-    if (!confirm(`Delete offer "${o.title}"? This can't be undone.`)) return;
+    if (!(await confirmDialog({ title: `Delete offer "${o.title}"?`, description: "This can't be undone.", tone: "danger", confirmLabel: "Delete" }))) return;
     setDeletingId(o.id);
     try {
       const res = await fetch(`/api/admin/offers/${o.id}`, { method: "DELETE" });

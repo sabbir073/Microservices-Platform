@@ -61,7 +61,7 @@ const QUICK_ACCESS = [
   { name: "Social Tasks", href: "/social-tasks", icon: Send, gradient: "from-cyan-500 to-blue-600" },
   { name: "Proxy", href: "/proxy-tasks", icon: Globe, gradient: "from-rose-500 to-red-600" },
   { name: "Board Tasks", href: "/board-tasks", icon: Pin, gradient: "from-indigo-500 to-purple-600" },
-  { name: "Offerwalls", href: "#offerwall", icon: Smartphone, gradient: "from-fuchsia-500 to-pink-600" },
+  { name: "Offerwalls", href: "/offerwalls", icon: Smartphone, gradient: "from-fuchsia-500 to-pink-600" },
 ];
 
 interface UserSummary {
@@ -129,7 +129,7 @@ export function EarningHub({ user }: EarningHubProps) {
       </section>
 
       {/* Tab Nav */}
-      <nav className="flex gap-1 overflow-x-auto -mx-1 px-1 pb-1 sticky top-0 z-10 bg-gray-950/80 backdrop-blur-sm">
+      <nav className="flex gap-1 overflow-x-auto scrollbar-none -mx-1 px-1 pb-1 sticky top-0 z-10 bg-gray-950/80 backdrop-blur-sm">
         {TABS.map((t) => {
           const isActive = t.key === tab;
           return (

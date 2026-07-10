@@ -1,5 +1,7 @@
 "use client";
 
+import { promptDialog } from "@/lib/confirm";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -30,9 +32,13 @@ export function ApproveRejectButtons({ courseId }: { courseId: string }) {
   };
 
   const reject = async () => {
-    const note = prompt(
-      "What needs to change before this can publish? (optional, shown to the tutor)"
-    );
+    const note = await promptDialog({
+      title: "Reject for revision",
+      description: "What needs to change before this can publish? (optional, shown to the tutor)",
+      tone: "warning",
+      multiline: true,
+      confirmLabel: "Reject",
+    });
     if (note === null) return; // cancelled
     setBusy("reject");
     try {

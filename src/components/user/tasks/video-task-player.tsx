@@ -13,6 +13,7 @@ import {
 import { toast } from "sonner";
 import type { VideoConfig } from "@/lib/video-tasks";
 import { formatDuration } from "@/lib/video-tasks";
+import { confirmDialog } from "@/lib/confirm";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
@@ -58,6 +59,7 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
   const [warmupLeft, setWarmupLeft] = useState(warmupTarget);
   const [watched, setWatched] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [autoFailed, setAutoFailed] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState("");
   const [uniqueKey, setUniqueKey] = useState("");
   const submittedRef = useRef(false);
@@ -134,6 +136,7 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
       return;
     }
     submittedRef.current = true;
+    setAutoFailed(false);
     setBusy(true);
     try {
       const res = await fetch(`/api/tasks/${task.id}/submit`, {
@@ -170,6 +173,8 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
       // Stay on the success screen — the user leaves via the "Done" button.
     } catch (err) {
       submittedRef.current = false;
+      // Surface a retry button instead of the perpetual "Submitting…" spinner.
+      setAutoFailed(true);
       toast.error("Couldn't submit", {
         description: err instanceof Error ? err.message : "Try again",
       });
@@ -178,7 +183,7 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
     }
   };
 
-  const handleCancel = () => {
+  const handleCancel = async () => {
     if (phase === "submitted") {
       onClose(true);
       return;
@@ -191,9 +196,12 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
       phase === "warmup" ||
       (phase === "watch" && watched < watchTarget)
     ) {
-      const ok = window.confirm(
-        "Quit now and lose your progress? You won't earn points."
-      );
+      const ok = await confirmDialog({
+        title: "Quit now and lose your progress?",
+        description: "You won't earn points.",
+        tone: "warning",
+        confirmLabel: "Quit",
+      });
       if (!ok) return;
     }
     onClose(false);
@@ -313,8 +321,9 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
         </div>
       </div>
 
-      {/* Bottom HUD */}
-      <div className="absolute bottom-0 inset-x-0 z-20 bg-linear-to-t from-black via-black/90 to-transparent px-4 pt-6 pb-4 space-y-3">
+      {/* Bottom HUD — scrollable + safe-area padding so the proof inputs and
+          Submit button stay reachable when the mobile keyboard is open. */}
+      <div className="absolute bottom-0 inset-x-0 z-20 max-h-[70vh] overflow-y-auto bg-linear-to-t from-black via-black/90 to-transparent px-4 pt-6 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-3">
         {phase === "submitted" && (
           <button
             onClick={() => onClose(true)}
@@ -385,7 +394,7 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
               </div>
             )}
 
-            {(autoSubmit && !needsProofForm) ? (
+            {(autoSubmit && !needsProofForm && busy && !autoFailed) ? (
               <div className="flex items-center justify-center gap-2 py-2.5 text-emerald-400 text-sm font-semibold">
                 <Loader2 className="w-4 h-4 animate-spin" />
                 Submitting…

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { confirmDialog } from "@/lib/confirm";
 import {
   User,
   Mail,
@@ -372,7 +373,7 @@ export function ProfileView() {
   };
 
   const disconnectSocial = async (id: string) => {
-    if (!confirm("Disconnect this account?")) return;
+    if (!(await confirmDialog({ title: "Disconnect this account?", tone: "danger", confirmLabel: "Disconnect" }))) return;
     try {
       const res = await fetch(`/api/profile/social-accounts/${id}`, {
         method: "DELETE",
@@ -501,7 +502,7 @@ export function ProfileView() {
                 )}
               </div>
               <p className="text-gray-500 text-sm mt-0.5">
-                @{profile.username ?? profile.email.split("@")[0]}
+                @{profile.username ?? profile.email?.split("@")[0] ?? "user"}
               </p>
             </div>
           </div>
@@ -2444,7 +2445,7 @@ function PhotoModal({
   };
 
   const removePhoto = async () => {
-    if (!confirm(`Remove ${target === "avatar" ? "profile photo" : "cover photo"}?`)) return;
+    if (!(await confirmDialog({ title: `Remove ${target === "avatar" ? "profile photo" : "cover photo"}?`, tone: "danger", confirmLabel: "Remove" }))) return;
     setBusy(true);
     try {
       const res = await fetch("/api/profile", {

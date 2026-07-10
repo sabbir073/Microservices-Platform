@@ -155,6 +155,9 @@ export function AnalyticsPanel({
                   <img
                     src={p.thumbnail}
                     alt=""
+                    onError={(e) => {
+                      e.currentTarget.style.display = "none";
+                    }}
                     className="w-12 h-12 rounded-lg object-cover bg-gray-800 shrink-0"
                   />
                 )}
@@ -164,7 +167,7 @@ export function AnalyticsPanel({
                       <span className="italic text-gray-500">No caption</span>
                     )}
                   </p>
-                  <div className="flex items-center gap-3 mt-1.5 text-[10px] text-gray-500">
+                  <div className="flex items-center flex-wrap gap-x-3 gap-y-1 mt-1.5 text-[10px] text-gray-500">
                     <span className="inline-flex items-center gap-0.5">
                       <EyeIcon className="w-3 h-3" />
                       {p.viewsCount.toLocaleString()}
@@ -215,9 +218,9 @@ function AnalyticsTile({
     amber: "text-amber-400 bg-amber-500/10 border-amber-500/20",
   };
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 flex items-center gap-3">
-      <div className={cn("p-2 rounded-lg border", tones[tone])}>{icon}</div>
-      <div className="min-w-0">
+    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 flex items-center gap-3 min-w-0">
+      <div className={cn("p-2 rounded-lg border shrink-0", tones[tone])}>{icon}</div>
+      <div className="min-w-0 flex-1">
         <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold truncate">
           {label}
         </p>

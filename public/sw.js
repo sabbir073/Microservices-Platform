@@ -1,4 +1,43 @@
-// EarnGPT service worker — web-push notifications.
+// EarnGPT service worker — web-push notifications + minimal offline shell.
+const CACHE = "earngpt-shell-v1";
+const OFFLINE_URL = "/";
+
+// Precache the app shell so navigations have an offline fallback, and take
+// control immediately so the page is "controlled" (required for installability).
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) => cache.add(OFFLINE_URL))
+      .catch(() => {})
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      )
+      .then(() => self.clients.claim())
+  );
+});
+
+// A fetch handler is REQUIRED for Chrome to fire beforeinstallprompt.
+// We only handle top-level navigations: network-first with an offline fallback.
+// Hashed static assets are left to the browser to avoid serving stale bundles.
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+  if (req.method !== "GET" || req.mode !== "navigate") return;
+  event.respondWith(
+    fetch(req).catch(() =>
+      caches.match(OFFLINE_URL).then((res) => res || Response.error())
+    )
+  );
+});
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {

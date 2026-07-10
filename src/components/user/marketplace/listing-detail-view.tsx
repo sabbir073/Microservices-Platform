@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { confirmDialog } from "@/lib/confirm";
 import {
   ShoppingCart,
   Eye,
@@ -175,9 +176,12 @@ export function ListingDetailView({
   const buy = async () => {
     // Confirm before committing wallet funds — once a marketplace listing
     // is purchased the status flips to SOLD and the spend is final.
-    const ok = window.confirm(
-      `Confirm purchase of "${listing.title}" for $${listing.price.toLocaleString()}?\n\nThe amount will be debited from your wallet immediately.`
-    );
+    const ok = await confirmDialog({
+      title: "Confirm purchase",
+      description: `Buy "${listing.title}" for $${listing.price.toLocaleString()}? The amount will be debited from your wallet immediately.`,
+      tone: "info",
+      confirmLabel: "Buy now",
+    });
     if (!ok) return;
     setBusy(true);
     try {

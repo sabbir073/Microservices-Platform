@@ -1,5 +1,7 @@
 "use client";
 
+import { promptDialog } from "@/lib/confirm";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, X, Loader2, RotateCcw } from "lucide-react";
@@ -75,14 +77,26 @@ export function SocialReviewActions({
   const applyDecisions = () =>
     patch({ action: "approved", itemDecisions: decisions }, "Reviewed");
 
-  const rejectAll = () => {
-    const reason = window.prompt(`Reject all of "${taskTitle}"? Reason:`);
+  const rejectAll = async () => {
+    const reason = await promptDialog({
+      title: `Reject all of "${taskTitle}"?`,
+      description: "Reason (shown to the user):",
+      tone: "danger",
+      multiline: true,
+      confirmLabel: "Reject all",
+    });
     if (reason === null) return;
     patch({ action: "rejected", rejectionReason: reason || undefined }, "Rejected");
   };
 
-  const requestRevision = () => {
-    const note = window.prompt("What should the user revise?");
+  const requestRevision = async () => {
+    const note = await promptDialog({
+      title: "Request revision",
+      description: "What should the user revise?",
+      tone: "warning",
+      multiline: true,
+      confirmLabel: "Request revision",
+    });
     if (note === null) return;
     patch({ action: "revision_requested", adminNote: note || undefined }, "Revision requested");
   };

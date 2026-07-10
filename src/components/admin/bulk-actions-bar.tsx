@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import {
   Mail,
@@ -72,7 +74,7 @@ export function BulkActionsBar({
     if (!handler) return;
     if (action.confirm) {
       const msg = action.confirm.replace("{N}", String(selectedIds.length));
-      if (!window.confirm(msg)) return;
+      if (!(await confirmDialog({ title: "Please confirm", description: msg, tone: "info" }))) return;
     }
     setBusy(true);
     try {

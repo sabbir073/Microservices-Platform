@@ -29,6 +29,7 @@ const AWS_ACCESS_KEY_ID = process.env.AWS_ACCESS_KEY_ID;
 const AWS_SECRET_ACCESS_KEY = process.env.AWS_SECRET_ACCESS_KEY;
 const AWS_REGION = process.env.AWS_REGION || "us-east-1";
 const AWS_S3_BUCKET = process.env.AWS_S3_BUCKET_NAME || process.env.AWS_S3_BUCKET;
+const AWS_CLOUDFRONT_DOMAIN = process.env.AWS_CLOUDFRONT_DOMAIN;
 
 // Initialize S3 client
 let s3Client: S3Client | null = null;
@@ -103,7 +104,11 @@ export async function uploadFile(
       })
     );
 
-    const url = `https://${AWS_S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
+    // Prefer the CloudFront delivery URL when configured — the bucket is served
+    // via CloudFront (raw S3 URLs are not publicly loadable, causing broken images).
+    const url = AWS_CLOUDFRONT_DOMAIN
+      ? `https://${AWS_CLOUDFRONT_DOMAIN}/${key}`
+      : `https://${AWS_S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
     return { success: true, url };
   } catch (error) {
     console.error("Error uploading to S3:", error);
@@ -380,7 +385,9 @@ export async function listUploadedParts(
  * Get the public URL for a file
  */
 export function getPublicUrl(key: string): string {
-  return `https://${AWS_S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
+  return AWS_CLOUDFRONT_DOMAIN
+    ? `https://${AWS_CLOUDFRONT_DOMAIN}/${key}`
+    : `https://${AWS_S3_BUCKET}.s3.${AWS_REGION}.amazonaws.com/${key}`;
 }
 
 /**

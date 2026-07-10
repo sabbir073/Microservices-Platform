@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -218,9 +220,12 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
 
   const remove = async (b: Board) => {
     if (
-      !window.confirm(
-        `Delete "${b.title}"? Tasks will be detached from this board.`
-      )
+      !(await confirmDialog({
+        title: `Delete "${b.title}"?`,
+        description: "Tasks will be detached from this board.",
+        tone: "danger",
+        confirmLabel: "Delete",
+      }))
     )
       return;
     try {
@@ -287,7 +292,7 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
                 {b.iconEmoji && (
                   <span className="text-2xl">{b.iconEmoji}</span>
                 )}
-                <h3 className="text-white font-semibold flex-1 truncate">
+                <h3 className="text-white font-semibold flex-1 min-w-0 truncate">
                   {b.title}
                 </h3>
                 <span

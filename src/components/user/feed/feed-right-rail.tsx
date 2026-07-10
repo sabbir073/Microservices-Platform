@@ -226,7 +226,7 @@ export function FeedRightRail({
                     href={`/u/${u.id}`}
                     className="text-sm font-semibold text-white truncate inline-flex items-center gap-1 hover:text-indigo-300"
                   >
-                    <span className="truncate">{u.name ?? "Anonymous"}</span>
+                    <span className="truncate min-w-0">{u.name ?? "Anonymous"}</span>
                     {u.isBlueVerified && (
                       <BadgeCheck className="w-3.5 h-3.5 text-sky-400 shrink-0" />
                     )}

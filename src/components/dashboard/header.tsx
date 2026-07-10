@@ -119,7 +119,7 @@ export function Header({ user }: HeaderProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 bg-gray-950/80 backdrop-blur-sm border-b border-gray-800">
+      <header className="sticky top-0 z-30 bg-gray-950/80 backdrop-blur-sm border-b border-gray-800 safe-t">
         <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* Left: Mobile Menu Button & Logo (mobile only) */}
           <div className="flex items-center gap-4 lg:hidden">

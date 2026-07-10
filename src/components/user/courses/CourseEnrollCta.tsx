@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
+import { promptDialog } from "@/lib/confirm";
 import {
   Loader2,
   Heart,
@@ -130,7 +131,14 @@ export function CourseEnrollCta({
   };
 
   const requestRefund = async () => {
-    const reason = prompt("Why are you requesting a refund? (10+ characters)");
+    const reason = await promptDialog({
+      title: "Request a refund",
+      description: "Why are you requesting a refund? (10+ characters)",
+      tone: "warning",
+      multiline: true,
+      required: true,
+      confirmLabel: "Submit request",
+    });
     if (reason === null) return;
     if (reason.trim().length < 10) {
       toast.error("Reason too short");

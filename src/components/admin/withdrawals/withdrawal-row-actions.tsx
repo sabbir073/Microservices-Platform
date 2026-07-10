@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -43,7 +45,7 @@ export function WithdrawalRowActions({
   const [adminNote, setAdminNote] = useState("");
 
   const approve = async () => {
-    if (!confirm(`Mark this $${amount.toFixed(2)} withdrawal as approved & processing?`)) return;
+    if (!(await confirmDialog({ title: `Approve $${amount.toFixed(2)} withdrawal?`, description: "It will be marked approved & processing.", tone: "success", confirmLabel: "Approve" }))) return;
     setBusy(true);
     try {
       const res = await fetch(`/api/admin/withdrawals/${withdrawalId}`, {

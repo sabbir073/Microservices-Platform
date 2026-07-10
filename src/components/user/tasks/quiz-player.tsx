@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { X, Clock, Loader2, Trophy, AlertTriangle, ArrowRight, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { confirmDialog } from "@/lib/confirm";
 
 interface Question {
   id: string;
@@ -152,8 +153,16 @@ export function QuizPlayer({ quizId, onClose }: QuizPlayerProps) {
                 {mm}:{ss}
               </div>
               <button
-                onClick={() => {
-                  if (confirm("Quit quiz? Your answers will be lost.")) onClose();
+                onClick={async () => {
+                  if (
+                    await confirmDialog({
+                      title: "Quit quiz?",
+                      description: "Your answers will be lost.",
+                      tone: "warning",
+                      confirmLabel: "Quit",
+                    })
+                  )
+                    onClose();
                 }}
                 className="p-1.5 rounded-lg text-gray-400 hover:text-white"
               >

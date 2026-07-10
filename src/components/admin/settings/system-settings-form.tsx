@@ -1,5 +1,7 @@
 "use client";
 
+import { confirmDialog } from "@/lib/confirm";
+
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -189,8 +191,8 @@ export function SystemSettingsForm({
     }
   };
 
-  const resetCategory = (category: string) => {
-    if (!window.confirm(`Reset all ${category} settings to defaults?`)) return;
+  const resetCategory = async (category: string) => {
+    if (!(await confirmDialog({ title: `Reset all ${category} settings to defaults?`, tone: "danger", confirmLabel: "Reset" }))) return;
     setValues((p) => {
       const next = { ...p };
       for (const [k, v] of Object.entries(DEFAULTS)) {
