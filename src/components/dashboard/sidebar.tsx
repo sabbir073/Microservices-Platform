@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Home,
   LayoutDashboard,
   ListTodo,
   Wallet,
@@ -55,6 +56,7 @@ const navigationGroups = [
   {
     section: "Main",
     items: [
+      { name: "Home", href: "/social", icon: Home },
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
       { name: "Tasks", href: "/tasks", icon: ListTodo },
       { name: "Daily Mission", href: "/daily-mission", icon: Target },
@@ -89,7 +91,6 @@ const navigationGroups = [
       { name: "My Learning", href: "/my-learning", icon: GraduationCap },
       { name: "Marketplace", href: "/marketplace", icon: Store },
       { name: "Lottery", href: "/lottery", icon: Ticket },
-      { name: "Social", href: "/social", icon: MessageSquare },
       { name: "Packages", href: "/packages", icon: Package },
       { name: "Advertiser", href: "/advertiser", icon: Briefcase },
     ],

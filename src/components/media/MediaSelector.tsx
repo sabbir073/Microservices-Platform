@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
-import { X, Search, Grid3x3, List, CheckCircle, Loader2, Image as ImageIcon, Video, FileAudio, FileText, File } from "lucide-react";
+import { X, Search, Grid3x3, List, CheckCircle, Loader2, Image as ImageIcon, Video, FileAudio, FileText, File, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { MediaItem, MediaFilter } from "@/types/media";
+import { hasPermission, type UserRole } from "@/lib/rbac";
 import { MediaUploader } from "./MediaUploader";
+import { AiImageGenerator } from "./AiImageGenerator";
 
 interface MediaSelectorProps {
   isOpen: boolean;
@@ -36,8 +38,28 @@ export function MediaSelector({
   const [filterType, setFilterType] = useState<MediaFilter["fileType"]>(fileType);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [activeTab, setActiveTab] = useState<"library" | "upload">("library");
+  const [activeTab, setActiveTab] = useState<"library" | "upload" | "ai">("library");
   const modalRef = useRef<HTMLDivElement>(null);
+
+  // Role is fetched from NextAuth's session endpoint (no SessionProvider in this
+  // app), used only to decide whether to offer the admin-only AI Generate tab.
+  const [role, setRole] = useState<UserRole | undefined>(undefined);
+  useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((s) => {
+        if (active) setRole(s?.user?.role as UserRole | undefined);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
+  const canUseAi =
+    hasPermission(role, "ai.manage") &&
+    (fileType === "IMAGE" || fileType === "all");
 
   const fetchMedia = useCallback(async (loadMore = false) => {
     setLoading(true);
@@ -221,11 +243,28 @@ export function MediaSelector({
           >
             Upload Files
           </button>
+          {canUseAi && (
+            <button
+              onClick={() => setActiveTab("ai")}
+              className={`px-6 py-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-1.5 ${
+                activeTab === "ai"
+                  ? "border-indigo-500 text-white"
+                  : "border-transparent text-gray-400 hover:text-white"
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-indigo-400" />
+              AI Generate
+            </button>
+          )}
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          {activeTab === "upload" ? (
+          {activeTab === "ai" && canUseAi ? (
+            <div className="overflow-y-auto">
+              <AiImageGenerator onGenerated={(media) => handleUploadComplete([media])} />
+            </div>
+          ) : activeTab === "upload" ? (
             <div className="p-6 overflow-y-auto">
               <MediaUploader
                 onUploadComplete={handleUploadComplete}
