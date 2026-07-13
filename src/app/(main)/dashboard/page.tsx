@@ -16,6 +16,10 @@ import {
 import Link from "next/link";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { taskRunHref } from "@/lib/task-routes";
+import { getProfileGateState } from "@/lib/profile-gate-server";
+import { ProfileCompletionBanner } from "@/components/user/primitives/profile-completion-banner";
+import { getKycPromptState } from "@/lib/kyc-prompt-server";
+import { KycPromptBanner } from "@/components/user/primitives/kyc-prompt-banner";
 
 // Stats Card Component
 function StatsCard({
@@ -179,6 +183,11 @@ export default async function DashboardPage() {
       }),
     ]);
 
+  const [gate, kycPrompt] = await Promise.all([
+    getProfileGateState(session.user.id),
+    getKycPromptState(session.user.id),
+  ]);
+
   const user = session.user;
   const points = userData?.pointsBalance ?? 0;
   const balance = userData?.cashBalance ?? 0;
@@ -190,6 +199,15 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {gate.locked && (
+        <ProfileCompletionBanner
+          done={gate.progress.done}
+          total={gate.progress.total}
+          percentage={gate.progress.percentage}
+        />
+      )}
+      {kycPrompt.show && <KycPromptBanner />}
+
       {/* Welcome Section */}
       <div>
         <h1 className="text-2xl font-bold text-white">

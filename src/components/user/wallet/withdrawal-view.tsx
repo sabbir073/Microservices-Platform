@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, AlertTriangle, CreditCard, Loader2, Lock, Plus } from "lucide-react";
+import { ArrowUpRight, AlertTriangle, CreditCard, Loader2, Lock, Plus, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,8 @@ interface WithdrawalViewProps {
   pointsBalance: number;
   packageTier: string;
   methods: PaymentMethod[];
+  kycStatus: string;
+  requireKyc: boolean;
 }
 
 const TIER_LIMITS: Record<string, { min: number; max: number }> = {
@@ -44,6 +46,8 @@ export function WithdrawalView({
   pointsBalance,
   packageTier,
   methods,
+  kycStatus,
+  requireKyc,
 }: WithdrawalViewProps) {
   const router = useRouter();
   const limits = TIER_LIMITS[packageTier] ?? TIER_LIMITS.FREE;
@@ -59,10 +63,13 @@ export function WithdrawalView({
   const youReceive = amount - fee;
 
   const isFree = packageTier === "FREE";
+  const kycLocked = requireKyc && kycStatus !== "APPROVED";
+  const kycPending = kycStatus === "PENDING";
   const tooLow = amount < limits.min;
   const tooHigh = amount > limits.max;
   const overBalance = amount > cashBalance;
-  const valid = !isFree && !tooLow && !tooHigh && !overBalance && !!methodId;
+  const valid =
+    !isFree && !kycLocked && !tooLow && !tooHigh && !overBalance && !!methodId;
 
   const submit = async () => {
     if (!valid) return;
@@ -128,7 +135,34 @@ export function WithdrawalView({
         </div>
       )}
 
-      {!isFree && (
+      {!isFree && kycLocked && (
+        <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/30 p-4">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-bold text-indigo-300">
+                {kycPending ? "KYC under review" : "Verify your identity to withdraw"}
+              </p>
+              <p className="text-xs text-indigo-200/80 mt-0.5">
+                {kycPending
+                  ? "Your KYC is being reviewed. Withdrawals unlock once it's approved."
+                  : "Complete identity verification (KYC) to unlock withdrawals. Earning tasks are unaffected."}
+              </p>
+              {!kycPending && (
+                <Link
+                  href="/kyc"
+                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Verify identity
+                </Link>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isFree && !kycLocked && (
         <>
           <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
             <div>

@@ -75,9 +75,10 @@ export function calculateProfileCompletion(p: ProfileSnapshot): CompletionResult
     { key: "city", label: "City", category: "address", weight: 3, done: has(p.city), href: "?tab=address" },
     { key: "street", label: "Street address", category: "address", weight: 3, done: has(p.street), href: "?tab=address" },
     { key: "postalCode", label: "Postal code", category: "address", weight: 2, done: has(p.postalCode), href: "?tab=address" },
-    // Verification
+    // Verification — KYC is intentionally NOT part of profile completion; it's a
+    // separate identity step (prompted after the profile is complete, required
+    // only for withdrawals). The ring reflects profile fields only.
     { key: "nidNumber", label: "National ID number", category: "verification", weight: 4, done: has(p.nidNumber), href: "?tab=kyc" },
-    { key: "kyc", label: "KYC verified", category: "verification", weight: 12, done: p.kycStatus === "APPROVED", href: "?tab=kyc" },
     // Social
     { key: "social", label: "At least 1 social account connected", category: "social", weight: 5, done: (p.socialAccountsCount ?? 0) > 0, href: "?tab=social" },
     { key: "socialThree", label: "3+ social accounts connected", category: "social", weight: 4, done: (p.socialAccountsCount ?? 0) >= 3, href: "?tab=social" },
@@ -93,5 +94,59 @@ export function calculateProfileCompletion(p: ProfileSnapshot): CompletionResult
     filledWeight,
     items,
     missing: items.filter((it) => !it.done),
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Core "essentials" used to UNLOCK Tasks & Missions (admin-gated). These are
+// achievable for every user — KYC and social accounts stay bonus-only on the
+// full ring above, and are NOT required here.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type RequiredSnapshot = Pick<
+  ProfileSnapshot,
+  "avatar" | "firstName" | "lastName" | "dateOfBirth" | "gender" | "country" | "phone"
+>;
+
+interface RequiredItem {
+  key: keyof RequiredSnapshot;
+  label: string;
+  href: string;
+}
+
+export const UNLOCK_REQUIRED: RequiredItem[] = [
+  { key: "avatar", label: "Profile photo", href: "/profile?tab=personal" },
+  { key: "firstName", label: "First name", href: "/profile?tab=personal" },
+  { key: "lastName", label: "Last name", href: "/profile?tab=personal" },
+  { key: "dateOfBirth", label: "Date of birth", href: "/profile?tab=personal" },
+  { key: "gender", label: "Gender", href: "/profile?tab=personal" },
+  { key: "phone", label: "Phone number", href: "/profile?tab=personal" },
+  { key: "country", label: "Country", href: "/profile?tab=address" },
+];
+
+/** True when all core essentials are filled (used to unlock Tasks/Missions). */
+export function isProfileComplete(p: RequiredSnapshot): boolean {
+  return UNLOCK_REQUIRED.every((it) => has(p[it.key]));
+}
+
+export interface RequiredProgress {
+  done: number;
+  total: number;
+  percentage: number;
+  complete: boolean;
+  missing: RequiredItem[];
+}
+
+/** Progress across the core essentials — for the locked screen + nudge banner. */
+export function requiredProfileProgress(p: RequiredSnapshot): RequiredProgress {
+  const missing = UNLOCK_REQUIRED.filter((it) => !has(p[it.key]));
+  const total = UNLOCK_REQUIRED.length;
+  const done = total - missing.length;
+  return {
+    done,
+    total,
+    percentage: total > 0 ? Math.round((done / total) * 100) : 100,
+    complete: missing.length === 0,
+    missing,
   };
 }
