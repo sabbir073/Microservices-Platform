@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TaskStatus, TaskType, SubmissionStatus } from "@/generated/prisma";
 import { getEffectivePackage, packageHasFeature, type PackageFeatureKey } from "@/lib/packages";
+import { getUiToggles } from "@/lib/ui-toggles-server";
+import { isProfileComplete } from "@/lib/profile-completion";
 
 const TASK_TYPE_FEATURE: Record<TaskType, PackageFeatureKey> = {
   SOCIAL: "socialTasks",
@@ -61,11 +63,27 @@ export async function POST(
         id: true,
         level: true,
         country: true,
+        avatar: true,
+        firstName: true,
+        lastName: true,
+        dateOfBirth: true,
+        gender: true,
+        phone: true,
       },
     });
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Admin-gated profile-completion requirement — block starting any task until
+    // the user's core profile is filled.
+    const { requireProfileCompletion } = await getUiToggles();
+    if (requireProfileCompletion && !isProfileComplete(user)) {
+      return NextResponse.json(
+        { error: "Complete your profile to start tasks." },
+        { status: 403 }
+      );
     }
 
     // Resolve effective plan (handles expiry + isDefault fallback).

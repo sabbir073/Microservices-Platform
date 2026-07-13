@@ -107,6 +107,8 @@ const DEFAULTS: SettingsBag = {
   "ui.cookies_popup_enabled": true,
   "ui.notification_popup_enabled": true,
   "ui.pwa_install_prompt_enabled": true,
+  "ui.require_profile_completion": false,
+  "ui.require_kyc_for_withdrawal": true,
 };
 
 const CATEGORY_FOR_KEY: Record<string, string> = {
@@ -145,6 +147,8 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   "ui.cookies_popup_enabled": "ui_toggles",
   "ui.notification_popup_enabled": "ui_toggles",
   "ui.pwa_install_prompt_enabled": "ui_toggles",
+  "ui.require_profile_completion": "ui_toggles",
+  "ui.require_kyc_for_withdrawal": "ui_toggles",
 };
 
 export function SystemSettingsForm({
@@ -847,6 +851,22 @@ export function SystemSettingsForm({
               onChange={(v) => set("ui.pwa_install_prompt_enabled", v)}
               disabled={!canEdit}
               tone="purple"
+            />
+            <Toggle
+              label="Require profile completion for Tasks & Missions"
+              description="Users must fill their core profile (photo, name, DOB, gender, country, phone) before accessing Tasks and Daily Missions"
+              checked={values["ui.require_profile_completion"] === true}
+              onChange={(v) => set("ui.require_profile_completion", v)}
+              disabled={!canEdit}
+              tone="amber"
+            />
+            <Toggle
+              label="Require KYC for withdrawals"
+              description="Users must be KYC-verified to withdraw. When off, only withdrawals over $100 require KYC."
+              checked={values["ui.require_kyc_for_withdrawal"] !== false}
+              onChange={(v) => set("ui.require_kyc_for_withdrawal", v)}
+              disabled={!canEdit}
+              tone="red"
             />
           </div>
         )}

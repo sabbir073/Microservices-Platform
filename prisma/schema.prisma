@@ -738,6 +738,7 @@ model User {
   kycStatus         KYCStatus   @default(NOT_SUBMITTED)
   kycSubmittedAt    DateTime?
   kycApprovedAt     DateTime?
+  kycPromptedAt     DateTime?   // set once when we nudge a completed-profile user to do KYC
   isBlueVerified    Boolean     @default(false)
   // Visual style for the verified badge. Null/"BLUE" = classic blue tick.
   // Other presets (GOLD, RAINBOW, EMERALD, PURPLE, ROSE, OCEAN) render

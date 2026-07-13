@@ -10,6 +10,7 @@ import {
   KYCStatus,
 } from "@/generated/prisma";
 import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
+import { getUiToggles } from "@/lib/ui-toggles-server";
 
 // Fee configuration per payment method
 const PAYMENT_FEES: Record<PaymentMethod, { percentage: number; fixed: number }> = {
@@ -185,10 +186,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check KYC status for amounts > $100
-    if (amount > 100 && user.kycStatus !== KYCStatus.APPROVED) {
+    // KYC gate. When the admin toggle is on, ALL withdrawals require KYC;
+    // otherwise KYC is only required for amounts over $100.
+    const { requireKycForWithdrawal } = await getUiToggles();
+    if (
+      (requireKycForWithdrawal || amount > 100) &&
+      user.kycStatus !== KYCStatus.APPROVED
+    ) {
       return NextResponse.json(
-        { error: "KYC verification required for withdrawals over $100" },
+        {
+          error: requireKycForWithdrawal
+            ? "Complete KYC verification to withdraw."
+            : "KYC verification required for withdrawals over $100",
+        },
         { status: 403 }
       );
     }

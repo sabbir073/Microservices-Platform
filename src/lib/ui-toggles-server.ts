@@ -4,18 +4,28 @@ export interface UiToggles {
   cookiesPopup: boolean;
   notificationPopup: boolean;
   pwaInstallPrompt: boolean;
+  /** When true, users must complete their core profile to use Tasks & Missions. */
+  requireProfileCompletion: boolean;
+  /** When true, all withdrawals require KYC; when false only withdrawals >$100 do. */
+  requireKycForWithdrawal: boolean;
 }
 
 const KEYS = {
   cookiesPopup: "ui.cookies_popup_enabled",
   notificationPopup: "ui.notification_popup_enabled",
   pwaInstallPrompt: "ui.pwa_install_prompt_enabled",
+  requireProfileCompletion: "ui.require_profile_completion",
+  requireKycForWithdrawal: "ui.require_kyc_for_withdrawal",
 } as const;
 
 const DEFAULTS: UiToggles = {
   cookiesPopup: true,
   notificationPopup: true,
   pwaInstallPrompt: true,
+  // OFF by default — nothing changes for users until an admin turns it on.
+  requireProfileCompletion: false,
+  // ON by default — KYC is required to withdraw.
+  requireKycForWithdrawal: true,
 };
 
 function asBool(v: unknown, fallback: boolean): boolean {
@@ -56,6 +66,14 @@ export async function getUiToggles(): Promise<UiToggles> {
       pwaInstallPrompt: asBool(
         map.get(KEYS.pwaInstallPrompt),
         DEFAULTS.pwaInstallPrompt
+      ),
+      requireProfileCompletion: asBool(
+        map.get(KEYS.requireProfileCompletion),
+        DEFAULTS.requireProfileCompletion
+      ),
+      requireKycForWithdrawal: asBool(
+        map.get(KEYS.requireKycForWithdrawal),
+        DEFAULTS.requireKycForWithdrawal
       ),
     };
     _cache = { value, ts: Date.now() };

@@ -5,6 +5,10 @@ import { SocialFeedView } from "@/components/user/feed/social-feed-view";
 import type { BannerSlide } from "@/components/user/primitives/banner-slider";
 import { getTickerPayload } from "@/lib/ticker-server";
 import { getTrendingHashtags } from "@/lib/trending";
+import { getProfileGateState } from "@/lib/profile-gate-server";
+import { ProfileCompletionBanner } from "@/components/user/primitives/profile-completion-banner";
+import { getKycPromptState } from "@/lib/kyc-prompt-server";
+import { KycPromptBanner } from "@/components/user/primitives/kyc-prompt-banner";
 
 export default async function SocialPage() {
   const session = await auth();
@@ -20,8 +24,15 @@ export default async function SocialPage() {
     })
   ).map((f) => f.followingId);
 
-  const [bannerRows, tickerPayload, bestEarnersRaw, whoToFollowRows, trendingHashtags] =
-    await Promise.all([
+  const [
+    bannerRows,
+    tickerPayload,
+    bestEarnersRaw,
+    whoToFollowRows,
+    trendingHashtags,
+    gate,
+    kycPrompt,
+  ] = await Promise.all([
       prisma.banner.findMany({
         where: {
           isActive: true,
@@ -62,6 +73,8 @@ export default async function SocialPage() {
         cacheStrategy: { ttl: 60, swr: 120 },
       }),
       getTrendingHashtags(6),
+      getProfileGateState(userId),
+      getKycPromptState(userId),
     ]);
 
   const bestEarners = bestEarnersRaw.map((r) => ({
@@ -93,8 +106,23 @@ export default async function SocialPage() {
   }));
 
   return (
-    <SocialFeedView
-      user={{
+    <>
+      {gate.locked && (
+        <div className="mb-4">
+          <ProfileCompletionBanner
+            done={gate.progress.done}
+            total={gate.progress.total}
+            percentage={gate.progress.percentage}
+          />
+        </div>
+      )}
+      {kycPrompt.show && (
+        <div className="mb-4">
+          <KycPromptBanner />
+        </div>
+      )}
+      <SocialFeedView
+        user={{
         id: session.user.id,
         name: session.user.name ?? null,
         avatar: session.user.image ?? null,
@@ -119,6 +147,7 @@ export default async function SocialPage() {
             }
           : undefined
       }
-    />
+      />
+    </>
   );
 }

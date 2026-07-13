@@ -6,6 +6,8 @@ import {
   type WalletTransaction,
   type ReferralStats,
 } from "@/components/user/wallet/wallet-view";
+import { getKycPromptState } from "@/lib/kyc-prompt-server";
+import { KycPromptBanner } from "@/components/user/primitives/kyc-prompt-banner";
 
 export default async function WalletPage() {
   const session = await auth();
@@ -96,16 +98,25 @@ export default async function WalletPage() {
     createdAt: tx.createdAt.toISOString(),
   }));
 
+  const kycPrompt = await getKycPromptState(userId);
+
   return (
-    <WalletView
-      pointsBalance={user.pointsBalance}
-      cashBalance={Number(user.cashBalance)}
-      totalEarnings={Number(user.totalEarnings)}
-      totalWithdrawn={totalWithdrawn}
-      packageTier={user.package?.slug ?? "default"}
-      transactions={txList}
-      referralStats={stats}
-      pendingWithdrawals={pendingWithdrawalsCount}
-    />
+    <>
+      {kycPrompt.show && (
+        <div className="mb-4">
+          <KycPromptBanner />
+        </div>
+      )}
+      <WalletView
+        pointsBalance={user.pointsBalance}
+        cashBalance={Number(user.cashBalance)}
+        totalEarnings={Number(user.totalEarnings)}
+        totalWithdrawn={totalWithdrawn}
+        packageTier={user.package?.slug ?? "default"}
+        transactions={txList}
+        referralStats={stats}
+        pendingWithdrawals={pendingWithdrawalsCount}
+      />
+    </>
   );
 }
