@@ -21,6 +21,7 @@ import {
   type VerifiedBadgeStyle,
 } from "@/components/user/profile/verified-badge";
 import { userDisplayId } from "@/lib/display-id";
+import { FEATURES } from "@/lib/features";
 
 // Generate a 12-char password with at least 1 lower / upper / digit / symbol
 function generateRandomPassword(length = 12): string {
@@ -55,6 +56,7 @@ export interface EditUserData {
   pointsBalance: number;
   cashBalance: number;
   packageId: string | null;
+  featureOverrides?: Record<string, boolean> | null;
   kycStatus: string;
   isBlueVerified: boolean;
   verifiedBadgeStyle: string | null;
@@ -94,12 +96,13 @@ interface UserEditFormProps {
   onDone?: () => void;
 }
 
-type Tab = "account" | "verify" | "balance" | "photos" | "personal" | "address";
+type Tab = "account" | "verify" | "balance" | "photos" | "personal" | "address" | "access";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "account", label: "Account" },
   { id: "verify", label: "🔑 Verify & Password" },
   { id: "balance", label: "Balance & Tier" },
+  { id: "access", label: "Feature Access" },
   { id: "photos", label: "Photos" },
   { id: "personal", label: "Personal Info" },
   { id: "address", label: "Address" },
@@ -158,6 +161,9 @@ export function UserEditForm({
     pointsBalance: user.pointsBalance,
     cashBalance: user.cashBalance,
     packageId: user.packageId ?? "",
+    featureOverrides: {
+      ...((user.featureOverrides ?? {}) as Record<string, boolean>),
+    } as Record<string, boolean>,
     kycStatus: user.kycStatus,
     isBlueVerified: user.isBlueVerified,
     verifiedBadgeStyle: user.verifiedBadgeStyle ?? "BLUE",
@@ -280,6 +286,14 @@ export function UserEditForm({
         payload.street = form.street || null;
       if (form.postalCode !== (user.postalCode ?? ""))
         payload.postalCode = form.postalCode || null;
+
+      // Feature access overrides
+      if (
+        JSON.stringify(form.featureOverrides) !==
+        JSON.stringify(user.featureOverrides ?? {})
+      ) {
+        payload.featureOverrides = form.featureOverrides;
+      }
 
       if (Object.keys(payload).length === 0) {
         toast.info("No changes to save");
@@ -1087,6 +1101,69 @@ export function UserEditForm({
                   className={fieldCls}
                 />
               </Field>
+            </div>
+          )}
+
+          {tab === "access" && (
+            <div className="space-y-4">
+              <p className="text-xs text-slate-500">
+                Override this user&apos;s feature access. <b>Default</b> follows
+                their plan; <b>On</b>/<b>Off</b> force it regardless of package.
+              </p>
+              {(["section", "task"] as const).map((grp) => (
+                <div key={grp} className="space-y-2">
+                  <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">
+                    {grp === "section" ? "Sections" : "Task categories"}
+                  </p>
+                  {FEATURES.filter((f) => f.group === grp).map((f) => {
+                    const cur = form.featureOverrides[f.key];
+                    const setOv = (val: boolean | null) => {
+                      const next = { ...form.featureOverrides };
+                      if (val === null) delete next[f.key];
+                      else next[f.key] = val;
+                      set("featureOverrides", next);
+                    };
+                    const opts: Array<{ lbl: string; val: boolean | null }> = [
+                      { lbl: "Default", val: null },
+                      { lbl: "On", val: true },
+                      { lbl: "Off", val: false },
+                    ];
+                    return (
+                      <div
+                        key={f.key}
+                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-slate-950/50 border border-slate-800"
+                      >
+                        <span className="text-sm text-white">{f.label}</span>
+                        <div className="inline-flex rounded-lg border border-slate-700 overflow-hidden text-xs font-semibold shrink-0">
+                          {opts.map(({ lbl, val }) => {
+                            const active =
+                              val === null ? cur === undefined : cur === val;
+                            return (
+                              <button
+                                key={lbl}
+                                type="button"
+                                onClick={() => setOv(val)}
+                                className={cn(
+                                  "px-3 py-1.5 transition-colors",
+                                  active
+                                    ? val === true
+                                      ? "bg-emerald-500 text-white"
+                                      : val === false
+                                        ? "bg-red-500 text-white"
+                                        : "bg-slate-700 text-white"
+                                    : "text-slate-400 hover:text-white"
+                                )}
+                              >
+                                {lbl}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           )}
         </form>

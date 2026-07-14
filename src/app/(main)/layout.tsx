@@ -3,6 +3,7 @@ import { getSession } from "@/lib/auth";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { Header } from "@/components/dashboard/header";
 import { BottomTabBar } from "@/components/dashboard/bottom-tab-bar";
+import { getEffectiveFeatures } from "@/lib/packages";
 
 export default async function MainLayout({
   children,
@@ -17,10 +18,14 @@ export default async function MainLayout({
     redirect("/login");
   }
 
+  // Effective feature set (package + per-user overrides) → hide disabled nav.
+  const { enabled } = await getEffectiveFeatures(session.user.id);
+  const features = Array.from(enabled);
+
   return (
     <div className="min-h-screen bg-gray-950">
       {/* Sidebar */}
-      <Sidebar user={session.user} />
+      <Sidebar user={session.user} features={features} />
 
       {/* Main Content */}
       <div className="lg:pl-72">
@@ -34,7 +39,7 @@ export default async function MainLayout({
       </div>
 
       {/* App-style bottom nav (mobile only) */}
-      <BottomTabBar />
+      <BottomTabBar features={features} />
     </div>
   );
 }

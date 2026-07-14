@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { TransactionType, TransactionStatus } from "@/generated/prisma/client";
+import { userCanFeature } from "@/lib/packages";
 
 const fundSchema = z.object({ amount: z.number().min(1).max(100000) });
 
@@ -18,6 +19,9 @@ export async function POST(
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!(await userCanFeature(session.user.id, "advertiser"))) {
+    return NextResponse.json({ error: "The advertiser is disabled for your plan" }, { status: 403 });
   }
   const { id } = await params;
   const body = await request.json().catch(() => ({}));

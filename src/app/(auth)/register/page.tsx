@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Mail, Lock, User, Gift, Sparkles, CheckCircle } from "lucide-react";
+import { Mail, Lock, User, AtSign, Gift, Sparkles, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -46,6 +46,7 @@ export default function RegisterPage() {
           email: data.email,
           password: data.password,
           name: data.name,
+          username: data.username?.trim() ? data.username.trim() : undefined,
           referralCode: data.referralCode,
         }),
       });
@@ -156,6 +157,16 @@ export default function RegisterPage() {
             leftIcon={<User className="h-5 w-5" />}
             error={errors.name?.message}
             {...register("name")}
+          />
+
+          <Input
+            label="Username (optional)"
+            type="text"
+            placeholder="Choose a username"
+            leftIcon={<AtSign className="h-5 w-5" />}
+            hint="Leave blank and we'll generate one for you. Used in your profile link."
+            error={errors.username?.message}
+            {...register("username")}
           />
 
           <Input

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { confirmDialog } from "@/lib/confirm";
+import { profileHref } from "@/lib/user-href";
 import {
   ShoppingCart,
   Eye,
@@ -672,7 +673,7 @@ export function ListingDetailView({
           </div>
           <div className="flex-1 min-w-0">
             <Link
-              href={`/u/${listing.seller.id}`}
+              href={profileHref(listing.seller)}
               className="text-sm font-bold text-white hover:text-indigo-400"
             >
               {listing.seller.name ?? "Seller"}

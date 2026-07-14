@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { confirmDialog } from "@/lib/confirm";
+import { profileHref } from "@/lib/user-href";
+import { USERNAME_REGEX } from "@/lib/username";
 import {
   User,
   Mail,
@@ -473,7 +475,7 @@ export function ProfileView() {
 
           <div className="flex justify-end mb-2 gap-2">
             <Link
-              href={`/u/${profile.id}`}
+              href={profileHref(profile)}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-xs font-semibold"
             >
               <EyeIcon className="w-3.5 h-3.5" />
@@ -802,9 +804,11 @@ function PersonalTab({
         <Field label="Last Name">
           <input value={form.lastName} onChange={(e) => set("lastName", e.target.value)} className={inp} />
         </Field>
-        <Field label="Username">
-          <input value={form.username} onChange={(e) => set("username", e.target.value)} placeholder="e.g. @yourname" className={inp} />
-        </Field>
+        <UsernameField
+          value={form.username}
+          onChange={(v) => set("username", v)}
+          currentUsername={profile.username ?? null}
+        />
         <Field label="Date of Birth">
           <input type="date" value={form.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} className={inp} />
         </Field>
@@ -2199,7 +2203,7 @@ function UserListTab({
             key={u.id}
             className="flex items-center gap-3 p-3 rounded-xl border border-gray-800 bg-gray-900 hover:border-gray-700 transition-colors"
           >
-            <Link href={`/u/${u.id}`} className="shrink-0">
+            <Link href={profileHref(u)} className="shrink-0">
               <div className="w-11 h-11 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden">
                 {u.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -2210,7 +2214,7 @@ function UserListTab({
               </div>
             </Link>
             <div className="flex-1 min-w-0">
-              <Link href={`/u/${u.id}`} className="block">
+              <Link href={profileHref(u)} className="block">
                 <p className="text-sm font-bold text-white truncate inline-flex items-center gap-1">
                   {u.name ?? u.username ?? "User"}
                   {u.isBlueVerified && (
@@ -2721,6 +2725,118 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <label className="block text-[11px] font-medium text-gray-400 mb-1">{label}</label>
       {children}
     </div>
+  );
+}
+
+/**
+ * Username handle field with a leading "@", live availability check and a
+ * preview of the resulting profile link. Setting a handle makes the user's
+ * profile reachable at /u/<username> (the /u/[id] page redirects id → handle).
+ */
+function UsernameField({
+  value,
+  onChange,
+  currentUsername,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  currentUsername: string | null;
+}) {
+  const clean = value.replace(/^@+/, "").trim();
+  const isCurrent =
+    !!currentUsername && clean.toLowerCase() === currentUsername.toLowerCase();
+  const formatValid = USERNAME_REGEX.test(clean);
+  const needsRemote = !!clean && !isCurrent && formatValid;
+
+  // Availability result, tagged with the handle it belongs to so a stale
+  // response never shows against a newer input.
+  const [remote, setRemote] = useState<{ u: string; available: boolean } | null>(
+    null
+  );
+
+  useEffect(() => {
+    if (!needsRemote) return;
+    let cancel = false;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          `/api/profile/username-available?u=${encodeURIComponent(clean)}`
+        );
+        const d = await r.json();
+        if (!cancel) setRemote({ u: clean, available: !!d.available });
+      } catch {
+        /* leave prior state; treat as unknown */
+      }
+    }, 450);
+    return () => {
+      cancel = true;
+      clearTimeout(t);
+    };
+  }, [clean, needsRemote]);
+
+  // Derive the display status synchronously (no setState-in-effect).
+  const status: "idle" | "current" | "invalid" | "checking" | "available" | "taken" =
+    !clean
+      ? "idle"
+      : isCurrent
+        ? "current"
+        : !formatValid
+          ? "invalid"
+          : remote && remote.u === clean
+            ? remote.available
+              ? "available"
+              : "taken"
+            : "checking";
+
+  return (
+    <Field label="Username">
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">
+          @
+        </span>
+        <input
+          value={clean}
+          onChange={(e) =>
+            onChange(e.target.value.replace(/^@+/, "").replace(/\s+/g, ""))
+          }
+          placeholder="yourname"
+          maxLength={30}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          className={cn(inp, "pl-7 pr-9")}
+        />
+        <span className="absolute right-3 top-1/2 -translate-y-1/2">
+          {status === "checking" && (
+            <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+          )}
+          {(status === "available" || status === "current") && (
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          )}
+          {(status === "taken" || status === "invalid") && (
+            <X className="w-4 h-4 text-rose-400" />
+          )}
+        </span>
+      </div>
+      {status === "invalid" ? (
+        <p className="mt-1 text-[11px] text-rose-400">
+          3-30 characters: letters, numbers, dot, underscore or hyphen.
+        </p>
+      ) : status === "taken" ? (
+        <p className="mt-1 text-[11px] text-rose-400">
+          This username is already taken.
+        </p>
+      ) : clean.trim() ? (
+        <p className="mt-1 text-[11px] text-gray-400">
+          {status === "available" ? "Available — " : ""}Profile link:{" "}
+          <span className="text-indigo-300">/u/{clean.trim()}</span>
+        </p>
+      ) : (
+        <p className="mt-1 text-[11px] text-gray-500">
+          Pick a public @handle — this becomes your profile link (/u/yourname).
+        </p>
+      )}
+    </Field>
   );
 }
 

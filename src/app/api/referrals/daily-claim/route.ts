@@ -6,7 +6,11 @@ import {
   TransactionStatus,
   NotificationType,
 } from "@/generated/prisma/client";
-import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
+import {
+  getEffectivePackage,
+  resolveUserFeature,
+  parseFeatureOverrides,
+} from "@/lib/packages";
 
 function utcDateKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
@@ -105,7 +109,7 @@ export async function POST() {
 
   const me = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true },
+    select: { id: true, featureOverrides: true },
   });
   if (!me) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -114,7 +118,13 @@ export async function POST() {
   const userPackage = await getEffectivePackage(userId);
   const accessLevel = userPackage?.accessLevel ?? 0;
 
-  if (!packageHasFeature(userPackage, "referrals")) {
+  if (
+    !resolveUserFeature(
+      userPackage,
+      parseFeatureOverrides(me.featureOverrides),
+      "referrals"
+    )
+  ) {
     return NextResponse.json(
       { error: "Referral rewards are disabled for your plan" },
       { status: 403 }

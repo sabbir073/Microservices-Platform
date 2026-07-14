@@ -84,8 +84,15 @@ export default async function RootLayout({
 }>) {
   const ui = await getUiToggles();
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" data-theme="dark" suppressHydrationWarning>
       <body className="font-sans antialiased" suppressHydrationWarning>
+        {/* Set the saved theme before first paint so a reload never flashes the
+            wrong theme. This runs synchronously before the body content paints. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('earngpt-theme');if(t){document.documentElement.setAttribute('data-theme',t)}}catch(e){}`,
+          }}
+        />
         <ThemeProvider defaultTheme="dark" storageKey="earngpt-theme">
           {children}
           <ServiceWorkerRegister />

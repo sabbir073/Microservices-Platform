@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TaskStatus, TaskType, SubmissionStatus } from "@/generated/prisma";
-import { getEffectivePackage, packageHasFeature, type PackageFeatureKey } from "@/lib/packages";
+import {
+  getEffectivePackage,
+  resolveUserFeature,
+  parseFeatureOverrides,
+  type PackageFeatureKey,
+} from "@/lib/packages";
 import { getUiToggles } from "@/lib/ui-toggles-server";
 import { isProfileComplete } from "@/lib/profile-completion";
 
@@ -69,12 +74,15 @@ export async function POST(
         dateOfBirth: true,
         gender: true,
         phone: true,
+        featureOverrides: true,
       },
     });
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
+
+    const overrides = parseFeatureOverrides(user.featureOverrides);
 
     // Admin-gated profile-completion requirement — block starting any task until
     // the user's core profile is filled.
@@ -89,8 +97,9 @@ export async function POST(
     // Resolve effective plan (handles expiry + isDefault fallback).
     const userPackage = await getEffectivePackage(session.user.id);
 
-    // Plan-level Tasks gate (admin can switch off all tasks for a plan).
-    if (!packageHasFeature(userPackage, "tasks")) {
+    // Plan-level Tasks gate (admin can switch off all tasks for a plan;
+    // per-user overrides win).
+    if (!resolveUserFeature(userPackage, overrides, "tasks")) {
       return NextResponse.json(
         { error: "Tasks are disabled for your plan" },
         { status: 403 }
@@ -100,7 +109,7 @@ export async function POST(
     // Per-task-type gate (e.g. plan with articleTasksEnabled=false can't
     // start an ARTICLE task).
     const typeFeature = TASK_TYPE_FEATURE[task.type];
-    if (!packageHasFeature(userPackage, typeFeature)) {
+    if (!resolveUserFeature(userPackage, overrides, typeFeature)) {
       return NextResponse.json(
         { error: `${task.type} tasks are disabled for your plan` },
         { status: 403 }

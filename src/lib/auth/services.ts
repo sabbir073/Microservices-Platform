@@ -2,17 +2,48 @@ import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { generateReferralCode } from "@/lib/utils";
 import { sendVerificationEmail, sendPasswordResetEmail } from "@/lib/email";
+import { isValidUsername, slugifyUsername } from "@/lib/username";
 import { v4 as uuidv4 } from "uuid";
+
+/**
+ * Resolve a unique @username handle. Tries the slugified seed first, then the
+ * seed with a few random numeric suffixes, checking them all in one query.
+ * Every account gets a handle so profile links are always `/u/<username>`.
+ */
+async function generateUniqueUsername(seed: string): Promise<string> {
+  const base = slugifyUsername(seed) || "user";
+  const candidates = new Set<string>();
+  if (base.length >= 3) candidates.add(base);
+  while (candidates.size < 12) {
+    const suffix = Math.floor(100 + Math.random() * 900000).toString();
+    candidates.add((base + suffix).slice(0, 30));
+  }
+  const list = [...candidates];
+
+  const taken = await prisma.user.findMany({
+    where: { username: { in: list, mode: "insensitive" } },
+    select: { username: true },
+  });
+  const takenLc = new Set(taken.map((t) => (t.username ?? "").toLowerCase()));
+
+  const free = list.find((c) => c.length >= 3 && !takenLc.has(c.toLowerCase()));
+  if (free) return free;
+
+  // Astronomically unlikely fallback — add timestamp entropy.
+  return (base.slice(0, 20) + Date.now().toString().slice(-9)).slice(0, 30);
+}
 
 export async function registerUser({
   email,
   password,
   name,
+  username,
   referralCode,
 }: {
   email: string;
   password: string;
   name: string;
+  username?: string;
   referralCode?: string;
 }) {
   // Check if email already exists
@@ -22,6 +53,26 @@ export async function registerUser({
 
   if (existingUser) {
     throw new Error("Email already registered");
+  }
+
+  // Username: use the one the user chose (validated + unique), else auto-generate
+  // a unique handle from their name/email. Either way every account gets one.
+  let finalUsername: string;
+  const chosen = username?.trim();
+  if (chosen) {
+    if (!isValidUsername(chosen)) {
+      throw new Error("INVALID_USERNAME");
+    }
+    const taken = await prisma.user.findFirst({
+      where: { username: { equals: chosen, mode: "insensitive" } },
+      select: { id: true },
+    });
+    if (taken) {
+      throw new Error("USERNAME_TAKEN");
+    }
+    finalUsername = chosen;
+  } else {
+    finalUsername = await generateUniqueUsername(name || email.split("@")[0]);
   }
 
   // Hash password
@@ -50,17 +101,46 @@ export async function registerUser({
     });
   }
 
-  // Create user
-  const user = await prisma.user.create({
-    data: {
-      email: email.toLowerCase(),
-      password: hashedPassword,
-      name,
-      referralCode: newReferralCode,
-      referredById,
-      status: "PENDING_VERIFICATION",
-    },
-  });
+  // Create user. Guard the username unique constraint against the rare race
+  // where the chosen handle is claimed between our check and this insert.
+  let user;
+  try {
+    user = await prisma.user.create({
+      data: {
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        name,
+        username: finalUsername,
+        referralCode: newReferralCode,
+        referredById,
+        status: "PENDING_VERIFICATION",
+      },
+    });
+  } catch (err) {
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code?: string }).code === "P2002"
+    ) {
+      // Username (or referral code) collided under concurrency.
+      if (chosen) throw new Error("USERNAME_TAKEN");
+      finalUsername = await generateUniqueUsername(`${finalUsername}`);
+      user = await prisma.user.create({
+        data: {
+          email: email.toLowerCase(),
+          password: hashedPassword,
+          name,
+          username: finalUsername,
+          referralCode: newReferralCode,
+          referredById,
+          status: "PENDING_VERIFICATION",
+        },
+      });
+    } else {
+      throw err;
+    }
+  }
 
   // Create verification token
   const verificationToken = uuidv4();

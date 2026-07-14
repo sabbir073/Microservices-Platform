@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { TransactionType, TransactionStatus } from "@/generated/prisma/client";
 import { getAdClickCost } from "@/lib/ad-billing";
+import { userCanFeature } from "@/lib/packages";
 
 export async function GET() {
   const session = await auth();
@@ -94,6 +95,9 @@ export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!(await userCanFeature(session.user.id, "advertiser"))) {
+    return NextResponse.json({ error: "The advertiser is disabled for your plan" }, { status: 403 });
   }
   const body = await request.json();
   const v = createSchema.safeParse(body);

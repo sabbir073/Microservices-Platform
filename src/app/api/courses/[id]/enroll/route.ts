@@ -12,6 +12,7 @@ import {
   resolveCourseCommissionBps,
   splitCoursePrice,
 } from "@/lib/course-commission";
+import { userCanFeature } from "@/lib/packages";
 
 const enrollSchema = z.object({
   couponCode: z.string().max(60).optional().nullable(),
@@ -44,6 +45,9 @@ export async function POST(
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!(await userCanFeature(session.user.id, "courses"))) {
+      return NextResponse.json({ error: "Courses are disabled for your plan" }, { status: 403 });
     }
     const { id } = await params;
     const body = await req.json().catch(() => ({}));

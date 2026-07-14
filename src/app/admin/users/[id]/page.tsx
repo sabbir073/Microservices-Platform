@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
+import { profileHref } from "@/lib/user-href";
 import { hasPermission, ROLE_CONFIG, type UserRole } from "@/lib/rbac";
 import { UserDetailActions, AdjustBalanceButton } from "@/components/admin/user-detail-actions";
 import { DisplayBoostPanel } from "@/components/admin/users/display-boost-panel";
@@ -393,7 +394,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
 
           <div className="flex justify-end mb-2 gap-2">
             <Link
-              href={`/u/${user.id}`}
+              href={profileHref(user)}
               target="_blank"
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-xs font-semibold"
             >

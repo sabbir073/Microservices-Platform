@@ -32,6 +32,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { confirmDialog } from "@/lib/confirm";
 import { PullToRefresh } from "@/components/user/primitives/pull-to-refresh";
+import { profileHref } from "@/lib/user-href";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import {
@@ -1320,7 +1321,7 @@ function FeedPostCard({
         {/* Header */}
         <div className="flex items-start gap-3">
           <Link
-            href={post.user ? `/u/${post.user.id}` : "#"}
+            href={post.user ? profileHref(post.user) : "#"}
             className="shrink-0"
           >
             <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium overflow-hidden">
@@ -1339,7 +1340,7 @@ function FeedPostCard({
           <div className="flex-1 min-w-0">
             <div className="inline-flex items-center gap-1.5">
               <Link
-                href={post.user ? `/u/${post.user.id}` : "#"}
+                href={post.user ? profileHref(post.user) : "#"}
                 className="text-sm font-semibold text-white hover:text-indigo-400 transition-colors"
               >
                 {post.user?.name ?? "Anonymous"}
@@ -1887,7 +1888,7 @@ function RenderedContent({ content }: { content: string }) {
       parts.push(
         <Link
           key={key++}
-          href={`/u/${userId}`}
+          href={`/u/${encodeURIComponent(username)}`}
           className="text-indigo-400 hover:text-indigo-300 hover:underline font-semibold"
         >
           @{username}

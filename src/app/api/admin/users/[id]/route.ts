@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Prisma } from "@/generated/prisma/client";
+import { parseFeatureOverrides } from "@/lib/packages";
 import { z } from "zod";
 
 // GET /api/admin/users/[id] - Get user details
@@ -104,6 +105,7 @@ const updateUserSchema = z.object({
   cashBalance: z.number().min(0).optional(),
   packageId: z.string().nullable().optional(),
   packageExpiresAt: z.string().datetime().optional().nullable(),
+  featureOverrides: z.record(z.string(), z.boolean()).optional().nullable(),
   kycStatus: z.enum(["NOT_SUBMITTED", "PENDING", "APPROVED", "REJECTED"]).optional(),
   isBlueVerified: z.boolean().optional(),
   verifiedBadgeStyle: z
@@ -243,6 +245,14 @@ export async function PATCH(
       updateData.packageExpiresAt = data.packageExpiresAt
         ? new Date(data.packageExpiresAt)
         : null;
+    }
+    if (data.featureOverrides !== undefined) {
+      // Keep only known feature keys → boolean; store null when empty.
+      const fo =
+        data.featureOverrides === null
+          ? {}
+          : parseFeatureOverrides(data.featureOverrides);
+      updateData.featureOverrides = Object.keys(fo).length ? fo : null;
     }
     if (data.kycStatus !== undefined) updateData.kycStatus = data.kycStatus;
     if (data.isBlueVerified !== undefined)
