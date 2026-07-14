@@ -1,47 +1,26 @@
 import { prisma } from "@/lib/prisma";
+import {
+  FEATURE_TO_COLUMN,
+  FEATURE_KEYS,
+  FEATURES,
+  parseFeatureOverrides,
+  type PackageFeatureKey,
+  type FeatureOverrides,
+} from "@/lib/features";
 
-/**
- * Single feature flag a Plan can toggle on/off. Maps 1:1 to a `*Enabled`
- * boolean column on the Package table.
- */
-export type PackageFeatureKey =
-  // Section-level
-  | "tasks"
-  | "socialFeed"
-  | "referrals"
-  | "withdrawals"
-  | "marketplace"
-  | "boost"
-  | "dailyMission"
-  | "lottery"
-  | "courses"
-  // Per-task-type
-  | "socialTasks"
-  | "proxyTasks"
-  | "articleTasks"
-  | "videoTasks"
-  | "quizTasks"
-  | "surveyTasks"
-  | "offerwallTasks";
+// Re-export the client-safe catalog so existing `@/lib/packages` imports keep working.
+export { FEATURE_KEYS, FEATURES, parseFeatureOverrides };
+export type { PackageFeatureKey, FeatureOverrides };
 
-const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
-  tasks: "tasksEnabled",
-  socialFeed: "socialFeedEnabled",
-  referrals: "referralsEnabled",
-  withdrawals: "withdrawalsEnabled",
-  marketplace: "marketplaceEnabled",
-  boost: "boostEnabled",
-  dailyMission: "dailyMissionEnabled",
-  lottery: "lotteryEnabled",
-  courses: "coursesEnabled",
-  socialTasks: "socialTasksEnabled",
-  proxyTasks: "proxyTasksEnabled",
-  articleTasks: "articleTasksEnabled",
-  videoTasks: "videoTasksEnabled",
-  quizTasks: "quizTasksEnabled",
-  surveyTasks: "surveyTasksEnabled",
-  offerwallTasks: "offerwallTasksEnabled",
-};
+/** Effective feature value: a per-user override wins, else the package flag. */
+export function resolveUserFeature(
+  pkg: PackageRow | null | undefined,
+  overrides: FeatureOverrides | null | undefined,
+  key: PackageFeatureKey
+): boolean {
+  if (overrides && typeof overrides[key] === "boolean") return overrides[key]!;
+  return packageHasFeature(pkg, key);
+}
 
 // Concrete PackageRow type — Prisma Accelerate's `Awaited<ReturnType<...>>`
 // inference returns `{}` for findFirst/findUnique results, so we declare
@@ -65,6 +44,7 @@ export interface PackageRow {
   dailyMissionEnabled: boolean;
   lotteryEnabled: boolean;
   coursesEnabled: boolean;
+  advertiserEnabled: boolean;
   adFree: boolean;
   socialTasksEnabled: boolean;
   proxyTasksEnabled: boolean;
@@ -166,6 +146,50 @@ export function packageHasFeature(
 export async function userAccessLevel(userId: string): Promise<number> {
   const pkg = await getEffectivePackage(userId);
   return pkg?.accessLevel ?? 0;
+}
+
+/**
+ * The user's effective feature set = package flags with per-user overrides
+ * applied. One query. Use `enabled.has(key)` for nav hiding + page gating.
+ */
+export async function getEffectiveFeatures(userId: string): Promise<{
+  pkg: PackageRow | null;
+  overrides: FeatureOverrides;
+  enabled: Set<PackageFeatureKey>;
+}> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      packageExpiresAt: true,
+      package: true,
+      featureOverrides: true,
+    },
+  });
+
+  const subActive =
+    user?.package &&
+    user.package.isActive &&
+    (user.packageExpiresAt == null ||
+      user.packageExpiresAt.getTime() > Date.now());
+  const pkg: PackageRow | null = subActive
+    ? (user!.package as unknown as PackageRow)
+    : await defaultPackage();
+
+  const overrides = parseFeatureOverrides(user?.featureOverrides);
+  const enabled = new Set<PackageFeatureKey>();
+  for (const key of FEATURE_KEYS) {
+    if (resolveUserFeature(pkg, overrides, key)) enabled.add(key);
+  }
+  return { pkg, overrides, enabled };
+}
+
+/** True if the user can use a feature (override-aware). */
+export async function userCanFeature(
+  userId: string,
+  feature: PackageFeatureKey
+): Promise<boolean> {
+  const { enabled } = await getEffectiveFeatures(userId);
+  return enabled.has(feature);
 }
 
 /**

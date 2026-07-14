@@ -12,6 +12,14 @@ const registerSchema = z.object({
       "Password must contain at least one uppercase letter, one lowercase letter, and one number"
     ),
   name: z.string().min(2, "Name must be at least 2 characters"),
+  username: z
+    .string()
+    .trim()
+    .regex(
+      /^[a-zA-Z0-9._-]{3,30}$/,
+      "Username must be 3-30 characters: letters, numbers, dot, underscore or hyphen."
+    )
+    .optional(),
   referralCode: z.string().optional(),
 });
 
@@ -63,6 +71,22 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { success: false, error: error.message },
           { status: 409 }
+        );
+      }
+      if (error.message === "USERNAME_TAKEN") {
+        return NextResponse.json(
+          { success: false, error: "Username already taken" },
+          { status: 409 }
+        );
+      }
+      if (error.message === "INVALID_USERNAME") {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Username must be 3-30 characters: letters, numbers, dot, underscore or hyphen.",
+          },
+          { status: 400 }
         );
       }
     }

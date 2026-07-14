@@ -9,7 +9,11 @@ import {
   NotificationType,
   KYCStatus,
 } from "@/generated/prisma";
-import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
+import {
+  getEffectivePackage,
+  resolveUserFeature,
+  parseFeatureOverrides,
+} from "@/lib/packages";
 import { getUiToggles } from "@/lib/ui-toggles-server";
 
 // Fee configuration per payment method
@@ -169,6 +173,7 @@ export async function POST(request: NextRequest) {
         id: true,
         pointsBalance: true,
         kycStatus: true,
+        featureOverrides: true,
       },
     });
 
@@ -179,7 +184,13 @@ export async function POST(request: NextRequest) {
     // Effective package (handles expiry + isDefault fallback).
     const userPackage = await getEffectivePackage(session.user.id);
 
-    if (!packageHasFeature(userPackage, "withdrawals")) {
+    if (
+      !resolveUserFeature(
+        userPackage,
+        parseFeatureOverrides(user.featureOverrides),
+        "withdrawals"
+      )
+    ) {
       return NextResponse.json(
         { error: "Withdrawals are disabled for your plan" },
         { status: 403 }

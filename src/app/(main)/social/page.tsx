@@ -54,7 +54,7 @@ export default async function SocialPage() {
       prisma.user.findMany({
         orderBy: { totalEarnings: "desc" },
         take: 5,
-        select: { id: true, name: true, avatar: true, level: true, totalEarnings: true },
+        select: { id: true, name: true, username: true, avatar: true, level: true, totalEarnings: true },
         cacheStrategy: { ttl: 60, swr: 120 },
       }),
       prisma.user.findMany({
@@ -80,6 +80,7 @@ export default async function SocialPage() {
   const bestEarners = bestEarnersRaw.map((r) => ({
     id: r.id,
     name: r.name,
+    username: r.username,
     avatar: r.avatar,
     level: r.level,
   }));

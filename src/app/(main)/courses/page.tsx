@@ -3,10 +3,15 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { CoursesBrowse } from "@/components/user/courses/CoursesBrowse";
 import { GraduationCap } from "lucide-react";
+import { getEffectiveFeatures } from "@/lib/packages";
+import { FeatureLock } from "@/components/user/primitives/feature-lock";
 
 export default async function CoursesPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
+
+  const { enabled } = await getEffectiveFeatures(session.user.id);
+  if (!enabled.has("courses")) return <FeatureLock title="Courses" />;
 
   // Featured strip — server-rendered for fast first paint
   const featuredRaw = await prisma.course.findMany({

@@ -13,6 +13,7 @@ import {
   resolveCommissionBps,
   splitPrice,
 } from "@/lib/marketplace-commission";
+import { userCanFeature } from "@/lib/packages";
 
 // POST /api/cart/checkout
 //
@@ -27,6 +28,9 @@ export async function POST() {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!(await userCanFeature(session.user.id, "marketplace"))) {
+      return NextResponse.json({ error: "Marketplace is disabled for your plan" }, { status: 403 });
     }
     const userId = session.user.id;
 

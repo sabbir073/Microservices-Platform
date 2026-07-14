@@ -11,14 +11,20 @@ import { haptic } from "@/lib/haptics";
 
 // Left → right: two smaller page tabs, the bigger center Home, then Wallet + Menu.
 const TABS = [
-  { name: "Mission", href: "/daily-mission", icon: Target },
-  { name: "Tasks", href: "/tasks", icon: ListTodo },
+  { name: "Mission", href: "/daily-mission", icon: Target, feature: "dailyMission" },
+  { name: "Tasks", href: "/tasks", icon: ListTodo, feature: "tasks" },
   { name: "Home", href: "/social", icon: Home, primary: true },
   { name: "Wallet", href: "/wallet", icon: Wallet },
 ] as const;
 
+const GRID_COLS: Record<number, string> = {
+  3: "grid-cols-3",
+  4: "grid-cols-4",
+  5: "grid-cols-5",
+};
+
 /** App-style fixed bottom navigation for mobile (hidden on lg+). */
-export function BottomTabBar() {
+export function BottomTabBar({ features }: { features?: string[] }) {
   const pathname = usePathname();
   const setMenuOpen = useMobileNav((s) => s.setOpen);
   const [unread, setUnread] = useState(0);
@@ -46,13 +52,22 @@ export function BottomTabBar() {
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`);
 
+  const tabs = TABS.filter(
+    (t) => !("feature" in t) || !features || features.includes(t.feature)
+  );
+
   return (
     <nav
       className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-gray-800 bg-gray-900/95 backdrop-blur"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
-      <div className="grid grid-cols-5 items-center">
-        {TABS.map((tab) => {
+      <div
+        className={cn(
+          "grid items-center",
+          GRID_COLS[tabs.length + 1] ?? "grid-cols-5"
+        )}
+      >
+        {tabs.map((tab) => {
           const activeTab = isActive(tab.href);
           const primary = "primary" in tab && tab.primary;
           return (

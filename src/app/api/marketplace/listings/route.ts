@@ -7,6 +7,7 @@ import {
   getCategory,
 } from "@/lib/marketplace-categories";
 import { inngest, EVENTS } from "@/lib/inngest/client";
+import { userCanFeature } from "@/lib/packages";
 import { z } from "zod";
 
 // GET /api/marketplace/listings - Get marketplace listings
@@ -233,6 +234,9 @@ export async function POST(request: NextRequest) {
     const session = await auth();
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!(await userCanFeature(session.user.id, "marketplace"))) {
+      return NextResponse.json({ error: "Marketplace is disabled for your plan" }, { status: 403 });
     }
 
     const body = await request.json();

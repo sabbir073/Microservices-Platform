@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { profileHref } from "@/lib/user-href";
 import {
   Loader2,
   Calendar,
@@ -472,7 +473,7 @@ function UserListTab({
             key={u.id}
             className="flex items-center gap-3 p-3 rounded-xl border border-gray-800 bg-gray-900"
           >
-            <Link href={`/u/${u.id}`}>
+            <Link href={profileHref(u)}>
               <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden">
                 {u.avatar ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -483,7 +484,7 @@ function UserListTab({
               </div>
             </Link>
             <div className="flex-1 min-w-0">
-              <Link href={`/u/${u.id}`} className="block">
+              <Link href={profileHref(u)} className="block">
                 <p className="text-sm font-bold text-white truncate inline-flex items-center gap-1">
                   {u.name ?? u.username ?? "User"}
                   {u.isBlueVerified && (

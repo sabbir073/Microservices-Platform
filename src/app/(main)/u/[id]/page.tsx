@@ -11,14 +11,27 @@ export default async function PublicProfilePage({
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const { id } = await params;
+  const { id: param } = await params;
 
-  // Quick existence check (404 fast)
-  const exists = await prisma.user.findUnique({
-    where: { id },
-    select: { id: true },
-  });
-  if (!exists) notFound();
+  // The route param is a username handle (preferred) OR a raw user id (legacy).
+  // Resolve by username first (case-insensitive), then fall back to id.
+  const user =
+    (await prisma.user.findFirst({
+      where: { username: { equals: param, mode: "insensitive" } },
+      select: { id: true, username: true },
+    })) ??
+    (await prisma.user.findUnique({
+      where: { id: param },
+      select: { id: true, username: true },
+    }));
 
-  return <PublicProfileView userId={id} viewerId={session.user.id} />;
+  if (!user) notFound();
+
+  // Canonical: if reached by id (or wrong case) but a username exists, redirect
+  // so the address bar always shows /u/<username>.
+  if (user.username && param !== user.username) {
+    redirect(`/u/${encodeURIComponent(user.username)}`);
+  }
+
+  return <PublicProfileView userId={user.id} viewerId={session.user.id} />;
 }

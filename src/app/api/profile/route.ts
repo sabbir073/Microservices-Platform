@@ -410,7 +410,6 @@ export async function PATCH(request: NextRequest) {
     for (const f of [
       "firstName",
       "lastName",
-      "username",
       "bio",
       "gender",
       "profession",
@@ -428,6 +427,37 @@ export async function PATCH(request: NextRequest) {
           return NextResponse.json({ error: `${f} too long` }, { status: 400 });
         }
         updateData[f] = val || null;
+      }
+    }
+
+    // Username — a URL-safe, unique handle used in profile links (/u/<username>).
+    if (body.username !== undefined) {
+      const raw = body.username === null ? null : String(body.username).trim();
+      if (!raw) {
+        updateData.username = null;
+      } else if (!/^[a-zA-Z0-9._-]{3,30}$/.test(raw)) {
+        return NextResponse.json(
+          {
+            error:
+              "Username must be 3-30 characters: letters, numbers, dot, underscore or hyphen.",
+          },
+          { status: 400 }
+        );
+      } else {
+        const taken = await prisma.user.findFirst({
+          where: {
+            username: { equals: raw, mode: "insensitive" },
+            NOT: { id: session.user.id },
+          },
+          select: { id: true },
+        });
+        if (taken) {
+          return NextResponse.json(
+            { error: "Username already taken" },
+            { status: 400 }
+          );
+        }
+        updateData.username = raw;
       }
     }
     if (body.dateOfBirth !== undefined) {

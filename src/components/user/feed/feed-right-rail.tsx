@@ -15,10 +15,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { profileHref } from "@/lib/user-href";
 
 export interface RailEarner {
   id: string;
   name: string | null;
+  username: string | null;
   avatar: string | null;
   level: number;
 }
@@ -189,7 +191,7 @@ export function FeedRightRail({
           <ul className="space-y-2.5">
             {bestEarners.map((u, i) => (
               <li key={u.id}>
-                <Link href={`/u/${u.id}`} className="flex items-center gap-2.5 group">
+                <Link href={profileHref(u)} className="flex items-center gap-2.5 group">
                   <span
                     className={cn(
                       "w-4 text-center text-xs font-bold tabular-nums",
@@ -218,12 +220,12 @@ export function FeedRightRail({
           <ul className="space-y-3">
             {whoToFollow.map((u) => (
               <li key={u.id} className="flex items-center gap-2.5">
-                <Link href={`/u/${u.id}`}>
+                <Link href={profileHref(u)}>
                   <Avatar name={u.name} avatar={u.avatar} />
                 </Link>
                 <div className="flex-1 min-w-0">
                   <Link
-                    href={`/u/${u.id}`}
+                    href={profileHref(u)}
                     className="text-sm font-semibold text-white truncate inline-flex items-center gap-1 hover:text-indigo-300"
                   >
                     <span className="truncate min-w-0">{u.name ?? "Anonymous"}</span>

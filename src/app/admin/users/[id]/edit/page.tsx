@@ -37,6 +37,7 @@ export default async function EditUserPage({
         pointsBalance: true,
         cashBalance: true,
         packageId: true,
+        featureOverrides: true,
         kycStatus: true,
         isBlueVerified: true,
         verifiedBadgeStyle: true,
@@ -79,6 +80,9 @@ export default async function EditUserPage({
   const user = {
     ...userRaw,
     dateOfBirth: userRaw.dateOfBirth ? new Date(userRaw.dateOfBirth) : null,
+    featureOverrides: (userRaw.featureOverrides ?? null) as
+      | Record<string, boolean>
+      | null,
   };
 
   const isSuperAdmin = adminRole === "SUPER_ADMIN";

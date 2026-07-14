@@ -50,34 +50,44 @@ interface SidebarProps {
     image?: string | null;
     role?: string;
   };
+  /** Effective feature keys the user has; items tagged with a `feature` not in
+   *  this list are hidden. Omitted → show everything (e.g. admin surfaces). */
+  features?: string[];
 }
 
-const navigationGroups = [
+type NavItem = {
+  name: string;
+  href: string;
+  icon: typeof Home;
+  feature?: string;
+};
+
+const navigationGroups: { section: string; items: NavItem[] }[] = [
   {
     section: "Main",
     items: [
       { name: "Home", href: "/social", icon: Home },
       { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-      { name: "Tasks", href: "/tasks", icon: ListTodo },
-      { name: "Daily Mission", href: "/daily-mission", icon: Target },
+      { name: "Tasks", href: "/tasks", icon: ListTodo, feature: "tasks" },
+      { name: "Daily Mission", href: "/daily-mission", icon: Target, feature: "dailyMission" },
       { name: "Quizzes", href: "/quizzes", icon: Brain },
       { name: "Wallet", href: "/wallet", icon: Wallet },
-      { name: "Referrals", href: "/referrals", icon: Users },
+      { name: "Referrals", href: "/referrals", icon: Users, feature: "referrals" },
     ],
   },
   {
     section: "Earn",
     items: [
       { name: "Earn Hub", href: "/earn", icon: Gift },
-      { name: "Manual Tasks", href: "/manual-tasks", icon: ClipboardList },
-      { name: "Article Tasks", href: "/article-tasks", icon: FileText },
-      { name: "Video Tasks", href: "/video-tasks", icon: Video },
-      { name: "Quiz Tasks", href: "/quiz-tasks", icon: Brain },
-      { name: "Survey Tasks", href: "/survey-tasks", icon: ClipboardCheck },
-      { name: "Social Tasks", href: "/social-tasks", icon: Send },
-      { name: "Social Posts", href: "/social-posts", icon: Megaphone },
-      { name: "Proxy Tasks", href: "/proxy-tasks", icon: Globe },
-      { name: "Board Tasks", href: "/board-tasks", icon: Pin },
+      { name: "Manual Tasks", href: "/manual-tasks", icon: ClipboardList, feature: "tasks" },
+      { name: "Article Tasks", href: "/article-tasks", icon: FileText, feature: "articleTasks" },
+      { name: "Video Tasks", href: "/video-tasks", icon: Video, feature: "videoTasks" },
+      { name: "Quiz Tasks", href: "/quiz-tasks", icon: Brain, feature: "quizTasks" },
+      { name: "Survey Tasks", href: "/survey-tasks", icon: ClipboardCheck, feature: "surveyTasks" },
+      { name: "Social Tasks", href: "/social-tasks", icon: Send, feature: "socialTasks" },
+      { name: "Social Posts", href: "/social-posts", icon: Megaphone, feature: "socialTasks" },
+      { name: "Proxy Tasks", href: "/proxy-tasks", icon: Globe, feature: "proxyTasks" },
+      { name: "Board Tasks", href: "/board-tasks", icon: Pin, feature: "tasks" },
       { name: "Watch & Earn", href: "/watch-ads", icon: Video },
       { name: "Milestones", href: "/milestones", icon: Target },
       { name: "Achievements", href: "/achievements", icon: Award },
@@ -87,19 +97,19 @@ const navigationGroups = [
   {
     section: "Grow",
     items: [
-      { name: "Courses", href: "/courses", icon: GraduationCap },
-      { name: "My Learning", href: "/my-learning", icon: GraduationCap },
-      { name: "Marketplace", href: "/marketplace", icon: Store },
-      { name: "Lottery", href: "/lottery", icon: Ticket },
+      { name: "Courses", href: "/courses", icon: GraduationCap, feature: "courses" },
+      { name: "My Learning", href: "/my-learning", icon: GraduationCap, feature: "courses" },
+      { name: "Marketplace", href: "/marketplace", icon: Store, feature: "marketplace" },
+      { name: "Lottery", href: "/lottery", icon: Ticket, feature: "lottery" },
       { name: "Packages", href: "/packages", icon: Package },
-      { name: "Advertiser", href: "/advertiser", icon: Briefcase },
+      { name: "Advertiser", href: "/advertiser", icon: Briefcase, feature: "advertiser" },
     ],
   },
   {
     section: "Account",
     items: [
       { name: "Add Funds", href: "/deposit", icon: CreditCard },
-      { name: "Withdrawal", href: "/withdrawal", icon: ArrowUpRight },
+      { name: "Withdrawal", href: "/withdrawal", icon: ArrowUpRight, feature: "withdrawals" },
       { name: "Subscriptions", href: "/subscriptions", icon: CreditCard },
       { name: "My Package", href: "/my-package", icon: Package },
       { name: "Notifications", href: "/notifications", icon: Bell },
@@ -124,9 +134,12 @@ interface SidebarContentProps {
   pathname: string;
   onNavigate: () => void;
   onSignOut: () => void;
+  features?: string[];
 }
 
-function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarContentProps) {
+function SidebarContent({ user, pathname, onNavigate, onSignOut, features }: SidebarContentProps) {
+  const visible = (item: NavItem) =>
+    !item.feature || !features || features.includes(item.feature);
   return (
     <>
       {/* Logo */}
@@ -175,13 +188,16 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarConten
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
-        {navigationGroups.map((group) => (
+        {navigationGroups.map((group) => {
+          const items = group.items.filter(visible);
+          if (items.length === 0) return null;
+          return (
           <div key={group.section}>
             <p className="px-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">
               {group.section}
             </p>
             <ul className="space-y-1">
-              {group.items.map((item) => {
+              {items.map((item) => {
                 const isActive =
                   pathname === item.href || pathname.startsWith(`${item.href}/`);
                 return (
@@ -204,7 +220,8 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarConten
               })}
             </ul>
           </div>
-        ))}
+          );
+        })}
       </nav>
 
       {/* Tutor Navigation - Show for users with TUTOR role */}
@@ -283,7 +300,7 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut }: SidebarConten
   );
 }
 
-export function Sidebar({ user }: SidebarProps) {
+export function Sidebar({ user, features }: SidebarProps) {
   const pathname = usePathname();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
@@ -324,6 +341,7 @@ export function Sidebar({ user }: SidebarProps) {
             pathname={pathname}
             onNavigate={handleNavigate}
             onSignOut={handleSignOut}
+            features={features}
           />
         </div>
       </div>
@@ -336,6 +354,7 @@ export function Sidebar({ user }: SidebarProps) {
             pathname={pathname}
             onNavigate={handleNavigate}
             onSignOut={handleSignOut}
+            features={features}
           />
         </div>
       </div>
