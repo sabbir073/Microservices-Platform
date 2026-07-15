@@ -48,6 +48,11 @@ interface Ad {
   rewardPoints: number;
   rewardCooldownSec: number;
   watchSeconds: number;
+  headline: string | null;
+  brandName: string | null;
+  brandLogo: string | null;
+  ctaLabel: string | null;
+  targeting: { countries?: string[]; genders?: string[]; minLevel?: number } | null;
   campaign: { id: string; title: string };
   placement: { id: string; name: string };
 }
@@ -304,14 +309,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
             </div>
           )}
 
-          {tab === "analytics" && (
-            <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 space-y-2 text-sm text-slate-300">
-              <p>Total impressions: <span className="text-white font-bold">{totalImpr.toLocaleString()}</span></p>
-              <p>Total clicks: <span className="text-white font-bold">{totalClicks.toLocaleString()}</span></p>
-              <p>Overall CTR: <span className="text-white font-bold">{ctr}%</span></p>
-              <p className="text-xs text-slate-500 pt-2">Per-ad impressions/clicks are shown on each row in the Ads tab.</p>
-            </div>
-          )}
+          {tab === "analytics" && <AnalyticsTab />}
         </>
       )}
 
@@ -352,6 +350,54 @@ function StatCard({ icon, value, label }: { icon: React.ReactNode; value: string
 }
 function Empty({ text }: { text: string }) {
   return <p className="text-sm text-slate-500 py-8 text-center">{text}</p>;
+}
+
+interface DayStat { date: string; impressions: number; clicks: number; spendUsd: number }
+function AnalyticsTab() {
+  const [series, setSeries] = useState<DayStat[]>([]);
+  const [totals, setTotals] = useState({ impressions: 0, clicks: 0, ctr: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/admin/ads/analytics?days=14")
+      .then((r) => r.json())
+      .then((d) => {
+        setSeries(d.series ?? []);
+        setTotals(d.totals ?? { impressions: 0, clicks: 0, ctr: 0 });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const maxImp = Math.max(1, ...series.map((s) => s.impressions));
+  const spend = series.reduce((s, d) => s + d.spendUsd, 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard icon={<Eye className="w-5 h-5" />} value={totals.impressions.toLocaleString()} label="Impressions (all time)" />
+        <StatCard icon={<MousePointer className="w-5 h-5" />} value={totals.clicks.toLocaleString()} label="Clicks (all time)" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${totals.ctr.toFixed(2)}%`} label="CTR" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`$${spend.toFixed(2)}`} label="Spend (14d)" />
+      </div>
+      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-3">Impressions · last 14 days</p>
+        {loading ? (
+          <p className="text-xs text-slate-500 py-6 text-center">Loading…</p>
+        ) : series.every((s) => s.impressions === 0) ? (
+          <p className="text-xs text-slate-500 py-6 text-center">No impressions in this window yet.</p>
+        ) : (
+          <div className="flex items-end gap-1 h-28">
+            {series.map((s) => (
+              <div key={s.date} className="flex-1" title={`${s.date}: ${s.impressions} impr, ${s.clicks} clicks, $${s.spendUsd.toFixed(2)}`}>
+                <div className="w-full rounded-t bg-linear-to-t from-blue-600 to-indigo-500" style={{ height: `${(s.impressions / maxImp) * 100}%` }} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 function IconBtn({ children, onClick, title, danger }: { children: React.ReactNode; onClick: () => void; title: string; danger?: boolean }) {
   return (
@@ -400,6 +446,16 @@ function AdModal({
   const [status, setStatus] = useState(ad?.status ?? "ACTIVE");
   const [rewardPoints, setRewardPoints] = useState(String(ad?.rewardPoints ?? 0));
   const [watchSeconds, setWatchSeconds] = useState(String(ad?.watchSeconds ?? 15));
+  // Native (post-like feed ad) fields
+  const [format, setFormat] = useState(ad?.format ?? "BANNER");
+  const [headline, setHeadline] = useState(ad?.headline ?? "");
+  const [brandName, setBrandName] = useState(ad?.brandName ?? "");
+  const [brandLogo, setBrandLogo] = useState(ad?.brandLogo ?? "");
+  const [ctaLabel, setCtaLabel] = useState(ad?.ctaLabel ?? "");
+  // Targeting
+  const [tgCountry, setTgCountry] = useState(ad?.targeting?.countries?.[0] ?? "");
+  const [tgGenders, setTgGenders] = useState<string[]>(ad?.targeting?.genders ?? []);
+  const [tgMinLevel, setTgMinLevel] = useState(String(ad?.targeting?.minLevel ?? 0));
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -409,10 +465,15 @@ function AdModal({
     }
     setBusy(true);
     try {
+      const targeting: Record<string, unknown> = {};
+      if (tgCountry.trim()) targeting.countries = [tgCountry.trim()];
+      if (tgGenders.length) targeting.genders = tgGenders;
+      if (Number(tgMinLevel) > 0) targeting.minLevel = Number(tgMinLevel);
       const payload = {
         campaignId,
         placementId,
         type,
+        format,
         contentUrl,
         targetUrl,
         htmlContent,
@@ -420,6 +481,11 @@ function AdModal({
         status,
         rewardPoints: Number(rewardPoints) || 0,
         watchSeconds: Number(watchSeconds) || 15,
+        headline,
+        brandName,
+        brandLogo,
+        ctaLabel,
+        targeting,
       };
       const res = await fetch(ad ? `/api/admin/ads/${ad.id}` : "/api/admin/ads", {
         method: ad ? "PATCH" : "POST",
@@ -494,6 +560,83 @@ function AdModal({
               <option value="PAUSED">Paused</option>
               <option value="INACTIVE">Inactive</option>
             </select>
+          </div>
+        </div>
+
+        {/* Format — Banner vs Native (post-like feed ad) */}
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Format</label>
+          <div className="flex gap-2">
+            {["BANNER", "NATIVE"].map((f) => (
+              <button
+                key={f}
+                onClick={() => setFormat(f)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold ${format === f ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
+              >
+                {f === "BANNER" ? "Banner" : "Native (feed)"}
+              </button>
+            ))}
+          </div>
+          {format === "NATIVE" && (
+            <p className="text-[11px] text-slate-500 mt-1">
+              Native ads render as post-like cards in the social feed (placement IN_FEED).
+            </p>
+          )}
+        </div>
+
+        {format === "NATIVE" && (
+          <div className="rounded-lg border border-slate-800 p-3 space-y-2.5">
+            <p className="text-xs font-bold text-slate-400">Native creative</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Brand name</label>
+                <input value={brandName} onChange={(e) => setBrandName(e.target.value)} className={inputCls} placeholder="e.g. NordVPN" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">CTA label</label>
+                <input value={ctaLabel} onChange={(e) => setCtaLabel(e.target.value)} className={inputCls} placeholder="Learn More" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Brand logo</label>
+              <ImageUploadField value={brandLogo} onChange={setBrandLogo} previewSize="square" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Headline / ad copy</label>
+              <textarea value={headline} onChange={(e) => setHeadline(e.target.value)} rows={3} className={inputCls} placeholder="What are you promoting?" />
+            </div>
+          </div>
+        )}
+
+        {/* Targeting */}
+        <div className="rounded-lg border border-slate-800 p-3 space-y-2.5">
+          <p className="text-xs font-bold text-slate-400">Targeting (optional)</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Country</label>
+              <input value={tgCountry} onChange={(e) => setTgCountry(e.target.value)} className={inputCls} placeholder="Any" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Min level</label>
+              <input type="number" min={0} value={tgMinLevel} onChange={(e) => setTgMinLevel(e.target.value)} className={inputCls} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Gender</label>
+            <div className="flex gap-1.5">
+              {["MALE", "FEMALE", "OTHER"].map((g) => {
+                const on = tgGenders.includes(g);
+                return (
+                  <button
+                    key={g}
+                    onClick={() => setTgGenders((prev) => (on ? prev.filter((x) => x !== g) : [...prev, g]))}
+                    className={`flex-1 py-1.5 rounded-md text-[11px] font-semibold capitalize ${on ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
+                  >
+                    {g.toLowerCase()}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 

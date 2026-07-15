@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@/generated/prisma/client";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { normalizeTargeting, type AdTargeting } from "@/lib/ad-targeting";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -32,6 +34,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (body.rewardCooldownSec !== undefined)
     data.rewardCooldownSec = Math.max(0, Number(body.rewardCooldownSec) || 3600);
   if (body.watchSeconds !== undefined) data.watchSeconds = Math.max(1, Number(body.watchSeconds) || 15);
+  if (body.headline !== undefined) data.headline = body.headline ? String(body.headline) : null;
+  if (body.brandName !== undefined) data.brandName = body.brandName ? String(body.brandName) : null;
+  if (body.brandLogo !== undefined) data.brandLogo = body.brandLogo ? String(body.brandLogo) : null;
+  if (body.ctaLabel !== undefined) data.ctaLabel = body.ctaLabel ? String(body.ctaLabel) : null;
+  if (body.promotedPostId !== undefined)
+    data.promotedPostId = body.promotedPostId ? String(body.promotedPostId) : null;
+  if (body.targeting !== undefined) {
+    data.targeting =
+      (normalizeTargeting((body.targeting ?? {}) as AdTargeting) as
+        | Prisma.InputJsonValue
+        | null) ?? Prisma.JsonNull;
+  }
 
   const ad = await prisma.ad.update({ where: { id }, data });
   return NextResponse.json({ ad });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Plus, MousePointer2, Eye, Target, Loader2 } from "lucide-react";
 import { StatCard } from "@/components/user/primitives/stat-card";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
@@ -181,9 +182,10 @@ export function AdvertiserDashboard() {
         campaigns.map((c) => {
           const pct = c.budget > 0 ? (c.spent / c.budget) * 100 : 0;
           return (
-            <div
+            <Link
               key={c.id}
-              className="rounded-xl border border-gray-800 bg-gray-900 p-3"
+              href={`/advertiser/campaigns/${c.id}`}
+              className="block rounded-xl border border-gray-800 bg-gray-900 p-3 hover:border-gray-700 transition-colors"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
@@ -208,7 +210,11 @@ export function AdvertiserDashboard() {
                   </span>
                   {c.status !== "ENDED" && (
                     <button
-                      onClick={() => fundCampaign(c.id, c.title)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        fundCampaign(c.id, c.title);
+                      }}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-bold hover:bg-indigo-500/25"
                     >
                       <Plus className="w-3 h-3" />
@@ -243,7 +249,7 @@ export function AdvertiserDashboard() {
                   </p>
                 </div>
               </div>
-            </div>
+            </Link>
           );
         })}
 
