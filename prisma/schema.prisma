@@ -321,7 +321,7 @@ model Ad {
   placementId String
   placement   AdPlacement @relation(fields: [placementId], references: [id])
   type        String      @default("LOCAL")
-  format      String      @default("BANNER")
+  format      String      @default("BANNER") // BANNER | NATIVE (feed post-like)
   contentUrl  String?
   targetUrl   String?
   htmlContent String?     @db.Text
@@ -329,17 +329,43 @@ model Ad {
   status      String      @default("ACTIVE")
   impressions Int         @default(0)
   clicks      Int         @default(0)
+  // Native (post-like) creative fields — used when format = NATIVE
+  headline    String?     @db.Text     // post-like ad copy
+  brandName   String?                  // shown as author name
+  brandLogo   String?                  // author avatar URL
+  ctaLabel    String?                  // CTA button label (e.g. "Learn More")
+  // Promote-a-real-post: when set, the native ad renders this post + its author
+  promotedPostId String?
+  promotedPost   Post?    @relation("PostAds", fields: [promotedPostId], references: [id], onDelete: SetNull)
+  // Simple targeting: { countries?, genders?, minLevel?, packages? } (null = everyone)
+  targeting   Json?
   // Viewer-reward (watch-and-earn)
   rewardPoints      Int    @default(0)
   rewardCooldownSec Int    @default(3600)
   watchSeconds      Int    @default(15)
   views       AdView[]
+  dailyStats  AdDailyStat[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   @@index([campaignId])
   @@index([placementId])
   @@index([status])
+  @@index([promotedPostId])
+}
+
+// Per-day rollup of ad impressions/clicks/spend for time-series analytics.
+model AdDailyStat {
+  id          String   @id @default(cuid())
+  adId        String
+  ad          Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  spendUsd    Float    @default(0)
+
+  @@unique([adId, date])
+  @@index([adId, date])
 }
 
 model AdView {
@@ -1999,6 +2025,7 @@ model Post {
   views       PostView[]
   shares      PostShare[]
   mentions    Mention[]
+  adPromotions Ad[]     @relation("PostAds")
   @@index([userId])
   @@index([createdAt])
   @@index([groupId])
