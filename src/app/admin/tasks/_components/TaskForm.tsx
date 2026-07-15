@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Save, X, Plus, Trash2, AlertCircle, Loader2, Image as ImageIcon } from "lucide-react";
+import { Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Save, X, Plus, Trash2, AlertCircle, Loader2, Image as ImageIcon, Smartphone } from "lucide-react";
 import { MediaSelector } from "@/components/media/MediaSelector";
 import type { MediaItem } from "@/types/media";
 import { SocialTaskBuilder } from "./SocialTaskBuilder";
@@ -29,6 +29,12 @@ import {
   validateCustomConfig,
   type CustomConfig,
 } from "@/lib/custom-tasks";
+import { AppInstallTaskBuilder } from "./AppInstallTaskBuilder";
+import {
+  validateAppInstallConfig,
+  normalizeAppInstallConfig,
+  type AppInstallConfig,
+} from "@/lib/app-install-tasks";
 
 // Task types with icons and colors
 const taskTypes = [
@@ -39,6 +45,7 @@ const taskTypes = [
   { id: "SOCIAL", label: "Social", icon: Share2, color: "pink", description: "Social media engagement" },
   { id: "PROXY", label: "Proxy", icon: Globe, color: "cyan", description: "Geo-targeted browsing" },
   { id: "OFFERWALL", label: "Offerwall", icon: Gift, color: "emerald", description: "Complete offers" },
+  { id: "APPINSTALL", label: "App Install", icon: Smartphone, color: "emerald", description: "Install an app + proof" },
   { id: "CUSTOM", label: "Custom", icon: Sparkles, color: "indigo", description: "Custom task type" },
 ];
 
@@ -91,6 +98,7 @@ interface TaskFormProps {
     videoConfig?: VideoConfig | null;
     surveyConfig?: SurveyConfig | null;
     customConfig?: CustomConfig | null;
+    appInstallConfig?: AppInstallConfig | null;
     proxyInstructions: string | null;
     startsAt: Date | null;
     expiresAt: Date | null;
@@ -211,6 +219,11 @@ export function TaskForm({ task }: TaskFormProps) {
     task?.customConfig ?? DEFAULT_CUSTOM_CONFIG
   );
 
+  // App-install task config
+  const [appInstallConfig, setAppInstallConfig] = useState<AppInstallConfig>(
+    task?.appInstallConfig ?? { appName: "", steps: [], autoApprove: false }
+  );
+
   // Media selector state
   const [mediaSelectorOpen, setMediaSelectorOpen] = useState(false);
   const [mediaSelectorTarget, setMediaSelectorTarget] = useState<"thumbnail" | { type: "quiz"; index: number } | null>(null);
@@ -327,6 +340,14 @@ export function TaskForm({ task }: TaskFormProps) {
         customConfigOut = customConfig;
       }
 
+      // For APPINSTALL tasks, validate and prep config
+      let appInstallConfigOut: AppInstallConfig | null = null;
+      if (formData.type === "APPINSTALL") {
+        const err = validateAppInstallConfig(appInstallConfig);
+        if (err) throw new Error(err);
+        appInstallConfigOut = normalizeAppInstallConfig(appInstallConfig);
+      }
+
       // Prepare the data
       const submitData = {
         ...formData,
@@ -343,6 +364,7 @@ export function TaskForm({ task }: TaskFormProps) {
         videoConfig: videoConfigOut,
         surveyConfig: surveyConfigOut,
         customConfig: customConfigOut,
+        appInstallConfig: appInstallConfigOut,
         contentUrl: contentUrlOut,
         duration: durationOut
           ? parseInt(durationOut.toString())
@@ -738,6 +760,35 @@ export function TaskForm({ task }: TaskFormProps) {
             </p>
           </div>
           <CustomTaskBuilder value={customConfig} onChange={setCustomConfig} />
+        </div>
+      )}
+
+      {/* App-install builder */}
+      {formData.type === "APPINSTALL" && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-white inline-flex items-center gap-2">
+              <Smartphone className="w-5 h-5 text-green-400" />
+              App Install Task
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Paste a Play Store or App Store link and hit Fetch to auto-fill the
+              app name, icon and description (all editable). The user installs the
+              app, then uploads a proof screenshot.
+            </p>
+          </div>
+          <AppInstallTaskBuilder
+            value={appInstallConfig}
+            onChange={setAppInstallConfig}
+            onAutofill={(m) =>
+              setFormData((f) => ({
+                ...f,
+                title: f.title || m.name,
+                description: f.description || m.description,
+                thumbnailUrl: f.thumbnailUrl || m.logo,
+              }))
+            }
+          />
         </div>
       )}
 

@@ -1,0 +1,294 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  Smartphone,
+  Loader2,
+  ArrowLeft,
+  Coins,
+  Sparkles,
+  CheckCircle2,
+  ExternalLink,
+  Download,
+} from "lucide-react";
+import { toast } from "sonner";
+import { ProofImageUpload } from "@/components/user/tasks/proof-image-upload";
+import { type AppInstallConfig } from "@/lib/app-install-tasks";
+
+interface AppInstallTask {
+  id: string;
+  title: string;
+  description?: string | null;
+  pointsReward: number;
+  xpReward: number;
+  thumbnailUrl?: string | null;
+  appInstallConfig?: AppInstallConfig | null;
+}
+
+interface UserStatus {
+  hasActiveSubmission: boolean;
+  activeSubmissionId?: string | null;
+  completedToday: boolean;
+}
+
+type SubmitState =
+  | { kind: "ready"; submissionId: string }
+  | { kind: "completed_today" }
+  | { kind: "blocked"; reason: string }
+  | { kind: "loading" };
+
+export function AppInstallDetailView({ taskId }: { taskId: string }) {
+  const router = useRouter();
+  const [task, setTask] = useState<AppInstallTask | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [submitState, setSubmitState] = useState<SubmitState>({ kind: "loading" });
+  const [screenshot, setScreenshot] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      setSubmitState({ kind: "loading" });
+      try {
+        const tRes = await fetch(`/api/tasks/${taskId}`);
+        if (!tRes.ok) throw new Error(await tRes.text());
+        const tData = await tRes.json();
+        if (cancel) return;
+        setTask(tData.task as AppInstallTask);
+        const userStatus = (tData.userStatus ?? {}) as UserStatus;
+
+        if (userStatus.hasActiveSubmission && userStatus.activeSubmissionId) {
+          setSubmitState({ kind: "ready", submissionId: userStatus.activeSubmissionId });
+          return;
+        }
+        if (userStatus.completedToday) {
+          setSubmitState({ kind: "completed_today" });
+          return;
+        }
+        const sRes = await fetch(`/api/tasks/${taskId}/start`, { method: "POST" });
+        const sData = await sRes.json().catch(() => ({}));
+        if (cancel) return;
+        if (!sRes.ok) {
+          const reason = sData.error ?? `HTTP ${sRes.status}`;
+          if (typeof reason === "string" && /limit/i.test(reason)) {
+            setSubmitState({ kind: "completed_today" });
+            return;
+          }
+          setSubmitState({ kind: "blocked", reason });
+          return;
+        }
+        if (sData.submission?.id) {
+          setSubmitState({ kind: "ready", submissionId: sData.submission.id });
+        } else {
+          setSubmitState({ kind: "blocked", reason: "Couldn't start this task." });
+        }
+      } catch (err) {
+        if (cancel) return;
+        setLoadError(err instanceof Error ? err.message : "Failed to load task");
+      } finally {
+        if (!cancel) setLoading(false);
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [taskId]);
+
+  const cfg = task?.appInstallConfig;
+  const logo = cfg?.appLogo || task?.thumbnailUrl || null;
+  const steps = cfg?.steps ?? [];
+
+  const submit = async () => {
+    if (!task || submitState.kind !== "ready") return;
+    if (!screenshot) {
+      toast.error("Upload a screenshot showing the app installed");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/tasks/${task.id}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          submissionId: submitState.submissionId,
+          proofImages: [screenshot],
+        }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      if (d.status === "approved") {
+        toast.success("Download counted! 🎉", {
+          description: `+${d.rewards?.points ?? task.pointsReward} pts credited`,
+        });
+      } else {
+        toast.success("Proof submitted", {
+          description: `You'll get ${task.pointsReward} pts once approved.`,
+        });
+      }
+      router.push("/tasks");
+    } catch (err) {
+      toast.error("Failed", {
+        description: err instanceof Error ? err.message : "Try again",
+      });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[40vh] gap-3">
+        <Loader2 className="w-7 h-7 animate-spin text-green-400" />
+        <p className="text-sm text-gray-500">Loading task…</p>
+      </div>
+    );
+  }
+
+  if (loadError || !task) {
+    return (
+      <div className="space-y-4">
+        <Link href="/tasks" className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white">
+          <ArrowLeft className="w-4 h-4" /> Back to tasks
+        </Link>
+        <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+          <p className="text-sm font-bold text-red-400 mb-1">Couldn&apos;t load this task</p>
+          <p className="text-xs text-red-300/80">{loadError ?? "Task not found."}</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <Link href="/tasks" className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white">
+        <ArrowLeft className="w-4 h-4" /> Back to tasks
+      </Link>
+
+      {/* App card */}
+      <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 sm:p-5 space-y-4">
+        <div className="flex items-start gap-4">
+          <div className="w-16 h-16 rounded-2xl bg-gray-800 overflow-hidden shrink-0 grid place-items-center">
+            {logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logo} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <Smartphone className="w-7 h-7 text-gray-600" />
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] uppercase tracking-wider text-green-400 font-bold">
+              App Install
+            </span>
+            <h1 className="text-lg sm:text-xl font-bold text-white leading-tight">
+              {cfg?.appName || task.title}
+            </h1>
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-300 text-xs font-bold border border-amber-500/30">
+                <Coins className="w-3.5 h-3.5" />+{task.pointsReward.toLocaleString()} pts
+              </span>
+              {task.xpReward > 0 && (
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 text-xs font-bold border border-violet-500/30">
+                  <Sparkles className="w-3.5 h-3.5" />+{task.xpReward} XP
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {(cfg?.description || task.description) && (
+          <p className="text-sm text-gray-300 whitespace-pre-wrap">
+            {cfg?.description || task.description}
+          </p>
+        )}
+
+        {/* Install buttons */}
+        <div className="flex flex-wrap gap-2">
+          {cfg?.playStoreUrl && (
+            <a
+              href={cfg.playStoreUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold"
+            >
+              <Download className="w-4 h-4" /> Install on Google Play
+              <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+            </a>
+          )}
+          {cfg?.appStoreUrl && (
+            <a
+              href={cfg.appStoreUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-sm font-bold"
+            >
+              <Download className="w-4 h-4" /> Install on App Store
+              <ExternalLink className="w-3.5 h-3.5 opacity-70" />
+            </a>
+          )}
+        </div>
+      </div>
+
+      {/* Steps */}
+      {steps.length > 0 && (
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-2.5">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+            How to complete
+          </p>
+          <ol className="space-y-2">
+            {steps.map((s, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-sm text-gray-200">
+                <span className="w-5 h-5 rounded-full bg-green-500/15 text-green-400 text-[11px] font-bold grid place-items-center shrink-0 mt-0.5">
+                  {i + 1}
+                </span>
+                {s}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+
+      {submitState.kind === "completed_today" && (
+        <section className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 flex items-start gap-3">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+          <div>
+            <h2 className="text-base font-bold text-white">Already submitted</h2>
+            <p className="text-xs text-emerald-200/80 mt-1">
+              Your proof is pending review or already credited.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {submitState.kind === "blocked" && (
+        <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-200">
+          {submitState.reason}
+        </section>
+      )}
+
+      {submitState.kind === "ready" && (
+        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-5 space-y-3">
+          <div>
+            <p className="text-sm font-bold text-white">Submit your proof</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Install the app, open it, then upload a screenshot as proof.
+            </p>
+          </div>
+          <ProofImageUpload value={screenshot} onChange={setScreenshot} />
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || !screenshot}
+            className="w-full inline-flex items-center justify-center gap-2 py-3 rounded-xl bg-linear-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white text-sm font-bold shadow-lg shadow-emerald-900/30 disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit proof"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

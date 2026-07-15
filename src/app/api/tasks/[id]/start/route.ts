@@ -20,6 +20,7 @@ const TASK_TYPE_FEATURE: Record<TaskType, PackageFeatureKey> = {
   SURVEY: "surveyTasks",
   OFFERWALL: "offerwallTasks",
   CUSTOM: "tasks",
+  APPINSTALL: "appInstall",
 };
 
 // POST /api/tasks/:id/start - Start a task

@@ -58,6 +58,7 @@ export interface PackageFormPkg {
   quizTasksEnabled: boolean;
   surveyTasksEnabled: boolean;
   offerwallTasksEnabled: boolean;
+  appInstallEnabled: boolean;
 
   dailyTaskLimit: number;
   minWithdrawal: number;
@@ -102,6 +103,7 @@ const TASK_TOGGLES: Array<{ key: keyof PackageFormPkg; label: string; tooltip: s
   { key: "quizTasksEnabled", label: "Quiz Tasks", tooltip: "TaskType.QUIZ — multiple-choice quiz tasks." },
   { key: "surveyTasksEnabled", label: "Survey Tasks", tooltip: "TaskType.SURVEY — survey tasks." },
   { key: "offerwallTasksEnabled", label: "Offerwall Tasks", tooltip: "TaskType.OFFERWALL — third-party offerwall tasks." },
+  { key: "appInstallEnabled", label: "App Install Tasks", tooltip: "TaskType.APPINSTALL — install-an-app tasks with proof." },
 ];
 
 export function PackageForm({ pkg, mode = "edit" }: PackageFormProps) {

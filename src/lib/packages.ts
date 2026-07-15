@@ -53,6 +53,7 @@ export interface PackageRow {
   quizTasksEnabled: boolean;
   surveyTasksEnabled: boolean;
   offerwallTasksEnabled: boolean;
+  appInstallEnabled: boolean;
   dailyTaskLimit: number;
   minWithdrawal: number;
   withdrawalFeeDiscount: number;

@@ -42,6 +42,7 @@ enum TaskType {
   PROXY
   OFFERWALL
   CUSTOM
+  APPINSTALL
 }
 
 enum TaskStatus {
@@ -1024,6 +1025,7 @@ model Task {
   videoConfig     Json?      // Video task config (see lib/video-tasks.ts VideoConfig)
   surveyConfig    Json?      // Survey task config (see lib/survey-tasks.ts SurveyConfig)
   customConfig    Json?      // Custom task config (see lib/custom-tasks.ts CustomConfig)
+  appInstallConfig Json?     // App-install task config (see lib/app-install-tasks.ts AppInstallConfig)
   proxyInstructions String?    @db.Text
   startsAt        DateTime?
   expiresAt       DateTime?
@@ -1219,6 +1221,7 @@ model Package {
   quizTasksEnabled      Boolean @default(true)
   surveyTasksEnabled    Boolean @default(true)
   offerwallTasksEnabled Boolean @default(true)
+  appInstallEnabled     Boolean @default(true)
 
   // Limits
   dailyTaskLimit        Int   @default(-1)

@@ -25,7 +25,8 @@ export type PackageFeatureKey =
   | "videoTasks"
   | "quizTasks"
   | "surveyTasks"
-  | "offerwallTasks";
+  | "offerwallTasks"
+  | "appInstall";
 
 export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   tasks: "tasksEnabled",
@@ -45,6 +46,7 @@ export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   quizTasks: "quizTasksEnabled",
   surveyTasks: "surveyTasksEnabled",
   offerwallTasks: "offerwallTasksEnabled",
+  appInstall: "appInstallEnabled",
 };
 
 /** All feature keys (stable order) — for iterating overrides + admin UIs. */
@@ -75,6 +77,7 @@ export const FEATURES: {
   { key: "quizTasks", label: "Quiz Tasks", group: "task" },
   { key: "surveyTasks", label: "Survey Tasks", group: "task" },
   { key: "offerwallTasks", label: "Offerwall Tasks", group: "task" },
+  { key: "appInstall", label: "App Install Tasks", group: "task" },
 ];
 
 /** Sparse per-user grants/denials that override the package value. */

@@ -343,6 +343,7 @@ function countEnabledFlags(pkg: {
   quizTasksEnabled: boolean;
   surveyTasksEnabled: boolean;
   offerwallTasksEnabled: boolean;
+  appInstallEnabled: boolean;
 }) {
   return [
     pkg.tasksEnabled,
@@ -362,6 +363,7 @@ function countEnabledFlags(pkg: {
     pkg.quizTasksEnabled,
     pkg.surveyTasksEnabled,
     pkg.offerwallTasksEnabled,
+    pkg.appInstallEnabled,
   ].filter(Boolean).length;
 }
 

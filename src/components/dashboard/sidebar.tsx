@@ -36,6 +36,7 @@ import {
   Bell,
   CreditCard,
   ClipboardCheck,
+  Smartphone,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
@@ -87,6 +88,7 @@ const navigationGroups: { section: string; items: NavItem[] }[] = [
       { name: "Social Tasks", href: "/social-tasks", icon: Send, feature: "socialTasks" },
       { name: "Social Posts", href: "/social-posts", icon: Megaphone, feature: "socialTasks" },
       { name: "Proxy Tasks", href: "/proxy-tasks", icon: Globe, feature: "proxyTasks" },
+      { name: "App Install", href: "/app-install-tasks", icon: Smartphone, feature: "appInstall" },
       { name: "Board Tasks", href: "/board-tasks", icon: Pin, feature: "tasks" },
       { name: "Watch & Earn", href: "/watch-ads", icon: Video },
       { name: "Milestones", href: "/milestones", icon: Target },

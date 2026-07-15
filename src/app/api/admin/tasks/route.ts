@@ -4,6 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { validateCustomConfig, type CustomConfig } from "@/lib/custom-tasks";
 import {
+  validateAppInstallConfig,
+  normalizeAppInstallConfig,
+  type AppInstallConfig,
+} from "@/lib/app-install-tasks";
+import {
   normalizeSocialConfig,
   validateSocialBundle,
   sortBundleItems,
@@ -51,6 +56,7 @@ export async function POST(request: NextRequest) {
       videoConfig,
       surveyConfig,
       customConfig,
+      appInstallConfig,
       proxyInstructions,
       startsAt,
       expiresAt,
@@ -68,9 +74,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate task type
-    const validTypes = ["VIDEO", "ARTICLE", "QUIZ", "SURVEY", "SOCIAL", "PROXY", "OFFERWALL", "CUSTOM"];
+    const validTypes = ["VIDEO", "ARTICLE", "QUIZ", "SURVEY", "SOCIAL", "PROXY", "OFFERWALL", "CUSTOM", "APPINSTALL"];
     if (!validTypes.includes(type)) {
       return NextResponse.json({ error: "Invalid task type" }, { status: 400 });
+    }
+
+    // Validate APPINSTALL task config
+    let appInstallConfigOut: AppInstallConfig | null = null;
+    if (type === "APPINSTALL") {
+      const err = validateAppInstallConfig(appInstallConfig);
+      if (err) return NextResponse.json({ error: err }, { status: 400 });
+      appInstallConfigOut = normalizeAppInstallConfig(appInstallConfig as AppInstallConfig);
     }
 
     // Validate CUSTOM task config
@@ -169,6 +183,9 @@ export async function POST(request: NextRequest) {
           : null,
         customConfig: customConfig
           ? JSON.parse(JSON.stringify(customConfig))
+          : null,
+        appInstallConfig: appInstallConfigOut
+          ? JSON.parse(JSON.stringify(appInstallConfigOut))
           : null,
         proxyInstructions: proxyInstructions || null,
         startsAt: startsAt ? new Date(startsAt) : null,
