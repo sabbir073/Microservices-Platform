@@ -129,15 +129,23 @@ export function AdvertiserDashboard() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <h1 className="text-xl font-bold text-white flex-1">📣 Advertiser</h1>
-        <button
-          onClick={() => setCreating(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 text-white text-xs font-semibold"
-        >
-          <Plus className="w-4 h-4" />
-          New Campaign
-        </button>
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-linear-to-br from-indigo-600/20 via-purple-600/10 to-transparent p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-indigo-500/20 grid place-items-center text-indigo-300 shrink-0">
+            <Target className="w-6 h-6" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg font-bold text-white">Advertiser</h1>
+            <p className="text-xs text-gray-400">Promote your posts &amp; run native feed ads.</p>
+          </div>
+          <button
+            onClick={() => setCreating(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            New Campaign
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
