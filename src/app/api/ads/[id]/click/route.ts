@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getAdClickCost } from "@/lib/ad-billing";
+import { bumpAdDailyStat } from "@/lib/ad-stats";
 
 /**
  * Records an ad click and bills the owning campaign's budget. The conditional
@@ -30,6 +31,11 @@ export async function POST(
       where: { id: ad.campaignId, status: "ACTIVE", budget: { gte: cost } },
       data: { budget: { decrement: cost } },
     });
+    // Roll up click + actual spend (0 when the campaign couldn't be billed).
+    await bumpAdDailyStat(id, {
+      clicks: 1,
+      spendUsd: billed.count > 0 ? cost : 0,
+    });
     if (billed.count === 0) {
       // Out of budget — pause so it drops out of rotation.
       await prisma.adCampaign
@@ -39,6 +45,8 @@ export async function POST(
         })
         .catch(() => {});
     }
+  } else {
+    await bumpAdDailyStat(id, { clicks: 1 });
   }
 
   return NextResponse.json({ success: true });

@@ -24,6 +24,7 @@ import {
   type CustomConfig,
   type CustomAnswers,
 } from "@/lib/custom-tasks";
+import type { AppInstallConfig } from "@/lib/app-install-tasks";
 
 // POST /api/tasks/:id/submit - Submit task proof
 export async function POST(
@@ -239,6 +240,16 @@ export async function POST(
       }
     }
 
+    // ── App-install task: a proof screenshot is required ──
+    if (task.type === "APPINSTALL") {
+      if (!Array.isArray(proofImages) || proofImages.length === 0) {
+        return NextResponse.json(
+          { error: "Upload a screenshot showing the app installed." },
+          { status: 400 }
+        );
+      }
+    }
+
     // ── Video task: hard-fail on bad unique key (auto-reject) ──
     if (task.type === "VIDEO") {
       const cfg = task.videoConfig as VideoConfig | null;
@@ -279,13 +290,18 @@ export async function POST(
     const customAutoApprove =
       task.type === "CUSTOM" &&
       (task.customConfig as CustomConfig | null)?.autoApprove === true;
+    const appInstallAutoApprove =
+      task.type === "APPINSTALL" &&
+      (task.appInstallConfig as AppInstallConfig | null)?.autoApprove === true;
     const shouldAutoApprove =
       !uniqueKeyMismatch &&
       task.type !== "SURVEY" &&
       (isArticleKeyPool ||
         customAutoApprove ||
+        appInstallAutoApprove ||
         (task.type !== "ARTICLE" &&
           task.type !== "CUSTOM" &&
+          task.type !== "APPINSTALL" &&
           (task.autoApprove || task.type === "VIDEO" || task.type === "QUIZ")));
 
     const newStatus = shouldAutoApprove

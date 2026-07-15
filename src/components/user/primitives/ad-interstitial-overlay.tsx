@@ -1,0 +1,118 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { ExternalLink, X } from "lucide-react";
+
+interface Ad {
+  id: string;
+  type: string;
+  imageUrl?: string;
+  title?: string;
+  body?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  html?: string;
+  sponsor?: string;
+}
+
+/**
+ * Imperative full-screen interstitial ad. When `open` flips true it fetches a
+ * GAME_INTERSTITIAL ad; if none is available (or the plan is ad-free) it calls
+ * `onDone()` immediately so the game flow never blocks. Otherwise it shows the
+ * ad with a skip countdown; closing calls `onDone()`. Tracks impression on show
+ * and click on the CTA.
+ */
+export function AdInterstitialOverlay({
+  open,
+  onDone,
+  skipSeconds = 5,
+}: {
+  open: boolean;
+  onDone: () => void;
+  skipSeconds?: number;
+}) {
+  const [ad, setAd] = useState<Ad | null>(null);
+  const [left, setLeft] = useState(skipSeconds);
+  const doneRef = useRef(onDone);
+  useEffect(() => {
+    doneRef.current = onDone;
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    let cancel = false;
+    fetch(`/api/ads/serve?placement=GAME_INTERSTITIAL`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancel) return;
+        if (d?.ad) {
+          setAd(d.ad);
+          setLeft(skipSeconds);
+          fetch(`/api/ads/${d.ad.id}/impression`, { method: "POST" }).catch(() => {});
+        } else {
+          doneRef.current(); // no ad → don't block
+        }
+      })
+      .catch(() => !cancel && doneRef.current());
+    return () => {
+      cancel = true;
+      setAd(null); // clear on close so a reopen never flashes a stale ad
+    };
+  }, [open, skipSeconds]);
+
+  // Skip countdown.
+  useEffect(() => {
+    if (!open || !ad || left <= 0) return;
+    const t = setTimeout(() => setLeft((n) => n - 1), 1000);
+    return () => clearTimeout(t);
+  }, [open, ad, left]);
+
+  if (!open || !ad) return null;
+
+  const trackClick = () => {
+    fetch(`/api/ads/${ad.id}/click`, { method: "POST" }).catch(() => {});
+  };
+
+  return (
+    <div className="fixed inset-0 z-10001 bg-black/95 flex flex-col items-center justify-center p-4">
+      <span className="absolute top-3 left-3 text-[10px] font-bold uppercase tracking-wider text-white/60">
+        Sponsored
+      </span>
+      <button
+        onClick={() => left <= 0 && onDone()}
+        disabled={left > 0}
+        className="absolute top-3 right-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold disabled:opacity-60"
+      >
+        {left > 0 ? `Skip in ${left}s` : (<><X className="w-3.5 h-3.5" /> Close</>)}
+      </button>
+
+      {ad.type === "HTML" && ad.html ? (
+        <div
+          className="max-w-md w-full rounded-2xl overflow-hidden border border-white/10"
+          dangerouslySetInnerHTML={{ __html: ad.html }}
+        />
+      ) : (
+        <a
+          href={ad.ctaUrl ?? "#"}
+          target="_blank"
+          rel="noopener sponsored noreferrer"
+          onClick={trackClick}
+          className="max-w-md w-full rounded-2xl overflow-hidden border border-white/10 bg-gray-900 block"
+        >
+          {ad.imageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={ad.imageUrl} alt={ad.title ?? "Ad"} className="w-full max-h-72 object-cover" />
+          )}
+          <div className="p-4">
+            {ad.title && <p className="text-base font-bold text-white">{ad.title}</p>}
+            {ad.body && <p className="text-sm text-gray-400 mt-1">{ad.body}</p>}
+            <span className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 text-white text-sm font-bold">
+              {ad.ctaLabel || "Learn More"}
+              <ExternalLink className="w-3.5 h-3.5" />
+            </span>
+          </div>
+        </a>
+      )}
+    </div>
+  );
+}

@@ -15,8 +15,20 @@ import {
   MousePointer,
   Loader2,
   X,
+  ListChecks,
+  PlayCircle,
+  Film,
+  CheckCircle2,
+  Rss,
+  LayoutDashboard,
+  Sparkles,
+  Wallet,
+  ShoppingBag,
+  User as UserIcon,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 import { AD_PLACEMENTS } from "@/lib/ad-placements";
 
@@ -28,11 +40,18 @@ interface Campaign {
   status: string;
   _count?: { ads: number };
 }
+interface PlacementStats {
+  impressions: number;
+  clicks: number;
+  activeAds: number;
+  totalAds: number;
+}
 interface Placement {
   id: string;
   name: string;
   isActive: boolean;
   _count?: { ads: number };
+  stats?: PlacementStats;
 }
 interface Ad {
   id: string;
@@ -48,6 +67,11 @@ interface Ad {
   rewardPoints: number;
   rewardCooldownSec: number;
   watchSeconds: number;
+  headline: string | null;
+  brandName: string | null;
+  brandLogo: string | null;
+  ctaLabel: string | null;
+  targeting: { countries?: string[]; genders?: string[]; minLevel?: number } | null;
   campaign: { id: string; title: string };
   placement: { id: string; name: string };
 }
@@ -55,12 +79,29 @@ interface Ad {
 const TABS = [
   { id: "ads", label: "Ads", icon: Newspaper },
   { id: "campaigns", label: "Campaigns", icon: Megaphone },
-  { id: "placements", label: "Placements", icon: Layers },
+  { id: "placements", label: "Ad Spaces", icon: Layers },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
 const PLACEMENT_LABEL = Object.fromEntries(AD_PLACEMENTS.map((p) => [p.name, p.label]));
+const PLACEMENT_DESC = Object.fromEntries(AD_PLACEMENTS.map((p) => [p.name, p.description]));
+const CANONICAL_NAMES = new Set<string>(AD_PLACEMENTS.map((p) => p.name));
+
+// Per-space icon for the Ad Spaces cards.
+const PLACEMENT_ICON: Record<string, LucideIcon> = {
+  TASK_LIST: ListChecks,
+  TASK_START: PlayCircle,
+  VIDEO_ABOVE: Film,
+  VIDEO_BELOW: Film,
+  TASK_COMPLETE: CheckCircle2,
+  IN_FEED: Rss,
+  DASHBOARD: LayoutDashboard,
+  EARN_HUB: Sparkles,
+  WALLET_TOP: Wallet,
+  MARKETPLACE_TOP: ShoppingBag,
+  PROFILE_BOTTOM: UserIcon,
+};
 
 export function AdManagerView({ canManage }: { canManage: boolean }) {
   const [tab, setTab] = useState<TabId>("ads");
@@ -186,10 +227,10 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard icon={<Eye className="w-5 h-5" />} value={totalImpr.toLocaleString()} label="Impressions" />
-        <StatCard icon={<MousePointer className="w-5 h-5" />} value={totalClicks.toLocaleString()} label="Clicks" />
-        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${ctr}%`} label="CTR" />
-        <StatCard icon={<Newspaper className="w-5 h-5" />} value={String(ads.length)} label="Ads" />
+        <StatCard icon={<Eye className="w-5 h-5" />} value={totalImpr.toLocaleString()} label="Impressions" tone="purple" />
+        <StatCard icon={<MousePointer className="w-5 h-5" />} value={totalClicks.toLocaleString()} label="Clicks" tone="amber" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${ctr}%`} label="CTR" tone="emerald" />
+        <StatCard icon={<Newspaper className="w-5 h-5" />} value={String(ads.length)} label="Ads" tone="blue" />
       </div>
 
       <div className="flex gap-1 border-b border-slate-800 overflow-x-auto">
@@ -218,32 +259,51 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
           {tab === "ads" && (
             <div className="space-y-2">
               {ads.length === 0 && <Empty text="No ads yet. Create one to start." />}
-              {ads.map((ad) => (
-                <div key={ad.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    {ad.contentUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={ad.contentUrl} alt="" className="w-14 h-10 rounded object-cover bg-slate-950 shrink-0" />
-                    ) : (
-                      <div className="w-14 h-10 rounded bg-slate-950 grid place-items-center text-slate-600 text-[10px] shrink-0">{ad.type}</div>
+              {ads.map((ad) => {
+                const thumb = ad.contentUrl || ad.brandLogo;
+                const title = ad.brandName || ad.headline || ad.campaign.title;
+                const tgt = targetingSummary(ad.targeting);
+                const isFeed = ad.format === "NATIVE";
+                return (
+                  <div key={ad.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-3 hover:border-slate-700 transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {thumb ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={thumb} alt="" className="w-14 h-14 rounded-lg object-cover bg-slate-950 shrink-0" />
+                      ) : (
+                        <div className="w-14 h-14 rounded-lg bg-slate-950 grid place-items-center text-slate-600 shrink-0">
+                          {isFeed ? <Rss className="w-5 h-5" /> : <Newspaper className="w-5 h-5" />}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white truncate">{title}</p>
+                        <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider", isFeed ? "bg-indigo-500/15 text-indigo-300" : "bg-slate-800 text-slate-400")}>
+                            {isFeed ? "Feed" : "Banner"}
+                          </span>
+                          <StatusPill status={ad.status} />
+                          <span className="text-[10px] text-slate-500">{PLACEMENT_LABEL[ad.placement.name] ?? ad.placement.name}</span>
+                          {ad.rewardPoints > 0 && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400">+{ad.rewardPoints}pts</span>
+                          )}
+                          {tgt && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-800 text-slate-300">🎯 {tgt}</span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5 tabular-nums">
+                          {ad.impressions.toLocaleString()} impr · {ad.clicks.toLocaleString()} clicks · w{ad.weight}
+                        </p>
+                      </div>
+                    </div>
+                    {canManage && (
+                      <div className="flex gap-1">
+                        <IconBtn onClick={() => setAdModal(ad)} title="Edit"><Pencil className="w-4 h-4" /></IconBtn>
+                        <IconBtn onClick={() => deleteAd(ad.id)} title="Delete" danger><Trash2 className="w-4 h-4" /></IconBtn>
+                      </div>
                     )}
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">{ad.campaign.title}</p>
-                      <p className="text-xs text-slate-400">
-                        {PLACEMENT_LABEL[ad.placement.name] ?? ad.placement.name} · w{ad.weight} · {ad.status}
-                        {ad.rewardPoints > 0 && ` · +${ad.rewardPoints}pts`}
-                      </p>
-                      <p className="text-[11px] text-slate-500">{ad.impressions} impr · {ad.clicks} clicks</p>
-                    </div>
                   </div>
-                  {canManage && (
-                    <div className="flex gap-1">
-                      <IconBtn onClick={() => setAdModal(ad)} title="Edit"><Pencil className="w-4 h-4" /></IconBtn>
-                      <IconBtn onClick={() => deleteAd(ad.id)} title="Delete" danger><Trash2 className="w-4 h-4" /></IconBtn>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -251,67 +311,64 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
             <div className="space-y-2">
               {campaigns.length === 0 && <Empty text="No campaigns yet." />}
               {campaigns.map((c) => (
-                <div key={c.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-white truncate">{c.title}</p>
-                    <p className="text-xs text-slate-400">
-                      ${c.budget.toFixed(2)} · {c.status} · {c._count?.ads ?? 0} ads
-                    </p>
-                  </div>
-                  {canManage && (
-                    <div className="flex gap-1">
-                      <IconBtn onClick={() => setCampModal(c)} title="Edit"><Pencil className="w-4 h-4" /></IconBtn>
-                      <IconBtn onClick={() => deleteCampaign(c.id)} title="Delete" danger><Trash2 className="w-4 h-4" /></IconBtn>
+                <div key={c.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5 hover:border-slate-700 transition-colors">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">{c.title}</p>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <StatusPill status={c.status} />
+                        <span className="text-[11px] text-slate-500">{c._count?.ads ?? 0} ads</span>
+                      </div>
                     </div>
-                  )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-sm font-bold text-white tabular-nums">${c.budget.toFixed(2)}</span>
+                      {canManage && (
+                        <div className="flex gap-1">
+                          <IconBtn onClick={() => setCampModal(c)} title="Edit"><Pencil className="w-4 h-4" /></IconBtn>
+                          <IconBtn onClick={() => deleteCampaign(c.id)} title="Delete" danger><Trash2 className="w-4 h-4" /></IconBtn>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
           )}
 
           {tab === "placements" && (
-            <div className="space-y-3">
+            <div className="space-y-4">
+              <p className="text-sm text-slate-400">
+                Every ad space maps to a slot in the app. Toggle a space off to stop showing ads there.
+                Live stats below are aggregated from all ads assigned to each space.
+              </p>
               {canManage && (
-                <div className="flex gap-2">
+                <div className="flex gap-2 max-w-md">
                   <input
                     value={newPlacement}
                     onChange={(e) => setNewPlacement(e.target.value)}
-                    placeholder="NEW_PLACEMENT_NAME"
-                    className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm"
+                    placeholder="ADD CUSTOM SPACE (e.g. HOME_HERO)"
+                    className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder:text-slate-600"
                   />
-                  <button onClick={addPlacement} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold">Add</button>
+                  <button onClick={addPlacement} className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold">
+                    <Plus className="w-4 h-4" /> Add
+                  </button>
                 </div>
               )}
-              {placements.map((p) => (
-                <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-white">{PLACEMENT_LABEL[p.name] ?? p.name}</p>
-                    <p className="text-xs text-slate-500 font-mono">{p.name} · {p._count?.ads ?? 0} ads</p>
-                  </div>
-                  {canManage && (
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => togglePlacement(p)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${p.isActive ? "bg-emerald-500/15 text-emerald-400" : "bg-slate-800 text-slate-400"}`}
-                      >
-                        {p.isActive ? "Active" : "Inactive"}
-                      </button>
-                      <IconBtn onClick={() => deletePlacement(p.id)} title="Delete" danger><Trash2 className="w-4 h-4" /></IconBtn>
-                    </div>
-                  )}
-                </div>
-              ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {placements.map((p) => (
+                  <AdSpaceCard
+                    key={p.id}
+                    placement={p}
+                    canManage={canManage}
+                    onToggle={() => togglePlacement(p)}
+                    onDelete={() => deletePlacement(p.id)}
+                  />
+                ))}
+              </div>
             </div>
           )}
 
-          {tab === "analytics" && (
-            <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 space-y-2 text-sm text-slate-300">
-              <p>Total impressions: <span className="text-white font-bold">{totalImpr.toLocaleString()}</span></p>
-              <p>Total clicks: <span className="text-white font-bold">{totalClicks.toLocaleString()}</span></p>
-              <p>Overall CTR: <span className="text-white font-bold">{ctr}%</span></p>
-              <p className="text-xs text-slate-500 pt-2">Per-ad impressions/clicks are shown on each row in the Ads tab.</p>
-            </div>
-          )}
+          {tab === "analytics" && <AnalyticsTab />}
         </>
       )}
 
@@ -341,17 +398,243 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   );
 }
 
-function StatCard({ icon, value, label }: { icon: React.ReactNode; value: string; label: string }) {
+const STAT_TONES: Record<string, string> = {
+  indigo: "bg-indigo-500/15 text-indigo-400",
+  purple: "bg-purple-500/15 text-purple-400",
+  amber: "bg-amber-500/15 text-amber-400",
+  emerald: "bg-emerald-500/15 text-emerald-400",
+  blue: "bg-blue-500/15 text-blue-400",
+};
+function StatCard({
+  icon,
+  value,
+  label,
+  tone = "blue",
+}: {
+  icon: React.ReactNode;
+  value: string;
+  label: string;
+  tone?: keyof typeof STAT_TONES;
+}) {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-      <div className="text-slate-400">{icon}</div>
-      <p className="text-xl font-bold text-white mt-2">{value}</p>
-      <p className="text-xs text-slate-500">{label}</p>
+    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-4 flex items-center gap-3 hover:border-slate-700 transition-colors">
+      <div className={cn("w-10 h-10 rounded-xl grid place-items-center shrink-0", STAT_TONES[tone])}>
+        {icon}
+      </div>
+      <div className="min-w-0">
+        <p className="text-xl font-bold text-white tabular-nums leading-tight">{value}</p>
+        <p className="text-[11px] text-slate-500 truncate">{label}</p>
+      </div>
     </div>
   );
 }
 function Empty({ text }: { text: string }) {
   return <p className="text-sm text-slate-500 py-8 text-center">{text}</p>;
+}
+
+function StatusPill({ status }: { status: string }) {
+  const s = status.toUpperCase();
+  const cls =
+    s === "ACTIVE"
+      ? "bg-emerald-500/15 text-emerald-400"
+      : s === "PAUSED"
+        ? "bg-amber-500/15 text-amber-400"
+        : "bg-slate-800 text-slate-400";
+  return (
+    <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider", cls)}>
+      {s}
+    </span>
+  );
+}
+
+/** Short human summary of an ad's targeting, or null when it targets everyone. */
+function targetingSummary(
+  t: { countries?: string[]; genders?: string[]; minLevel?: number } | null
+): string | null {
+  if (!t) return null;
+  const parts: string[] = [];
+  if (t.countries?.length) parts.push(t.countries.join("/"));
+  if (t.genders?.length) parts.push(t.genders.map((g) => g[0]).join(""));
+  if (t.minLevel && t.minLevel > 0) parts.push(`L${t.minLevel}+`);
+  return parts.length ? parts.join(" · ") : null;
+}
+
+function AdSpaceCard({
+  placement: p,
+  canManage,
+  onToggle,
+  onDelete,
+}: {
+  placement: Placement;
+  canManage: boolean;
+  onToggle: () => void;
+  onDelete: () => void;
+}) {
+  const Icon = PLACEMENT_ICON[p.name] ?? Layers;
+  const isFeed = p.name === "IN_FEED";
+  const stats = p.stats ?? { impressions: 0, clicks: 0, activeAds: 0, totalAds: 0 };
+  const ctr = stats.impressions > 0 ? ((stats.clicks / stats.impressions) * 100).toFixed(1) : "0.0";
+  const isCustom = !CANONICAL_NAMES.has(p.name);
+
+  return (
+    <div
+      className={cn(
+        "rounded-2xl border bg-slate-900 p-4 flex flex-col gap-3 transition-colors",
+        p.isActive ? "border-slate-800 hover:border-slate-700" : "border-slate-800/60 opacity-70"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "w-10 h-10 rounded-xl grid place-items-center shrink-0",
+            isFeed ? "bg-indigo-500/15 text-indigo-400" : "bg-slate-800 text-slate-300"
+          )}
+        >
+          <Icon className="w-5 h-5" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-sm font-bold text-white">{PLACEMENT_LABEL[p.name] ?? p.name}</p>
+            <span
+              className={cn(
+                "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider",
+                isFeed ? "bg-indigo-500/15 text-indigo-300" : "bg-slate-800 text-slate-400"
+              )}
+            >
+              {isFeed ? "Native feed" : "Banner"}
+            </span>
+            {isCustom && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-500/15 text-amber-400">
+                Custom
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
+            {PLACEMENT_DESC[p.name] ?? p.name}
+          </p>
+        </div>
+      </div>
+
+      {/* Preview mock */}
+      <div className="rounded-lg bg-slate-950 border border-slate-800 p-2.5">
+        {isFeed ? (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-4 h-4 rounded-full bg-slate-700" />
+              <div className="h-1.5 w-16 rounded bg-slate-700" />
+              <span className="ml-auto text-[7px] font-bold uppercase tracking-wider text-slate-600">Sponsored</span>
+            </div>
+            <div className="h-1.5 w-full rounded bg-slate-800" />
+            <div className="h-8 w-full rounded bg-slate-800" />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <div className="h-8 w-12 rounded bg-slate-800 shrink-0" />
+            <div className="flex-1 space-y-1">
+              <div className="h-1.5 w-3/4 rounded bg-slate-700" />
+              <div className="h-1.5 w-1/2 rounded bg-slate-800" />
+            </div>
+            <span className="text-[7px] font-bold uppercase tracking-wider text-slate-600">Ad</span>
+          </div>
+        )}
+      </div>
+
+      {/* Live stats */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div>
+          <p className="text-sm font-bold text-white tabular-nums">{stats.impressions.toLocaleString()}</p>
+          <p className="text-[9px] uppercase tracking-wider text-slate-500">Impr</p>
+        </div>
+        <div>
+          <p className="text-sm font-bold text-white tabular-nums">{stats.clicks.toLocaleString()}</p>
+          <p className="text-[9px] uppercase tracking-wider text-slate-500">Clicks</p>
+        </div>
+        <div>
+          <p className="text-sm font-bold text-white tabular-nums">{ctr}%</p>
+          <p className="text-[9px] uppercase tracking-wider text-slate-500">CTR</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800">
+        <span className="text-[11px] text-slate-400">
+          <span className="text-emerald-400 font-bold">{stats.activeAds}</span> active ·{" "}
+          {stats.totalAds} total ads
+        </span>
+        {canManage && (
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={onToggle}
+              className={cn(
+                "px-2.5 py-1 rounded-lg text-[11px] font-semibold",
+                p.isActive
+                  ? "bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25"
+                  : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+              )}
+            >
+              {p.isActive ? "Active" : "Off"}
+            </button>
+            {isCustom && (
+              <button
+                onClick={onDelete}
+                title="Delete custom space"
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-red-400"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+interface DayStat { date: string; impressions: number; clicks: number; spendUsd: number }
+function AnalyticsTab() {
+  const [series, setSeries] = useState<DayStat[]>([]);
+  const [totals, setTotals] = useState({ impressions: 0, clicks: 0, ctr: 0 });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/admin/ads/analytics?days=14")
+      .then((r) => r.json())
+      .then((d) => {
+        setSeries(d.series ?? []);
+        setTotals(d.totals ?? { impressions: 0, clicks: 0, ctr: 0 });
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const maxImp = Math.max(1, ...series.map((s) => s.impressions));
+  const spend = series.reduce((s, d) => s + d.spendUsd, 0);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard icon={<Eye className="w-5 h-5" />} value={totals.impressions.toLocaleString()} label="Impressions (all time)" tone="purple" />
+        <StatCard icon={<MousePointer className="w-5 h-5" />} value={totals.clicks.toLocaleString()} label="Clicks (all time)" tone="amber" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${totals.ctr.toFixed(2)}%`} label="CTR" tone="emerald" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`$${spend.toFixed(2)}`} label="Spend (14d)" tone="indigo" />
+      </div>
+      <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-3">Impressions · last 14 days</p>
+        {loading ? (
+          <p className="text-xs text-slate-500 py-6 text-center">Loading…</p>
+        ) : series.every((s) => s.impressions === 0) ? (
+          <p className="text-xs text-slate-500 py-6 text-center">No impressions in this window yet.</p>
+        ) : (
+          <div className="flex items-end gap-1 h-28">
+            {series.map((s) => (
+              <div key={s.date} className="flex-1" title={`${s.date}: ${s.impressions} impr, ${s.clicks} clicks, $${s.spendUsd.toFixed(2)}`}>
+                <div className="w-full rounded-t bg-linear-to-t from-blue-600 to-indigo-500" style={{ height: `${(s.impressions / maxImp) * 100}%` }} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 function IconBtn({ children, onClick, title, danger }: { children: React.ReactNode; onClick: () => void; title: string; danger?: boolean }) {
   return (
@@ -400,6 +683,16 @@ function AdModal({
   const [status, setStatus] = useState(ad?.status ?? "ACTIVE");
   const [rewardPoints, setRewardPoints] = useState(String(ad?.rewardPoints ?? 0));
   const [watchSeconds, setWatchSeconds] = useState(String(ad?.watchSeconds ?? 15));
+  // Native (post-like feed ad) fields
+  const [format, setFormat] = useState(ad?.format ?? "BANNER");
+  const [headline, setHeadline] = useState(ad?.headline ?? "");
+  const [brandName, setBrandName] = useState(ad?.brandName ?? "");
+  const [brandLogo, setBrandLogo] = useState(ad?.brandLogo ?? "");
+  const [ctaLabel, setCtaLabel] = useState(ad?.ctaLabel ?? "");
+  // Targeting
+  const [tgCountry, setTgCountry] = useState(ad?.targeting?.countries?.[0] ?? "");
+  const [tgGenders, setTgGenders] = useState<string[]>(ad?.targeting?.genders ?? []);
+  const [tgMinLevel, setTgMinLevel] = useState(String(ad?.targeting?.minLevel ?? 0));
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -409,10 +702,15 @@ function AdModal({
     }
     setBusy(true);
     try {
+      const targeting: Record<string, unknown> = {};
+      if (tgCountry.trim()) targeting.countries = [tgCountry.trim()];
+      if (tgGenders.length) targeting.genders = tgGenders;
+      if (Number(tgMinLevel) > 0) targeting.minLevel = Number(tgMinLevel);
       const payload = {
         campaignId,
         placementId,
         type,
+        format,
         contentUrl,
         targetUrl,
         htmlContent,
@@ -420,6 +718,11 @@ function AdModal({
         status,
         rewardPoints: Number(rewardPoints) || 0,
         watchSeconds: Number(watchSeconds) || 15,
+        headline,
+        brandName,
+        brandLogo,
+        ctaLabel,
+        targeting,
       };
       const res = await fetch(ad ? `/api/admin/ads/${ad.id}` : "/api/admin/ads", {
         method: ad ? "PATCH" : "POST",
@@ -494,6 +797,83 @@ function AdModal({
               <option value="PAUSED">Paused</option>
               <option value="INACTIVE">Inactive</option>
             </select>
+          </div>
+        </div>
+
+        {/* Format — Banner vs Native (post-like feed ad) */}
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Format</label>
+          <div className="flex gap-2">
+            {["BANNER", "NATIVE"].map((f) => (
+              <button
+                key={f}
+                onClick={() => setFormat(f)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold ${format === f ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
+              >
+                {f === "BANNER" ? "Banner" : "Native (feed)"}
+              </button>
+            ))}
+          </div>
+          {format === "NATIVE" && (
+            <p className="text-[11px] text-slate-500 mt-1">
+              Native ads render as post-like cards in the social feed (placement IN_FEED).
+            </p>
+          )}
+        </div>
+
+        {format === "NATIVE" && (
+          <div className="rounded-lg border border-slate-800 p-3 space-y-2.5">
+            <p className="text-xs font-bold text-slate-400">Native creative</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Brand name</label>
+                <input value={brandName} onChange={(e) => setBrandName(e.target.value)} className={inputCls} placeholder="e.g. NordVPN" />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">CTA label</label>
+                <input value={ctaLabel} onChange={(e) => setCtaLabel(e.target.value)} className={inputCls} placeholder="Learn More" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Brand logo</label>
+              <ImageUploadField value={brandLogo} onChange={setBrandLogo} previewSize="square" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Headline / ad copy</label>
+              <textarea value={headline} onChange={(e) => setHeadline(e.target.value)} rows={3} className={inputCls} placeholder="What are you promoting?" />
+            </div>
+          </div>
+        )}
+
+        {/* Targeting */}
+        <div className="rounded-lg border border-slate-800 p-3 space-y-2.5">
+          <p className="text-xs font-bold text-slate-400">Targeting (optional)</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Country</label>
+              <input value={tgCountry} onChange={(e) => setTgCountry(e.target.value)} className={inputCls} placeholder="Any" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Min level</label>
+              <input type="number" min={0} value={tgMinLevel} onChange={(e) => setTgMinLevel(e.target.value)} className={inputCls} />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Gender</label>
+            <div className="flex gap-1.5">
+              {["MALE", "FEMALE", "OTHER"].map((g) => {
+                const on = tgGenders.includes(g);
+                return (
+                  <button
+                    key={g}
+                    onClick={() => setTgGenders((prev) => (on ? prev.filter((x) => x !== g) : [...prev, g]))}
+                    className={`flex-1 py-1.5 rounded-md text-[11px] font-semibold capitalize ${on ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
+                  >
+                    {g.toLowerCase()}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 

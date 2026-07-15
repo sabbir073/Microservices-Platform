@@ -18,6 +18,7 @@ export type PackageFeatureKey =
   | "lottery"
   | "courses"
   | "advertiser"
+  | "games"
   // Per-task-type
   | "socialTasks"
   | "proxyTasks"
@@ -25,7 +26,8 @@ export type PackageFeatureKey =
   | "videoTasks"
   | "quizTasks"
   | "surveyTasks"
-  | "offerwallTasks";
+  | "offerwallTasks"
+  | "appInstall";
 
 export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   tasks: "tasksEnabled",
@@ -38,6 +40,7 @@ export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   lottery: "lotteryEnabled",
   courses: "coursesEnabled",
   advertiser: "advertiserEnabled",
+  games: "gamesEnabled",
   socialTasks: "socialTasksEnabled",
   proxyTasks: "proxyTasksEnabled",
   articleTasks: "articleTasksEnabled",
@@ -45,6 +48,7 @@ export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   quizTasks: "quizTasksEnabled",
   surveyTasks: "surveyTasksEnabled",
   offerwallTasks: "offerwallTasksEnabled",
+  appInstall: "appInstallEnabled",
 };
 
 /** All feature keys (stable order) — for iterating overrides + admin UIs. */
@@ -68,6 +72,7 @@ export const FEATURES: {
   { key: "lottery", label: "Lottery", group: "section" },
   { key: "courses", label: "Courses", group: "section" },
   { key: "advertiser", label: "Advertiser (create ads)", group: "section" },
+  { key: "games", label: "HTML5 Games", group: "section" },
   { key: "socialTasks", label: "Social Tasks", group: "task" },
   { key: "proxyTasks", label: "Proxy Tasks", group: "task" },
   { key: "articleTasks", label: "Article Tasks", group: "task" },
@@ -75,6 +80,7 @@ export const FEATURES: {
   { key: "quizTasks", label: "Quiz Tasks", group: "task" },
   { key: "surveyTasks", label: "Survey Tasks", group: "task" },
   { key: "offerwallTasks", label: "Offerwall Tasks", group: "task" },
+  { key: "appInstall", label: "App Install Tasks", group: "task" },
 ];
 
 /** Sparse per-user grants/denials that override the package value. */

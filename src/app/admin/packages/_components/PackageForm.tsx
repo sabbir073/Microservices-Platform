@@ -48,6 +48,7 @@ export interface PackageFormPkg {
   lotteryEnabled: boolean;
   coursesEnabled: boolean;
   advertiserEnabled: boolean;
+  gamesEnabled: boolean;
   adFree: boolean;
 
   // Per-task-type toggles
@@ -58,6 +59,7 @@ export interface PackageFormPkg {
   quizTasksEnabled: boolean;
   surveyTasksEnabled: boolean;
   offerwallTasksEnabled: boolean;
+  appInstallEnabled: boolean;
 
   dailyTaskLimit: number;
   minWithdrawal: number;
@@ -90,6 +92,7 @@ const SECTION_TOGGLES: Array<{ key: keyof PackageFormPkg; label: string; tooltip
   { key: "lotteryEnabled", label: "Lottery", tooltip: "Enter the daily lottery draw." },
   { key: "coursesEnabled", label: "Courses", tooltip: "Access the courses section." },
   { key: "advertiserEnabled", label: "Advertiser", tooltip: "Create/fund ad campaigns on /advertiser." },
+  { key: "gamesEnabled", label: "HTML5 Games", tooltip: "Access the games catalog at /games." },
   { key: "adFree", label: "Ad-Free", tooltip: "Hide all ads for users on this plan (Watch & Earn still works)." },
 ];
 
@@ -102,6 +105,7 @@ const TASK_TOGGLES: Array<{ key: keyof PackageFormPkg; label: string; tooltip: s
   { key: "quizTasksEnabled", label: "Quiz Tasks", tooltip: "TaskType.QUIZ — multiple-choice quiz tasks." },
   { key: "surveyTasksEnabled", label: "Survey Tasks", tooltip: "TaskType.SURVEY — survey tasks." },
   { key: "offerwallTasksEnabled", label: "Offerwall Tasks", tooltip: "TaskType.OFFERWALL — third-party offerwall tasks." },
+  { key: "appInstallEnabled", label: "App Install Tasks", tooltip: "TaskType.APPINSTALL — install-an-app tasks with proof." },
 ];
 
 export function PackageForm({ pkg, mode = "edit" }: PackageFormProps) {

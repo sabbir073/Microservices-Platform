@@ -38,6 +38,7 @@ const PLAN_PATCH = z
     lotteryEnabled: z.boolean().optional(),
     coursesEnabled: z.boolean().optional(),
     advertiserEnabled: z.boolean().optional(),
+    gamesEnabled: z.boolean().optional(),
     adFree: z.boolean().optional(),
 
     socialTasksEnabled: z.boolean().optional(),
@@ -47,6 +48,7 @@ const PLAN_PATCH = z
     quizTasksEnabled: z.boolean().optional(),
     surveyTasksEnabled: z.boolean().optional(),
     offerwallTasksEnabled: z.boolean().optional(),
+    appInstallEnabled: z.boolean().optional(),
 
     dailyTaskLimit: z.number().int().min(-1).max(100000).optional(),
     minWithdrawal: z.number().min(0).optional(),

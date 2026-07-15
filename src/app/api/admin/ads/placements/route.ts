@@ -12,11 +12,48 @@ export async function GET() {
   }
   // Make sure the canonical slots always exist.
   await ensureDefaultPlacements().catch(() => {});
-  const placements = await prisma.adPlacement.findMany({
-    orderBy: { name: "asc" },
-    include: { _count: { select: { ads: true } } },
-  });
-  return NextResponse.json({ placements });
+  const [placements, ads] = await Promise.all([
+    prisma.adPlacement.findMany({
+      orderBy: { name: "asc" },
+      include: { _count: { select: { ads: true } } },
+    }),
+    prisma.ad.findMany({
+      select: { placementId: true, status: true, impressions: true, clicks: true },
+    }),
+  ]);
+
+  // Aggregate live stats per placement from the Ad table.
+  const statsByPlacement = new Map<
+    string,
+    { impressions: number; clicks: number; activeAds: number; totalAds: number }
+  >();
+  for (const ad of ads) {
+    const cur =
+      statsByPlacement.get(ad.placementId) ?? {
+        impressions: 0,
+        clicks: 0,
+        activeAds: 0,
+        totalAds: 0,
+      };
+    cur.impressions += ad.impressions;
+    cur.clicks += ad.clicks;
+    cur.totalAds += 1;
+    if (ad.status === "ACTIVE") cur.activeAds += 1;
+    statsByPlacement.set(ad.placementId, cur);
+  }
+
+  const withStats = placements.map((p) => ({
+    ...p,
+    stats:
+      statsByPlacement.get(p.id) ?? {
+        impressions: 0,
+        clicks: 0,
+        activeAds: 0,
+        totalAds: 0,
+      },
+  }));
+
+  return NextResponse.json({ placements: withStats });
 }
 
 export async function POST(request: NextRequest) {

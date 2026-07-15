@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Plus, MousePointer2, Eye, Target, Loader2 } from "lucide-react";
 import { StatCard } from "@/components/user/primitives/stat-card";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
@@ -128,15 +129,23 @@ export function AdvertiserDashboard() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <h1 className="text-xl font-bold text-white flex-1">📣 Advertiser</h1>
-        <button
-          onClick={() => setCreating(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500 text-white text-xs font-semibold"
-        >
-          <Plus className="w-4 h-4" />
-          New Campaign
-        </button>
+      <div className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-linear-to-br from-indigo-600/20 via-purple-600/10 to-transparent p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-11 h-11 rounded-xl bg-indigo-500/20 grid place-items-center text-indigo-300 shrink-0">
+            <Target className="w-6 h-6" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-lg font-bold text-white">Advertiser</h1>
+            <p className="text-xs text-gray-400">Promote your posts &amp; run native feed ads.</p>
+          </div>
+          <button
+            onClick={() => setCreating(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            New Campaign
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -181,9 +190,10 @@ export function AdvertiserDashboard() {
         campaigns.map((c) => {
           const pct = c.budget > 0 ? (c.spent / c.budget) * 100 : 0;
           return (
-            <div
+            <Link
               key={c.id}
-              className="rounded-xl border border-gray-800 bg-gray-900 p-3"
+              href={`/advertiser/campaigns/${c.id}`}
+              className="block rounded-xl border border-gray-800 bg-gray-900 p-3 hover:border-gray-700 transition-colors"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
@@ -208,7 +218,11 @@ export function AdvertiserDashboard() {
                   </span>
                   {c.status !== "ENDED" && (
                     <button
-                      onClick={() => fundCampaign(c.id, c.title)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        fundCampaign(c.id, c.title);
+                      }}
                       className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-bold hover:bg-indigo-500/25"
                     >
                       <Plus className="w-3 h-3" />
@@ -243,7 +257,7 @@ export function AdvertiserDashboard() {
                   </p>
                 </div>
               </div>
-            </div>
+            </Link>
           );
         })}
 

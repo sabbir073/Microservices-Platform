@@ -16,6 +16,8 @@ export function taskRunHref(type: string | null | undefined, id: string): string
       return `/survey-tasks/${id}`;
     case "CUSTOM":
       return `/custom-tasks/${id}`;
+    case "APPINSTALL":
+      return `/app-install-tasks/${id}`;
     case "SOCIAL":
       return `/social-tasks/${id}`;
     case "QUIZ":

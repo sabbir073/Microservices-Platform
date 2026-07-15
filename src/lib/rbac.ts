@@ -139,6 +139,8 @@ export type Permission =
   | "notifications.send"
   | "banners.view"
   | "banners.manage"
+  | "games.view"
+  | "games.manage"
   | "offers.view"
   | "offers.manage"
   | "ads.view"
@@ -204,6 +206,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "campaigns.view", "campaigns.manage",
     "notifications.view", "notifications.send",
     "banners.view", "banners.manage",
+    "games.view", "games.manage",
     "ads.view", "ads.manage",
     "landing.view", "landing.edit",
     "ticker.view", "ticker.edit",
@@ -259,6 +262,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "campaigns.view", "campaigns.manage",
     "notifications.view", "notifications.send",
     "banners.view", "banners.manage",
+    "games.view", "games.manage",
     "ads.view", "ads.manage",
     "landing.view", "landing.edit",
     "ticker.view", "ticker.edit",
@@ -425,6 +429,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     href: "/admin/lottery",
     icon: "Ticket",
     permissions: ["lottery.view"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Games",
+    href: "/admin/games",
+    icon: "Gamepad2",
+    permissions: ["games.view"],
     category: "PLATFORM",
   },
   {

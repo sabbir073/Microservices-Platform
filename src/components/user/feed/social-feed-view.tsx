@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { FeedAdCard, type FeedAd } from "@/components/user/feed/feed-ad-card";
 import {
   Image as ImageIcon,
   X,
@@ -239,21 +239,91 @@ function FeedTab({
 }) {
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = async () => {
+  // Native in-feed ad pool — prefetched and cycled through, one every 2 posts.
+  const [feedAds, setFeedAds] = useState<FeedAd[]>([]);
+  const loadingAdsRef = useRef(false);
+
+  const PAGE_SIZE = 20;
+
+  const fetchFeedAds = async () => {
+    if (loadingAdsRef.current) return;
+    loadingAdsRef.current = true;
     try {
-      const res = await fetch("/api/feed?page=1&limit=20");
+      const res = await fetch("/api/ads/feed?count=10");
       const data = await res.json();
-      setPosts(data.posts ?? []);
+      if (Array.isArray(data.ads) && data.ads.length > 0) {
+        setFeedAds((prev) => [...prev, ...data.ads]);
+      }
     } catch {
-      setPosts([]);
+      /* no ads — feed just shows posts */
     } finally {
-      setLoading(false);
+      loadingAdsRef.current = false;
     }
   };
 
+  const load = async () => {
+    try {
+      const res = await fetch(`/api/feed?page=1&limit=${PAGE_SIZE}`);
+      const data = await res.json();
+      const items: FeedPost[] = data.posts ?? [];
+      setPosts(items);
+      setPage(1);
+      setHasMore(items.length >= PAGE_SIZE);
+    } catch {
+      setPosts([]);
+      setHasMore(false);
+    } finally {
+      setLoading(false);
+    }
+    void fetchFeedAds();
+  };
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const next = page + 1;
+    try {
+      const res = await fetch(`/api/feed?page=${next}&limit=${PAGE_SIZE}`);
+      const data = await res.json();
+      const items: FeedPost[] = data.posts ?? [];
+      // De-dupe against posts already shown (announcements/promoted can repeat).
+      setPosts((prev) => {
+        const seen = new Set(prev.map((p) => p.id));
+        return [...prev, ...items.filter((p) => !seen.has(p.id))];
+      });
+      setPage(next);
+      setHasMore(items.length >= PAGE_SIZE);
+    } catch {
+      setHasMore(false);
+    } finally {
+      setLoadingMore(false);
+    }
+    void fetchFeedAds(); // grow the ad pool as the feed grows
+  };
+
+  // Infinite scroll: load the next page when the bottom sentinel comes into view.
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void loadMore();
+      },
+      { rootMargin: "600px" }
+    );
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, hasMore, loadingMore]);
+
   useEffect(() => {
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const sortedPosts = useMemo(() => {
@@ -334,18 +404,34 @@ function FeedTab({
 
       {!loading && sortedPosts.length > 0 && (
         <div className="space-y-3">
-          {sortedPosts.map((post, i) => (
-            <Fragment key={post.id}>
-              <FeedPostCard
-                post={post}
-                currentUserId={user.id}
-                currentUserRole={user.role ?? null}
-                onUpdated={(patch) => handlePostUpdated(post.id, patch)}
-                onDeleted={() => handlePostDeleted(post.id)}
-              />
-              {(i + 1) % 4 === 0 && <AdRenderer placement="IN_FEED" />}
-            </Fragment>
-          ))}
+          {sortedPosts.map((post, i) => {
+            // One native ad after every 2 posts, cycling the prefetched pool.
+            const showAd = (i + 1) % 2 === 0 && feedAds.length > 0;
+            const ad = showAd
+              ? feedAds[Math.floor(i / 2) % feedAds.length]
+              : null;
+            return (
+              <Fragment key={post.id}>
+                <FeedPostCard
+                  post={post}
+                  currentUserId={user.id}
+                  currentUserRole={user.role ?? null}
+                  onUpdated={(patch) => handlePostUpdated(post.id, patch)}
+                  onDeleted={() => handlePostDeleted(post.id)}
+                />
+                {ad && <FeedAdCard key={`ad-${i}-${ad.adId}`} ad={ad} />}
+              </Fragment>
+            );
+          })}
+
+          {/* Infinite-scroll sentinel + loading state */}
+          <div ref={sentinelRef} className="h-1" />
+          {loadingMore && <ListSkeleton rows={2} />}
+          {!hasMore && (
+            <p className="text-center text-[11px] text-gray-600 py-4">
+              You&apos;re all caught up.
+            </p>
+          )}
         </div>
       )}
     </div>

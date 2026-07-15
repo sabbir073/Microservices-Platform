@@ -45,6 +45,7 @@ export interface PackageRow {
   lotteryEnabled: boolean;
   coursesEnabled: boolean;
   advertiserEnabled: boolean;
+  gamesEnabled: boolean;
   adFree: boolean;
   socialTasksEnabled: boolean;
   proxyTasksEnabled: boolean;
@@ -53,6 +54,7 @@ export interface PackageRow {
   quizTasksEnabled: boolean;
   surveyTasksEnabled: boolean;
   offerwallTasksEnabled: boolean;
+  appInstallEnabled: boolean;
   dailyTaskLimit: number;
   minWithdrawal: number;
   withdrawalFeeDiscount: number;

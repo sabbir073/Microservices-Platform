@@ -42,6 +42,7 @@ enum TaskType {
   PROXY
   OFFERWALL
   CUSTOM
+  APPINSTALL
 }
 
 enum TaskStatus {
@@ -120,6 +121,26 @@ enum BannerLocation {
   MARKETPLACE
   DASHBOARD
   ALL
+}
+
+// HTML5 game catalog entry — admin supplies an icon + embed URL; users play it
+// in a full-screen iframe with interstitial ads on open/resume/quit. No reward.
+model Game {
+  id          String   @id @default(cuid())
+  title       String
+  category    String?
+  description String?  @db.Text
+  iconUrl     String
+  embedUrl    String
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  playsCount  Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([order])
 }
 
 model Banner {
@@ -321,7 +342,7 @@ model Ad {
   placementId String
   placement   AdPlacement @relation(fields: [placementId], references: [id])
   type        String      @default("LOCAL")
-  format      String      @default("BANNER")
+  format      String      @default("BANNER") // BANNER | NATIVE (feed post-like)
   contentUrl  String?
   targetUrl   String?
   htmlContent String?     @db.Text
@@ -329,17 +350,43 @@ model Ad {
   status      String      @default("ACTIVE")
   impressions Int         @default(0)
   clicks      Int         @default(0)
+  // Native (post-like) creative fields — used when format = NATIVE
+  headline    String?     @db.Text     // post-like ad copy
+  brandName   String?                  // shown as author name
+  brandLogo   String?                  // author avatar URL
+  ctaLabel    String?                  // CTA button label (e.g. "Learn More")
+  // Promote-a-real-post: when set, the native ad renders this post + its author
+  promotedPostId String?
+  promotedPost   Post?    @relation("PostAds", fields: [promotedPostId], references: [id], onDelete: SetNull)
+  // Simple targeting: { countries?, genders?, minLevel?, packages? } (null = everyone)
+  targeting   Json?
   // Viewer-reward (watch-and-earn)
   rewardPoints      Int    @default(0)
   rewardCooldownSec Int    @default(3600)
   watchSeconds      Int    @default(15)
   views       AdView[]
+  dailyStats  AdDailyStat[]
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
   @@index([campaignId])
   @@index([placementId])
   @@index([status])
+  @@index([promotedPostId])
+}
+
+// Per-day rollup of ad impressions/clicks/spend for time-series analytics.
+model AdDailyStat {
+  id          String   @id @default(cuid())
+  adId        String
+  ad          Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  date        DateTime @db.Date
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  spendUsd    Float    @default(0)
+
+  @@unique([adId, date])
+  @@index([adId, date])
 }
 
 model AdView {
@@ -998,6 +1045,7 @@ model Task {
   videoConfig     Json?      // Video task config (see lib/video-tasks.ts VideoConfig)
   surveyConfig    Json?      // Survey task config (see lib/survey-tasks.ts SurveyConfig)
   customConfig    Json?      // Custom task config (see lib/custom-tasks.ts CustomConfig)
+  appInstallConfig Json?     // App-install task config (see lib/app-install-tasks.ts AppInstallConfig)
   proxyInstructions String?    @db.Text
   startsAt        DateTime?
   expiresAt       DateTime?
@@ -1183,6 +1231,7 @@ model Package {
   lotteryEnabled      Boolean @default(true)
   coursesEnabled      Boolean @default(true)
   advertiserEnabled   Boolean @default(true)
+  gamesEnabled        Boolean @default(true)
   adFree              Boolean @default(false)
 
   // Per-task-type toggles
@@ -1193,6 +1242,7 @@ model Package {
   quizTasksEnabled      Boolean @default(true)
   surveyTasksEnabled    Boolean @default(true)
   offerwallTasksEnabled Boolean @default(true)
+  appInstallEnabled     Boolean @default(true)
 
   // Limits
   dailyTaskLimit        Int   @default(-1)
@@ -1999,6 +2049,7 @@ model Post {
   views       PostView[]
   shares      PostShare[]
   mentions    Mention[]
+  adPromotions Ad[]     @relation("PostAds")
   @@index([userId])
   @@index([createdAt])
   @@index([groupId])

@@ -38,6 +38,7 @@ export default async function NewPackagePage() {
     lotteryEnabled: true,
     coursesEnabled: true,
     advertiserEnabled: true,
+    gamesEnabled: true,
     adFree: false,
 
     socialTasksEnabled: true,
@@ -47,6 +48,7 @@ export default async function NewPackagePage() {
     quizTasksEnabled: true,
     surveyTasksEnabled: true,
     offerwallTasksEnabled: true,
+    appInstallEnabled: true,
 
     dailyTaskLimit: -1,
     minWithdrawal: 5,

@@ -335,6 +335,7 @@ function countEnabledFlags(pkg: {
   lotteryEnabled: boolean;
   coursesEnabled: boolean;
   advertiserEnabled: boolean;
+  gamesEnabled: boolean;
   adFree: boolean;
   socialTasksEnabled: boolean;
   proxyTasksEnabled: boolean;
@@ -343,6 +344,7 @@ function countEnabledFlags(pkg: {
   quizTasksEnabled: boolean;
   surveyTasksEnabled: boolean;
   offerwallTasksEnabled: boolean;
+  appInstallEnabled: boolean;
 }) {
   return [
     pkg.tasksEnabled,
@@ -355,6 +357,7 @@ function countEnabledFlags(pkg: {
     pkg.lotteryEnabled,
     pkg.coursesEnabled,
     pkg.advertiserEnabled,
+    pkg.gamesEnabled,
     pkg.socialTasksEnabled,
     pkg.proxyTasksEnabled,
     pkg.articleTasksEnabled,
@@ -362,6 +365,7 @@ function countEnabledFlags(pkg: {
     pkg.quizTasksEnabled,
     pkg.surveyTasksEnabled,
     pkg.offerwallTasksEnabled,
+    pkg.appInstallEnabled,
   ].filter(Boolean).length;
 }
 

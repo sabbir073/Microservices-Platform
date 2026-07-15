@@ -57,6 +57,7 @@ export default async function EditPackagePage({ params }: PageProps) {
     lotteryEnabled: pkg.lotteryEnabled,
     coursesEnabled: pkg.coursesEnabled,
     advertiserEnabled: pkg.advertiserEnabled,
+    gamesEnabled: pkg.gamesEnabled,
     adFree: pkg.adFree,
 
     socialTasksEnabled: pkg.socialTasksEnabled,
@@ -66,6 +67,7 @@ export default async function EditPackagePage({ params }: PageProps) {
     quizTasksEnabled: pkg.quizTasksEnabled,
     surveyTasksEnabled: pkg.surveyTasksEnabled,
     offerwallTasksEnabled: pkg.offerwallTasksEnabled,
+    appInstallEnabled: pkg.appInstallEnabled,
 
     dailyTaskLimit: pkg.dailyTaskLimit,
     minWithdrawal: pkg.minWithdrawal,

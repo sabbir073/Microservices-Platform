@@ -33,6 +33,7 @@ const PLAN_INPUT = z
     lotteryEnabled: z.boolean(),
     coursesEnabled: z.boolean(),
     advertiserEnabled: z.boolean().optional(),
+    gamesEnabled: z.boolean().optional(),
     adFree: z.boolean().optional(),
 
     // Per-task-type toggles
@@ -43,6 +44,7 @@ const PLAN_INPUT = z
     quizTasksEnabled: z.boolean(),
     surveyTasksEnabled: z.boolean(),
     offerwallTasksEnabled: z.boolean(),
+    appInstallEnabled: z.boolean().optional(),
 
     // Limits
     dailyTaskLimit: z.number().int().min(-1).max(100000),
@@ -153,6 +155,7 @@ export async function POST(req: NextRequest) {
         lotteryEnabled: data.lotteryEnabled,
         coursesEnabled: data.coursesEnabled,
         advertiserEnabled: data.advertiserEnabled ?? true,
+        gamesEnabled: data.gamesEnabled ?? true,
         adFree: data.adFree ?? false,
 
         socialTasksEnabled: data.socialTasksEnabled,
@@ -162,6 +165,7 @@ export async function POST(req: NextRequest) {
         quizTasksEnabled: data.quizTasksEnabled,
         surveyTasksEnabled: data.surveyTasksEnabled,
         offerwallTasksEnabled: data.offerwallTasksEnabled,
+        appInstallEnabled: data.appInstallEnabled ?? true,
 
         dailyTaskLimit: data.dailyTaskLimit,
         minWithdrawal: data.minWithdrawal,
