@@ -33,6 +33,7 @@ const PLAN_INPUT = z
     lotteryEnabled: z.boolean(),
     coursesEnabled: z.boolean(),
     advertiserEnabled: z.boolean().optional(),
+    gamesEnabled: z.boolean().optional(),
     adFree: z.boolean().optional(),
 
     // Per-task-type toggles
@@ -154,6 +155,7 @@ export async function POST(req: NextRequest) {
         lotteryEnabled: data.lotteryEnabled,
         coursesEnabled: data.coursesEnabled,
         advertiserEnabled: data.advertiserEnabled ?? true,
+        gamesEnabled: data.gamesEnabled ?? true,
         adFree: data.adFree ?? false,
 
         socialTasksEnabled: data.socialTasksEnabled,

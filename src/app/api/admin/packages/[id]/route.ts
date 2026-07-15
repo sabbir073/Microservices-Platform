@@ -38,6 +38,7 @@ const PLAN_PATCH = z
     lotteryEnabled: z.boolean().optional(),
     coursesEnabled: z.boolean().optional(),
     advertiserEnabled: z.boolean().optional(),
+    gamesEnabled: z.boolean().optional(),
     adFree: z.boolean().optional(),
 
     socialTasksEnabled: z.boolean().optional(),

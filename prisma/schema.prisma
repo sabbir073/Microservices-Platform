@@ -123,6 +123,26 @@ enum BannerLocation {
   ALL
 }
 
+// HTML5 game catalog entry — admin supplies an icon + embed URL; users play it
+// in a full-screen iframe with interstitial ads on open/resume/quit. No reward.
+model Game {
+  id          String   @id @default(cuid())
+  title       String
+  category    String?
+  description String?  @db.Text
+  iconUrl     String
+  embedUrl    String
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  playsCount  Int      @default(0)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([order])
+}
+
 model Banner {
   id          String         @id @default(cuid())
   title       String
@@ -1211,6 +1231,7 @@ model Package {
   lotteryEnabled      Boolean @default(true)
   coursesEnabled      Boolean @default(true)
   advertiserEnabled   Boolean @default(true)
+  gamesEnabled        Boolean @default(true)
   adFree              Boolean @default(false)
 
   // Per-task-type toggles

@@ -18,6 +18,7 @@ export type PackageFeatureKey =
   | "lottery"
   | "courses"
   | "advertiser"
+  | "games"
   // Per-task-type
   | "socialTasks"
   | "proxyTasks"
@@ -39,6 +40,7 @@ export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   lottery: "lotteryEnabled",
   courses: "coursesEnabled",
   advertiser: "advertiserEnabled",
+  games: "gamesEnabled",
   socialTasks: "socialTasksEnabled",
   proxyTasks: "proxyTasksEnabled",
   articleTasks: "articleTasksEnabled",
@@ -70,6 +72,7 @@ export const FEATURES: {
   { key: "lottery", label: "Lottery", group: "section" },
   { key: "courses", label: "Courses", group: "section" },
   { key: "advertiser", label: "Advertiser (create ads)", group: "section" },
+  { key: "games", label: "HTML5 Games", group: "section" },
   { key: "socialTasks", label: "Social Tasks", group: "task" },
   { key: "proxyTasks", label: "Proxy Tasks", group: "task" },
   { key: "articleTasks", label: "Article Tasks", group: "task" },

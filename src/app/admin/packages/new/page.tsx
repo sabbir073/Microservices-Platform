@@ -38,6 +38,7 @@ export default async function NewPackagePage() {
     lotteryEnabled: true,
     coursesEnabled: true,
     advertiserEnabled: true,
+    gamesEnabled: true,
     adFree: false,
 
     socialTasksEnabled: true,

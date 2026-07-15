@@ -18,6 +18,7 @@ export const AD_PLACEMENTS = [
   { name: "WALLET_TOP", label: "Wallet", description: "Top of the wallet page." },
   { name: "MARKETPLACE_TOP", label: "Marketplace", description: "Top of the marketplace." },
   { name: "PROFILE_BOTTOM", label: "Profile", description: "Bottom of user profiles." },
+  { name: "GAME_INTERSTITIAL", label: "Game Interstitial", description: "Full-screen ad on game open / resume / quit." },
 ] as const;
 
 export type AdPlacementName = (typeof AD_PLACEMENTS)[number]["name"];

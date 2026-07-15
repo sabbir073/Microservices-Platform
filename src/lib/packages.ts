@@ -45,6 +45,7 @@ export interface PackageRow {
   lotteryEnabled: boolean;
   coursesEnabled: boolean;
   advertiserEnabled: boolean;
+  gamesEnabled: boolean;
   adFree: boolean;
   socialTasksEnabled: boolean;
   proxyTasksEnabled: boolean;
