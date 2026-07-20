@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { KycSubmitView } from "@/components/user/security/kyc-submit-view";
 import { parseDocumentImages } from "@/lib/kyc";
+import { getSetting } from "@/lib/system-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +12,13 @@ export default async function KycPage() {
   if (!session?.user?.id) redirect("/login");
   const userId = session.user.id;
 
-  const [user, doc] = await Promise.all([
+  const [user, doc, autoEnabled] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: { kycStatus: true } }),
     prisma.kYCDocument.findFirst({
       where: { userId },
       orderBy: { createdAt: "desc" },
     }),
+    getSetting<boolean>("kyc.autoEnabled", true),
   ]);
 
   const kycStatus = (user?.kycStatus ?? "NOT_SUBMITTED") as
@@ -28,6 +30,7 @@ export default async function KycPage() {
   return (
     <KycSubmitView
       kycStatus={kycStatus}
+      autoEnabled={autoEnabled}
       document={
         doc
           ? {

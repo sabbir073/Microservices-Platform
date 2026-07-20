@@ -81,6 +81,99 @@ export async function generateText(
   }
 }
 
+export interface ExtractedId {
+  fullName?: string;
+  dateOfBirth?: string; // ISO yyyy-mm-dd
+  idNumber?: string;
+  documentType?: string;
+  expiry?: string; // ISO yyyy-mm-dd
+  confidence: number; // 0..1
+}
+
+/**
+ * OCR an identity document (front, optionally back) with Gemini vision and
+ * return structured fields. Used by the automated KYC flow. Returns
+ * `{ success, data }` or `{ success:false, error }`. Parses defensively — a
+ * bad/blurry image simply yields low confidence.
+ */
+export async function extractIdData(
+  images: { base64: string; mime: string }[]
+): Promise<{ success: boolean; data?: ExtractedId; error?: string }> {
+  if (!GEMINI_API_KEY) return { success: false, error: "GEMINI_API_KEY not set" };
+  if (!images.length) return { success: false, error: "No images" };
+
+  const prompt =
+    "You are an ID document OCR engine. Read the attached government ID image(s) " +
+    "and return ONLY a compact JSON object (no markdown, no prose) with these keys: " +
+    '{"fullName": string, "dateOfBirth": "YYYY-MM-DD"|null, "idNumber": string|null, ' +
+    '"documentType": string|null, "expiry": "YYYY-MM-DD"|null, "confidence": number}. ' +
+    "confidence is 0..1 for how clearly the document + fields are readable and look genuine. " +
+    "If the image is not an ID or is unreadable, set confidence low (<0.3). Dates must be ISO. " +
+    "Do not invent values — use null when a field is not visible.";
+
+  try {
+    const res = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              ...images.map((im) => ({
+                inline_data: { mime_type: im.mime, data: im.base64 },
+              })),
+            ],
+          },
+        ],
+        generationConfig: { temperature: 0, responseMimeType: "application/json" },
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      return { success: false, error: err?.error?.message ?? `HTTP ${res.status}` };
+    }
+    const data = await res.json();
+    const text: string = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const json = safeJson(text);
+    if (!json) return { success: false, error: "Could not parse OCR result" };
+    const conf = Number(json.confidence);
+    return {
+      success: true,
+      data: {
+        fullName: str(json.fullName),
+        dateOfBirth: str(json.dateOfBirth),
+        idNumber: str(json.idNumber),
+        documentType: str(json.documentType),
+        expiry: str(json.expiry),
+        confidence: Number.isFinite(conf) ? Math.min(Math.max(conf, 0), 1) : 0,
+      },
+    };
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Request failed" };
+  }
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() ? v.trim() : undefined;
+}
+function safeJson(text: string): Record<string, unknown> | null {
+  const raw = text.trim().replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) {
+      try {
+        return JSON.parse(m[0]);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
 /**
  * Generate an image from a text prompt using an image-capable Gemini model
  * (default `gemini-2.5-flash-image`, overridable via GEMINI_IMAGE_MODEL).

@@ -976,6 +976,8 @@ model KYCDocument {
   documentType String
   documentUrl String
   status      KYCStatus @default(PENDING)
+  method      String    @default("MANUAL") // MANUAL | AUTO (Gemini OCR + face match)
+  extracted   Json?     // auto results: { fullName, dateOfBirth, idNumber, expiry, ocrConfidence, faceSimilarity, faceMatched, decision, reasons[] }
   rejectionReason String?
   reviewedBy  String?
   reviewedAt  DateTime?
