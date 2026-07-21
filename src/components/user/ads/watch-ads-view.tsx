@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, PlayCircle, Clock, Sparkles, X, CheckCircle2 } from "lucide-react";
-import { toast } from "sonner";
+import { notifyCenter } from "@/lib/notify-center";
 
 interface RewardAd {
   id: string;
@@ -160,12 +160,18 @@ function AdWatchModal({
       const res = await fetch(`/api/ads/${ad.id}/reward`, { method: "POST" });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "Couldn't claim");
-      toast.success(`+${d.rewarded} pts earned!`);
+      notifyCenter.reward({
+        amount: d.rewarded,
+        unit: "pts",
+        title: "Reward earned!",
+        description: "Thanks for watching 🎬",
+      });
       onRewarded();
     } catch (err) {
-      toast.error("Failed", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
+      notifyCenter.error(
+        "Failed",
+        err instanceof Error ? err.message : "Try again"
+      );
       setClaiming(false);
     }
   };

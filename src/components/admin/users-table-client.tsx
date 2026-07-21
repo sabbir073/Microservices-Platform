@@ -12,6 +12,7 @@ import {
   Edit,
   Ban,
   Trash2,
+  CheckCircle2,
   Users as UsersIcon,
   ChevronLeft,
   ChevronRight,
@@ -193,6 +194,22 @@ export function UsersTableClient({
       window.open(data.url ?? "/dashboard", "_blank");
     } catch (err) {
       toast.error("Failed to impersonate user", { description: String(err) });
+    }
+  };
+
+  const handleApprove = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/users/${id}/approve`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to approve user");
+      }
+      toast.success("User approved");
+      router.refresh();
+    } catch (err) {
+      toast.error("Failed to approve user", { description: String(err) });
     }
   };
 
@@ -386,9 +403,19 @@ export function UsersTableClient({
                               <LogIn className="w-4 h-4" />
                             </button>
                           )}
+                          {permissions.canEdit &&
+                            u.status === "PENDING_VERIFICATION" && (
+                              <button
+                                onClick={() => handleApprove(u.id)}
+                                className="p-1.5 rounded hover:bg-slate-700 text-emerald-400 hover:text-emerald-300"
+                                title="Approve user"
+                              >
+                                <CheckCircle2 className="w-4 h-4" />
+                              </button>
+                            )}
                           {permissions.canEdit && (
                             <Link
-                              href={`/admin/users/${u.id}?edit=1`}
+                              href={`/admin/users/${u.id}/edit`}
                               className="p-1.5 rounded hover:bg-slate-700 text-emerald-400 hover:text-emerald-300"
                               title="Edit user"
                             >

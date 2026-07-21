@@ -17,6 +17,7 @@ import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register"
 import { SplashScreen } from "@/components/pwa/splash-screen";
 import { PwaInstallPrompt } from "@/components/pwa/pwa-install-prompt";
 import { ConfirmHost } from "@/components/providers/confirm-host";
+import { NotifyCenterHost } from "@/components/providers/notify-center-host";
 import { getUiToggles } from "@/lib/ui-toggles-server";
 import "./globals.css";
 
@@ -101,6 +102,7 @@ export default async function RootLayout({
           <PushPermissionPrompt enabled={ui.notificationPopup} />
           <PwaInstallPrompt enabled={ui.pwaInstallPrompt} />
           <ConfirmHost />
+          <NotifyCenterHost />
           <Toaster
             position="top-center"
             theme="dark"

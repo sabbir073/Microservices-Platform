@@ -44,9 +44,24 @@ export function SocialWatchModal({
   const [phase, setPhase] = useState<Phase>("warmup");
   const [warmupLeft, setWarmupLeft] = useState(WARMUP);
   const [watched, setWatched] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
   const watchedRef = useRef(0);
-  const visibleRef = useRef(true);
+  const lastTimeRef = useRef(0);
+  const visibleRef = useRef(
+    typeof document === "undefined" ? true : !document.hidden
+  );
+  const focusedRef = useRef(
+    typeof document === "undefined" ? true : document.hasFocus()
+  );
+  const playingRef = useRef(false);
+  const phaseRef = useRef<Phase>("warmup");
+  const playerRef = useRef<HTMLVideoElement | null>(null);
   const doneRef = useRef(false);
+
+  // Mirror phase into a ref so the timeupdate handler reads the live value.
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   // Lock body scroll while open
   useEffect(() => {
@@ -57,13 +72,25 @@ export function SocialWatchModal({
     };
   }, []);
 
-  // Pause the timer when the user tabs away
+  // Track tab visibility + window focus — either being lost stops accrual.
   useEffect(() => {
     const onVis = () => {
       visibleRef.current = !document.hidden;
     };
+    const onFocus = () => {
+      focusedRef.current = true;
+    };
+    const onBlur = () => {
+      focusedRef.current = false;
+    };
     document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+    };
   }, []);
 
   // Warmup countdown — transition happens inside the timeout (not synchronously
@@ -80,21 +107,33 @@ export function SocialWatchModal({
     return () => clearTimeout(t);
   }, [phase, warmupLeft]);
 
-  // Watch ticker (1s), pauses when hidden
-  useEffect(() => {
-    if (phase !== "watch") return;
-    const id = setInterval(() => {
-      if (!visibleRef.current) return;
-      const next = Math.min(target, watchedRef.current + 1);
-      watchedRef.current = next;
-      setWatched(next);
-      if (next >= target) {
-        clearInterval(id);
-        setPhase("complete");
-      }
-    }, 1000);
-    return () => clearInterval(id);
-  }, [phase, target]);
+  // Real playback tracking — advance only by genuine currentTime deltas while
+  // playing + visible + focused; reject seeks. Mirrors VideoTaskPlayer.
+  const canAccrue = () =>
+    playingRef.current && visibleRef.current && focusedRef.current;
+
+  const handleTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const t = e.currentTarget.currentTime;
+    if (!Number.isFinite(t)) return;
+    const delta = t - lastTimeRef.current;
+    lastTimeRef.current = t;
+    if (phaseRef.current !== "watch") return;
+    if (!canAccrue()) return;
+    if (delta <= 0 || delta > 2) return;
+    const next = Math.min(target, watchedRef.current + delta);
+    watchedRef.current = next;
+    setWatched(next);
+    if (next >= target) {
+      setPhase("complete");
+    }
+  };
+
+  const completeFromEnded = () => {
+    if (phaseRef.current !== "watch") return;
+    watchedRef.current = target;
+    setWatched(target);
+    setPhase("complete");
+  };
 
   // Fire onComplete once when done — the user then leaves via the Continue button.
   useEffect(() => {
@@ -141,13 +180,33 @@ export function SocialWatchModal({
       <div className="relative flex-1">
         {url ? (
           <ReactPlayer
+            ref={playerRef}
             src={url}
-            playing
+            playing={phase === "watch"}
             playsInline
             controls={false}
+            muted={false}
             width="100%"
             height="100%"
             style={{ position: "absolute", inset: 0, backgroundColor: "#000" }}
+            onPlay={() => {
+              playingRef.current = true;
+              setIsPlaying(true);
+            }}
+            onPause={() => {
+              playingRef.current = false;
+              setIsPlaying(false);
+            }}
+            onEnded={() => {
+              playingRef.current = false;
+              setIsPlaying(false);
+              completeFromEnded();
+            }}
+            onError={() => {
+              playingRef.current = false;
+              setIsPlaying(false);
+            }}
+            onTimeUpdate={handleTimeUpdate}
             config={{ youtube: { disablekb: 1, rel: 0, fs: 0 } }}
           />
         ) : (
@@ -165,6 +224,33 @@ export function SocialWatchModal({
           onContextMenu={(e) => e.preventDefault()}
           style={{ touchAction: "none" }}
         />
+
+        {/* Tap-to-play — a real user gesture starts genuine sound playback;
+            watch time only accrues while actually playing. */}
+        {phase === "watch" && !isPlaying && url && (
+          <button
+            type="button"
+            onClick={() => {
+              const p = playerRef.current;
+              if (p && typeof p.play === "function") {
+                const r = p.play();
+                if (r && typeof (r as Promise<void>).catch === "function") {
+                  (r as Promise<void>).catch(() => {});
+                }
+              }
+            }}
+            className="absolute inset-0 z-20 grid place-items-center bg-black/70 backdrop-blur-sm"
+          >
+            <span className="flex flex-col items-center gap-3">
+              <span className="grid place-items-center w-20 h-20 rounded-full bg-white/15 ring-2 ring-white/40">
+                <PlayCircle className="w-11 h-11 text-white" />
+              </span>
+              <span className="text-sm font-semibold text-white">
+                Tap to play with sound
+              </span>
+            </span>
+          </button>
+        )}
 
         {phase === "warmup" && (
           <div className="absolute inset-0 z-20 grid place-items-center bg-black/70 pointer-events-none">

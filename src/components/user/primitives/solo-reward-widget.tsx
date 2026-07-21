@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Gift, Lock, CheckCircle2, Clock, Loader2, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { notifyCenter } from "@/lib/notify-center";
 
 export type SoloRewardStatus = "LOCKED" | "ELIGIBLE" | "CLAIMED" | "EXPIRED";
 
@@ -49,15 +49,17 @@ export function SoloRewardWidget({
     try {
       const res = await fetch("/api/solo-reward/claim", { method: "POST" });
       if (!res.ok) throw new Error("Claim failed");
-      toast.success("Reward claimed!", {
+      notifyCenter.reward({
+        title: "Reward claimed!",
         description: "Your reward has been credited.",
       });
       setShowModal(false);
       onClaimed?.();
     } catch (err) {
-      toast.error("Failed to claim", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
+      notifyCenter.error(
+        "Failed to claim",
+        err instanceof Error ? err.message : "Try again"
+      );
     } finally {
       setClaiming(false);
     }

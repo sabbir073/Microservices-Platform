@@ -1095,6 +1095,11 @@ model TaskSubmission {
   rejectionReason String?
   pointsEarned  Int?
   xpEarned      Int?
+  // Server-authoritative watch tracking (VIDEO + SOCIAL watch actions). The
+  // heartbeat route accrues real, playing+focused seconds here so the submit
+  // gate never has to trust a client-claimed watch count.
+  watchedSeconds Int             @default(0)
+  lastBeatAt     DateTime?
   // Type-specific proof bag — used by SOCIAL ({ socialUsername, socialGeneratedContent }),
   // forward-flexible for future task types.
   metadata      Json?

@@ -11,6 +11,8 @@ export type AdPlacement =
   | "VIDEO_ABOVE"
   | "VIDEO_BELOW"
   | "TASK_COMPLETE"
+  | "GAME_INTERSTITIAL"
+  | "VIDEO_INTERSTITIAL"
   | "DASHBOARD"
   | "EARN_HUB"
   | "EARN_PROMOTE"

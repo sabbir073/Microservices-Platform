@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, X } from "lucide-react";
+import type { AdPlacementName } from "@/lib/ad-placements";
 
 interface Ad {
   id: string;
@@ -16,20 +17,22 @@ interface Ad {
 }
 
 /**
- * Imperative full-screen interstitial ad. When `open` flips true it fetches a
- * GAME_INTERSTITIAL ad; if none is available (or the plan is ad-free) it calls
- * `onDone()` immediately so the game flow never blocks. Otherwise it shows the
- * ad with a skip countdown; closing calls `onDone()`. Tracks impression on show
- * and click on the CTA.
+ * Imperative full-screen interstitial ad. When `open` flips true it fetches an
+ * ad for `placement` (default GAME_INTERSTITIAL); if none is available (or the
+ * plan is ad-free) it calls `onDone()` immediately so the host flow never
+ * blocks. Otherwise it shows the ad with a skip countdown; closing calls
+ * `onDone()`. Tracks impression on show and click on the CTA.
  */
 export function AdInterstitialOverlay({
   open,
   onDone,
   skipSeconds = 5,
+  placement = "GAME_INTERSTITIAL",
 }: {
   open: boolean;
   onDone: () => void;
   skipSeconds?: number;
+  placement?: AdPlacementName;
 }) {
   const [ad, setAd] = useState<Ad | null>(null);
   const [left, setLeft] = useState(skipSeconds);
@@ -41,7 +44,7 @@ export function AdInterstitialOverlay({
   useEffect(() => {
     if (!open) return;
     let cancel = false;
-    fetch(`/api/ads/serve?placement=GAME_INTERSTITIAL`)
+    fetch(`/api/ads/serve?placement=${placement}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (cancel) return;
@@ -58,7 +61,7 @@ export function AdInterstitialOverlay({
       cancel = true;
       setAd(null); // clear on close so a reopen never flashes a stale ad
     };
-  }, [open, skipSeconds]);
+  }, [open, skipSeconds, placement]);
 
   // Skip countdown.
   useEffect(() => {

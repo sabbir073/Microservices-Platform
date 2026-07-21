@@ -154,6 +154,7 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   "ui.pwa_install_prompt_enabled": "ui_toggles",
   "ui.require_profile_completion": "ui_toggles",
   "ui.require_kyc_for_withdrawal": "ui_toggles",
+  "ui.require_email_verification": "ui_toggles",
 };
 
 export function SystemSettingsForm({
@@ -902,6 +903,14 @@ export function SystemSettingsForm({
               onChange={(v) => set("ui.require_kyc_for_withdrawal", v)}
               disabled={!canEdit}
               tone="red"
+            />
+            <Toggle
+              label="Require email verification to log in"
+              description="Users must verify their email before they can sign in. When off, unverified accounts can log in (Google accounts are always verified)."
+              checked={values["ui.require_email_verification"] === true}
+              onChange={(v) => set("ui.require_email_verification", v)}
+              disabled={!canEdit}
+              tone="amber"
             />
           </div>
         )}

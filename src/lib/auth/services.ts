@@ -1,9 +1,88 @@
 import bcrypt from "bcryptjs";
+import speakeasy from "speakeasy";
 import { prisma } from "@/lib/prisma";
 import { generateReferralCode } from "@/lib/utils";
 import { sendVerificationEmail, sendPasswordResetEmail } from "@/lib/email";
 import { isValidUsername, slugifyUsername } from "@/lib/username";
+import { getUiToggles } from "@/lib/ui-toggles-server";
 import { v4 as uuidv4 } from "uuid";
+
+/**
+ * Why a login attempt did or didn't pass. `INVALID` is intentionally generic
+ * (wrong password OR unknown email) so we never reveal which accounts exist.
+ */
+export type LoginReason =
+  | "INVALID"
+  | "EMAIL_NOT_VERIFIED"
+  | "ACCOUNT_DISABLED"
+  | "TWO_FACTOR_REQUIRED"
+  | "INVALID_2FA";
+
+export interface LoginUser {
+  id: string;
+  email: string;
+  name: string | null;
+  image: string | null;
+  role: string;
+}
+
+export type LoginResult =
+  | { ok: true; user: LoginUser }
+  | { ok: false; reason: LoginReason };
+
+/**
+ * Single source of truth for credential login. Both the NextAuth `authorize`
+ * callback and the `/api/auth/login-check` pre-check call this, so the login
+ * page can show the REAL reason (Auth.js v5 hides thrown errors from the
+ * client, masking everything as a generic "CredentialsSignin"). The email-
+ * verification gate is admin-toggleable via `requireEmailVerification`.
+ */
+export async function evaluateLogin(
+  email: string,
+  password: string,
+  otp?: string
+): Promise<LoginResult> {
+  const user = await prisma.user.findUnique({
+    where: { email: email.toLowerCase() },
+  });
+
+  // Wrong password or unknown email → same generic answer (no user enumeration).
+  if (!user || !user.password) return { ok: false, reason: "INVALID" };
+  const passwordsMatch = await bcrypt.compare(password, user.password);
+  if (!passwordsMatch) return { ok: false, reason: "INVALID" };
+
+  const { requireEmailVerification } = await getUiToggles();
+  if (requireEmailVerification && !user.emailVerified) {
+    return { ok: false, reason: "EMAIL_NOT_VERIFIED" };
+  }
+
+  if (user.status === "BANNED" || user.status === "SUSPENDED") {
+    return { ok: false, reason: "ACCOUNT_DISABLED" };
+  }
+
+  if (user.twoFactorEnabled && user.twoFactorSecret) {
+    const code = typeof otp === "string" ? otp.trim() : "";
+    if (!code) return { ok: false, reason: "TWO_FACTOR_REQUIRED" };
+    const valid = speakeasy.totp.verify({
+      secret: user.twoFactorSecret,
+      encoding: "base32",
+      token: code,
+      window: 2,
+    });
+    if (!valid) return { ok: false, reason: "INVALID_2FA" };
+  }
+
+  return {
+    ok: true,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      image: user.avatar,
+      role: user.role,
+    },
+  };
+}
 
 /**
  * Resolve a unique @username handle. Tries the slugified seed first, then the

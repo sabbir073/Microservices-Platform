@@ -3,10 +3,9 @@ import type { NextAuthConfig } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 import { z } from "zod";
-import bcrypt from "bcryptjs";
-import speakeasy from "speakeasy";
 import { prisma } from "@/lib/prisma";
 import { generateReferralCode } from "@/lib/utils";
+import { evaluateLogin } from "@/lib/auth/services";
 import { authConfig } from "./config";
 
 const loginSchema = z.object({
@@ -31,56 +30,18 @@ const providers: NextAuthConfig["providers"] = [
       }
 
       const { email, password } = validatedFields.data;
+      const otp =
+        typeof credentials?.otp === "string" ? credentials.otp : undefined;
 
-      const user = await prisma.user.findUnique({
-        where: { email: email.toLowerCase() },
-      });
-
-      if (!user || !user.password) {
+      // Shared evaluator is the single source of truth (also used by the
+      // /api/auth/login-check pre-check). Auth.js v5 masks thrown errors as a
+      // generic "CredentialsSignin", so we just return null here and let the
+      // login page surface the precise reason from the pre-check.
+      const result = await evaluateLogin(email, password, otp);
+      if (!result.ok) {
         return null;
       }
-
-      const passwordsMatch = await bcrypt.compare(password, user.password);
-
-      if (!passwordsMatch) {
-        return null;
-      }
-
-      // Check if email is verified
-      if (!user.emailVerified) {
-        throw new Error("EMAIL_NOT_VERIFIED");
-      }
-
-      // Check if account is active
-      if (user.status === "BANNED" || user.status === "SUSPENDED") {
-        throw new Error("ACCOUNT_DISABLED");
-      }
-
-      // Enforce 2FA when enabled: require a valid TOTP code.
-      if (user.twoFactorEnabled && user.twoFactorSecret) {
-        const otp =
-          typeof credentials?.otp === "string" ? credentials.otp.trim() : "";
-        if (!otp) {
-          throw new Error("TWO_FACTOR_REQUIRED");
-        }
-        const valid = speakeasy.totp.verify({
-          secret: user.twoFactorSecret,
-          encoding: "base32",
-          token: otp,
-          window: 2,
-        });
-        if (!valid) {
-          throw new Error("INVALID_2FA");
-        }
-      }
-
-      return {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        image: user.avatar,
-        role: user.role,
-      };
+      return result.user;
     },
   }),
 ];

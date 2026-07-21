@@ -10,7 +10,7 @@ import {
   Sparkles,
   Crown,
 } from "lucide-react";
-import { toast } from "sonner";
+import { notifyCenter } from "@/lib/notify-center";
 import { format } from "date-fns";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
@@ -88,12 +88,16 @@ export function LotteryView() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
-      toast.success(`Purchased ${quantity} ticket${quantity > 1 ? "s" : ""}!`);
+      notifyCenter.success(
+        `Purchased ${quantity} ticket${quantity > 1 ? "s" : ""}!`,
+        "Good luck in the draw 🍀"
+      );
       void load();
     } catch (err) {
-      toast.error("Couldn't buy ticket", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
+      notifyCenter.error(
+        "Couldn't buy ticket",
+        err instanceof Error ? err.message : "Try again"
+      );
     } finally {
       setBusyId(null);
     }

@@ -43,7 +43,12 @@ import { getXpRank, levelProgress } from "@/lib/user-rank";
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ tab?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    edit?: string;
+    ban?: string;
+    delete?: string;
+  }>;
 }
 
 export default async function UserDetailPage({ params, searchParams }: PageProps) {
@@ -59,7 +64,17 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
   }
 
   const { id } = await params;
-  const { tab = "overview" } = await searchParams;
+  const {
+    tab = "overview",
+    edit,
+    ban,
+    delete: del,
+  } = await searchParams;
+
+  // The users list links Edit → ?edit=1; send it to the real edit form.
+  if (edit) {
+    redirect(`/admin/users/${id}/edit`);
+  }
 
   // Fetch user with related data using separate queries
   const [userData, counts, coursesCreatedCount, marketplaceSalesAgg] =
@@ -351,6 +366,8 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
           canEdit={hasPermission(adminRole, "users.edit")}
           canBan={hasPermission(adminRole, "users.ban")}
           canDelete={hasPermission(adminRole, "users.delete")}
+          canApprove={hasPermission(adminRole, "users.edit")}
+          initialAction={ban ? "ban" : del ? "delete" : undefined}
           canImpersonate={adminRole === "SUPER_ADMIN" && user.role !== "SUPER_ADMIN" && user.id !== session.user.id}
         />
       </div>

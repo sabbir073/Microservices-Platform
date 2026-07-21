@@ -101,6 +101,41 @@ textarea,
   animation: sheet-up 0.22s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* Center popup pop-in (used by the centered notification host). */
+@keyframes pop-in {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.animate-pop-in {
+  animation: pop-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Twinkle for the reward sparkle burst. */
+@keyframes sparkle {
+  0%,
+  100% {
+    transform: scale(0.6) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1) rotate(15deg);
+    opacity: 1;
+  }
+}
+.animate-sparkle {
+  animation: sparkle 1.4s ease-in-out infinite;
+}
+
 /* Safe-area helpers for notch / status bar / home indicator (viewportFit=cover). */
 .safe-t {
   padding-top: env(safe-area-inset-top);
