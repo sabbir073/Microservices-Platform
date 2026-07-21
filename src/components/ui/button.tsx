@@ -11,23 +11,23 @@ import { haptic } from "@/lib/haptics";
 const HAPTIC_VARIANTS = new Set(["primary", "danger", "success", "gold"]);
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-200 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950 disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-200 active:scale-[0.97] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-950 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
         primary:
-          "bg-linear-to-r from-indigo-500 to-purple-600 text-white hover:opacity-90 focus-visible:ring-indigo-500",
+          "bg-linear-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-600/25 hover:shadow-indigo-500/35 hover:brightness-110 hover:-translate-y-0.5 focus-visible:ring-indigo-500",
         secondary:
-          "bg-gray-800 text-white hover:bg-gray-700 border border-gray-700",
+          "bg-gray-800 text-white hover:bg-gray-700 border border-gray-700 shadow-sm",
         outline:
-          "border border-gray-700 bg-transparent text-white hover:bg-gray-800",
+          "border border-gray-700 bg-transparent text-white hover:bg-gray-800 hover:border-gray-600",
         ghost:
           "text-gray-400 hover:text-white hover:bg-gray-800",
         danger:
-          "bg-red-500 text-white hover:bg-red-600 focus-visible:ring-red-500",
+          "bg-red-500 text-white shadow-lg shadow-red-600/20 hover:bg-red-600 hover:-translate-y-0.5 focus-visible:ring-red-500",
         success:
-          "bg-emerald-500 text-white hover:bg-emerald-600 focus-visible:ring-emerald-500",
-        gold: "bg-linear-to-r from-amber-500 to-yellow-600 text-gray-900 hover:opacity-90 focus-visible:ring-amber-500",
+          "bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-600 hover:-translate-y-0.5 focus-visible:ring-emerald-500",
+        gold: "bg-linear-to-br from-amber-400 to-yellow-600 text-gray-950 shadow-lg shadow-amber-500/25 hover:brightness-110 hover:-translate-y-0.5 focus-visible:ring-amber-500",
         link: "text-indigo-400 underline-offset-4 hover:underline",
       },
       size: {

@@ -5,7 +5,6 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import {
   normalizeSocialConfig,
   validateSocialBundle,
-  sortBundleItems,
   bundleTotalPoints,
 } from "@/lib/social-tasks";
 
@@ -157,7 +156,8 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           { status: 400 }
         );
       }
-      const items = sortBundleItems(norm.items);
+      // Preserve the admin's chosen action order (drag-and-drop) verbatim.
+      const items = norm.items;
       pointsRewardOut = bundleTotalPoints(items);
       socialConfigOut = { platform: norm.platform, items, version: 2 };
       socialPlatformOut = norm.platform;

@@ -19,6 +19,13 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [needsOtp, setNeedsOtp] = useState(false);
   const [otp, setOtp] = useState("");
+  // Email-verification recovery: when a valid-password account isn't verified,
+  // offer a resend of the verification link.
+  const [showResend, setShowResend] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [resending, setResending] = useState(false);
+  const [resendNote, setResendNote] = useState<string | null>(null);
+  const [devVerifyUrl, setDevVerifyUrl] = useState<string | null>(null);
 
   const verified = searchParams.get("verified") === "true";
   const callbackUrl = searchParams.get("callbackUrl") || "/social";
@@ -34,8 +41,53 @@ export default function LoginPage() {
   const onSubmit = async (data: LoginInput) => {
     setIsLoading(true);
     setError(null);
+    setShowResend(false);
+    setResendNote(null);
+    setDevVerifyUrl(null);
 
     try {
+      // Pre-check the exact reason first — Auth.js v5 masks authorize errors as
+      // a generic "CredentialsSignin", so signIn() alone can't tell us whether
+      // the password was wrong vs. the email is unverified vs. 2FA is needed.
+      const checkRes = await fetch("/api/auth/login-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: data.email,
+          password: data.password,
+          otp: needsOtp ? otp : undefined,
+        }),
+      });
+      const { reason } = (await checkRes.json().catch(() => ({}))) as {
+        reason?: string;
+      };
+
+      if (reason === "EMAIL_NOT_VERIFIED") {
+        setPendingEmail(data.email);
+        setShowResend(true);
+        setError("Please verify your email before logging in.");
+        return;
+      }
+      if (reason === "ACCOUNT_DISABLED") {
+        setError("Your account has been disabled. Please contact support.");
+        return;
+      }
+      if (reason === "TWO_FACTOR_REQUIRED") {
+        setNeedsOtp(true);
+        setError("Enter the 6-digit code from your authenticator app.");
+        return;
+      }
+      if (reason === "INVALID_2FA") {
+        setNeedsOtp(true);
+        setError("Invalid 2FA code. Try again.");
+        return;
+      }
+      if (reason !== "OK") {
+        setError("Invalid email or password");
+        return;
+      }
+
+      // Reason is OK — the sign-in will succeed.
       const result = await signIn("credentials", {
         email: data.email,
         password: data.password,
@@ -44,36 +96,61 @@ export default function LoginPage() {
       });
 
       if (result?.error) {
-        if (result.error === "EMAIL_NOT_VERIFIED") {
-          setError("Please verify your email before logging in.");
-        } else if (result.error === "ACCOUNT_DISABLED") {
-          setError("Your account has been disabled. Please contact support.");
-        } else if (result.error === "TWO_FACTOR_REQUIRED") {
-          setNeedsOtp(true);
-          setError("Enter the 6-digit code from your authenticator app.");
-        } else if (result.error === "INVALID_2FA") {
-          setNeedsOtp(true);
-          setError("Invalid 2FA code. Try again.");
-        } else {
-          setError("Invalid email or password");
-        }
-      } else {
-        // Get the session to check user role for redirect
-        const session = await getSession();
-        const userRole = session?.user?.role;
-
-        // Redirect based on role - all admin roles go to admin dashboard
-        if (userRole && ADMIN_ROLE_STRINGS.includes(userRole as typeof ADMIN_ROLE_STRINGS[number])) {
-          router.push("/admin");
-        } else {
-          router.push(callbackUrl);
-        }
-        router.refresh();
+        // Shouldn't normally happen after an OK pre-check (e.g. a race), but
+        // fail gracefully.
+        setError("Invalid email or password");
+        return;
       }
+
+      // Get the session to check user role for redirect
+      const session = await getSession();
+      const userRole = session?.user?.role;
+
+      // Redirect based on role - all admin roles go to admin dashboard
+      if (
+        userRole &&
+        ADMIN_ROLE_STRINGS.includes(
+          userRole as typeof ADMIN_ROLE_STRINGS[number]
+        )
+      ) {
+        router.push("/admin");
+      } else {
+        router.push(callbackUrl);
+      }
+      router.refresh();
     } catch {
       setError("An error occurred. Please try again.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!pendingEmail) return;
+    setResending(true);
+    setResendNote(null);
+    setDevVerifyUrl(null);
+    try {
+      const res = await fetch("/api/auth/resend-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pendingEmail }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        message?: string;
+        devVerifyUrl?: string;
+        error?: string;
+      };
+      if (!res.ok) {
+        setResendNote(data.error ?? "Couldn't send the verification email.");
+        return;
+      }
+      setResendNote(data.message ?? "Verification email sent.");
+      if (data.devVerifyUrl) setDevVerifyUrl(data.devVerifyUrl);
+    } catch {
+      setResendNote("Couldn't send the verification email. Try again.");
+    } finally {
+      setResending(false);
     }
   };
 
@@ -113,6 +190,29 @@ export default function LoginPage() {
         {error && (
           <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
             {error}
+          </div>
+        )}
+
+        {/* Resend verification (shown when a valid account isn't verified) */}
+        {showResend && (
+          <div className="p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-sm space-y-2">
+            <button
+              type="button"
+              onClick={handleResendVerification}
+              disabled={resending}
+              className="font-semibold text-amber-300 hover:text-amber-200 disabled:opacity-50"
+            >
+              {resending ? "Sending…" : "Resend verification email"}
+            </button>
+            {resendNote && <p className="text-amber-200/80">{resendNote}</p>}
+            {devVerifyUrl && (
+              <a
+                href={devVerifyUrl}
+                className="block break-all text-indigo-400 hover:text-indigo-300 underline"
+              >
+                {devVerifyUrl}
+              </a>
+            )}
           </div>
         )}
 

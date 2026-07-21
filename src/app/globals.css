@@ -7,13 +7,55 @@
   --font-jetbrains: "JetBrains Mono", "Fira Code", "Consolas", monospace;
 }
 
+/* ─────────────────────────────────────────────────────────────────────────
+   Design tokens (Tailwind v4 @theme) — a single cohesive, premium cool-dark
+   neutral ramp. The app applies surfaces/borders/text through raw `gray-*` and
+   `slate-*` utilities everywhere, so retuning these two ramps here lifts every
+   screen at once (and unifies the user `gray` + admin `slate` areas into one
+   palette) without touching individual files. Light mode keeps its own
+   data-theme override shim further below.
+   ───────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Neutral ramp — subtle indigo undertone, richer near-blacks, readable mids. */
+  --color-gray-50: #f6f7fa;
+  --color-gray-100: #eceef3;
+  --color-gray-200: #e0e3ec;
+  --color-gray-300: #c7ccdb;
+  --color-gray-400: #99a0b6;
+  --color-gray-500: #6a7288;
+  --color-gray-600: #3b4055;
+  --color-gray-700: #282c3c;
+  --color-gray-800: #1a1d29;
+  --color-gray-900: #10121b;
+  --color-gray-950: #0a0b11;
+
+  /* Admin uses slate-* — map it to the same ramp for one cohesive neutral. */
+  --color-slate-50: #f6f7fa;
+  --color-slate-100: #eceef3;
+  --color-slate-200: #e0e3ec;
+  --color-slate-300: #c7ccdb;
+  --color-slate-400: #99a0b6;
+  --color-slate-500: #6a7288;
+  --color-slate-600: #3b4055;
+  --color-slate-700: #282c3c;
+  --color-slate-800: #1a1d29;
+  --color-slate-900: #10121b;
+  --color-slate-950: #0a0b11;
+
+  /* Curated accents (replaces per-feature rainbow gradients). */
+  --color-brand: #6366f1;
+  --color-brand-2: #8b5cf6;
+  --color-money: #10b981;
+  --color-points: #f59e0b;
+}
+
 /* Base styles */
 html {
   scroll-behavior: smooth;
   /* Dark-first base so a full page reload never flashes white before the
      app's own dark surfaces (or the theme boot script) paint. The light
      theme overrides this via `html[data-theme="light"] body` below. */
-  background-color: #0a0a0f;
+  background-color: #0a0b11;
 }
 
 body {
@@ -101,6 +143,55 @@ textarea,
   animation: sheet-up 0.22s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* Center popup pop-in (used by the centered notification host). */
+@keyframes pop-in {
+  0% {
+    transform: scale(0.85);
+    opacity: 0;
+  }
+  60% {
+    transform: scale(1.03);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+.animate-pop-in {
+  animation: pop-in 0.32s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Twinkle for the reward sparkle burst. */
+@keyframes sparkle {
+  0%,
+  100% {
+    transform: scale(0.6) rotate(0deg);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1) rotate(15deg);
+    opacity: 1;
+  }
+}
+.animate-sparkle {
+  animation: sparkle 1.4s ease-in-out infinite;
+}
+
+/* Auto-dismiss countdown bar for centered notifications (right → left). */
+@keyframes notify-bar {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.animate-notify-bar {
+  transform-origin: left;
+  animation: notify-bar linear forwards;
+}
+
 /* Safe-area helpers for notch / status bar / home indicator (viewportFit=cover). */
 .safe-t {
   padding-top: env(safe-area-inset-top);
@@ -154,28 +245,78 @@ textarea,
 }
 
 ::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 4px;
+  background: #282c3c;
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #4b5563;
+  background: #3b4055;
 }
 
 /* Text selection */
 ::selection {
-  background-color: #6366f1;
-  color: white;
+  background-color: color-mix(in oklab, var(--color-brand) 40%, transparent);
+  color: #fff;
 }
 
-/* Focus styles */
+/* Focus styles — soft brand ring instead of a hard outline. */
 :focus-visible {
-  outline: 2px solid #6366f1;
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: 0 0 0 2px var(--color-gray-950),
+    0 0 0 4px color-mix(in oklab, var(--color-brand) 55%, transparent);
+  border-radius: 0.5rem;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Premium surface + elevation + typography utilities. Components opt in by
+   adding these classes; they give the flat gray cards real depth and a
+   consistent heading scale.
+   ───────────────────────────────────────────────────────────────────────── */
+@utility card {
+  background-color: var(--color-gray-900);
+  border: 1px solid color-mix(in oklab, var(--color-gray-700) 55%, var(--color-gray-800));
+  border-radius: 1rem;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04),
+    0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 14px 30px -14px rgba(0, 0, 0, 0.6);
+}
+
+@utility card-interactive {
+  transition: transform 0.18s ease, box-shadow 0.18s ease,
+    border-color 0.18s ease;
+  &:hover {
+    transform: translateY(-2px);
+    border-color: color-mix(in oklab, var(--color-brand) 45%, var(--color-gray-700));
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+      0 10px 24px -8px rgba(0, 0, 0, 0.55),
+      0 0 0 1px color-mix(in oklab, var(--color-brand) 22%, transparent);
+  }
+}
+
+@utility elevate-1 {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 4px 12px -4px rgba(0, 0, 0, 0.4);
+}
+
+@utility elevate-2 {
+  box-shadow: 0 6px 16px -6px rgba(0, 0, 0, 0.5),
+    0 18px 40px -16px rgba(0, 0, 0, 0.55);
+}
+
+@utility text-display {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+@utility text-eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-gray-500);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { notifyCenter } from "@/lib/notify-center";
 import QRCodeLib from "qrcode";
 import { format } from "date-fns";
 import { ShareModal } from "@/components/user/primitives/share-modal";
@@ -99,16 +100,20 @@ export function ReferralsView({
       const res = await fetch("/api/referrals/daily-claim", { method: "POST" });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
-      toast.success(`+${d.points} pts claimed!`, {
+      notifyCenter.reward({
+        amount: d.points,
+        unit: "pts",
+        title: "Referral bonus claimed!",
         description: `${d.referralCount} referrals × ${d.perReferral} pts`,
       });
       // Refresh status
       const sRes = await fetch("/api/referrals/daily-claim");
       if (sRes.ok) setDailyClaim(await sRes.json());
     } catch (err) {
-      toast.error("Couldn't claim", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
+      notifyCenter.error(
+        "Couldn't claim",
+        err instanceof Error ? err.message : "Try again"
+      );
     } finally {
       setClaimingDaily(false);
     }

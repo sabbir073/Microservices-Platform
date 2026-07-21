@@ -11,8 +11,11 @@ import {
   Clock,
   XCircle,
   Send,
+  Zap,
+  ScanFace,
 } from "lucide-react";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { ProofImageUpload } from "@/components/user/tasks/proof-image-upload";
 
 export interface KycDoc {
@@ -28,6 +31,7 @@ export interface KycDoc {
 interface Props {
   kycStatus: "NOT_SUBMITTED" | "PENDING" | "APPROVED" | "REJECTED";
   document: KycDoc | null;
+  autoEnabled?: boolean;
 }
 
 const DOC_TYPES = [
@@ -37,15 +41,54 @@ const DOC_TYPES = [
   "Other government ID",
 ];
 
-export function KycSubmitView({ kycStatus, document }: Props) {
+export function KycSubmitView({ kycStatus, document, autoEnabled = true }: Props) {
   const router = useRouter();
   const [documentType, setDocumentType] = useState(DOC_TYPES[0]);
   const [front, setFront] = useState("");
   const [back, setBack] = useState("");
   const [selfie, setSelfie] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<"auto" | "manual">(autoEnabled ? "auto" : "manual");
+  const [verifying, setVerifying] = useState(false);
 
   const canSubmit = kycStatus === "NOT_SUBMITTED" || kycStatus === "REJECTED";
+
+  const submitAuto = async () => {
+    if (!front.trim() || !selfie.trim()) {
+      toast.error("Add your ID photo and a selfie to verify instantly");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const idImages = [front, back].map((s) => s.trim()).filter(Boolean);
+      const res = await fetch("/api/kyc/auto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentType, idImages, selfie: selfie.trim() }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      if (d.status === "APPROVED") {
+        toast.success("Verified instantly ✅", {
+          description: "Your identity is confirmed — withdrawals unlocked.",
+        });
+      } else {
+        toast.success("Submitted — a quick manual check is needed", {
+          description: Array.isArray(d.reasons) && d.reasons.length ? d.reasons[0] : undefined,
+        });
+      }
+      setFront("");
+      setBack("");
+      setSelfie("");
+      router.refresh();
+    } catch (err) {
+      toast.error("Verification failed", {
+        description: err instanceof Error ? err.message : "Try again or upload manually",
+      });
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   const submit = async () => {
     const images = [front, back, selfie].map((s) => s.trim()).filter(Boolean);
@@ -178,63 +221,128 @@ export function KycSubmitView({ kycStatus, document }: Props) {
 
       {/* Submission form */}
       {canSubmit && (
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-5 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1.5">
-              Document type
-            </label>
-            <select
-              value={documentType}
-              onChange={(e) => setDocumentType(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
-            >
-              {DOC_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
+        <div className="space-y-4">
+          {autoEnabled && (
+            <div className="inline-flex w-full rounded-lg border border-gray-800 overflow-hidden text-xs">
+              {([
+                ["auto", "⚡ Instant verify"],
+                ["manual", "Upload manually"],
+              ] as const).map(([m, label]) => (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  className={cn(
+                    "flex-1 px-3 py-2 font-semibold",
+                    mode === m ? "bg-indigo-500 text-white" : "bg-gray-900 text-gray-400"
+                  )}
+                >
+                  {label}
+                </button>
               ))}
-            </select>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">
-                ID front <span className="text-red-400">*</span>
-              </label>
-              <ProofImageUpload value={front} onChange={setFront} />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">
-                ID back
-              </label>
-              <ProofImageUpload value={back} onChange={setBack} />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-400 mb-1.5">
-                Selfie with ID
-              </label>
-              <ProofImageUpload value={selfie} onChange={setSelfie} />
-            </div>
-          </div>
+          )}
 
-          <p className="text-[11px] text-gray-500">
-            Upload a clear photo of your government-issued ID (front required).
-            Adding the back and a selfie holding your ID speeds up approval. Max
-            5&nbsp;MB per image.
-          </p>
+          {/* Document type — shared */}
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-5 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-1.5">
+                Document type
+              </label>
+              <select
+                value={documentType}
+                onChange={(e) => setDocumentType(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+              >
+                {DOC_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </div>
 
-          <button
-            onClick={submit}
-            disabled={busy}
-            className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold disabled:opacity-50"
-          >
-            {busy ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
+            {mode === "auto" && autoEnabled ? (
+              <>
+                <div className="flex items-start gap-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20 p-3">
+                  <Zap className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-gray-300">
+                    Scan your ID and take a selfie — our AI reads the ID and matches
+                    your face to verify instantly. Anything unclear goes to a quick
+                    manual check.
+                  </p>
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                      ID photo <span className="text-red-400">*</span>
+                    </label>
+                    <ProofImageUpload value={front} onChange={setFront} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                      Selfie <span className="text-red-400">*</span>
+                    </label>
+                    <ProofImageUpload value={selfie} onChange={setSelfie} />
+                  </div>
+                </div>
+                <button
+                  onClick={submitAuto}
+                  disabled={verifying}
+                  className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-sm font-bold disabled:opacity-50"
+                >
+                  {verifying ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" /> Verifying your ID…
+                    </>
+                  ) : (
+                    <>
+                      <ScanFace className="w-4 h-4" /> Verify instantly
+                    </>
+                  )}
+                </button>
+              </>
             ) : (
-              <Send className="w-4 h-4" />
+              <>
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                      ID front <span className="text-red-400">*</span>
+                    </label>
+                    <ProofImageUpload value={front} onChange={setFront} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                      ID back
+                    </label>
+                    <ProofImageUpload value={back} onChange={setBack} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1.5">
+                      Selfie with ID
+                    </label>
+                    <ProofImageUpload value={selfie} onChange={setSelfie} />
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-500">
+                  Upload a clear photo of your government-issued ID (front required).
+                  Adding the back and a selfie holding your ID speeds up approval.
+                  Max 5&nbsp;MB per image.
+                </p>
+                <button
+                  onClick={submit}
+                  disabled={busy}
+                  className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold disabled:opacity-50"
+                >
+                  {busy ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  {kycStatus === "REJECTED" ? "Resubmit for review" : "Submit for review"}
+                </button>
+              </>
             )}
-            {kycStatus === "REJECTED" ? "Resubmit for review" : "Submit for review"}
-          </button>
+          </div>
         </div>
       )}
     </div>

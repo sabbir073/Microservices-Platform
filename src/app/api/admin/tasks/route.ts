@@ -11,7 +11,6 @@ import {
 import {
   normalizeSocialConfig,
   validateSocialBundle,
-  sortBundleItems,
   bundleTotalPoints,
 } from "@/lib/social-tasks";
 
@@ -119,7 +118,9 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      const items = sortBundleItems(norm.items);
+      // Preserve the admin's chosen action order (drag-and-drop) verbatim —
+      // no tier re-sort.
+      const items = norm.items;
       pointsRewardOut = bundleTotalPoints(items);
       socialConfigOut = { platform: norm.platform, items, version: 2 };
       socialPlatformOut = norm.platform;

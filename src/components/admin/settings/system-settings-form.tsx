@@ -73,6 +73,9 @@ const DEFAULTS: SettingsBag = {
   ip_whitelist_enabled: false,
   fraud_detection_enabled: true,
   require_full_profile_for_withdraw: false,
+  "kyc.autoEnabled": true,
+  "kyc.faceMinSimilarity": 88,
+  "kyc.ocrMinConfidence": 0.7,
   // Email
   smtp_host: "smtp.gmail.com",
   smtp_port: 587,
@@ -126,6 +129,8 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   password_min_length: "security", require_kyc: "security", require_2fa: "security",
   require_strong_passwords: "security", ip_whitelist_enabled: "security",
   fraud_detection_enabled: "security", require_full_profile_for_withdraw: "security",
+  "kyc.autoEnabled": "security", "kyc.faceMinSimilarity": "security",
+  "kyc.ocrMinConfidence": "security",
   // Email
   smtp_host: "email", smtp_port: "email", smtp_username: "email",
   smtp_password: "email", email_from_address: "email", email_from_name: "email",
@@ -149,6 +154,7 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   "ui.pwa_install_prompt_enabled": "ui_toggles",
   "ui.require_profile_completion": "ui_toggles",
   "ui.require_kyc_for_withdrawal": "ui_toggles",
+  "ui.require_email_verification": "ui_toggles",
 };
 
 export function SystemSettingsForm({
@@ -507,6 +513,36 @@ export function SystemSettingsForm({
               onChange={(v) => set("require_kyc", v)}
               disabled={!canEdit}
             />
+            <Toggle
+              label="Instant (auto) KYC verification"
+              description="Let users verify instantly via AI OCR + selfie face-match. Uncertain cases still go to manual review."
+              checked={values["kyc.autoEnabled"] !== false}
+              onChange={(v) => set("kyc.autoEnabled", v)}
+              disabled={!canEdit}
+            />
+            <Field label="Auto KYC — min face-match %">
+              <input
+                type="number"
+                min={50}
+                max={100}
+                value={Number(values["kyc.faceMinSimilarity"] ?? 88)}
+                onChange={(e) => set("kyc.faceMinSimilarity", parseInt(e.target.value) || 88)}
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
+            <Field label="Auto KYC — min OCR confidence (0–1)">
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={Number(values["kyc.ocrMinConfidence"] ?? 0.7)}
+                onChange={(e) => set("kyc.ocrMinConfidence", parseFloat(e.target.value) || 0.7)}
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
             <Toggle
               label="Two-Factor Authentication"
               description="Require 2FA for all admin accounts"
@@ -867,6 +903,14 @@ export function SystemSettingsForm({
               onChange={(v) => set("ui.require_kyc_for_withdrawal", v)}
               disabled={!canEdit}
               tone="red"
+            />
+            <Toggle
+              label="Require email verification to log in"
+              description="Users must verify their email before they can sign in. When off, unverified accounts can log in (Google accounts are always verified)."
+              checked={values["ui.require_email_verification"] === true}
+              onChange={(v) => set("ui.require_email_verification", v)}
+              disabled={!canEdit}
+              tone="amber"
             />
           </div>
         )}

@@ -14,7 +14,6 @@ import {
   PlayCircle,
   Loader2,
 } from "lucide-react";
-import { toast } from "sonner";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import type { VideoConfig } from "@/lib/video-tasks";
 import { formatDuration } from "@/lib/video-tasks";
@@ -131,8 +130,9 @@ export function VideoTaskDetailView({ taskId }: { taskId: string }) {
         submissionId={state.submissionId}
         onClose={(didSubmit) => {
           if (didSubmit) {
-            toast.success("Saved");
-            router.push("/video-tasks?tab=submitted");
+            // VIDEO auto-approves — send to the Approved tab, not the
+            // pending-review "Submitted" tab (which only lists PENDING).
+            router.push("/video-tasks?tab=approved");
           } else {
             // User backed out — keep the submission resumable
             setState({ kind: "ready", submissionId: state.submissionId });
@@ -288,8 +288,7 @@ export function VideoTaskDetailView({ taskId }: { taskId: string }) {
                 You&apos;ve already done this today
               </h2>
               <p className="text-xs text-emerald-200/80 mt-1">
-                Either submitted (pending review) or already credited. Come
-                back tomorrow.
+                Your reward has been credited. Come back tomorrow for more.
               </p>
               <Link
                 href="/video-tasks"

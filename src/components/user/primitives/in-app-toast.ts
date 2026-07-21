@@ -1,4 +1,5 @@
 import { toast } from "sonner";
+import { notifyCenter } from "@/lib/notify-center";
 
 export const inAppToast = {
   success(message: string, description?: string) {
@@ -13,15 +14,12 @@ export const inAppToast = {
   warning(message: string, description?: string) {
     return toast.warning(message, { description, duration: 4000 });
   },
+  // Rewards show a centered, celebratory popup rather than a corner toast.
   reward(amount: number, unit: "pts" | "USD" = "pts", description?: string) {
-    return toast.success(
-      unit === "pts"
-        ? `+${amount.toLocaleString()} pts`
-        : `+$${amount.toFixed(2)}`,
-      {
-        description: description ?? "Reward credited",
-        duration: 4000,
-      }
-    );
+    return notifyCenter.reward({
+      amount,
+      unit,
+      description: description ?? "Reward credited",
+    });
   },
 };

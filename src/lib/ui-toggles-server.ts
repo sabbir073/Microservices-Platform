@@ -8,6 +8,8 @@ export interface UiToggles {
   requireProfileCompletion: boolean;
   /** When true, all withdrawals require KYC; when false only withdrawals >$100 do. */
   requireKycForWithdrawal: boolean;
+  /** When true, a user must have a verified email before they can log in. */
+  requireEmailVerification: boolean;
 }
 
 const KEYS = {
@@ -16,6 +18,7 @@ const KEYS = {
   pwaInstallPrompt: "ui.pwa_install_prompt_enabled",
   requireProfileCompletion: "ui.require_profile_completion",
   requireKycForWithdrawal: "ui.require_kyc_for_withdrawal",
+  requireEmailVerification: "ui.require_email_verification",
 } as const;
 
 const DEFAULTS: UiToggles = {
@@ -26,6 +29,9 @@ const DEFAULTS: UiToggles = {
   requireProfileCompletion: false,
   // ON by default — KYC is required to withdraw.
   requireKycForWithdrawal: true,
+  // OFF by default — don't block login on email verification unless an admin
+  // opts in. Google OAuth accounts are auto-verified regardless.
+  requireEmailVerification: false,
 };
 
 function asBool(v: unknown, fallback: boolean): boolean {
@@ -74,6 +80,10 @@ export async function getUiToggles(): Promise<UiToggles> {
       requireKycForWithdrawal: asBool(
         map.get(KEYS.requireKycForWithdrawal),
         DEFAULTS.requireKycForWithdrawal
+      ),
+      requireEmailVerification: asBool(
+        map.get(KEYS.requireEmailVerification),
+        DEFAULTS.requireEmailVerification
       ),
     };
     _cache = { value, ts: Date.now() };

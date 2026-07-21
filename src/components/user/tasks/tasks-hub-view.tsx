@@ -35,17 +35,28 @@ interface ApiTask {
   minLevel?: number;
   canStart?: boolean;
   reason?: string | null;
+  userStatus?: "AVAILABLE" | "IN_PROGRESS" | "SUBMITTED" | "COMPLETED";
 }
 
+// Cohesive tinted chips (not saturated rainbow gradients) — professional look.
+const QA_CHIP: Record<string, string> = {
+  indigo: "bg-indigo-500/10 text-indigo-400 ring-1 ring-indigo-500/20",
+  violet: "bg-violet-500/10 text-violet-400 ring-1 ring-violet-500/20",
+  emerald: "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20",
+  cyan: "bg-cyan-500/10 text-cyan-400 ring-1 ring-cyan-500/20",
+  amber: "bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20",
+  rose: "bg-rose-500/10 text-rose-400 ring-1 ring-rose-500/20",
+};
+
 const QUICK_ACCESS = [
-  { name: "Articles", href: "/article-tasks", icon: FileText, gradient: "from-blue-500 to-cyan-500" },
-  { name: "Videos", href: "/video-tasks", icon: Video, gradient: "from-rose-500 to-pink-500" },
-  { name: "Quizzes", href: "/quiz-tasks", icon: Brain, gradient: "from-emerald-500 to-teal-500" },
-  { name: "Social", href: "/social-tasks", icon: Send, gradient: "from-cyan-500 to-blue-600" },
-  { name: "Manual", href: "/manual-tasks", icon: ClipboardList, gradient: "from-blue-500 to-indigo-600" },
-  { name: "Proxy", href: "/proxy-tasks", icon: Globe, gradient: "from-rose-500 to-red-600" },
-  { name: "Boards", href: "/board-tasks", icon: Pin, gradient: "from-orange-500 to-pink-500" },
-  { name: "Offerwall", href: "/earn#offerwall", icon: Smartphone, gradient: "from-fuchsia-500 to-pink-600" },
+  { name: "Articles", href: "/article-tasks", icon: FileText, tone: "indigo" },
+  { name: "Videos", href: "/video-tasks", icon: Video, tone: "rose" },
+  { name: "Quizzes", href: "/quiz-tasks", icon: Brain, tone: "emerald" },
+  { name: "Social", href: "/social-tasks", icon: Send, tone: "cyan" },
+  { name: "Manual", href: "/manual-tasks", icon: ClipboardList, tone: "indigo" },
+  { name: "Proxy", href: "/proxy-tasks", icon: Globe, tone: "violet" },
+  { name: "Boards", href: "/board-tasks", icon: Pin, tone: "amber" },
+  { name: "Offerwall", href: "/earn#offerwall", icon: Smartphone, tone: "violet" },
 ];
 
 const FILTERS = [
@@ -180,14 +191,14 @@ export function TasksHubView() {
             <Link
               key={item.name}
               href={item.href}
-              className="group flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl bg-gray-900 border border-gray-800 hover:border-gray-700 hover:scale-[1.03] transition-all"
+              className="group card card-interactive flex flex-col items-center justify-center gap-1.5 p-3"
             >
               <div
-                className={`w-9 h-9 rounded-lg bg-linear-to-br ${item.gradient} flex items-center justify-center shadow-lg`}
+                className={`w-10 h-10 rounded-xl grid place-items-center ${QA_CHIP[item.tone]}`}
               >
-                <item.icon className="w-4 h-4 text-white" />
+                <item.icon className="w-5 h-5" />
               </div>
-              <span className="text-[10px] text-gray-300 group-hover:text-white text-center leading-tight">
+              <span className="text-[11px] font-medium text-gray-300 group-hover:text-white text-center leading-tight">
                 {item.name}
               </span>
             </Link>
@@ -245,7 +256,7 @@ export function TasksHubView() {
               durationMin={t.duration ?? undefined}
               thumbnail={t.thumbnailUrl ?? undefined}
               href={taskRunHref(t.type, t.id)}
-              actionLabel="Open"
+              status={t.userStatus ?? "AVAILABLE"}
             />
           ))}
         </div>

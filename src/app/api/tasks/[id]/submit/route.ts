@@ -84,7 +84,7 @@ export async function POST(
       );
     }
 
-    // Check if the required time was met (for video/article tasks).
+    // Check if the required watch time was met.
     // VIDEO tasks are gated on videoConfig.watchSeconds (what the player enforces),
     // NOT task.duration — the two can diverge (duration is often the full video
     // length), which would otherwise make a fully-watched video impossible to submit.
@@ -93,18 +93,33 @@ export async function POST(
         ? (task.videoConfig as VideoConfig | null)?.watchSeconds ?? task.duration ?? 0
         : task.duration ?? 0;
     if (requiredSeconds) {
-      const elapsedSeconds = Math.floor(
-        (Date.now() - submission.createdAt.getTime()) / 1000
-      );
       const requiredDuration = Math.floor(requiredSeconds * 0.8); // 80% of required time
 
-      if (elapsedSeconds < requiredDuration) {
-        return NextResponse.json(
-          {
-            error: `Please complete the task. ${requiredDuration - elapsedSeconds} seconds remaining.`,
-          },
-          { status: 400 }
+      // VIDEO tasks are validated against server-accrued watched seconds (the
+      // /heartbeat route only credits real, foreground playback), so a client
+      // can't satisfy the gate just by waiting. Other timed types fall back to
+      // wall-clock elapsed since the submission was started.
+      if (task.type === "VIDEO") {
+        if (submission.watchedSeconds < requiredDuration) {
+          return NextResponse.json(
+            {
+              error: `Please watch the full video. ${requiredDuration - submission.watchedSeconds} seconds of watch time remaining.`,
+            },
+            { status: 400 }
+          );
+        }
+      } else {
+        const elapsedSeconds = Math.floor(
+          (Date.now() - submission.createdAt.getTime()) / 1000
         );
+        if (elapsedSeconds < requiredDuration) {
+          return NextResponse.json(
+            {
+              error: `Please complete the task. ${requiredDuration - elapsedSeconds} seconds remaining.`,
+            },
+            { status: 400 }
+          );
+        }
       }
     }
 
@@ -390,6 +405,9 @@ export async function POST(
         answers: answers || null,
         score,
         status: newStatus,
+        // Mark the actual submit moment (distinguishes "in progress" from
+        // "submitted / pending review" for a still-PENDING submission).
+        submittedAt: new Date(),
         ...(hasMetadata
           ? { metadata: JSON.parse(JSON.stringify(submissionMetadata)) }
           : {}),

@@ -976,6 +976,8 @@ model KYCDocument {
   documentType String
   documentUrl String
   status      KYCStatus @default(PENDING)
+  method      String    @default("MANUAL") // MANUAL | AUTO (Gemini OCR + face match)
+  extracted   Json?     // auto results: { fullName, dateOfBirth, idNumber, expiry, ocrConfidence, faceSimilarity, faceMatched, decision, reasons[] }
   rejectionReason String?
   reviewedBy  String?
   reviewedAt  DateTime?
@@ -1093,6 +1095,15 @@ model TaskSubmission {
   rejectionReason String?
   pointsEarned  Int?
   xpEarned      Int?
+  // Server-authoritative watch tracking (VIDEO + SOCIAL watch actions). The
+  // heartbeat route accrues real, playing+focused seconds here so the submit
+  // gate never has to trust a client-claimed watch count.
+  watchedSeconds Int             @default(0)
+  lastBeatAt     DateTime?
+  // Set the moment the user actually SUBMITS proof (vs. merely /start-ing the
+  // task). Distinguishes "in progress" (PENDING, submittedAt null) from
+  // "submitted / pending review" (PENDING, submittedAt set) for the task list.
+  submittedAt    DateTime?
   // Type-specific proof bag — used by SOCIAL ({ socialUsername, socialGeneratedContent }),
   // forward-flexible for future task types.
   metadata      Json?

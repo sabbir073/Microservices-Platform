@@ -4,7 +4,14 @@ import { cn } from "@/lib/utils";
 import { Clock, Coins, Lock, Check, Sparkles, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 
-export type TaskStatus = "AVAILABLE" | "LOCKED" | "COMPLETED" | "COOLDOWN" | "PENDING";
+export type TaskStatus =
+  | "AVAILABLE"
+  | "LOCKED"
+  | "COMPLETED"
+  | "COOLDOWN"
+  | "PENDING"
+  | "IN_PROGRESS"
+  | "SUBMITTED";
 export type TaskDifficulty = "EASY" | "MEDIUM" | "HARD";
 
 interface TaskCardProps {
@@ -38,6 +45,8 @@ const STATUS_TONE: Record<TaskStatus, string> = {
   COMPLETED: "bg-emerald-500/15 text-emerald-400 cursor-default",
   COOLDOWN: "bg-gray-800 text-gray-500 cursor-not-allowed",
   PENDING: "bg-amber-500/15 text-amber-400 cursor-default",
+  IN_PROGRESS: "bg-blue-500 hover:bg-blue-600 text-white",
+  SUBMITTED: "bg-amber-500/15 text-amber-400",
 };
 
 export function TaskCard({
@@ -69,16 +78,24 @@ export function TaskCard({
       ? "Done"
       : onCooldown
       ? cooldownText ?? "Cooldown"
+      : status === "IN_PROGRESS"
+      ? "Resume →"
+      : status === "SUBMITTED"
+      ? "Pending review"
       : status === "PENDING"
       ? "Pending"
       : "Start →");
 
-  const ActionTag: "a" | "button" = href && status === "AVAILABLE" ? "a" : "button";
+  const navigable =
+    status === "AVAILABLE" ||
+    status === "IN_PROGRESS" ||
+    status === "SUBMITTED";
+  const ActionTag: "a" | "button" = href && navigable ? "a" : "button";
 
   return (
     <div
       className={cn(
-        "group relative rounded-xl border border-gray-800 bg-gray-900 p-3 transition-colors hover:border-gray-700",
+        "group card card-interactive p-4",
         isLocked && "opacity-60",
         className
       )}

@@ -74,6 +74,27 @@ export function VideoTaskBuilder({ value, onChange }: Props) {
             {meta.label}
           </span>
         </div>
+        {(value.provider === "YOUTUBE" || value.provider === "FACEBOOK") && (
+          <div className="mt-2 flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/5 px-3 py-2">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+            <p className="text-[11px] text-amber-200/80 leading-relaxed">
+              Watch time is tracked from real playback and verified on the
+              server, so in-app rewards are accurate and won&apos;t be clawed
+              back. Note: whether the view also counts on{" "}
+              {value.provider === "YOUTUBE" ? "YouTube" : "Facebook"} is decided
+              by their own systems — incentivized views may be filtered out by
+              their fraud audits. That part is outside our control.
+              {value.provider === "YOUTUBE" && (
+                <>
+                  {" "}
+                  YouTube&apos;s own in-video ads also can&apos;t be
+                  auto-skipped (browser cross-origin limit) — your own
+                  skippable ad shows instead.
+                </>
+              )}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Watch time + warmup */}
@@ -98,8 +119,9 @@ export function VideoTaskBuilder({ value, onChange }: Props) {
             className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-blue-500"
           />
           <p className="text-[11px] text-gray-500 mt-1">
-            ≈ {formatDuration(value.watchSeconds)} — total time user must
-            watch.
+            ≈ {formatDuration(value.watchSeconds)} — real playback time the user
+            must watch. Tip: keep ≥30s so it&apos;s more likely to register as a
+            view on YouTube/Facebook.
           </p>
         </div>
         <div>

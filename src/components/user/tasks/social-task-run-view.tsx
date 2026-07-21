@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -14,6 +14,7 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { notifyCenter } from "@/lib/notify-center";
 import { cn } from "@/lib/utils";
 import {
   SOCIAL_PLATFORMS,
@@ -54,25 +55,137 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
   const [busy, setBusy] = useState(false);
   const [generatingAi, setGeneratingAi] = useState<number | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // A PENDING submission is created on load (or resumed) so the submit route
+  // has something to attach to, and its clock runs while the user completes
+  // the actions.
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  // Gate progress-saving until the initial load + resume finished, so an empty
+  // first render never overwrites previously-saved progress.
+  const [hydrated, setHydrated] = useState(false);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restore per-action progress saved earlier (watched flags, proof, AI) from
+  // the resumed submission's metadata so a reload resumes instead of restarting.
+  const hydrateProgress = (
+    loadedTask: ReturnType<typeof mapSocialTaskRow>,
+    metadata: unknown
+  ) => {
+    const rawItems =
+      metadata &&
+      typeof metadata === "object" &&
+      Array.isArray((metadata as Record<string, unknown>).items)
+        ? ((metadata as { items: unknown[] }).items as Array<
+            Record<string, unknown>
+          >)
+        : null;
+    if (!rawItems) return;
+    const byAction = new Map<string, Record<string, unknown>>();
+    for (const it of rawItems) {
+      if (it && typeof it.action === "string") byAction.set(it.action, it);
+    }
+    const proof: Record<number, ItemProof> = {};
+    const watched: Record<number, boolean> = {};
+    const ai: Record<number, string> = {};
+    loadedTask.items.forEach((item, idx) => {
+      const s = byAction.get(item.action);
+      if (!s) return;
+      const url = typeof s.proofUrl === "string" ? s.proofUrl : "";
+      const screenshot =
+        typeof s.screenshotUrl === "string" ? s.screenshotUrl : "";
+      const username = typeof s.username === "string" ? s.username : "";
+      if (url || screenshot || username)
+        proof[idx] = { url, screenshot, username };
+      if (typeof s.generatedContent === "string" && s.generatedContent.trim())
+        ai[idx] = s.generatedContent;
+      if (s.watched === true) watched[idx] = true;
+    });
+    if (Object.keys(proof).length) setProofByIndex(proof);
+    if (Object.keys(watched).length) setWatchedByIndex(watched);
+    if (Object.keys(ai).length) setAiOutputByIndex(ai);
+  };
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/tasks/${taskId}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-      .then((d) => {
+    (async () => {
+      try {
+        const r = await fetch(`/api/tasks/${taskId}`);
+        if (!r.ok) throw new Error(String(r.status));
+        const d = await r.json();
         if (cancelled) return;
         if (!d?.task) {
           setNotFound(true);
           return;
         }
-        setTask(mapSocialTaskRow(d.task));
-      })
-      .catch(() => !cancelled && setNotFound(true))
-      .finally(() => !cancelled && setLoading(false));
+        const mapped = mapSocialTaskRow(d.task);
+        setTask(mapped);
+        // Start (or resume) the submission so we have an id to submit with.
+        // Failures here are non-fatal — submit() will retry and surface them.
+        try {
+          const sr = await fetch(`/api/tasks/${taskId}/start`, {
+            method: "POST",
+          });
+          const sd = await sr.json().catch(() => ({}));
+          if (!cancelled && sr.ok && sd?.submission?.id) {
+            setSubmissionId(sd.submission.id as string);
+            // Resume: rehydrate per-action progress saved earlier so a reload
+            // (or leaving the page mid-task) doesn't start from scratch.
+            hydrateProgress(mapped, sd.submission?.metadata);
+          }
+        } catch {
+          /* submit() retries /start */
+        }
+      } catch {
+        if (!cancelled) setNotFound(true);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+          setHydrated(true);
+        }
+      }
+    })();
     return () => {
       cancelled = true;
     };
   }, [taskId]);
+
+  // Auto-save partial progress (debounced) whenever watched/proof/AI changes,
+  // so leaving or reloading mid-task resumes instead of restarting.
+  useEffect(() => {
+    if (!hydrated || !task || !submissionId || submitted) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const t = task;
+    const sid = submissionId;
+    saveTimer.current = setTimeout(() => {
+      const items = t.items.map((item, idx) => {
+        const p = proofByIndex[idx] ?? EMPTY_PROOF;
+        const ai = aiOutputByIndex[idx];
+        const out: Record<string, string | boolean> = { action: item.action };
+        if (p.url) out.proofUrl = p.url;
+        if (p.screenshot) out.screenshotUrl = p.screenshot;
+        if (p.username) out.username = p.username;
+        if (ai && ai.trim()) out.generatedContent = ai;
+        if (watchedByIndex[idx]) out.watched = true;
+        return out;
+      });
+      void fetch(`/api/tasks/${t.id}/progress`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId: sid, items }),
+        keepalive: true,
+      }).catch(() => {});
+    }, 700);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [
+    hydrated,
+    task,
+    submissionId,
+    submitted,
+    proofByIndex,
+    aiOutputByIndex,
+    watchedByIndex,
+  ]);
 
   const platform = task ? PLATFORM_LOOKUP[task.platform] : null;
 
@@ -153,6 +266,18 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
     }
     setBusy(true);
     try {
+      // Ensure a PENDING submission exists (the submit route requires one).
+      let sid = submissionId;
+      if (!sid) {
+        const sr = await fetch(`/api/tasks/${task.id}/start`, {
+          method: "POST",
+        });
+        const sd = await sr.json().catch(() => ({}));
+        if (!sr.ok) throw new Error(sd.error || "Couldn't start the task");
+        sid = (sd.submission?.id as string | undefined) ?? null;
+        setSubmissionId(sid);
+      }
+
       const payloadItems = items.map((item, idx) => {
         const req = item.proofRequirements;
         const p = proofByIndex[idx] ?? EMPTY_PROOF;
@@ -169,15 +294,19 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
       const res = await fetch(`/api/tasks/${task.id}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: payloadItems }),
+        body: JSON.stringify({ submissionId: sid, items: payloadItems }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Couldn't submit the task");
+      }
       setSubmitted(true);
-      toast.success("Submitted! Awaiting verification.");
+      notifyCenter.success("Submitted!", "Awaiting verification.");
     } catch (err) {
-      toast.error("Failed", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
+      notifyCenter.error(
+        "Couldn't submit",
+        err instanceof Error ? err.message : "Try again"
+      );
     } finally {
       setBusy(false);
     }

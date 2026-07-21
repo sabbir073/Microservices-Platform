@@ -197,10 +197,10 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features }: Sid
           if (items.length === 0) return null;
           return (
           <div key={group.section}>
-            <p className="px-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider mb-2">
+            <p className="px-3 text-[10px] font-bold text-gray-500 uppercase tracking-[0.12em] mb-2">
               {group.section}
             </p>
-            <ul className="space-y-1">
+            <ul className="space-y-0.5">
               {items.map((item) => {
                 const isActive =
                   pathname === item.href || pathname.startsWith(`${item.href}/`);
@@ -210,12 +210,15 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features }: Sid
                       href={item.href}
                       onClick={onNavigate}
                       className={cn(
-                        "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                        "relative flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all",
                         isActive
-                          ? "bg-indigo-500/10 text-indigo-400"
-                          : "text-gray-400 hover:text-white hover:bg-gray-800"
+                          ? "bg-indigo-500/12 text-indigo-300 ring-1 ring-inset ring-indigo-500/20"
+                          : "text-gray-400 hover:text-white hover:bg-gray-800/70"
                       )}
                     >
+                      {isActive && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-linear-to-b from-indigo-400 to-violet-500" />
+                      )}
                       <item.icon className="w-4 h-4" />
                       {item.name}
                     </Link>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -13,6 +13,7 @@ import {
   Minus,
   Trash2,
   LogIn,
+  CheckCircle2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
@@ -26,6 +27,9 @@ interface UserDetailActionsProps {
   canBan: boolean;
   canDelete: boolean;
   canImpersonate: boolean;
+  canApprove?: boolean;
+  /** Auto-open a modal on mount — driven by the list table's ?ban=1/?delete=1 links. */
+  initialAction?: "ban" | "delete";
 }
 
 export function UserDetailActions({
@@ -37,15 +41,50 @@ export function UserDetailActions({
   canBan,
   canDelete,
   canImpersonate,
+  canApprove = false,
+  initialAction,
 }: UserDetailActionsProps) {
   const router = useRouter();
   const [isBanning, setIsBanning] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isImpersonating, setIsImpersonating] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
   const [showBanModal, setShowBanModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showImpersonateModal, setShowImpersonateModal] = useState(false);
   const [banReason, setBanReason] = useState("");
+
+  // Open the ban/delete modal when arriving from the list table's action links.
+  useEffect(() => {
+    if (initialAction === "ban" && canBan && userStatus !== "BANNED") {
+      setShowBanModal(true);
+    } else if (initialAction === "delete" && canDelete) {
+      setShowDeleteModal(true);
+    }
+    // Run once on mount for the given initial action.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialAction]);
+
+  const handleApprove = async () => {
+    setIsApproving(true);
+    try {
+      const response = await fetch(`/api/admin/users/${userId}/approve`, {
+        method: "POST",
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to approve user");
+      }
+      toast.success("User approved");
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Failed to approve user"
+      );
+    } finally {
+      setIsApproving(false);
+    }
+  };
 
   const handleBan = async () => {
     setIsBanning(true);
@@ -145,6 +184,20 @@ export function UserDetailActions({
   return (
     <>
       <div className="flex gap-2">
+        {canApprove && userStatus === "PENDING_VERIFICATION" && (
+          <button
+            onClick={handleApprove}
+            disabled={isApproving}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50"
+          >
+            {isApproving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4" />
+            )}
+            Approve
+          </button>
+        )}
         {canEdit && (
           <Link
             href={`/admin/users/${userId}/edit`}

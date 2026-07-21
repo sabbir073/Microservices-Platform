@@ -18,6 +18,7 @@ import {
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { toast } from "sonner";
+import { notifyCenter } from "@/lib/notify-center";
 import { cn } from "@/lib/utils";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
@@ -117,14 +118,18 @@ export function DailyMissionView() {
       const res = await fetch("/api/daily-mission/claim", { method: "POST" });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
-      toast.success(`+${d.points} pts, +${d.xp} XP claimed!`, {
-        description: `Streak: ${d.streak} day${d.streak === 1 ? "" : "s"} 🔥`,
+      notifyCenter.reward({
+        amount: d.points,
+        unit: "pts",
+        title: "Daily mission claimed!",
+        description: `+${d.xp} XP · Streak: ${d.streak} day${d.streak === 1 ? "" : "s"} 🔥`,
       });
       await load();
     } catch (err) {
-      toast.error("Claim failed", {
-        description: err instanceof Error ? err.message : "Try again",
-      });
+      notifyCenter.error(
+        "Claim failed",
+        err instanceof Error ? err.message : "Try again"
+      );
     } finally {
       setClaiming(false);
     }

@@ -11,10 +11,12 @@ import {
   PlayCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { notifyCenter } from "@/lib/notify-center";
 import type { VideoConfig } from "@/lib/video-tasks";
 import { formatDuration } from "@/lib/video-tasks";
 import { confirmDialog } from "@/lib/confirm";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { AdInterstitialOverlay } from "@/components/user/primitives/ad-interstitial-overlay";
 
 const ReactPlayer = dynamic(() => import("react-player"), {
   ssr: false,
@@ -58,13 +60,37 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
   );
   const [warmupLeft, setWarmupLeft] = useState(warmupTarget);
   const [watched, setWatched] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [autoFailed, setAutoFailed] = useState(false);
   const [screenshotUrl, setScreenshotUrl] = useState("");
   const [uniqueKey, setUniqueKey] = useState("");
+  // Interstitial ad gates — playback waits for the intro ad; the reward flow
+  // waits for the outro ad. Both resolve immediately when no ad is available.
+  const [introAdDone, setIntroAdDone] = useState(false);
+  const [outroAdDone, setOutroAdDone] = useState(false);
   const submittedRef = useRef(false);
   const watchedRef = useRef(0);
-  const visibleRef = useRef(true);
+  const lastTimeRef = useRef(0);
+  // Gating refs — watch time only accrues while the video is genuinely
+  // playing AND the tab is both visible and focused. Kept in refs so the
+  // per-frame timeupdate handler and the heartbeat interval read live values
+  // without re-subscribing.
+  const visibleRef = useRef(
+    typeof document === "undefined" ? true : !document.hidden
+  );
+  const focusedRef = useRef(
+    typeof document === "undefined" ? true : document.hasFocus()
+  );
+  const playingRef = useRef(false);
+  const phaseRef = useRef<Phase>(phase);
+  const playerRef = useRef<HTMLVideoElement | null>(null);
+  const handleCancelRef = useRef<() => void>(() => {});
+
+  // Mirror phase into a ref so the timeupdate handler reads the live value.
+  useEffect(() => {
+    phaseRef.current = phase;
+  }, [phase]);
 
   // Lock body scroll while open
   useEffect(() => {
@@ -75,18 +101,31 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
     };
   }, []);
 
-  // Pause progress while tab hidden
+  // Track tab visibility + window focus — either being lost stops accrual.
   useEffect(() => {
     const onVis = () => {
       visibleRef.current = !document.hidden;
     };
+    const onFocus = () => {
+      focusedRef.current = true;
+    };
+    const onBlur = () => {
+      focusedRef.current = false;
+    };
     document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("blur", onBlur);
+    };
   }, []);
 
-  // Warmup countdown
+  // Warmup countdown — held until the intro ad is dismissed.
   useEffect(() => {
     if (phase !== "warmup") return;
+    if (!introAdDone) return;
     if (warmupLeft <= 0) {
       setPhase("watch");
       return;
@@ -95,35 +134,83 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
       setWarmupLeft((s) => Math.max(0, s - 1));
     }, 1000);
     return () => clearTimeout(t);
-  }, [phase, warmupLeft]);
+  }, [phase, warmupLeft, introAdDone]);
 
-  // Watch ticker (1s) — pauses when tab hidden
+  // ── Real playback tracking ──────────────────────────────────────────────
+  // Advance watched seconds by the actual delta of the player's currentTime,
+  // and only while the video is playing + the tab is visible + focused. Seeks
+  // (delta <= 0, or a forward jump > 2s) are ignored so the counter reflects
+  // genuinely-watched time, not scrubbing.
+  const canAccrue = () =>
+    playingRef.current && visibleRef.current && focusedRef.current;
+
+  const handleTimeUpdate = (
+    e: React.SyntheticEvent<HTMLVideoElement>
+  ) => {
+    const t = e.currentTarget.currentTime;
+    if (!Number.isFinite(t)) return;
+    const delta = t - lastTimeRef.current;
+    lastTimeRef.current = t;
+    if (phaseRef.current !== "watch") return;
+    if (!canAccrue()) return;
+    // Normal playback ticks are small positive deltas; reject seeks/jumps.
+    if (delta <= 0 || delta > 2) return;
+    const next = Math.min(watchTarget, watchedRef.current + delta);
+    watchedRef.current = next;
+    setWatched(next);
+    if (next >= watchTarget) {
+      setPhase("complete");
+    }
+  };
+
+  const completeFromEnded = () => {
+    // Video ended before hitting watchTarget (video shorter than target):
+    // a genuine full watch still counts.
+    if (phaseRef.current !== "watch") return;
+    watchedRef.current = watchTarget;
+    setWatched(watchTarget);
+    setPhase("complete");
+  };
+
+  // ── Heartbeat ───────────────────────────────────────────────────────────
+  // Ping the server so IT accrues the authoritative watchedSeconds — the
+  // submit gate trusts that value, not the client's local counter. The first
+  // beat (fired on playback start) only anchors the clock; each later beat
+  // credits the real, capped gap since the previous one. `force` lets the
+  // pre-submit beat flush the final interval even after playback has ended.
+  const sendBeat = async (force = false) => {
+    if (!force && !canAccrue()) return;
+    try {
+      await fetch(`/api/tasks/${task.id}/heartbeat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId }),
+        keepalive: true,
+      });
+    } catch {
+      /* transient network error — next beat will catch up */
+    }
+  };
+
   useEffect(() => {
     if (phase !== "watch") return;
-    const id = setInterval(() => {
-      if (!visibleRef.current) return;
-      const next = Math.min(watchTarget, watchedRef.current + 1);
-      watchedRef.current = next;
-      setWatched(next);
-      if (next >= watchTarget) {
-        clearInterval(id);
-        setPhase("complete");
-      }
-    }, 1000);
+    const id = setInterval(() => void sendBeat(), 5000);
     return () => clearInterval(id);
-  }, [phase, watchTarget]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, task.id, submissionId]);
 
   // Auto-submit on complete (if configured & no proof needed)
   const needsProofForm =
     proofReq.screenshot || proofReq.uniqueKey;
   useEffect(() => {
     if (phase !== "complete") return;
+    if (!outroAdDone) return; // let the outro interstitial finish first
     if (!autoSubmit) return;
     if (needsProofForm) return;
     if (submittedRef.current) return;
     void doSubmit();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, autoSubmit, needsProofForm]);
+  }, [phase, autoSubmit, needsProofForm, outroAdDone]);
 
   const doSubmit = async () => {
     if (submittedRef.current) return;
@@ -139,6 +226,9 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
     setAutoFailed(false);
     setBusy(true);
     try {
+      // Flush the final watch gap to the server so its authoritative
+      // watchedSeconds is up to date before the gate runs.
+      await sendBeat(true);
       const res = await fetch(`/api/tasks/${task.id}/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -164,12 +254,15 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
         return;
       }
       setPhase("submitted");
-      toast.success(`+${task.pointsReward} pts!`, {
-        description:
-          status === "PENDING"
-            ? "Submitted for review."
-            : "Watched & rewarded.",
-      });
+      if (status === "PENDING") {
+        notifyCenter.success("Submitted for review", "You'll be notified once approved.");
+      } else {
+        notifyCenter.reward({
+          amount: task.pointsReward,
+          unit: "pts",
+          title: "Watched & rewarded!",
+        });
+      }
       // Stay on the success screen — the user leaves via the "Done" button.
     } catch (err) {
       submittedRef.current = false;
@@ -207,6 +300,41 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
     onClose(false);
   };
 
+  // Keep a live handle to handleCancel so the mount-only popstate listener
+  // always runs the current closure (fresh phase/watched), not a stale one.
+  useEffect(() => {
+    handleCancelRef.current = () => void handleCancel();
+  });
+
+  // Playback lock — a hardware/browser Back (or back-swipe) shouldn't silently
+  // drop the user out mid-watch. We trap history so Back routes through the
+  // same "Quit now?" confirm as the X button. Released once watching is done.
+  useEffect(() => {
+    window.history.pushState(null, "", window.location.href);
+    const onPop = () => {
+      const p = phaseRef.current;
+      if (p === "complete" || p === "submitted") return; // allow leaving
+      // Re-trap our position, then prompt.
+      window.history.pushState(null, "", window.location.href);
+      handleCancelRef.current();
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  // Warn on tab refresh/close while actively watching.
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      const p = phaseRef.current;
+      if (p === "warmup" || p === "watch") {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
+
   const watchPct = useMemo(
     () =>
       watchTarget > 0 ? Math.min(100, (watched / watchTarget) * 100) : 0,
@@ -239,8 +367,9 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
       <div className="relative flex-1">
         {videoUrl ? (
           <ReactPlayer
+            ref={playerRef}
             src={videoUrl}
-            playing
+            playing={phase === "watch" && introAdDone}
             controls={false}
             playsInline
             muted={false}
@@ -251,11 +380,36 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
               inset: 0,
               backgroundColor: "#000",
             }}
+            onPlay={() => {
+              playingRef.current = true;
+              setIsPlaying(true);
+              // Anchor the server clock at real playback start (first beat
+              // credits 0), so short videos don't fail the gate on a race.
+              void sendBeat();
+            }}
+            onPause={() => {
+              playingRef.current = false;
+              setIsPlaying(false);
+            }}
+            onEnded={() => {
+              playingRef.current = false;
+              setIsPlaying(false);
+              completeFromEnded();
+            }}
+            onError={() => {
+              playingRef.current = false;
+              setIsPlaying(false);
+            }}
+            onTimeUpdate={handleTimeUpdate}
             config={{
               youtube: {
                 disablekb: 1,
                 rel: 0,
                 fs: 0,
+                // Hide video annotations/cards. NOTE: this does NOT remove
+                // YouTube's own pre-roll ads — those play inside a cross-origin
+                // iframe and cannot be skipped programmatically.
+                iv_load_policy: 3,
               },
             }}
           />
@@ -274,6 +428,38 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
           onContextMenu={(e) => e.preventDefault()}
           style={{ touchAction: "none" }}
         />
+
+        {/* Tap-to-play — browsers block autoplay-with-sound, and muted views
+            don't register on YouTube/FB. A real user gesture starts genuine
+            playback with sound. Shown whenever we're in the watch phase but
+            the player isn't actually playing. */}
+        {phase === "watch" && !isPlaying && videoUrl && introAdDone && (
+          <button
+            type="button"
+            onClick={() => {
+              const p = playerRef.current;
+              if (p && typeof p.play === "function") {
+                const r = p.play();
+                if (r && typeof (r as Promise<void>).catch === "function") {
+                  (r as Promise<void>).catch(() => {});
+                }
+              }
+            }}
+            className="absolute inset-0 z-20 grid place-items-center bg-black/70 backdrop-blur-sm"
+          >
+            <span className="flex flex-col items-center gap-3">
+              <span className="grid place-items-center w-20 h-20 rounded-full bg-white/15 ring-2 ring-white/40">
+                <PlayCircle className="w-11 h-11 text-white" />
+              </span>
+              <span className="text-sm font-semibold text-white">
+                Tap to play with sound
+              </span>
+              <span className="text-xs text-gray-300">
+                Watch time counts only while the video is playing
+              </span>
+            </span>
+          </button>
+        )}
 
         {/* Phase 1: warmup */}
         {phase === "warmup" && (
@@ -416,6 +602,22 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
           </div>
         )}
       </div>
+
+      {/* Intro interstitial — shown on open; playback is held until it's
+          dismissed. Resolves immediately (onDone) if no ad / ad-free plan. */}
+      <AdInterstitialOverlay
+        open={!introAdDone}
+        placement="VIDEO_INTERSTITIAL"
+        onDone={() => setIntroAdDone(true)}
+      />
+
+      {/* Outro interstitial — shown once watching completes, before the reward
+          is claimed. Also resolves immediately when no ad is available. */}
+      <AdInterstitialOverlay
+        open={phase === "complete" && !outroAdDone}
+        placement="VIDEO_INTERSTITIAL"
+        onDone={() => setOutroAdDone(true)}
+      />
     </div>
   );
 }

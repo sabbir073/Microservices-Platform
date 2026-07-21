@@ -377,6 +377,11 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
                         </div>
                       </div>
 
+                      {/* Auto (AI) verification results */}
+                      {doc.method === "AUTO" && doc.extracted && (
+                        <AutoKycPanel extracted={doc.extracted} />
+                      )}
+
                       {/* Status banner for non-pending docs */}
                       {doc.status === "APPROVED" && (
                         <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
@@ -452,6 +457,72 @@ export default async function KYCQueuePage({ searchParams }: PageProps) {
 
       {/* Calendar import is unused — keep as decorative */}
       <Calendar className="hidden" />
+    </div>
+  );
+}
+
+function AutoKycPanel({ extracted }: { extracted: unknown }) {
+  const e = (extracted ?? {}) as {
+    fullName?: string;
+    dateOfBirth?: string;
+    idNumber?: string;
+    expiry?: string;
+    ocrConfidence?: number;
+    faceSimilarity?: number;
+    faceMatched?: boolean;
+    decision?: string;
+    reasons?: string[];
+  };
+  const sim = typeof e.faceSimilarity === "number" ? e.faceSimilarity : null;
+  const conf =
+    typeof e.ocrConfidence === "number" ? Math.round(e.ocrConfidence * 100) : null;
+  return (
+    <div className="mb-6 rounded-lg border border-indigo-500/30 bg-indigo-500/5 p-4 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 text-[10px] font-bold uppercase tracking-wider">
+          ⚡ Auto (AI)
+        </span>
+        <span className="text-xs text-slate-400">
+          AI-extracted — verify against the images before approving.
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+        <div>
+          <p className="text-[10px] uppercase text-slate-500">Name</p>
+          <p className="text-white truncate">{e.fullName ?? "—"}</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase text-slate-500">DOB</p>
+          <p className="text-white">{e.dateOfBirth ?? "—"}</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase text-slate-500">ID #</p>
+          <p className="text-white font-mono text-xs truncate">{e.idNumber ?? "—"}</p>
+        </div>
+        <div>
+          <p className="text-[10px] uppercase text-slate-500">Expiry</p>
+          <p className="text-white">{e.expiry ?? "—"}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-3 text-xs">
+        <span
+          className={
+            sim != null && sim >= 88
+              ? "text-emerald-400 font-bold"
+              : "text-amber-400 font-bold"
+          }
+        >
+          Face match: {sim != null ? `${sim}%` : "n/a"}
+        </span>
+        <span className="text-slate-400">OCR confidence: {conf != null ? `${conf}%` : "n/a"}</span>
+      </div>
+      {Array.isArray(e.reasons) && e.reasons.length > 0 && (
+        <ul className="list-disc list-inside text-[11px] text-amber-300/90 space-y-0.5">
+          {e.reasons.map((r, i) => (
+            <li key={i}>{r}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
