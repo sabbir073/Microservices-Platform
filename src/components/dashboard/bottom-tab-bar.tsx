@@ -58,7 +58,7 @@ export function BottomTabBar({ features }: { features?: string[] }) {
 
   return (
     <nav
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-gray-800 bg-gray-900/95 backdrop-blur"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-gray-800/80 bg-gray-950/85 backdrop-blur-xl"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div
@@ -84,13 +84,13 @@ export function BottomTabBar({ features }: { features?: string[] }) {
                 // Center Home: bigger icon inside a subtle rounded highlight.
                 <span
                   className={cn(
-                    "flex items-center justify-center w-11 h-11 rounded-full transition-colors",
+                    "flex items-center justify-center w-12 h-12 rounded-2xl transition-all -mt-4 border border-gray-800",
                     activeTab
-                      ? "bg-indigo-500/15 text-indigo-400"
-                      : "bg-gray-800/60 text-gray-300"
+                      ? "bg-linear-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-600/30 border-transparent"
+                      : "bg-gray-900 text-gray-300"
                   )}
                 >
-                  <tab.icon className="w-7 h-7" />
+                  <tab.icon className="w-6 h-6" />
                 </span>
               ) : (
                 <tab.icon className="w-5 h-5" />

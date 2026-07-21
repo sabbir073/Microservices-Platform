@@ -25,7 +25,7 @@ export function BalanceCard({
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-2xl border border-gray-800 bg-linear-to-br from-indigo-600/20 via-purple-600/10 to-gray-900 p-4",
+        "relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-linear-to-br from-indigo-600/25 via-violet-600/10 to-gray-900 p-5 elevate-2",
         className
       )}
     >

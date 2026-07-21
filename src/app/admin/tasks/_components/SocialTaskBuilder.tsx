@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
+import { Reorder, useDragControls } from "framer-motion";
 import {
   getPlatform,
   getAction,
   getPlatformGroups,
   emptyBundleConfig,
-  sortBundleItems,
   bundleTotalPoints,
   actionPriority,
   isWatchAction,
@@ -22,6 +22,7 @@ import {
   Plus,
   Minus,
   Trash2,
+  GripVertical,
 } from "lucide-react";
 
 interface Props {
@@ -40,8 +41,9 @@ interface Props {
 export function SocialTaskBuilder({ value, onChange }: Props) {
   const platform = useMemo(() => getPlatform(value.platform), [value.platform]);
 
-  // Selected items in natural-flow order (server re-sorts too, but keep the UI tidy).
-  const items = useMemo(() => sortBundleItems(value.items), [value.items]);
+  // Selected items in the admin's chosen order — the exact order users will
+  // complete them in. Reorderable by drag (see the Reorder.Group below).
+  const items = value.items;
   const total = useMemo(() => bundleTotalPoints(items), [items]);
 
   const commit = (nextItems: BundleItem[]) => {
@@ -71,7 +73,8 @@ export function SocialTaskBuilder({ value, onChange }: Props) {
       aiPromptEnabled: false,
       aiPrompt: null,
     };
-    commit(sortBundleItems([...value.items, fresh]));
+    // Append to the end; the admin drags to set the final order.
+    commit([...value.items, fresh]);
   };
 
   const updateItem = (actionKey: string, patch: Partial<BundleItem>) => {
@@ -147,8 +150,8 @@ export function SocialTaskBuilder({ value, onChange }: Props) {
             Actions <span className="text-red-400">*</span>
           </label>
           <p className="text-xs text-gray-500 mb-3">
-            Check every {platform.label} action this task bundles — users must
-            complete them in order (shown top-to-bottom in the natural flow).
+            Check every {platform.label} action this task bundles. Users complete
+            them in order — drag the cards below by the ⠿ handle to set the order.
           </p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {sortedActions.map((a) => {
@@ -191,131 +194,28 @@ export function SocialTaskBuilder({ value, onChange }: Props) {
         </div>
       )}
 
-      {/* Per-item configuration cards (in natural-flow order) */}
-      {items.map((item, idx) => {
-        const def = getAction(value.platform, item.action);
-        if (!def) return null;
-        return (
-          <div
-            key={item.action}
-            className="space-y-5 p-4 rounded-lg bg-gray-950 border border-gray-800"
-          >
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <p className="text-sm font-bold text-white">
-                  <span className="text-gray-500">{idx + 1}.</span> {def.emoji}{" "}
-                  {def.label}{" "}
-                  <span className="text-gray-400 font-normal">
-                    on {platform?.label}
-                  </span>
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">{def.description}</p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {def.supportsAiPrompt && (
-                  <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={item.aiPromptEnabled}
-                      onChange={() =>
-                        updateItem(item.action, {
-                          aiPromptEnabled: !item.aiPromptEnabled,
-                          aiPrompt: !item.aiPromptEnabled
-                            ? item.aiPrompt ?? ""
-                            : null,
-                        })
-                      }
-                      className="rounded bg-gray-800 border-gray-600 text-purple-500"
-                    />
-                    <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                    <span className="text-xs font-semibold text-purple-300">
-                      Use AI prompt
-                    </span>
-                  </label>
-                )}
-                <button
-                  type="button"
-                  onClick={() => toggleAction(item.action)}
-                  className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10"
-                  title="Remove action"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            {/* Per-item points */}
-            <PointsStepper
-              value={item.points}
-              onChange={(n) => updateItem(item.action, { points: n })}
+      {/* Per-item configuration cards — drag by the ⠿ handle to reorder */}
+      {items.length > 0 && (
+        <Reorder.Group
+          as="div"
+          axis="y"
+          values={items}
+          onReorder={commit}
+          className="space-y-5"
+        >
+          {items.map((item, idx) => (
+            <SocialActionCard
+              key={item.action}
+              item={item}
+              idx={idx}
+              platformKey={value.platform}
+              platformLabel={platform?.label}
+              onUpdate={(patch) => updateItem(item.action, patch)}
+              onRemove={() => toggleAction(item.action)}
             />
-
-            {/* Watch/listen duration — for watch-type actions (feeds the timed lock) */}
-            {isWatchAction(item.action) && (
-              <div>
-                <label className="block text-sm font-medium text-gray-400 mb-1.5">
-                  Watch / Listen duration (seconds)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={item.watchSeconds ?? 0}
-                  onChange={(e) => {
-                    const n = Number(e.target.value);
-                    updateItem(item.action, {
-                      watchSeconds: Number.isFinite(n) && n > 0 ? n : undefined,
-                    });
-                  }}
-                  placeholder="30"
-                  className="w-32 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                />
-                <p className="text-[11px] text-gray-500 mt-1">
-                  If set, users must watch this long in a locked player before it counts.
-                </p>
-              </div>
-            )}
-
-            {item.aiPromptEnabled && def.aiGeneratableFields ? (
-              <AiPromptSection
-                prompt={item.aiPrompt ?? ""}
-                onChange={(p) => updateItem(item.action, { aiPrompt: p })}
-                generatableFields={def.aiGeneratableFields}
-                actionLabel={def.label}
-              />
-            ) : null}
-
-            {/* Admin fields — skip AI-generatable ones if AI prompt is enabled */}
-            <div className="space-y-3">
-              {def.adminFields.map((field) => {
-                const isAiGen = def.aiGeneratableFields?.includes(field.key);
-                if (item.aiPromptEnabled && isAiGen) return null;
-                return (
-                  <FieldEditor
-                    key={field.key}
-                    field={field}
-                    value={item.fields[field.key] ?? ""}
-                    onChange={(v) =>
-                      updateItem(item.action, {
-                        fields: { ...item.fields, [field.key]: v },
-                      })
-                    }
-                  />
-                );
-              })}
-            </div>
-
-            {/* Proof requirements */}
-            <ProofRequirements
-              value={item.proofRequirements}
-              defaultProofFields={def.proofFields}
-              onChange={(pr) =>
-                updateItem(item.action, { proofRequirements: pr })
-              }
-            />
-          </div>
-        );
-      })}
+          ))}
+        </Reorder.Group>
+      )}
 
       {/* Live bundle summary */}
       {platform && items.length > 0 && (
@@ -341,6 +241,157 @@ export function SocialTaskBuilder({ value, onChange }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Draggable per-action config card (order = the order users complete them in)
+// -----------------------------------------------------------------------------
+
+function SocialActionCard({
+  item,
+  idx,
+  platformKey,
+  platformLabel,
+  onUpdate,
+  onRemove,
+}: {
+  item: BundleItem;
+  idx: number;
+  platformKey: string | null;
+  platformLabel?: string;
+  onUpdate: (patch: Partial<BundleItem>) => void;
+  onRemove: () => void;
+}) {
+  const controls = useDragControls();
+  const def = getAction(platformKey, item.action);
+  if (!def) return null;
+
+  return (
+    <Reorder.Item
+      as="div"
+      value={item}
+      dragListener={false}
+      dragControls={controls}
+      className="space-y-5 p-4 rounded-xl bg-gray-950 border border-gray-800"
+    >
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-start gap-2">
+          {/* Drag handle — only this starts a drag, so the inputs stay usable */}
+          <button
+            type="button"
+            aria-label="Drag to reorder"
+            onPointerDown={(e) => controls.start(e)}
+            className="mt-0.5 shrink-0 cursor-grab touch-none rounded-lg p-1 text-gray-500 hover:bg-gray-800 hover:text-gray-300 active:cursor-grabbing"
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+          <div>
+            <p className="text-sm font-bold text-white">
+              <span className="text-gray-500">{idx + 1}.</span> {def.emoji}{" "}
+              {def.label}{" "}
+              <span className="text-gray-400 font-normal">on {platformLabel}</span>
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">{def.description}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {def.supportsAiPrompt && (
+            <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={item.aiPromptEnabled}
+                onChange={() =>
+                  onUpdate({
+                    aiPromptEnabled: !item.aiPromptEnabled,
+                    aiPrompt: !item.aiPromptEnabled ? item.aiPrompt ?? "" : null,
+                  })
+                }
+                className="rounded bg-gray-800 border-gray-600 text-purple-500"
+              />
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <span className="text-xs font-semibold text-purple-300">
+                Use AI prompt
+              </span>
+            </label>
+          )}
+          <button
+            type="button"
+            onClick={onRemove}
+            className="p-1.5 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10"
+            title="Remove action"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      {/* Per-item points */}
+      <PointsStepper
+        value={item.points}
+        onChange={(n) => onUpdate({ points: n })}
+      />
+
+      {/* Watch/listen duration — for watch-type actions (feeds the timed lock) */}
+      {isWatchAction(item.action) && (
+        <div>
+          <label className="block text-sm font-medium text-gray-400 mb-1.5">
+            Watch / Listen duration (seconds)
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={item.watchSeconds ?? 0}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              onUpdate({
+                watchSeconds: Number.isFinite(n) && n > 0 ? n : undefined,
+              });
+            }}
+            placeholder="30"
+            className="w-32 px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
+          />
+          <p className="text-[11px] text-gray-500 mt-1">
+            If set, users must watch this long in a locked player before it counts.
+          </p>
+        </div>
+      )}
+
+      {item.aiPromptEnabled && def.aiGeneratableFields ? (
+        <AiPromptSection
+          prompt={item.aiPrompt ?? ""}
+          onChange={(p) => onUpdate({ aiPrompt: p })}
+          generatableFields={def.aiGeneratableFields}
+          actionLabel={def.label}
+        />
+      ) : null}
+
+      {/* Admin fields — skip AI-generatable ones if AI prompt is enabled */}
+      <div className="space-y-3">
+        {def.adminFields.map((field) => {
+          const isAiGen = def.aiGeneratableFields?.includes(field.key);
+          if (item.aiPromptEnabled && isAiGen) return null;
+          return (
+            <FieldEditor
+              key={field.key}
+              field={field}
+              value={item.fields[field.key] ?? ""}
+              onChange={(v) =>
+                onUpdate({ fields: { ...item.fields, [field.key]: v } })
+              }
+            />
+          );
+        })}
+      </div>
+
+      {/* Proof requirements */}
+      <ProofRequirements
+        value={item.proofRequirements}
+        defaultProofFields={def.proofFields}
+        onChange={(pr) => onUpdate({ proofRequirements: pr })}
+      />
+    </Reorder.Item>
   );
 }
 
@@ -582,8 +633,8 @@ function ProofRequirements({
         <p className="text-sm font-bold text-white">Proof Required</p>
       </div>
       <p className="text-xs text-gray-500 mb-3">
-        What users must submit to complete this task. Defaults are based on the
-        action — adjust if needed.
+        Optional — what users must submit to complete this task. Leave all off to
+        require no proof (e.g. watch actions verify automatically).
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <Toggle
@@ -656,6 +707,10 @@ function deriveDefaultProofRequirements(
   platformKey: string | null | undefined,
   actionKey: string
 ): ProofReqs {
+  // Watch actions verify via the locked player — default to no manual proof.
+  if (isWatchAction(actionKey)) {
+    return { url: false, screenshot: false, username: false };
+  }
   const action = getAction(platformKey, actionKey);
   if (!action) return { url: true, screenshot: true, username: false };
   const keys = action.proofFields.map((f) => f.key);

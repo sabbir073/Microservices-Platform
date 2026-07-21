@@ -36,11 +36,11 @@ function StatsCard({
   icon: React.ElementType;
 }) {
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+    <div className="card p-6">
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm text-gray-400">{title}</p>
-          <p className="text-2xl font-bold text-white mt-1">{value}</p>
+          <p className="text-2xl font-extrabold text-white mt-1 tracking-tight tabular-nums">{value}</p>
           {change && (
             <div className="flex items-center gap-1 mt-2">
               {changeType === "positive" ? (
@@ -59,8 +59,8 @@ function StatsCard({
             </div>
           )}
         </div>
-        <div className="p-3 bg-indigo-500/10 rounded-lg">
-          <Icon className="w-6 h-6 text-indigo-400" />
+        <div className="grid place-items-center h-11 w-11 bg-indigo-500/10 text-indigo-400 ring-1 ring-indigo-500/20 rounded-xl">
+          <Icon className="w-6 h-6" />
         </div>
       </div>
     </div>
@@ -68,30 +68,34 @@ function StatsCard({
 }
 
 // Quick Action Card
+const QA_TONE: Record<string, string> = {
+  indigo: "bg-indigo-500/10 text-indigo-400 ring-1 ring-indigo-500/20",
+  amber: "bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20",
+  emerald: "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20",
+  pink: "bg-pink-500/10 text-pink-400 ring-1 ring-pink-500/20",
+};
+
 function QuickActionCard({
   title,
   description,
   href,
   icon: Icon,
-  color,
+  tone = "indigo",
 }: {
   title: string;
   description: string;
   href: string;
   icon: React.ElementType;
-  color: string;
+  tone?: "indigo" | "amber" | "emerald" | "pink";
 }) {
   return (
-    <Link
-      href={href}
-      className="bg-gray-900 rounded-xl border border-gray-800 p-5 hover:border-gray-700 transition-colors group"
-    >
+    <Link href={href} className="card card-interactive p-5 group block">
       <div
-        className={`w-12 h-12 rounded-lg ${color} flex items-center justify-center mb-4`}
+        className={`w-12 h-12 rounded-xl grid place-items-center mb-4 ${QA_TONE[tone]}`}
       >
-        <Icon className="w-6 h-6 text-white" />
+        <Icon className="w-6 h-6" />
       </div>
-      <h3 className="font-semibold text-white group-hover:text-indigo-400 transition-colors">
+      <h3 className="font-semibold text-white group-hover:text-indigo-300 transition-colors">
         {title}
       </h3>
       <p className="text-sm text-gray-500 mt-1">{description}</p>
@@ -251,28 +255,28 @@ export default async function DashboardPage() {
             description="Earn points by completing tasks"
             href="/tasks"
             icon={CheckCircle}
-            color="bg-linear-to-br from-indigo-500 to-purple-600"
+            tone="indigo"
           />
           <QuickActionCard
             title="Invite Friends"
             description="Earn commissions from referrals"
             href="/referrals"
             icon={Users}
-            color="bg-linear-to-br from-amber-500 to-orange-600"
+            tone="amber"
           />
           <QuickActionCard
             title="Daily Bonus"
             description="Claim your daily rewards"
             href="/earn"
             icon={Gift}
-            color="bg-linear-to-br from-emerald-500 to-teal-600"
+            tone="emerald"
           />
           <QuickActionCard
             title="Leaderboard"
             description="See top earners this week"
             href="/leaderboard"
             icon={Trophy}
-            color="bg-linear-to-br from-pink-500 to-rose-600"
+            tone="pink"
           />
         </div>
       </div>
@@ -281,7 +285,7 @@ export default async function DashboardPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recent Activity */}
-        <div className="lg:col-span-2 bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <div className="lg:col-span-2 card p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-white">Recent Activity</h2>
             <Link
@@ -307,7 +311,7 @@ export default async function DashboardPage() {
         {/* Streak & Achievements */}
         <div className="space-y-6">
           {/* Daily Streak */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+          <div className="card p-6">
             <h3 className="text-lg font-semibold text-white mb-4">
               Daily Streak
             </h3>
@@ -325,7 +329,7 @@ export default async function DashboardPage() {
           </div>
 
           {/* Level Progress */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+          <div className="card p-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-white">Level</h3>
               <span className="px-2 py-1 bg-indigo-500/10 text-indigo-400 text-xs font-medium rounded-full">
@@ -352,7 +356,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Available Tasks Preview */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-6">
+      <div className="card p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-white">Available Tasks</h2>
           <Link

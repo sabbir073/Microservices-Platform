@@ -405,6 +405,9 @@ export async function POST(
         answers: answers || null,
         score,
         status: newStatus,
+        // Mark the actual submit moment (distinguishes "in progress" from
+        // "submitted / pending review" for a still-PENDING submission).
+        submittedAt: new Date(),
         ...(hasMetadata
           ? { metadata: JSON.parse(JSON.stringify(submissionMetadata)) }
           : {}),

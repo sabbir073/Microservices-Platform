@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Save, X, Plus, Trash2, AlertCircle, Loader2, Image as ImageIcon, Smartphone } from "lucide-react";
 import { MediaSelector } from "@/components/media/MediaSelector";
+import { notifyCenter } from "@/lib/notify-center";
 import type { MediaItem } from "@/types/media";
 import { SocialTaskBuilder } from "./SocialTaskBuilder";
 import { ArticleTaskBuilder } from "./ArticleTaskBuilder";
@@ -412,13 +413,25 @@ export function TaskForm({ task }: TaskFormProps) {
         setCreatedTaskId(savedTaskId);
       }
 
+      // Centered success popup (persists across the redirect — NotifyCenterHost
+      // is mounted in the root layout).
+      const okMsg = isDraft
+        ? "Saved as draft"
+        : effectiveTaskId
+          ? "Task updated"
+          : "Task created";
+      notifyCenter.success(okMsg, "It's now in your task list.");
+
       if (opts.redirect) {
         router.push("/admin/tasks");
         router.refresh();
       }
       return { taskId: savedTaskId };
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      const message = err instanceof Error ? err.message : "An error occurred";
+      setError(message);
+      // Centered error popup so the issue is visible without scrolling to the top.
+      notifyCenter.error("Couldn't save task", message);
       return { taskId: null };
     } finally {
       setLoading(false);

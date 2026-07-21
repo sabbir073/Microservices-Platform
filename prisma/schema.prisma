@@ -1100,6 +1100,10 @@ model TaskSubmission {
   // gate never has to trust a client-claimed watch count.
   watchedSeconds Int             @default(0)
   lastBeatAt     DateTime?
+  // Set the moment the user actually SUBMITS proof (vs. merely /start-ing the
+  // task). Distinguishes "in progress" (PENDING, submittedAt null) from
+  // "submitted / pending review" (PENDING, submittedAt set) for the task list.
+  submittedAt    DateTime?
   // Type-specific proof bag — used by SOCIAL ({ socialUsername, socialGeneratedContent }),
   // forward-flexible for future task types.
   metadata      Json?

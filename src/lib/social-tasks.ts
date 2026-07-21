@@ -3312,7 +3312,7 @@ export interface BundleValidationResult {
 /**
  * Validate a bundle: platform set, ≥1 item, each action resolves, required
  * adminFields filled (skipping AI-generatable ones when AI mode is on for the
- * item), points ≥ 0, and ≥1 proof requirement per item.
+ * item), points ≥ 0. Proof requirements are optional (may be none).
  */
 export function validateSocialBundle(cfg: {
   platform: string | null;
@@ -3336,11 +3336,8 @@ export function validateSocialBundle(cfg: {
       itemErrors[idx] = "Points must be 0 or more.";
       return;
     }
-    const pr = item.proofRequirements;
-    if (!pr.url && !pr.screenshot && !pr.username) {
-      itemErrors[idx] = "Select at least one proof requirement.";
-      return;
-    }
+    // Proof is optional — an action may require none (e.g. WATCH actions are
+    // verified by the locked player, not by uploaded proof).
     const aiOn = item.aiPromptEnabled && !!(item.aiPrompt ?? "").trim();
     const missing = def.adminFields.find((f) => {
       if (!f.required) return false;

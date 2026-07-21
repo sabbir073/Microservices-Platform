@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Video as VideoIcon } from "lucide-react";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { TaskCard } from "@/components/user/primitives/task-card";
@@ -47,9 +47,17 @@ const TAB_TO_STATUS: Record<Tab, string[]> = {
   rejected: ["REJECTED", "REVISION_REQUESTED"],
 };
 
+const TABS: Tab[] = ["available", "submitted", "approved", "rejected"];
+
 export function VideoTasksView() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("available");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab");
+  const [tab, setTab] = useState<Tab>(
+    initialTab && (TABS as string[]).includes(initialTab)
+      ? (initialTab as Tab)
+      : "available"
+  );
   const [tasks, setTasks] = useState<VideoTask[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);

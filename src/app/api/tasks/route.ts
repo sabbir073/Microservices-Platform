@@ -83,14 +83,33 @@ export async function GET(request: NextRequest) {
         createdAt: { gte: todayStart },
         status: { in: ["APPROVED", "AUTO_APPROVED", "PENDING"] },
       },
-      select: { taskId: true, status: true },
+      select: { taskId: true, status: true, submittedAt: true },
     });
 
+    // Per-task per-user status for the list badges:
+    //   COMPLETED   — an APPROVED/AUTO_APPROVED submission today
+    //   SUBMITTED   — a PENDING submission the user already submitted (pending review)
+    //   IN_PROGRESS — a PENDING submission started but not yet submitted
+    type UserTaskStatus = "COMPLETED" | "SUBMITTED" | "IN_PROGRESS";
     const userTodayCounts = new Map<string, number>();
     const pendingTaskIds = new Set<string>();
+    const userStatusByTask = new Map<string, UserTaskStatus>();
+    const rank: Record<UserTaskStatus, number> = {
+      IN_PROGRESS: 1,
+      SUBMITTED: 2,
+      COMPLETED: 3,
+    };
     for (const s of userSubmissionsToday) {
       userTodayCounts.set(s.taskId, (userTodayCounts.get(s.taskId) ?? 0) + 1);
       if (s.status === "PENDING") pendingTaskIds.add(s.taskId);
+      const st: UserTaskStatus =
+        s.status === "PENDING"
+          ? s.submittedAt
+            ? "SUBMITTED"
+            : "IN_PROGRESS"
+          : "COMPLETED";
+      const prev = userStatusByTask.get(s.taskId);
+      if (!prev || rank[st] > rank[prev]) userStatusByTask.set(s.taskId, st);
     }
 
     // Hide entire task types that this plan has switched off (e.g. plan with
@@ -215,6 +234,7 @@ export async function GET(request: NextRequest) {
         dailyLimit,
         remainingToday,
         hasPending,
+        userStatus: userStatusByTask.get(task.id) ?? "AVAILABLE",
         dailyLimitReached,
         totalLimitReached: !!reachedTotalLimit,
         canStart,
@@ -229,7 +249,12 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    const visibleTasks = processedTasks.filter((t) => t.canStart);
+    // Show startable tasks (available / in-progress / submitted) AND tasks the
+    // user has completed today (so they see a "Done" badge instead of the task
+    // silently vanishing). Only globally-unavailable tasks stay hidden.
+    const visibleTasks = processedTasks.filter(
+      (t) => t.canStart || t.userStatus === "COMPLETED"
+    );
 
     return NextResponse.json({
       tasks: visibleTasks,
