@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { z } from "zod";
 import { isGeminiConfigured, generateText } from "@/lib/gemini";
+import { prisma } from "@/lib/prisma";
+import { getSetting } from "@/lib/system-settings";
 
 const schema = z.object({ prompt: z.string().min(3).max(4000) });
 
@@ -23,6 +25,29 @@ export async function POST(request: NextRequest) {
   const v = schema.safeParse(body);
   if (!v.success) {
     return NextResponse.json({ error: "A prompt is required" }, { status: 400 });
+  }
+
+  // Per-user daily rate limit (admin-configurable; -1/0 = unlimited).
+  const limit = await getSetting<number>("ai.daily_limit_per_user", 50);
+  if (typeof limit === "number" && limit > 0) {
+    const dateKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+    const existing = await prisma.aiUsageDaily.findUnique({
+      where: { userId_dateKey: { userId: session.user.id, dateKey } },
+      select: { count: true },
+    });
+    if ((existing?.count ?? 0) >= limit) {
+      return NextResponse.json(
+        {
+          error: `Daily AI limit reached (${limit}/day). Try again tomorrow or write it yourself.`,
+        },
+        { status: 429 }
+      );
+    }
+    await prisma.aiUsageDaily.upsert({
+      where: { userId_dateKey: { userId: session.user.id, dateKey } },
+      create: { userId: session.user.id, dateKey, count: 1 },
+      update: { count: { increment: 1 } },
+    });
   }
 
   const result = await generateText(v.data.prompt);

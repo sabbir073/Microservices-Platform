@@ -40,6 +40,55 @@ function isWatchLocked(item: SocialTaskItemView): boolean {
   return isWatchAction(item.action) && !!item.watchSeconds && item.watchSeconds > 0;
 }
 
+/**
+ * Build the AI prompt for an action from the task's own title/description, the
+ * admin's reference content (the AI-generatable field the admin filled), and any
+ * extra guidance the admin added. Comment actions produce a short 1–2 line unique
+ * comment; content/post actions produce an original variant of the reference.
+ */
+function buildAiPrompt(
+  def: { aiGeneratableFields?: string[]; key?: string; label?: string } | null,
+  item: SocialTaskItemView,
+  task: { title?: string | null; description?: string | null }
+): string {
+  const genFields = def?.aiGeneratableFields ?? [];
+  const isComment =
+    genFields.some((k) => /comment/i.test(k)) ||
+    /comment|reply|review/i.test(`${def?.key ?? ""} ${def?.label ?? ""}`);
+  const contentKey = genFields[0];
+  const adminContent = contentKey
+    ? (item.fields?.[contentKey] ?? "").trim()
+    : "";
+  const extra = (item.aiPrompt ?? "").trim();
+  const topic = [task.title ?? "", task.description ?? ""]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(". ");
+
+  if (isComment) {
+    return [
+      "Write ONE short, original, natural-sounding comment (1 to 2 lines maximum, no quotation marks, no hashtags unless they fit naturally).",
+      topic && `It is about: ${topic}.`,
+      adminContent &&
+        `Keep a similar tone/style to this example but reword it and make it unique: "${adminContent}".`,
+      extra && `Extra guidance: ${extra}.`,
+      "Make it unique, human and specific. Return ONLY the comment text.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return [
+    "Write an original social media post — same topic and tone as the reference, but reworded and unique (do not copy it).",
+    adminContent && `Reference post: "${adminContent}".`,
+    topic && `Topic: ${topic}.`,
+    extra && `Extra guidance: ${extra}.`,
+    "Keep it engaging and natural. Return ONLY the post text.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function SocialTaskRunView({ taskId }: { taskId: string }) {
   const [task, setTask] = useState<SocialTaskView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -215,14 +264,15 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
         body: JSON.stringify({ prompt }),
       });
       if (!res.ok) {
-        toast.info("AI not available — write your post manually using the prompt above");
+        const d = await res.json().catch(() => ({}));
+        toast.info(d.error || "AI not available — please write it yourself");
         return;
       }
       const d = await res.json();
       setAiOutputByIndex((prev) => ({ ...prev, [idx]: d.text ?? d.content ?? "" }));
       toast.success("Generated — review and post it");
     } catch {
-      toast.info("Use the prompt to write your post manually");
+      toast.info("Please write it yourself this time");
     } finally {
       setGeneratingAi(null);
     }
@@ -552,21 +602,22 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
               )
             )}
 
-            {/* AI prompt */}
-            {item.aiPromptEnabled && item.aiPrompt && (
+            {/* AI generate — builds a unique variant from the task + your content */}
+            {item.aiPromptEnabled && (
               <div className="rounded-lg bg-purple-500/5 border border-purple-500/30 p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-purple-400" />
                   <p className="text-sm font-bold text-purple-300">
-                    Generate content with AI
+                    Generate your own with AI
                   </p>
                 </div>
-                <div className="rounded bg-gray-950 border border-purple-500/20 p-2 text-xs text-purple-200 whitespace-pre-wrap">
-                  {item.aiPrompt}
-                </div>
+                <p className="text-xs text-purple-200/80">
+                  Creates a unique {def?.label ?? "content"} from this task — each
+                  user gets a different one. Review, then post it and submit proof.
+                </p>
                 <button
                   type="button"
-                  onClick={() => generateAi(idx, item.aiPrompt!)}
+                  onClick={() => generateAi(idx, buildAiPrompt(def ?? null, item, task))}
                   disabled={generatingAi === idx}
                   className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-xs font-bold disabled:opacity-50"
                 >

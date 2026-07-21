@@ -1257,8 +1257,16 @@ model Package {
 
   // Limits
   dailyTaskLimit        Int   @default(-1)
+  dailyPostLimit        Int   @default(-1)
   withdrawalFeeDiscount Float @default(0)
   minWithdrawal         Float
+
+  // Social earning (per-package). `socialEarningEnabled` is a hard on/off gate;
+  // `socialEarningConfig` overrides the global per-action recipient points for
+  // this plan, e.g. { likePoints, commentPoints, postPoints, sharePoints,
+  // votePoints } — null keys fall back to the global social_earning config.
+  socialEarningEnabled  Boolean @default(true)
+  socialEarningConfig   Json?
 
   // Multipliers
   xpMultiplier            Float @default(1)
@@ -2188,6 +2196,17 @@ model SocialActionLog {
   createdAt DateTime @default(now())
   @@index([userId, dateKey, action])
   @@index([postId])
+}
+
+// Per-user daily AI-generation counter (rate limit for /api/ai/generate).
+// One row per user per UTC day; `count` increments on each generate call.
+model AiUsageDaily {
+  id        String   @id @default(cuid())
+  userId    String
+  dateKey   String
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+  @@unique([userId, dateKey])
 }
 
 model Group {

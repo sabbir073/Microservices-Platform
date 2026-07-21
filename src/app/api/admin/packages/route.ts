@@ -48,8 +48,15 @@ const PLAN_INPUT = z
 
     // Limits
     dailyTaskLimit: z.number().int().min(-1).max(100000),
+    dailyPostLimit: z.number().int().min(-1).max(100000).optional(),
     minWithdrawal: z.number().min(0),
     withdrawalFeeDiscount: z.number().min(0).max(100),
+
+    // Social earning (per-package)
+    socialEarningEnabled: z.boolean().optional(),
+    socialEarningConfig: z
+      .record(z.string(), z.number().int().min(0))
+      .optional(),
 
     // Multipliers
     xpMultiplier: z.number().min(0.1).max(50),
@@ -168,8 +175,11 @@ export async function POST(req: NextRequest) {
         appInstallEnabled: data.appInstallEnabled ?? true,
 
         dailyTaskLimit: data.dailyTaskLimit,
+        dailyPostLimit: data.dailyPostLimit ?? -1,
         minWithdrawal: data.minWithdrawal,
         withdrawalFeeDiscount: data.withdrawalFeeDiscount,
+        socialEarningEnabled: data.socialEarningEnabled ?? true,
+        socialEarningConfig: data.socialEarningConfig ?? undefined,
 
         xpMultiplier: data.xpMultiplier,
         taskRewardMultiplier: data.taskRewardMultiplier,

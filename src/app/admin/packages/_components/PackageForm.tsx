@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Save,
@@ -62,8 +63,13 @@ export interface PackageFormPkg {
   appInstallEnabled: boolean;
 
   dailyTaskLimit: number;
+  dailyPostLimit?: number;
   minWithdrawal: number;
   withdrawalFeeDiscount: number;
+
+  // Social earning (per-package)
+  socialEarningEnabled?: boolean;
+  socialEarningConfig?: Record<string, number> | null;
 
   xpMultiplier: number;
   taskRewardMultiplier: number;
@@ -74,6 +80,15 @@ export interface PackageFormPkg {
   features: string[];
   badgeColor: string | null;
 }
+
+// Per-action recipient point overrides shown in the Social Earning section.
+const SOCIAL_POINT_FIELDS: Array<{ key: string; label: string }> = [
+  { key: "likePoints", label: "Per like received" },
+  { key: "commentPoints", label: "Per comment received" },
+  { key: "postPoints", label: "Per post (daily)" },
+  { key: "sharePoints", label: "Per share received" },
+  { key: "votePoints", label: "Per poll vote received" },
+];
 
 interface PackageFormProps {
   pkg: PackageFormPkg;
@@ -277,9 +292,12 @@ export function PackageForm({ pkg, mode = "edit" }: PackageFormProps) {
 
       {/* Limits + Multipliers */}
       <Section title="Limits" description="Hard caps and minimum thresholds." icon={<Wallet className="w-5 h-5 text-amber-400" />}>
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Field label="Daily Task Limit" htmlFor="dtl" tooltip="Total tasks per day across ALL types. -1 = unlimited. 0 = effectively blocks tasks for this plan.">
             <input id="dtl" type="number" min={-1} value={data.dailyTaskLimit} onChange={(e) => setField("dailyTaskLimit", parseInt(e.target.value) || 0)} className={inputCls} />
+          </Field>
+          <Field label="Daily Post Limit" htmlFor="dpl" tooltip="Max social-feed posts per day for this plan. -1 = unlimited.">
+            <input id="dpl" type="number" min={-1} value={data.dailyPostLimit ?? -1} onChange={(e) => setField("dailyPostLimit", parseInt(e.target.value) || -1)} className={inputCls} />
           </Field>
           <Field label="Min Withdrawal ($)" htmlFor="mw">
             <input id="mw" type="number" min={0} step="0.01" value={data.minWithdrawal} onChange={(e) => setField("minWithdrawal", parseFloat(e.target.value) || 0)} className={inputCls} />
@@ -321,6 +339,48 @@ export function PackageForm({ pkg, mode = "edit" }: PackageFormProps) {
           dailyL1Points={data.dailyReferralPoints}
           onDailyL1Change={(v) => setField("dailyReferralPoints", v)}
         />
+      </Section>
+
+      {/* Social feed earning — per-package overrides. Base defaults + actor
+          rewards + caps live in Settings → Social Earning. */}
+      <Section
+        title="Social Feed Earning"
+        description="Points a user earns when their posts receive engagement. Leave a field blank to use the global default (Settings → Social Earning). The multiplier above still applies on top."
+        icon={<Gift className="w-5 h-5 text-emerald-400" />}
+      >
+        <ToggleRow
+          label="Enable social earning"
+          checked={data.socialEarningEnabled ?? true}
+          onChange={() =>
+            setField("socialEarningEnabled", !(data.socialEarningEnabled ?? true))
+          }
+          tooltip="Hard on/off. When off, this plan earns no points from likes/comments/etc."
+        />
+        {(data.socialEarningEnabled ?? true) && (
+          <div className="mt-4 grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {SOCIAL_POINT_FIELDS.map((f) => (
+              <Field key={f.key} label={f.label} htmlFor={`sep-${f.key}`}>
+                <input
+                  id={`sep-${f.key}`}
+                  type="number"
+                  min={0}
+                  placeholder="default"
+                  value={data.socialEarningConfig?.[f.key] ?? ""}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setData((d) => {
+                      const next = { ...(d.socialEarningConfig ?? {}) };
+                      if (raw === "") delete next[f.key];
+                      else next[f.key] = Math.max(0, parseInt(raw) || 0);
+                      return { ...d, socialEarningConfig: next };
+                    });
+                  }}
+                  className={inputCls}
+                />
+              </Field>
+            ))}
+          </div>
+        )}
       </Section>
 
       {/* Features (marketing) */}
@@ -522,7 +582,7 @@ function ReferralPyramidSelector({
         </p>
         <p className="text-xs text-gray-400 mt-1">
           Pick the deepest level this plan earns from. Per-level rates are configured globally on{" "}
-          <a href="/admin/referrals" className="text-cyan-400 underline">/admin/referrals</a>.
+          <Link href="/admin/referrals" className="text-cyan-400 underline">/admin/referrals</Link>.
         </p>
       </div>
 

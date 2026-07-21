@@ -298,7 +298,10 @@ function SocialActionCard({
 
         <div className="flex items-center gap-2">
           {def.supportsAiPrompt && (
-            <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 cursor-pointer">
+            <label
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 cursor-pointer"
+              title="On: each user clicks AI to generate their own unique variant from this task + your content. Off: users share your content exactly as written."
+            >
               <input
                 type="checkbox"
                 checked={item.aiPromptEnabled}
@@ -312,7 +315,7 @@ function SocialActionCard({
               />
               <Sparkles className="w-3.5 h-3.5 text-purple-400" />
               <span className="text-xs font-semibold text-purple-300">
-                Use AI prompt
+                Users AI-generate their own
               </span>
             </label>
           )}
@@ -367,15 +370,27 @@ function SocialActionCard({
         />
       ) : null}
 
-      {/* Admin fields — skip AI-generatable ones if AI prompt is enabled */}
+      {/* Admin fields. When AI-generate is on, the content field stays visible
+          as the "reference/example" the AI bases each user's variant on (and it
+          becomes optional — users may generate purely from the task). */}
       <div className="space-y-3">
         {def.adminFields.map((field) => {
           const isAiGen = def.aiGeneratableFields?.includes(field.key);
-          if (item.aiPromptEnabled && isAiGen) return null;
+          const aiRef = item.aiPromptEnabled && isAiGen;
           return (
             <FieldEditor
               key={field.key}
-              field={field}
+              field={
+                aiRef
+                  ? {
+                      ...field,
+                      label: `${field.label} — reference/example (optional)`,
+                      required: false,
+                      helperText:
+                        "Users click AI to generate a unique variant based on this. Leave blank to generate purely from the task title/description.",
+                    }
+                  : field
+              }
               value={item.fields[field.key] ?? ""}
               onChange={(v) =>
                 onUpdate({ fields: { ...item.fields, [field.key]: v } })
@@ -458,27 +473,27 @@ function AiPromptSection({
     <div className="rounded-lg bg-purple-500/5 border border-purple-500/30 p-4 space-y-2">
       <div className="flex items-center gap-2">
         <Sparkles className="w-4 h-4 text-purple-400" />
-        <p className="text-sm font-bold text-purple-300">AI Prompt Mode</p>
+        <p className="text-sm font-bold text-purple-300">
+          Extra AI instructions (optional)
+        </p>
       </div>
       <p className="text-xs text-gray-400">
-        Instead of writing the {actionLabel.toLowerCase()} content yourself,
-        give a prompt and the user&apos;s app will generate{" "}
-        <strong className="text-purple-300">
-          {generatableFields.join(", ")}
-        </strong>{" "}
-        from it (via AI). Users review the generated output, then post on the
-        platform and submit proof.
+        Each user clicks &quot;Generate&quot; to get a unique{" "}
+        {actionLabel.toLowerCase()} built from this task&apos;s title/description
+        and your reference content above. Add any extra guidance (tone, length,
+        hashtags) here — leave blank to use sensible defaults.
       </p>
       <textarea
-        rows={4}
+        rows={3}
         value={prompt}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. 'Write a 280-character motivational tweet about consistent earning, in a friendly tone, with relevant hashtags.'"
+        placeholder="e.g. 'Friendly tone, under 200 characters, add 1-2 relevant hashtags.'"
         className="w-full px-3 py-2 bg-gray-950 border border-purple-500/30 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
       />
       <p className="text-[11px] text-gray-500">
-        Tip: be specific about tone, length, hashtags, and format so AI output
-        is consistent.
+        Generatable fields:{" "}
+        <span className="text-purple-300">{generatableFields.join(", ")}</span>.
+        Each user gets a different result.
       </p>
     </div>
   );

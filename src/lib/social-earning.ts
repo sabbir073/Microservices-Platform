@@ -278,7 +278,8 @@ interface CreditCtx {
 async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   const { userId, role, rule, cfg, action, postId, sourceUserId } = ctx;
 
-  if (!rule.enabled || (rule.points <= 0 && rule.xp <= 0)) {
+  // Global enable is the master switch for this action.
+  if (!rule.enabled) {
     return { points: 0, xp: 0, skipped: "disabled" };
   }
 
@@ -289,7 +290,13 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
       id: true,
       status: true,
       createdAt: true,
-      package: { select: { socialEarningMultiplier: true } },
+      package: {
+        select: {
+          socialEarningMultiplier: true,
+          socialEarningEnabled: true,
+          socialEarningConfig: true,
+        },
+      },
     },
   });
   if (!user || user.status !== "ACTIVE") {
@@ -301,10 +308,50 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
     return { points: 0, xp: 0, skipped: "min_age" };
   }
 
+  const pkg = (
+    user as unknown as {
+      package: {
+        socialEarningMultiplier: number;
+        socialEarningEnabled: boolean;
+        socialEarningConfig: unknown;
+      } | null;
+    }
+  ).package;
+
+  // Plan-level hard gate — this package earns nothing socially.
+  if (pkg && pkg.socialEarningEnabled === false) {
+    return { points: 0, xp: 0, skipped: "disabled" };
+  }
+
   // Per-plan multiplier (defaults to 1× if no plan).
-  const planMultiplier =
-    (user as unknown as { package: { socialEarningMultiplier: number } | null }).package
-      ?.socialEarningMultiplier ?? 1;
+  const planMultiplier = pkg?.socialEarningMultiplier ?? 1;
+
+  // Per-package points override (recipient side): the plan can define its own
+  // points per action, replacing the global base. null/missing → global.
+  let basePoints = rule.points;
+  if (
+    role === "recipient" &&
+    pkg?.socialEarningConfig &&
+    typeof pkg.socialEarningConfig === "object"
+  ) {
+    const KEY: Partial<Record<SocialAction, string>> = {
+      LIKE_RECEIVED: "likePoints",
+      COMMENT_RECEIVED: "commentPoints",
+      POST_CREATE: "postPoints",
+      SHARE_RECEIVED: "sharePoints",
+      VOTE_RECEIVED: "votePoints",
+    };
+    const key = KEY[action];
+    const override = key
+      ? (pkg.socialEarningConfig as Record<string, unknown>)[key]
+      : undefined;
+    if (typeof override === "number" && override >= 0) basePoints = override;
+  }
+
+  // Nothing to pay for this action/plan.
+  if (basePoints <= 0 && rule.xp <= 0) {
+    return { points: 0, xp: 0, skipped: "disabled" };
+  }
 
   // Per-post cap (only counted against recipient credits — the post is what fills up)
   let postEarned = 0;
@@ -351,7 +398,7 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   }
 
   // Cap points (apply plan multiplier first, then daily/post caps)
-  let allowPoints = Math.max(0, Math.floor(rule.points * planMultiplier));
+  let allowPoints = Math.max(0, Math.floor(basePoints * planMultiplier));
   if (allowPoints > 0) {
     if (postId && role === "recipient") {
       allowPoints = Math.min(allowPoints, cfg.capPerPost - postEarned);

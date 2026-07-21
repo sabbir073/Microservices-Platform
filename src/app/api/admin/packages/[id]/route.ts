@@ -51,8 +51,14 @@ const PLAN_PATCH = z
     appInstallEnabled: z.boolean().optional(),
 
     dailyTaskLimit: z.number().int().min(-1).max(100000).optional(),
+    dailyPostLimit: z.number().int().min(-1).max(100000).optional(),
     minWithdrawal: z.number().min(0).optional(),
     withdrawalFeeDiscount: z.number().min(0).max(100).optional(),
+
+    socialEarningEnabled: z.boolean().optional(),
+    socialEarningConfig: z
+      .record(z.string(), z.number().int().min(0))
+      .optional(),
 
     xpMultiplier: z.number().min(0.1).max(50).optional(),
     taskRewardMultiplier: z.number().min(0.1).max(50).optional(),
