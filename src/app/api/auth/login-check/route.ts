@@ -4,7 +4,8 @@ import { evaluateLogin } from "@/lib/auth/services";
 
 const schema = z.object({
   email: z.string().email(),
-  password: z.string().min(1),
+  password: z.string().min(6), // match authorize()'s min length so a short
+  // password reports INVALID here exactly as the real sign-in would.
   otp: z.string().optional(),
 });
 

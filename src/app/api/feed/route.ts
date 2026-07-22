@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { awardSocialEarning } from "@/lib/social-earning";
+import { getEffectivePackage } from "@/lib/packages";
 import { extractMentionUsernames, resolveMentionedUsers } from "@/lib/mentions";
 import { isValidPostBackground } from "@/lib/post-backgrounds";
 
@@ -256,6 +257,27 @@ export async function POST(request: NextRequest) {
         { error: "Post content cannot exceed 2000 characters" },
         { status: 400 }
       );
+    }
+
+    // Per-plan daily post limit (-1 = unlimited).
+    const pkg = await getEffectivePackage(session.user.id);
+    const dailyPostLimit = pkg?.dailyPostLimit ?? -1;
+    if (dailyPostLimit !== -1) {
+      // Use UTC day boundary to match how every other daily counter here
+      // (AI usage, mission logs) keys its day — avoids a server-timezone skew.
+      const dayStart = new Date();
+      dayStart.setUTCHours(0, 0, 0, 0);
+      const postsToday = await prisma.post.count({
+        where: { userId: session.user.id, createdAt: { gte: dayStart } },
+      });
+      if (postsToday >= dailyPostLimit) {
+        return NextResponse.json(
+          {
+            error: `Daily post limit reached (${dailyPostLimit}/day). Try again tomorrow.`,
+          },
+          { status: 429 }
+        );
+      }
     }
 
     // Build poll structure if provided

@@ -122,7 +122,12 @@ export async function POST(request: NextRequest) {
       // no tier re-sort.
       const items = norm.items;
       pointsRewardOut = bundleTotalPoints(items);
-      socialConfigOut = { platform: norm.platform, items, version: 2 };
+      socialConfigOut = {
+        platform: norm.platform,
+        items,
+        version: 2,
+        sequential: norm.sequential,
+      };
       socialPlatformOut = norm.platform;
       socialActionOut = items[0]?.action ?? null;
       socialUrlOut =

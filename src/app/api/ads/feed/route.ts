@@ -3,40 +3,44 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { getEffectivePackage } from "@/lib/packages";
 import { getAdClickCost } from "@/lib/ad-billing";
-import { matchesTargeting } from "@/lib/ad-targeting";
+import { matchesTargeting, type TargetableUser } from "@/lib/ad-targeting";
 
-// GET /api/ads/feed?count=N
+// GET /api/ads/feed?count=N&exclude=id1,id2
 // Returns up to N native (post-like) ads for the social feed, filtered by the
-// viewer's targeting attributes. Each ad carries the fields FeedAdCard needs to
-// render a post-shaped card. Impressions are tracked on view (not here).
+// viewer's targeting attributes, excluding already-seen ad ids (rotation).
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const count = Math.min(Math.max(parseInt(searchParams.get("count") || "8"), 1), 20);
+  const exclude = new Set(
+    (searchParams.get("exclude") ?? "").split(",").filter(Boolean)
+  );
 
   const session = await auth();
 
   // Ad-free plans see no in-feed ads.
-  let viewer = {
-    country: null as string | null,
-    gender: null as string | null,
-    level: 0 as number,
-    packageSlug: null as string | null,
-  };
+  let viewer: TargetableUser = {};
   if (session?.user?.id) {
     const [pkg, u] = await Promise.all([
       getEffectivePackage(session.user.id),
       prisma.user.findUnique({
         where: { id: session.user.id },
-        select: { country: true, gender: true, level: true },
+        select: {
+          country: true,
+          city: true,
+          gender: true,
+          level: true,
+          dateOfBirth: true,
+          kycStatus: true,
+          isBlueVerified: true,
+          tags: true,
+          language: true,
+          createdAt: true,
+          lastLoginAt: true,
+        },
       }),
     ]);
     if (pkg?.adFree) return NextResponse.json({ ads: [] });
-    viewer = {
-      country: u?.country ?? null,
-      gender: u?.gender ?? null,
-      level: u?.level ?? 0,
-      packageSlug: pkg?.slug ?? null,
-    };
+    viewer = { ...(u ?? {}), packageSlug: pkg?.slug ?? null };
   }
 
   const placement = await prisma.adPlacement.findFirst({
@@ -61,15 +65,19 @@ export async function GET(request: NextRequest) {
       brandLogo: true,
       ctaLabel: true,
       contentUrl: true,
+      videoUrl: true,
       targetUrl: true,
       targeting: true,
       promotedPostId: true,
     },
   });
 
-  // Targeting filter, then weighted shuffle → take up to `count` distinct ads.
+  // Targeting filter → drop already-seen (rotation) → weighted shuffle.
   const eligible = ads.filter((a) => matchesTargeting(a.targeting, viewer));
-  const shuffled = weightedShuffle(eligible);
+  const unseen = eligible.filter((a) => !exclude.has(a.id));
+  // Prefer unseen; only fall back to the full pool once everything's been shown.
+  const pool = unseen.length > 0 ? unseen : eligible;
+  const shuffled = weightedShuffle(pool);
   const picked = shuffled.slice(0, count);
 
   // Resolve promoted posts (author + content) in one batch.
@@ -113,6 +121,7 @@ export async function GET(request: NextRequest) {
           },
           content: p.content ?? "",
           images: p.images ?? [],
+          videoUrl: null,
           backgroundStyle: p.backgroundStyle ?? null,
           ctaLabel: a.ctaLabel || "Learn More",
           targetUrl: a.targetUrl ?? null,
@@ -131,6 +140,7 @@ export async function GET(request: NextRequest) {
         },
         content: a.headline ?? "",
         images: a.contentUrl ? [a.contentUrl] : [],
+        videoUrl: a.videoUrl ?? null,
         backgroundStyle: null,
         ctaLabel: a.ctaLabel || "Learn More",
         targetUrl: a.targetUrl ?? null,

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Users, DollarSign, TrendingUp, ChevronLeft, ChevronRight, Crown, Gift, Settings, Eye, Download } from "lucide-react";
 import Link from "next/link";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { AdminTable } from "@/components/admin/ui/admin-table";
 
 interface PageProps {
   searchParams: Promise<{
@@ -228,85 +229,95 @@ export default async function AdminReferralsPage({ searchParams }: PageProps) {
         </div>
 
         {topReferrers.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-800">
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Rank</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">User</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Referral Code
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Total Referrals
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Package</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {topReferrers.map((user, index) => (
-                  <tr key={user.id} className="hover:bg-gray-800/50 transition-colors">
-                    <td className="py-4 px-6">
-                      <span
-                        className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold ${
-                          index === 0
-                            ? "bg-amber-500/10 text-amber-400"
-                            : index === 1
-                            ? "bg-gray-400/10 text-gray-300"
-                            : index === 2
-                            ? "bg-orange-500/10 text-orange-400"
-                            : "bg-gray-800 text-gray-500"
-                        }`}
-                      >
-                        {skip + index + 1}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
-                          {user.name?.charAt(0) || user.email.charAt(0)}
-                        </div>
-                        <div>
-                          <Link
-                            href={`/admin/users/${user.id}`}
-                            className="text-white hover:text-indigo-400 font-medium transition-colors"
-                          >
-                            {user.name || "Unnamed"}
-                          </Link>
-                          <p className="text-xs text-gray-500">{user.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <code className="px-2 py-1 bg-gray-800 rounded text-sm text-indigo-400">
-                        {user.referralCode}
-                      </code>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className="text-white font-semibold">
-                        {user._count.referrals.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400">
-                        {(user as { package?: { name?: string } | null }).package?.name ?? "—"}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6">
+          <AdminTable
+            bare
+            rows={topReferrers.map((user, index) => ({ user, rank: skip + index + 1 }))}
+            getRowKey={(r) => r.user.id}
+            columns={[
+              {
+                key: "rank",
+                header: "Rank",
+                mobileHidden: true,
+                cell: (r) => (
+                  <span
+                    className={`inline-flex items-center justify-center w-8 h-8 rounded-full font-bold ${
+                      r.rank === 1
+                        ? "bg-amber-500/10 text-amber-400"
+                        : r.rank === 2
+                        ? "bg-gray-400/10 text-gray-300"
+                        : r.rank === 3
+                        ? "bg-orange-500/10 text-orange-400"
+                        : "bg-gray-800 text-gray-500"
+                    }`}
+                  >
+                    {r.rank}
+                  </span>
+                ),
+              },
+              {
+                key: "user",
+                header: "User",
+                primary: true,
+                cell: (r) => (
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium shrink-0">
+                      {r.user.name?.charAt(0) || r.user.email.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
                       <Link
-                        href={`/admin/referrals/${user.id}`}
-                        className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors inline-flex"
-                        title="View Tree"
+                        href={`/admin/users/${r.user.id}`}
+                        className="text-white hover:text-indigo-400 font-medium transition-colors"
                       >
-                        <Eye className="w-4 h-4" />
+                        {r.user.name || "Unnamed"}
                       </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <p className="text-xs text-gray-500 truncate">{r.user.email}</p>
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                key: "code",
+                header: "Referral Code",
+                cell: (r) => (
+                  <code className="px-2 py-1 bg-gray-800 rounded text-sm text-indigo-400">
+                    {r.user.referralCode}
+                  </code>
+                ),
+              },
+              {
+                key: "total",
+                header: "Total Referrals",
+                cell: (r) => (
+                  <span className="text-white font-semibold">
+                    {r.user._count.referrals.toLocaleString()}
+                  </span>
+                ),
+              },
+              {
+                key: "package",
+                header: "Package",
+                mobileHidden: true,
+                cell: (r) => (
+                  <span className="px-2 py-1 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400">
+                    {(r.user as { package?: { name?: string } | null }).package?.name ?? "—"}
+                  </span>
+                ),
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                cell: (r) => (
+                  <Link
+                    href={`/admin/referrals/${r.user.id}`}
+                    className="p-1.5 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors inline-flex"
+                    title="View Tree"
+                  >
+                    <Eye className="w-4 h-4" />
+                  </Link>
+                ),
+              },
+            ]}
+          />
         ) : (
           <div className="p-16 text-center">
             <Gift className="w-12 h-12 mx-auto mb-4 text-gray-600" />

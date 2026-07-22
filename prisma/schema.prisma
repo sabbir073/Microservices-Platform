@@ -343,9 +343,14 @@ model Ad {
   placement   AdPlacement @relation(fields: [placementId], references: [id])
   type        String      @default("LOCAL")
   format      String      @default("BANNER") // BANNER | NATIVE (feed post-like)
-  contentUrl  String?
+  contentUrl  String?     // image / GIF creative URL
+  videoUrl    String?     // MP4/WebM video creative URL
   targetUrl   String?
   htmlContent String?     @db.Text
+  // Creative size — preset key (see src/lib/ad-sizes.ts); width/height used for "custom"
+  size        String?     @default("responsive")
+  width       Int?
+  height      Int?
   weight      Int         @default(10)
   status      String      @default("ACTIVE")
   impressions Int         @default(0)
@@ -1257,8 +1262,16 @@ model Package {
 
   // Limits
   dailyTaskLimit        Int   @default(-1)
+  dailyPostLimit        Int   @default(-1)
   withdrawalFeeDiscount Float @default(0)
   minWithdrawal         Float
+
+  // Social earning (per-package). `socialEarningEnabled` is a hard on/off gate;
+  // `socialEarningConfig` overrides the global per-action recipient points for
+  // this plan, e.g. { likePoints, commentPoints, postPoints, sharePoints,
+  // votePoints } — null keys fall back to the global social_earning config.
+  socialEarningEnabled  Boolean @default(true)
+  socialEarningConfig   Json?
 
   // Multipliers
   xpMultiplier            Float @default(1)
@@ -2188,6 +2201,17 @@ model SocialActionLog {
   createdAt DateTime @default(now())
   @@index([userId, dateKey, action])
   @@index([postId])
+}
+
+// Per-user daily AI-generation counter (rate limit for /api/ai/generate).
+// One row per user per UTC day; `count` increments on each generate call.
+model AiUsageDaily {
+  id        String   @id @default(cuid())
+  userId    String
+  dateKey   String
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+  @@unique([userId, dateKey])
 }
 
 model Group {

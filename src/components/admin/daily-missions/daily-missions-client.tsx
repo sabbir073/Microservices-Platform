@@ -33,6 +33,14 @@ const TASK_TYPES = [
   "BOARD",
   "MANUAL",
   "CUSTOM",
+  // Social-feed engagement goals — count feed likes/comments/etc. the user
+  // performs today (e.g. "like 100 posts"). Progress is tracked from
+  // SocialActionLog by daily-mission-progress.ts.
+  "SOCIAL_LIKE",
+  "SOCIAL_COMMENT",
+  "SOCIAL_POST",
+  "SOCIAL_SHARE",
+  "SOCIAL_VOTE",
 ] as const;
 
 const PACKAGE_TIERS = ["FREE", "STARTER", "PRO", "ELITE", "VIP"] as const;
@@ -628,7 +636,7 @@ export function DailyMissionsClient({ initial, canManage }: Props) {
                           <input
                             type="number"
                             min={1}
-                            max={100}
+                            max={1000}
                             value={it.targetCount}
                             onChange={(e) =>
                               updateItem(idx, {

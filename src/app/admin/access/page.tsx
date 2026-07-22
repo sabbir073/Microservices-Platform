@@ -22,6 +22,8 @@ import {
   ROLE_CONFIG,
   ROLE_PERMISSIONS,
 } from "@/lib/rbac";
+import { AdminTable } from "@/components/admin/ui/admin-table";
+import { AdminTableShell } from "@/components/admin/ui/admin-table-shell";
 
 interface PageProps {
   searchParams: Promise<{
@@ -449,7 +451,7 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
               <p className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">
                 {cat.label}
               </p>
-              <div className="overflow-x-auto rounded-lg border border-slate-800">
+              <AdminTableShell className="rounded-lg">
                 <table className="w-full text-sm">
                   <thead className="bg-slate-800/50">
                     <tr>
@@ -496,7 +498,7 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
                     ))}
                   </tbody>
                 </table>
-              </div>
+              </AdminTableShell>
             </div>
           ))}
         </div>
@@ -570,99 +572,105 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
       {/* Admin List */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
         {admins.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-800">
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Admin
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Role
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Status
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Last Login
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Joined
-                  </th>
-                  {canManage && (
-                    <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                      Actions
-                    </th>
-                  )}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {admins.map((admin) => {
+          <AdminTable
+            bare
+            rows={admins}
+            getRowKey={(admin) => admin.id}
+            columns={[
+              {
+                key: "admin",
+                header: "Admin",
+                primary: true,
+                cell: (admin) => (
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium shrink-0">
+                      {admin.name?.charAt(0) || admin.email.charAt(0)}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-white truncate">
+                        {admin.name || "Unnamed"}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate">{admin.email}</p>
+                    </div>
+                  </div>
+                ),
+              },
+              {
+                key: "role",
+                header: "Role",
+                cell: (admin) => {
                   const roleConfig = ROLE_CONFIG[admin.role as UserRole];
                   return (
-                    <tr key={admin.id} className="hover:bg-gray-800/50 transition-colors">
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
-                            {admin.name?.charAt(0) || admin.email.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="font-medium text-white">
-                              {admin.name || "Unnamed"}
-                            </p>
-                            <p className="text-xs text-gray-500">{admin.email}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-6">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${roleConfig.bgColor} ${roleConfig.color}`}
-                        >
-                          <Shield className="w-3 h-3" />
-                          {roleConfig.label}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            admin.status === "ACTIVE"
-                              ? "bg-emerald-500/10 text-emerald-400"
-                              : admin.status === "SUSPENDED"
-                              ? "bg-red-500/10 text-red-400"
-                              : "bg-gray-500/10 text-gray-400"
-                          }`}
-                        >
-                          {admin.status}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-400">
-                        {admin.lastLoginAt
-                          ? formatDistanceToNow(new Date(admin.lastLoginAt), {
-                              addSuffix: true,
-                            })
-                          : "Never"}
-                      </td>
-                      <td className="py-4 px-6 text-sm text-gray-500">
-                        {formatDistanceToNow(new Date(admin.createdAt), {
-                          addSuffix: true,
-                        })}
-                      </td>
-                      {canManage && (
-                        <td className="py-4 px-6">
-                          <Link
-                            href={`/admin/access/${admin.id}`}
-                            className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                          >
-                            Manage
-                          </Link>
-                        </td>
-                      )}
-                    </tr>
+                    <span
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${roleConfig.bgColor} ${roleConfig.color}`}
+                    >
+                      <Shield className="w-3 h-3" />
+                      {roleConfig.label}
+                    </span>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                },
+              },
+              {
+                key: "status",
+                header: "Status",
+                cell: (admin) => (
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      admin.status === "ACTIVE"
+                        ? "bg-emerald-500/10 text-emerald-400"
+                        : admin.status === "SUSPENDED"
+                        ? "bg-red-500/10 text-red-400"
+                        : "bg-gray-500/10 text-gray-400"
+                    }`}
+                  >
+                    {admin.status}
+                  </span>
+                ),
+              },
+              {
+                key: "lastLogin",
+                header: "Last Login",
+                mobileHidden: true,
+                cell: (admin) => (
+                  <span className="text-sm text-gray-400">
+                    {admin.lastLoginAt
+                      ? formatDistanceToNow(new Date(admin.lastLoginAt), {
+                          addSuffix: true,
+                        })
+                      : "Never"}
+                  </span>
+                ),
+              },
+              {
+                key: "joined",
+                header: "Joined",
+                mobileHidden: true,
+                cell: (admin) => (
+                  <span className="text-sm text-gray-500">
+                    {formatDistanceToNow(new Date(admin.createdAt), {
+                      addSuffix: true,
+                    })}
+                  </span>
+                ),
+              },
+              ...(canManage
+                ? [
+                    {
+                      key: "actions",
+                      header: "Actions",
+                      cell: (admin: (typeof admins)[number]) => (
+                        <Link
+                          href={`/admin/access/${admin.id}`}
+                          className="px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                        >
+                          Manage
+                        </Link>
+                      ),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         ) : (
           <div className="p-16 text-center">
             <Users className="w-12 h-12 mx-auto mb-4 text-gray-600" />

@@ -49,7 +49,7 @@ export function StatCard({
 }: StatCardProps) {
   const t = TONE_CLASSES[tone];
   const Inner = (
-    <div className="bg-slate-900 rounded-xl border border-slate-800 p-5 hover:border-slate-700 transition-colors h-full">
+    <div className="card card-interactive p-5 h-full">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs text-slate-400 font-medium truncate">{title}</p>

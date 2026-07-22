@@ -35,7 +35,13 @@ interface ApiTask {
   minLevel?: number;
   canStart?: boolean;
   reason?: string | null;
-  userStatus?: "AVAILABLE" | "IN_PROGRESS" | "SUBMITTED" | "COMPLETED";
+  userStatus?:
+    | "AVAILABLE"
+    | "IN_PROGRESS"
+    | "SUBMITTED"
+    | "COMPLETED"
+    | "REVISION"
+    | "REJECTED";
 }
 
 // Cohesive tinted chips (not saturated rainbow gradients) — professional look.

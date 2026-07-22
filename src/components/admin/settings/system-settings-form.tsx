@@ -106,6 +106,7 @@ const DEFAULTS: SettingsBag = {
   max_active_listings: 10,
   file_upload_max_mb: 5,
   api_rate_limit_per_min: 100,
+  "ai.daily_limit_per_user": 50,
   // Popups / install (site-wide)
   "ui.cookies_popup_enabled": true,
   "ui.notification_popup_enabled": true,
@@ -148,6 +149,7 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   max_tasks_per_day: "limits", max_withdrawals_per_day: "limits",
   max_referrals_per_user: "limits", max_active_listings: "limits",
   file_upload_max_mb: "limits", api_rate_limit_per_min: "limits",
+  "ai.daily_limit_per_user": "limits",
   // Popups / install
   "ui.cookies_popup_enabled": "ui_toggles",
   "ui.notification_popup_enabled": "ui_toggles",
@@ -852,6 +854,18 @@ export function SystemSettingsForm({
                   value={Number(values.api_rate_limit_per_min ?? 100)}
                   onChange={(e) =>
                     set("api_rate_limit_per_min", parseInt(e.target.value))
+                  }
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+              <Field label="AI Generations / User / Day">
+                <input
+                  type="number"
+                  min={-1}
+                  value={Number(values["ai.daily_limit_per_user"] ?? 50)}
+                  onChange={(e) =>
+                    set("ai.daily_limit_per_user", parseInt(e.target.value))
                   }
                   disabled={!canEdit}
                   className={inp}

@@ -15,6 +15,7 @@ import {
   ToggleLeft,
   ToggleRight,
 } from "lucide-react";
+import { AdminTableShell } from "@/components/admin/ui/admin-table-shell";
 
 interface Coupon {
   id: string;
@@ -74,9 +75,8 @@ export function CouponsAdmin({ initial, categories, courses, canManage }: Props)
         />
       )}
 
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+      <AdminTableShell>
+          <table className="w-full text-sm min-w-200">
             <thead className="bg-slate-950 text-slate-400 text-xs uppercase">
               <tr>
                 <th className="text-left px-4 py-3">Code</th>
@@ -106,8 +106,7 @@ export function CouponsAdmin({ initial, categories, courses, canManage }: Props)
               ))}
             </tbody>
           </table>
-        </div>
-      </div>
+      </AdminTableShell>
     </div>
   );
 }

@@ -56,8 +56,11 @@ export interface PackageRow {
   offerwallTasksEnabled: boolean;
   appInstallEnabled: boolean;
   dailyTaskLimit: number;
+  dailyPostLimit: number;
   minWithdrawal: number;
   withdrawalFeeDiscount: number;
+  socialEarningEnabled: boolean;
+  socialEarningConfig: Record<string, number> | null;
   xpMultiplier: number;
   taskRewardMultiplier: number;
   socialEarningMultiplier: number;

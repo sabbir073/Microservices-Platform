@@ -1,9 +1,29 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { CheckCircle, ExternalLink } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  CheckCircle,
+  ExternalLink,
+  Heart,
+  MessageCircle,
+  Eye,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPostBackground } from "@/lib/post-backgrounds";
+
+/** Stable pseudo-count per ad (so the native engagement numbers don't jump). */
+function seededCount(adId: string, salt: number, min: number, max: number) {
+  let h = salt >>> 0;
+  for (let i = 0; i < adId.length; i++) h = (h * 31 + adId.charCodeAt(i)) >>> 0;
+  return min + (h % (max - min + 1));
+}
+
+/** Compact number (1200 → 1.2k). */
+function fmt(n: number) {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
 
 /** A native feed ad, shaped by GET /api/ads/feed. Renders like a real post. */
 export interface FeedAd {
@@ -18,6 +38,7 @@ export interface FeedAd {
   };
   content: string;
   images: string[];
+  videoUrl?: string | null;
   backgroundStyle: string | null;
   ctaLabel: string;
   targetUrl: string | null;
@@ -26,6 +47,13 @@ export interface FeedAd {
 export function FeedAdCard({ ad }: { ad: FeedAd }) {
   const ref = useRef<HTMLElement | null>(null);
   const firedRef = useRef(false);
+  const [liked, setLiked] = useState(false);
+
+  // Native-post-style engagement counts (stable per ad).
+  const baseLikes = seededCount(ad.adId, 3, 40, 3200);
+  const comments = seededCount(ad.adId, 2, 5, 240);
+  const views = seededCount(ad.adId, 1, 800, 25000);
+  const likes = baseLikes + (liked ? 1 : 0);
 
   // Count one impression when the ad first scrolls into view.
   useEffect(() => {
@@ -104,7 +132,7 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
             >
               <p
                 className={cn(
-                  "text-xl font-bold leading-snug whitespace-pre-wrap break-words",
+                  "text-xl font-bold leading-snug whitespace-pre-wrap wrap-break-word",
                   postBg.textClass
                 )}
               >
@@ -118,8 +146,26 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
           ))}
       </div>
 
-      {/* Images */}
-      {ad.images.length > 0 && (
+      {/* Video creative (takes priority over images) */}
+      {ad.videoUrl ? (
+        <a
+          href={ad.targetUrl ?? "#"}
+          target="_blank"
+          rel="noopener sponsored noreferrer"
+          onClick={trackClick}
+          className="block bg-black"
+        >
+          <video
+            src={ad.videoUrl}
+            autoPlay
+            muted
+            loop
+            playsInline
+            className="w-full max-h-[70vh] object-contain bg-black"
+          />
+        </a>
+      ) : (
+        ad.images.length > 0 && (
         <a
           href={ad.targetUrl ?? "#"}
           target="_blank"
@@ -150,9 +196,39 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
             />
           ))}
         </a>
+        )
       )}
 
-      {/* CTA row (replaces like/comment/share) */}
+      {/* Engagement bar — native post look (like / comment / views) */}
+      <div className="flex items-center border-t border-gray-800 mt-3 text-sm">
+        <button
+          type="button"
+          onClick={() => setLiked((v) => !v)}
+          className={cn(
+            "flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 font-semibold transition-colors hover:bg-gray-800/40",
+            liked ? "text-rose-400" : "text-gray-400"
+          )}
+        >
+          <Heart className={cn("w-4 h-4", liked && "fill-rose-500 text-rose-500")} />
+          {fmt(likes)}
+        </button>
+        <a
+          href={ad.targetUrl ?? "#"}
+          target="_blank"
+          rel="noopener sponsored noreferrer"
+          onClick={trackClick}
+          className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 font-semibold text-gray-400 hover:bg-gray-800/40 transition-colors"
+        >
+          <MessageCircle className="w-4 h-4" />
+          {fmt(comments)}
+        </a>
+        <span className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 font-semibold text-gray-400">
+          <Eye className="w-4 h-4" />
+          {fmt(views)}
+        </span>
+      </div>
+
+      {/* CTA row */}
       <a
         href={ad.targetUrl ?? "#"}
         target="_blank"

@@ -13,6 +13,7 @@ export const AD_PLACEMENTS = [
   { name: "VIDEO_BELOW", label: "Video — Below", description: "Below the video player while watching." },
   { name: "TASK_COMPLETE", label: "Task Complete", description: "Task completion / reward screens." },
   { name: "IN_FEED", label: "Social Feed", description: "Native ad interleaved in the social feed." },
+  { name: "FEED_SIDEBAR", label: "Feed Sidebar", description: "Sponsored card in the social feed right rail." },
   { name: "DASHBOARD", label: "Dashboard", description: "User dashboard banner." },
   { name: "EARN_HUB", label: "Earn Hub", description: "Earn hub banner." },
   { name: "WALLET_TOP", label: "Wallet", description: "Top of the wallet page." },

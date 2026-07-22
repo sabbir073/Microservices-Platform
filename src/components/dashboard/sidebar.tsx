@@ -40,8 +40,8 @@ import {
   Smartphone,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
+import { useMobileNav } from "@/lib/stores/mobile-nav-store";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
 import { isAdmin, isTutor, type UserRole } from "@/lib/rbac";
 
 interface SidebarProps {
@@ -309,14 +309,18 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features }: Sid
 
 export function Sidebar({ user, features }: SidebarProps) {
   const pathname = usePathname();
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
+  // Single shared mobile-drawer signal — opened by BOTH the header hamburger
+  // and the bottom-bar Menu button (both write this store). This canonical,
+  // feature-filtered drawer replaces the header's old duplicate flat menu.
+  const isMobileOpen = useMobileNav((s) => s.open);
+  const setMobileOpen = useMobileNav((s) => s.setOpen);
 
   const handleSignOut = () => {
     signOut({ callbackUrl: "/login" });
   };
 
   const handleNavigate = () => {
-    setIsMobileOpen(false);
+    setMobileOpen(false);
   };
 
   return (
@@ -324,20 +328,20 @@ export function Sidebar({ user, features }: SidebarProps) {
       {/* Mobile Sidebar Overlay */}
       {isMobileOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          onClick={() => setIsMobileOpen(false)}
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md lg:hidden"
+          onClick={() => setMobileOpen(false)}
         />
       )}
 
       {/* Mobile Sidebar */}
       <div
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-72 bg-gray-900 transform transition-transform duration-300 lg:hidden",
+          "fixed inset-y-0 left-0 z-50 w-72 glass-strong rounded-none transform transition-transform duration-300 lg:hidden",
           isMobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
         <button
-          onClick={() => setIsMobileOpen(false)}
+          onClick={() => setMobileOpen(false)}
           className="absolute top-4 right-4 p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
         >
           <X className="w-5 h-5" />
@@ -355,7 +359,7 @@ export function Sidebar({ user, features }: SidebarProps) {
 
       {/* Desktop Sidebar */}
       <div className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:z-40 lg:flex lg:w-72 lg:flex-col">
-        <div className="flex flex-col h-full bg-gray-900 border-r border-gray-800">
+        <div className="flex flex-col h-full glass-strong rounded-none border-0 border-r border-gray-800/70">
           <SidebarContent
             user={user}
             pathname={pathname}
@@ -365,14 +369,6 @@ export function Sidebar({ user, features }: SidebarProps) {
           />
         </div>
       </div>
-
-      {/* Mobile Menu Button - This is handled in Header component */}
     </>
   );
-}
-
-// Export mobile menu toggle for header
-export function useMobileSidebar() {
-  const [isOpen, setIsOpen] = useState(false);
-  return { isOpen, setIsOpen };
 }

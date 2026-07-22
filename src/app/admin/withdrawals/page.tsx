@@ -18,6 +18,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Prisma } from "@/generated/prisma/client";
 import { WithdrawalRowActions } from "@/components/admin/withdrawals/withdrawal-row-actions";
 import { assessWithdrawalRisk, type RiskLevel } from "@/lib/withdrawal-risk";
+import { AdminTable } from "@/components/admin/ui/admin-table";
 
 const RISK_BADGE: Record<RiskLevel, { bg: string; text: string; label: string }> = {
   low: { bg: "bg-emerald-500/15", text: "text-emerald-400", label: "LOW" },
@@ -332,126 +333,142 @@ export default async function AdminWithdrawalsPage({ searchParams }: PageProps) 
 
       {/* Withdrawals Table */}
       {withdrawals.length > 0 ? (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-slate-800 bg-slate-800/50">
-                  <th className="text-left py-4 px-6 text-sm font-medium text-slate-400">User</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-slate-400">Amount</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-slate-400">Method</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-slate-400">Risk</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-slate-400">Status</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-slate-400">Requested</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-slate-400">KYC</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-slate-400">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {withdrawals.map((withdrawal) => {
-                  const config = statusConfig[withdrawal.status] || statusConfig.PENDING;
-                  const StatusIcon = config.icon;
-                  const history = historyByUser.get(withdrawal.userId) ?? {
-                    successful: 0,
-                    rejected: 0,
-                  };
-                  const risk = assessWithdrawalRisk({
-                    amount: withdrawal.amount,
-                    userKycStatus: withdrawal.user.kycStatus,
-                    userPackageTier: withdrawal.user.package?.slug ?? "default",
-                    accountAgeDays: differenceInDays(
-                      new Date(),
-                      withdrawal.user.createdAt
-                    ),
-                    previousSuccessfulWithdrawals: history.successful,
-                    previousRejectedWithdrawals: history.rejected,
-                  });
-                  const riskBadge = RISK_BADGE[risk.level];
-
-                  return (
-                    <tr key={withdrawal.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium">
-                            {withdrawal.user.name?.charAt(0) || withdrawal.user.email.charAt(0)}
-                          </div>
-                          <div className="min-w-0">
-                            <Link
-                              href={`/admin/users/${withdrawal.user.id}`}
-                              className="text-white hover:text-indigo-400 font-medium transition-colors truncate block max-w-45"
-                            >
-                              {withdrawal.user.name || "Unnamed"}
-                            </Link>
-                            <p className="text-xs text-slate-500 truncate max-w-45">
-                              {withdrawal.user.email}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-6">
-                        <div>
-                          <p className="text-white font-medium tabular-nums">${withdrawal.amount.toFixed(2)}</p>
-                          <p className="text-xs text-slate-500 tabular-nums">
-                            Fee ${withdrawal.fee.toFixed(2)} · Net ${withdrawal.netAmount.toFixed(2)}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="py-4 px-6">
-                        <span className="px-2 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-300">
-                          {methodLabels[withdrawal.method] || withdrawal.method}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6">
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${riskBadge.bg} ${riskBadge.text}`}
-                          title={
-                            risk.flags.length
-                              ? risk.flags.join(" · ")
-                              : "No risk flags"
-                          }
+        (() => {
+          const rows = withdrawals.map((withdrawal) => {
+            const config = statusConfig[withdrawal.status] || statusConfig.PENDING;
+            const history = historyByUser.get(withdrawal.userId) ?? {
+              successful: 0,
+              rejected: 0,
+            };
+            const risk = assessWithdrawalRisk({
+              amount: withdrawal.amount,
+              userKycStatus: withdrawal.user.kycStatus,
+              userPackageTier: withdrawal.user.package?.slug ?? "default",
+              accountAgeDays: differenceInDays(new Date(), withdrawal.user.createdAt),
+              previousSuccessfulWithdrawals: history.successful,
+              previousRejectedWithdrawals: history.rejected,
+            });
+            return { withdrawal, config, risk };
+          });
+          return (
+            <AdminTable
+              rows={rows}
+              getRowKey={(r) => r.withdrawal.id}
+              columns={[
+                {
+                  key: "user",
+                  header: "User",
+                  primary: true,
+                  cell: (r) => (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium shrink-0">
+                        {r.withdrawal.user.name?.charAt(0) || r.withdrawal.user.email.charAt(0)}
+                      </div>
+                      <div className="min-w-0">
+                        <Link
+                          href={`/admin/users/${r.withdrawal.user.id}`}
+                          className="text-white hover:text-indigo-400 font-medium transition-colors truncate block max-w-45"
                         >
-                          {riskBadge.label}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6">
-                        <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${config.bgColor} ${config.color}`}>
-                          <StatusIcon className={`w-3 h-3 ${withdrawal.status === "PROCESSING" ? "animate-spin" : ""}`} />
-                          {withdrawal.status}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6">
-                        <span className="text-sm text-slate-400">
-                          {formatDistanceToNow(withdrawal.createdAt, { addSuffix: true })}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6">
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          withdrawal.user.kycStatus === "APPROVED"
-                            ? "bg-emerald-500/10 text-emerald-400"
-                            : withdrawal.user.kycStatus === "PENDING"
-                            ? "bg-amber-500/10 text-amber-400"
-                            : withdrawal.user.kycStatus === "REJECTED"
-                            ? "bg-red-500/10 text-red-400"
-                            : "bg-slate-500/10 text-slate-400"
-                        }`}>
-                          {withdrawal.user.kycStatus === "NOT_SUBMITTED" ? "No KYC" : withdrawal.user.kycStatus}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6">
-                        <WithdrawalRowActions
-                          withdrawalId={withdrawal.id}
-                          status={withdrawal.status}
-                          amount={withdrawal.amount}
-                          canProcess={canProcess}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                          {r.withdrawal.user.name || "Unnamed"}
+                        </Link>
+                        <p className="text-xs text-slate-500 truncate max-w-45">
+                          {r.withdrawal.user.email}
+                        </p>
+                      </div>
+                    </div>
+                  ),
+                },
+                {
+                  key: "amount",
+                  header: "Amount",
+                  cell: (r) => (
+                    <div>
+                      <p className="text-white font-medium tabular-nums">${r.withdrawal.amount.toFixed(2)}</p>
+                      <p className="text-xs text-slate-500 tabular-nums">
+                        Fee ${r.withdrawal.fee.toFixed(2)} · Net ${r.withdrawal.netAmount.toFixed(2)}
+                      </p>
+                    </div>
+                  ),
+                },
+                {
+                  key: "method",
+                  header: "Method",
+                  cell: (r) => (
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-300">
+                      {methodLabels[r.withdrawal.method] || r.withdrawal.method}
+                    </span>
+                  ),
+                },
+                {
+                  key: "risk",
+                  header: "Risk",
+                  cell: (r) => {
+                    const riskBadge = RISK_BADGE[r.risk.level];
+                    return (
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold ${riskBadge.bg} ${riskBadge.text}`}
+                        title={r.risk.flags.length ? r.risk.flags.join(" · ") : "No risk flags"}
+                      >
+                        {riskBadge.label}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: "status",
+                  header: "Status",
+                  cell: (r) => {
+                    const StatusIcon = r.config.icon;
+                    return (
+                      <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${r.config.bgColor} ${r.config.color}`}>
+                        <StatusIcon className={`w-3 h-3 ${r.withdrawal.status === "PROCESSING" ? "animate-spin" : ""}`} />
+                        {r.withdrawal.status}
+                      </span>
+                    );
+                  },
+                },
+                {
+                  key: "requested",
+                  header: "Requested",
+                  cell: (r) => (
+                    <span className="text-sm text-slate-400">
+                      {formatDistanceToNow(r.withdrawal.createdAt, { addSuffix: true })}
+                    </span>
+                  ),
+                },
+                {
+                  key: "kyc",
+                  header: "KYC",
+                  cell: (r) => (
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      r.withdrawal.user.kycStatus === "APPROVED"
+                        ? "bg-emerald-500/10 text-emerald-400"
+                        : r.withdrawal.user.kycStatus === "PENDING"
+                        ? "bg-amber-500/10 text-amber-400"
+                        : r.withdrawal.user.kycStatus === "REJECTED"
+                        ? "bg-red-500/10 text-red-400"
+                        : "bg-slate-500/10 text-slate-400"
+                    }`}>
+                      {r.withdrawal.user.kycStatus === "NOT_SUBMITTED" ? "No KYC" : r.withdrawal.user.kycStatus}
+                    </span>
+                  ),
+                },
+                {
+                  key: "actions",
+                  header: "Actions",
+                  cell: (r) => (
+                    <WithdrawalRowActions
+                      withdrawalId={r.withdrawal.id}
+                      status={r.withdrawal.status}
+                      amount={r.withdrawal.amount}
+                      canProcess={canProcess}
+                    />
+                  ),
+                },
+              ]}
+            />
+          );
+        })()
       ) : (
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-16 text-center">
           <DollarSign className="w-12 h-12 mx-auto mb-4 text-gray-600" />

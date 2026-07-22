@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { z } from "zod";
 import { isGeminiConfigured, generateText } from "@/lib/gemini";
+import { prisma } from "@/lib/prisma";
+import { getSetting } from "@/lib/system-settings";
 
 const schema = z.object({ prompt: z.string().min(3).max(4000) });
 
@@ -25,6 +27,27 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "A prompt is required" }, { status: 400 });
   }
 
+  // Per-user daily rate limit (admin-configurable; -1/0 = unlimited).
+  // Settings can round-trip as strings, so coerce before comparing.
+  const rawLimit = await getSetting<number>("ai.daily_limit_per_user", 50);
+  const limit = Number(rawLimit);
+  const dateKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+  const rateLimited = Number.isFinite(limit) && limit > 0;
+  if (rateLimited) {
+    const existing = await prisma.aiUsageDaily.findUnique({
+      where: { userId_dateKey: { userId: session.user.id, dateKey } },
+      select: { count: true },
+    });
+    if ((existing?.count ?? 0) >= limit) {
+      return NextResponse.json(
+        {
+          error: `Daily AI limit reached (${limit}/day). Try again tomorrow or write it yourself.`,
+        },
+        { status: 429 }
+      );
+    }
+  }
+
   const result = await generateText(v.data.prompt);
   if (!result.success) {
     return NextResponse.json(
@@ -32,5 +55,16 @@ export async function POST(request: NextRequest) {
       { status: 502 }
     );
   }
+
+  // Only bill quota after a successful generation — a failed call shouldn't
+  // burn the user's daily allowance.
+  if (rateLimited) {
+    await prisma.aiUsageDaily.upsert({
+      where: { userId_dateKey: { userId: session.user.id, dateKey } },
+      create: { userId: session.user.id, dateKey, count: 1 },
+      update: { count: { increment: 1 } },
+    });
+  }
+
   return NextResponse.json({ text: result.text });
 }

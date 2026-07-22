@@ -67,7 +67,7 @@ export function ConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
       onClick={(e) => e.target === e.currentTarget && !busy && onClose()}
     >
       <div className="bg-slate-800 rounded-2xl border border-slate-700 w-full max-w-md mx-4">

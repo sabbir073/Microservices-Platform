@@ -26,8 +26,14 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (body.type && AD_TYPES.includes(body.type)) data.type = body.type;
   if (body.format !== undefined) data.format = String(body.format || "BANNER");
   if (body.contentUrl !== undefined) data.contentUrl = body.contentUrl ? String(body.contentUrl) : null;
+  if (body.videoUrl !== undefined) data.videoUrl = body.videoUrl ? String(body.videoUrl) : null;
   if (body.targetUrl !== undefined) data.targetUrl = body.targetUrl ? String(body.targetUrl) : null;
   if (body.htmlContent !== undefined) data.htmlContent = body.htmlContent ? String(body.htmlContent) : null;
+  if (body.size !== undefined) data.size = body.size ? String(body.size) : "responsive";
+  if (body.width !== undefined)
+    data.width = Number.isFinite(Number(body.width)) && Number(body.width) > 0 ? Math.round(Number(body.width)) : null;
+  if (body.height !== undefined)
+    data.height = Number.isFinite(Number(body.height)) && Number(body.height) > 0 ? Math.round(Number(body.height)) : null;
   if (body.weight !== undefined) data.weight = Math.max(1, Number(body.weight) || 10);
   if (body.status && AD_STATUSES.includes(body.status)) data.status = body.status;
   if (body.rewardPoints !== undefined) data.rewardPoints = Math.max(0, Number(body.rewardPoints) || 0);

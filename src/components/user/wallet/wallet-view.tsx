@@ -1,4 +1,5 @@
 "use client";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -85,6 +86,8 @@ export function WalletView(props: WalletViewProps) {
           Your earnings, referral commission, and payouts.
         </p>
       </header>
+
+      <AdRenderer placement="WALLET_TOP" />
 
       <BalanceCard
         points={props.pointsBalance}

@@ -45,6 +45,9 @@ export async function POST(
       proof,
       proofImages,
       answers,
+      // Actual media length (seconds) reported by the video player, so we can
+      // cap the required watch time at the real video length.
+      videoDuration,
       uniqueKey: submittedUniqueKey,
       // SOCIAL-only proof fields (sent by social-tasks-view.tsx)
       proofUrl,
@@ -84,15 +87,38 @@ export async function POST(
       );
     }
 
+    // Already submitted (still PENDING = awaiting manual review). Block a second
+    // submit so a reopened task can't overwrite proof or re-queue it.
+    if (submission.submittedAt) {
+      return NextResponse.json(
+        { error: "You've already submitted this — it's awaiting review." },
+        { status: 409 }
+      );
+    }
+
     // Check if the required watch time was met.
     // VIDEO tasks are gated on videoConfig.watchSeconds (what the player enforces),
     // NOT task.duration — the two can diverge (duration is often the full video
     // length), which would otherwise make a fully-watched video impossible to submit.
-    const requiredSeconds =
+    let requiredSeconds =
       task.type === "VIDEO"
         ? (task.videoConfig as VideoConfig | null)?.watchSeconds ?? task.duration ?? 0
         : task.duration ?? 0;
-    if (requiredSeconds) {
+    // If the real video is SHORTER than the configured watch target, cap the
+    // requirement at the actual length — otherwise a fully-watched short video
+    // can never satisfy 80% of a longer target.
+    if (
+      task.type === "VIDEO" &&
+      typeof videoDuration === "number" &&
+      videoDuration > 0 &&
+      videoDuration < requiredSeconds
+    ) {
+      requiredSeconds = videoDuration;
+    }
+    // SOCIAL bundles verify each action via the locked player's watched flag,
+    // not a wall-clock elapsed gate — skip the elapsed check for them even if an
+    // admin left a stray task.duration on the task.
+    if (requiredSeconds && task.type !== "SOCIAL") {
       const requiredDuration = Math.floor(requiredSeconds * 0.8); // 80% of required time
 
       // VIDEO tasks are validated against server-accrued watched seconds (the
@@ -396,12 +422,20 @@ export async function POST(
           : []
       : proofImages || [];
 
-    // Update submission with proof
-    const updatedSubmission = await prisma.taskSubmission.update({
-      where: { id: submission.id },
+    // Atomically claim the submission: only the FIRST concurrent submit flips
+    // it from PENDING/not-submitted to its new state. Two parallel POSTs (a
+    // double-click / client retry) would otherwise both pass the guard above
+    // and both run the credit block below — and since Transaction.reference
+    // has no unique backstop, the duplicate EARNING would stick (double pay).
+    const claim = await prisma.taskSubmission.updateMany({
+      where: {
+        id: submission.id,
+        status: SubmissionStatus.PENDING,
+        submittedAt: null,
+      },
       data: {
         proof: resolvedProof,
-        proofImages: resolvedProofImages,
+        proofImages: { set: resolvedProofImages },
         answers: answers || null,
         score,
         status: newStatus,
@@ -418,6 +452,16 @@ export async function POST(
         }),
       },
     });
+    if (claim.count === 0) {
+      // Lost the race (another request already submitted this).
+      return NextResponse.json(
+        { error: "You've already submitted this — it's awaiting review." },
+        { status: 409 }
+      );
+    }
+    const updatedSubmission = (await prisma.taskSubmission.findUnique({
+      where: { id: submission.id },
+    }))!;
 
     // If auto-approved AND not a board task, award points and update user
     if (shouldAutoApprove && !isBoardTask) {

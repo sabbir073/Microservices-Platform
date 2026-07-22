@@ -1,4 +1,5 @@
 "use client";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -146,6 +147,7 @@ export function MarketplaceView() {
 
   return (
     <div className="space-y-4">
+      <AdRenderer placement="MARKETPLACE_TOP" />
       {/* Header */}
       <div className="flex items-center gap-2 flex-wrap">
         <h1 className="text-xl sm:text-2xl font-bold text-white flex-1 inline-flex items-center gap-2">

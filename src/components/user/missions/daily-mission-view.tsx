@@ -33,6 +33,12 @@ const TYPE_TO_ROUTE: Record<string, string> = {
   BOARD: "/board-tasks",
   MANUAL: "/manual-tasks",
   CUSTOM: "/manual-tasks",
+  // Social-feed engagement goals → the feed
+  SOCIAL_LIKE: "/social",
+  SOCIAL_COMMENT: "/social",
+  SOCIAL_POST: "/social",
+  SOCIAL_SHARE: "/social",
+  SOCIAL_VOTE: "/social",
 };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -46,6 +52,11 @@ const TYPE_LABEL: Record<string, string> = {
   BOARD: "Board task",
   MANUAL: "Manual task",
   CUSTOM: "Custom task",
+  SOCIAL_LIKE: "Like posts",
+  SOCIAL_COMMENT: "Comment on posts",
+  SOCIAL_POST: "Create posts",
+  SOCIAL_SHARE: "Share posts",
+  SOCIAL_VOTE: "Vote on polls",
 };
 
 interface MissionItem {

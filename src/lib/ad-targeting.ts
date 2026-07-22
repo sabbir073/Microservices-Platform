@@ -1,78 +1,186 @@
 // Client-safe ad-targeting types + a pure matcher. NO server imports here so
 // the advertiser/admin ad forms (client components) can reuse the type + parser.
-// The feed serve endpoint uses `matchesTargeting` to decide who sees an ad.
+// Both serve paths (/api/ads/serve banner + /api/ads/feed native) use
+// `matchesTargeting` to decide who sees an ad.
 
-/** Simple audience rules stored on Ad.targeting (JSON). All present rules must
- *  match (AND). An empty/missing rule = no constraint on that dimension. */
+/** Audience rules stored on Ad.targeting (JSON). All present rules must match
+ *  (AND). An empty/missing rule = no constraint on that dimension. */
 export interface AdTargeting {
-  countries?: string[]; // matches User.country (case-insensitive)
-  genders?: string[]; // matches User.gender (e.g. MALE/FEMALE/OTHER)
-  minLevel?: number; // User.level must be >= this
-  packages?: string[]; // package slugs the viewer's plan must be one of
+  countries?: string[]; // User.country (case-insensitive)
+  cities?: string[]; // User.city (case-insensitive)
+  genders?: string[]; // User.gender (MALE/FEMALE/OTHER)
+  minAge?: number; // from User.dateOfBirth
+  maxAge?: number;
+  minLevel?: number; // User.level
+  maxLevel?: number;
+  packages?: string[]; // effective package slug
+  kycStatuses?: string[]; // User.kycStatus
+  verifiedOnly?: boolean; // User.isBlueVerified
+  tags?: string[]; // User.tags intersects (any-of)
+  languages?: string[]; // User.language
+  minAccountAgeDays?: number; // from User.createdAt
+  activeWithinDays?: number; // User.lastLoginAt recency
 }
 
 /** The viewer attributes we target on. */
 export interface TargetableUser {
   country?: string | null;
+  city?: string | null;
   gender?: string | null;
   level?: number | null;
   packageSlug?: string | null;
+  dateOfBirth?: Date | string | null;
+  kycStatus?: string | null;
+  isBlueVerified?: boolean | null;
+  tags?: string[] | null;
+  language?: string | null;
+  createdAt?: Date | string | null;
+  lastLoginAt?: Date | string | null;
 }
 
-/** Safely read a stored `targeting` JSON into a typed object. Unknown/invalid
- *  shapes collapse to an empty (target-everyone) targeting. */
+// ── Option constants for the admin targeting UI ──────────────────────────────
+export const GENDER_OPTIONS = ["MALE", "FEMALE", "OTHER"] as const;
+export const KYC_OPTIONS = [
+  "NOT_SUBMITTED",
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
+] as const;
+export const TAG_OPTIONS = [
+  "EARLY_ADOPTER",
+  "VERIFIED",
+  "CRYPTO",
+  "TRADER",
+  "GAMER",
+  "INFLUENCER",
+  "WHALE",
+  "PRO",
+  "ELITE",
+  "CREATOR",
+] as const;
+export const LANGUAGE_OPTIONS = [
+  { code: "en", label: "English" },
+  { code: "bn", label: "Bengali" },
+  { code: "hi", label: "Hindi" },
+  { code: "ur", label: "Urdu" },
+  { code: "es", label: "Spanish" },
+  { code: "ar", label: "Arabic" },
+  { code: "fr", label: "French" },
+  { code: "pt", label: "Portuguese" },
+  { code: "id", label: "Indonesian" },
+  { code: "ru", label: "Russian" },
+] as const;
+
+// ── helpers ──────────────────────────────────────────────────────────────────
+function toDate(v: Date | string | null | undefined): Date | null {
+  if (!v) return null;
+  const d = v instanceof Date ? v : new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function ageFromDob(dob: Date | string | null | undefined, now: Date): number | null {
+  const d = toDate(dob);
+  if (!d) return null;
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+  return age;
+}
+
+function daysSince(v: Date | string | null | undefined, now: Date): number | null {
+  const d = toDate(v);
+  if (!d) return null;
+  return (now.getTime() - d.getTime()) / 86_400_000;
+}
+
+function strArr(v: unknown): string[] | undefined {
+  return Array.isArray(v)
+    ? v.filter((x): x is string => typeof x === "string")
+    : undefined;
+}
+function posNum(v: unknown): number | undefined {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+}
+
+/** Safely read stored `targeting` JSON into a typed object. */
 export function parseTargeting(v: unknown): AdTargeting {
   if (!v || typeof v !== "object") return {};
-  const src = v as Record<string, unknown>;
+  const s = v as Record<string, unknown>;
   const out: AdTargeting = {};
-  if (Array.isArray(src.countries)) {
-    out.countries = src.countries.filter((x): x is string => typeof x === "string");
-  }
-  if (Array.isArray(src.genders)) {
-    out.genders = src.genders.filter((x): x is string => typeof x === "string");
-  }
-  if (typeof src.minLevel === "number" && src.minLevel > 0) {
-    out.minLevel = src.minLevel;
-  }
-  if (Array.isArray(src.packages)) {
-    out.packages = src.packages.filter((x): x is string => typeof x === "string");
-  }
+  if (strArr(s.countries)?.length) out.countries = strArr(s.countries);
+  if (strArr(s.cities)?.length) out.cities = strArr(s.cities);
+  if (strArr(s.genders)?.length) out.genders = strArr(s.genders);
+  if (posNum(s.minAge)) out.minAge = posNum(s.minAge);
+  if (posNum(s.maxAge)) out.maxAge = posNum(s.maxAge);
+  if (posNum(s.minLevel)) out.minLevel = posNum(s.minLevel);
+  if (posNum(s.maxLevel)) out.maxLevel = posNum(s.maxLevel);
+  if (strArr(s.packages)?.length) out.packages = strArr(s.packages);
+  if (strArr(s.kycStatuses)?.length) out.kycStatuses = strArr(s.kycStatuses);
+  if (s.verifiedOnly === true) out.verifiedOnly = true;
+  if (strArr(s.tags)?.length) out.tags = strArr(s.tags);
+  if (strArr(s.languages)?.length) out.languages = strArr(s.languages);
+  if (posNum(s.minAccountAgeDays)) out.minAccountAgeDays = posNum(s.minAccountAgeDays);
+  if (posNum(s.activeWithinDays)) out.activeWithinDays = posNum(s.activeWithinDays);
   return out;
 }
 
-/** Normalize a targeting object to null when it has no active rules (so we can
- *  store `null` for "everyone" instead of an empty object). */
+/** Normalize to null when there are no active rules ("everyone"). */
 export function normalizeTargeting(t: AdTargeting): AdTargeting | null {
-  const hasRule =
-    (t.countries && t.countries.length > 0) ||
-    (t.genders && t.genders.length > 0) ||
-    (typeof t.minLevel === "number" && t.minLevel > 0) ||
-    (t.packages && t.packages.length > 0);
-  return hasRule ? t : null;
+  const clean = parseTargeting(t);
+  return Object.keys(clean).length > 0 ? clean : null;
 }
 
-/** True if the viewer satisfies every set targeting rule. A null/empty
- *  targeting matches everyone. */
+/** True if the viewer satisfies every set targeting rule. Empty = everyone. */
 export function matchesTargeting(
   targeting: unknown,
   user: TargetableUser
 ): boolean {
   const t = parseTargeting(targeting);
+  const now = new Date();
 
-  if (t.countries && t.countries.length > 0) {
+  if (t.countries?.length) {
     const c = (user.country ?? "").toLowerCase();
     if (!t.countries.some((x) => x.toLowerCase() === c)) return false;
   }
-  if (t.genders && t.genders.length > 0) {
+  if (t.cities?.length) {
+    const c = (user.city ?? "").toLowerCase();
+    if (!t.cities.some((x) => x.toLowerCase() === c)) return false;
+  }
+  if (t.genders?.length) {
     const g = (user.gender ?? "").toUpperCase();
     if (!t.genders.some((x) => x.toUpperCase() === g)) return false;
   }
-  if (typeof t.minLevel === "number" && t.minLevel > 0) {
-    if ((user.level ?? 0) < t.minLevel) return false;
+  if (t.minAge || t.maxAge) {
+    const age = ageFromDob(user.dateOfBirth, now);
+    if (age === null) return false;
+    if (t.minAge && age < t.minAge) return false;
+    if (t.maxAge && age > t.maxAge) return false;
   }
-  if (t.packages && t.packages.length > 0) {
-    const p = user.packageSlug ?? "";
-    if (!t.packages.includes(p)) return false;
+  if (t.minLevel && (user.level ?? 0) < t.minLevel) return false;
+  if (t.maxLevel && (user.level ?? 0) > t.maxLevel) return false;
+  if (t.packages?.length) {
+    if (!t.packages.includes(user.packageSlug ?? "")) return false;
+  }
+  if (t.kycStatuses?.length) {
+    const k = (user.kycStatus ?? "").toUpperCase();
+    if (!t.kycStatuses.some((x) => x.toUpperCase() === k)) return false;
+  }
+  if (t.verifiedOnly && !user.isBlueVerified) return false;
+  if (t.tags?.length) {
+    const userTags = (user.tags ?? []).map((x) => x.toUpperCase());
+    if (!t.tags.some((x) => userTags.includes(x.toUpperCase()))) return false;
+  }
+  if (t.languages?.length) {
+    const l = (user.language ?? "").toLowerCase();
+    if (!t.languages.some((x) => x.toLowerCase() === l)) return false;
+  }
+  if (t.minAccountAgeDays) {
+    const d = daysSince(user.createdAt, now);
+    if (d === null || d < t.minAccountAgeDays) return false;
+  }
+  if (t.activeWithinDays) {
+    const d = daysSince(user.lastLoginAt, now);
+    if (d === null || d > t.activeWithinDays) return false;
   }
   return true;
 }

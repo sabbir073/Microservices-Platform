@@ -3,22 +3,48 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
 import { getEffectivePackage } from "@/lib/packages";
 import { getAdClickCost } from "@/lib/ad-billing";
+import { matchesTargeting, type TargetableUser } from "@/lib/ad-targeting";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const placement = searchParams.get("placement");
+  // Client-remembered last-shown ad id(s) for this placement — avoid an
+  // immediate repeat (rotation).
+  const exclude = new Set(
+    (searchParams.get("exclude") ?? "").split(",").filter(Boolean)
+  );
 
   if (!placement) {
     return NextResponse.json({ error: "placement required" }, { status: 400 });
   }
 
-  // Ad-free packages: hide passive placements (Watch & Earn is unaffected).
+  // Load the viewer once: ad-free gate + audience-targeting attributes.
   const session = await auth();
+  let viewer: TargetableUser | null = null;
   if (session?.user?.id) {
-    const pkg = await getEffectivePackage(session.user.id);
+    const [pkg, u] = await Promise.all([
+      getEffectivePackage(session.user.id),
+      prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: {
+          country: true,
+          city: true,
+          gender: true,
+          level: true,
+          dateOfBirth: true,
+          kycStatus: true,
+          isBlueVerified: true,
+          tags: true,
+          language: true,
+          createdAt: true,
+          lastLoginAt: true,
+        },
+      }),
+    ]);
     if (pkg?.adFree) {
-      return NextResponse.json({ ad: null });
+      return NextResponse.json({ ad: null }); // Watch & Earn is unaffected
     }
+    viewer = { ...(u ?? {}), packageSlug: pkg?.slug ?? null };
   }
 
   // Find placement by name
@@ -29,11 +55,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ad: null });
   }
 
-  // Get active ads for this placement, weighted random selection. Exclude
-  // campaigns whose remaining budget can't cover another billed click so we
-  // never show an ad we can't charge for.
+  // Get active ads for this placement. Exclude campaigns whose remaining budget
+  // can't cover another billed click so we never show an ad we can't charge for.
   const cost = await getAdClickCost();
-  const ads = await prisma.ad.findMany({
+  const allAds = await prisma.ad.findMany({
     where: {
       placementId: placementRow.id,
       status: "ACTIVE",
@@ -42,9 +67,18 @@ export async function GET(request: NextRequest) {
     include: { campaign: { select: { title: true } } },
   });
 
-  if (ads.length === 0) {
+  // Audience targeting (previously banners ignored this).
+  const targeted = viewer
+    ? allAds.filter((a) => matchesTargeting(a.targeting, viewer))
+    : allAds;
+
+  if (targeted.length === 0) {
     return NextResponse.json({ ad: null });
   }
+
+  // Prefer ads not just shown; fall back to the full set if all are excluded.
+  const fresh = targeted.filter((a) => !exclude.has(a.id));
+  const ads = fresh.length > 0 ? fresh : targeted;
 
   // Weighted pick
   const totalWeight = ads.reduce((sum, a) => sum + (a.weight ?? 10), 0);
@@ -71,12 +105,16 @@ export async function GET(request: NextRequest) {
       id: chosen.id,
       type: chosen.type,
       imageUrl: chosen.contentUrl ?? undefined,
+      videoUrl: chosen.videoUrl ?? undefined,
       title: chosen.campaign.title,
       body: undefined,
       ctaLabel: "Learn More",
       ctaUrl: chosen.targetUrl ?? undefined,
       html: chosen.htmlContent ?? undefined,
       sponsor: undefined,
+      size: chosen.size ?? undefined,
+      width: chosen.width ?? undefined,
+      height: chosen.height ?? undefined,
     },
   });
 }

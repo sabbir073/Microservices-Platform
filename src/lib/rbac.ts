@@ -606,6 +606,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     category: "SYSTEM",
   },
   {
+    name: "Feed Widgets",
+    href: "/admin/settings/feed-widgets",
+    icon: "LayoutList",
+    permissions: ["settings.view"],
+    category: "SYSTEM",
+  },
+  {
     name: "Locations",
     href: "/admin/locations",
     icon: "Globe",

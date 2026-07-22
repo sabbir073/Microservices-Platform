@@ -31,6 +31,14 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 import { AD_PLACEMENTS } from "@/lib/ad-placements";
+import { AD_SIZES } from "@/lib/ad-sizes";
+import {
+  GENDER_OPTIONS,
+  KYC_OPTIONS,
+  TAG_OPTIONS,
+  LANGUAGE_OPTIONS,
+  type AdTargeting,
+} from "@/lib/ad-targeting";
 
 interface Campaign {
   id: string;
@@ -58,8 +66,12 @@ interface Ad {
   type: string;
   format: string;
   contentUrl: string | null;
+  videoUrl: string | null;
   targetUrl: string | null;
   htmlContent: string | null;
+  size: string | null;
+  width: number | null;
+  height: number | null;
   weight: number;
   status: string;
   impressions: number;
@@ -71,7 +83,7 @@ interface Ad {
   brandName: string | null;
   brandLogo: string | null;
   ctaLabel: string | null;
-  targeting: { countries?: string[]; genders?: string[]; minLevel?: number } | null;
+  targeting: AdTargeting | null;
   campaign: { id: string; title: string };
   placement: { id: string; name: string };
 }
@@ -112,6 +124,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   const [adModal, setAdModal] = useState<Ad | "new" | null>(null);
   const [campModal, setCampModal] = useState<Campaign | "new" | null>(null);
   const [newPlacement, setNewPlacement] = useState("");
+  const [demoBusy, setDemoBusy] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
@@ -195,6 +208,39 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
     toast.success("Deleted");
     loadAll();
   };
+  const generateDemoAds = async () => {
+    setDemoBusy(true);
+    try {
+      const res = await fetch("/api/admin/ads/demo", { method: "POST" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed");
+      toast.success(
+        d.created > 0
+          ? `Created ${d.created} demo ad(s) across ${d.total} ad spaces`
+          : "Demo ads already exist for every ad space"
+      );
+      loadAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setDemoBusy(false);
+    }
+  };
+  const removeDemoAds = async () => {
+    if (!(await confirmDialog({ title: "Remove all demo ads?", tone: "danger", confirmLabel: "Remove" }))) return;
+    setDemoBusy(true);
+    try {
+      const res = await fetch("/api/admin/ads/demo", { method: "DELETE" });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? "Failed");
+      toast.success("Demo ads removed");
+      loadAll();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setDemoBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -208,21 +254,42 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
             Manage ads, campaigns, and placement slots across the platform.
           </p>
         </div>
-        {canManage && tab === "ads" && (
-          <button
-            onClick={() => setAdModal("new")}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" /> New Ad
-          </button>
-        )}
-        {canManage && tab === "campaigns" && (
-          <button
-            onClick={() => setCampModal("new")}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" /> New Campaign
-          </button>
+        {canManage && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={generateDemoAds}
+              disabled={demoBusy}
+              title="Create one labeled demo ad in every ad space so you can see where each renders"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-semibold disabled:opacity-50"
+            >
+              <Sparkles className="w-4 h-4 text-amber-400" />
+              Generate demo ads
+            </button>
+            <button
+              onClick={removeDemoAds}
+              disabled={demoBusy}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-red-400 text-sm font-semibold disabled:opacity-50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Remove demo
+            </button>
+            {tab === "ads" && (
+              <button
+                onClick={() => setAdModal("new")}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4" /> New Ad
+              </button>
+            )}
+            {tab === "campaigns" && (
+              <button
+                onClick={() => setCampModal("new")}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                <Plus className="w-4 h-4" /> New Campaign
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -448,14 +515,21 @@ function StatusPill({ status }: { status: string }) {
 }
 
 /** Short human summary of an ad's targeting, or null when it targets everyone. */
-function targetingSummary(
-  t: { countries?: string[]; genders?: string[]; minLevel?: number } | null
-): string | null {
+function targetingSummary(t: AdTargeting | null): string | null {
   if (!t) return null;
   const parts: string[] = [];
   if (t.countries?.length) parts.push(t.countries.join("/"));
+  if (t.cities?.length) parts.push(t.cities.join("/"));
   if (t.genders?.length) parts.push(t.genders.map((g) => g[0]).join(""));
-  if (t.minLevel && t.minLevel > 0) parts.push(`L${t.minLevel}+`);
+  if (t.minAge || t.maxAge) parts.push(`${t.minAge ?? ""}-${t.maxAge ?? ""}y`);
+  if (t.minLevel || t.maxLevel) parts.push(`L${t.minLevel ?? ""}-${t.maxLevel ?? ""}`);
+  if (t.packages?.length) parts.push(t.packages.join("/"));
+  if (t.kycStatuses?.length) parts.push(`KYC:${t.kycStatuses.map((k) => k[0]).join("")}`);
+  if (t.verifiedOnly) parts.push("✓verified");
+  if (t.tags?.length) parts.push(t.tags.join("/"));
+  if (t.languages?.length) parts.push(t.languages.join("/"));
+  if (t.minAccountAgeDays) parts.push(`${t.minAccountAgeDays}d+ old`);
+  if (t.activeWithinDays) parts.push(`active ${t.activeWithinDays}d`);
   return parts.length ? parts.join(" · ") : null;
 }
 
@@ -675,10 +749,17 @@ function AdModal({
 }) {
   const [campaignId, setCampaignId] = useState(ad?.campaign.id ?? campaigns[0]?.id ?? "");
   const [placementId, setPlacementId] = useState(ad?.placement.id ?? placements[0]?.id ?? "");
-  const [type, setType] = useState(ad?.type ?? "LOCAL");
   const [contentUrl, setContentUrl] = useState(ad?.contentUrl ?? "");
+  const [videoUrl, setVideoUrl] = useState(ad?.videoUrl ?? "");
   const [targetUrl, setTargetUrl] = useState(ad?.targetUrl ?? "");
   const [htmlContent, setHtmlContent] = useState(ad?.htmlContent ?? "");
+  // Creative kind: IMAGE (incl. GIF) | VIDEO | HTML. Drives the DB `type`.
+  const [creative, setCreative] = useState<"IMAGE" | "VIDEO" | "HTML">(
+    ad?.type === "HTML" ? "HTML" : ad?.videoUrl ? "VIDEO" : "IMAGE"
+  );
+  const [size, setSize] = useState(ad?.size ?? "responsive");
+  const [width, setWidth] = useState(String(ad?.width ?? ""));
+  const [height, setHeight] = useState(String(ad?.height ?? ""));
   const [weight, setWeight] = useState(String(ad?.weight ?? 10));
   const [status, setStatus] = useState(ad?.status ?? "ACTIVE");
   const [rewardPoints, setRewardPoints] = useState(String(ad?.rewardPoints ?? 0));
@@ -689,11 +770,28 @@ function AdModal({
   const [brandName, setBrandName] = useState(ad?.brandName ?? "");
   const [brandLogo, setBrandLogo] = useState(ad?.brandLogo ?? "");
   const [ctaLabel, setCtaLabel] = useState(ad?.ctaLabel ?? "");
-  // Targeting
-  const [tgCountry, setTgCountry] = useState(ad?.targeting?.countries?.[0] ?? "");
-  const [tgGenders, setTgGenders] = useState<string[]>(ad?.targeting?.genders ?? []);
-  const [tgMinLevel, setTgMinLevel] = useState(String(ad?.targeting?.minLevel ?? 0));
+  // Targeting (audience filters)
+  const tg = ad?.targeting ?? {};
+  const [tgCountries, setTgCountries] = useState((tg.countries ?? []).join(", "));
+  const [tgCities, setTgCities] = useState((tg.cities ?? []).join(", "));
+  const [tgGenders, setTgGenders] = useState<string[]>(tg.genders ?? []);
+  const [tgMinAge, setTgMinAge] = useState(String(tg.minAge ?? ""));
+  const [tgMaxAge, setTgMaxAge] = useState(String(tg.maxAge ?? ""));
+  const [tgMinLevel, setTgMinLevel] = useState(String(tg.minLevel ?? ""));
+  const [tgMaxLevel, setTgMaxLevel] = useState(String(tg.maxLevel ?? ""));
+  const [tgPackages, setTgPackages] = useState((tg.packages ?? []).join(", "));
+  const [tgKyc, setTgKyc] = useState<string[]>(tg.kycStatuses ?? []);
+  const [tgVerified, setTgVerified] = useState(!!tg.verifiedOnly);
+  const [tgTags, setTgTags] = useState<string[]>(tg.tags ?? []);
+  const [tgLanguages, setTgLanguages] = useState((tg.languages ?? []).join(", "));
+  const [tgAccountAge, setTgAccountAge] = useState(String(tg.minAccountAgeDays ?? ""));
+  const [tgActiveWithin, setTgActiveWithin] = useState(String(tg.activeWithinDays ?? ""));
   const [busy, setBusy] = useState(false);
+
+  const toggleIn = (arr: string[], v: string) =>
+    arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
+  const csv = (s: string) =>
+    s.split(",").map((x) => x.trim()).filter(Boolean);
 
   const save = async () => {
     if (!campaignId || !placementId) {
@@ -703,17 +801,32 @@ function AdModal({
     setBusy(true);
     try {
       const targeting: Record<string, unknown> = {};
-      if (tgCountry.trim()) targeting.countries = [tgCountry.trim()];
+      if (csv(tgCountries).length) targeting.countries = csv(tgCountries);
+      if (csv(tgCities).length) targeting.cities = csv(tgCities);
       if (tgGenders.length) targeting.genders = tgGenders;
+      if (Number(tgMinAge) > 0) targeting.minAge = Number(tgMinAge);
+      if (Number(tgMaxAge) > 0) targeting.maxAge = Number(tgMaxAge);
       if (Number(tgMinLevel) > 0) targeting.minLevel = Number(tgMinLevel);
+      if (Number(tgMaxLevel) > 0) targeting.maxLevel = Number(tgMaxLevel);
+      if (csv(tgPackages).length) targeting.packages = csv(tgPackages);
+      if (tgKyc.length) targeting.kycStatuses = tgKyc;
+      if (tgVerified) targeting.verifiedOnly = true;
+      if (tgTags.length) targeting.tags = tgTags;
+      if (csv(tgLanguages).length) targeting.languages = csv(tgLanguages);
+      if (Number(tgAccountAge) > 0) targeting.minAccountAgeDays = Number(tgAccountAge);
+      if (Number(tgActiveWithin) > 0) targeting.activeWithinDays = Number(tgActiveWithin);
       const payload = {
         campaignId,
         placementId,
-        type,
+        type: creative === "HTML" ? "HTML" : "LOCAL",
         format,
-        contentUrl,
+        contentUrl: creative === "IMAGE" ? contentUrl : "",
+        videoUrl: creative === "VIDEO" ? videoUrl : "",
         targetUrl,
-        htmlContent,
+        htmlContent: creative === "HTML" ? htmlContent : "",
+        size,
+        width: size === "custom" ? Number(width) || null : null,
+        height: size === "custom" ? Number(height) || null : null,
         weight: Number(weight) || 10,
         status,
         rewardPoints: Number(rewardPoints) || 0,
@@ -758,27 +871,53 @@ function AdModal({
         </div>
 
         <div>
-          <label className="block text-xs text-slate-400 mb-1">Type</label>
+          <label className="block text-xs text-slate-400 mb-1">Creative</label>
           <div className="flex gap-2">
-            {["LOCAL", "HTML"].map((t) => (
-              <button key={t} onClick={() => setType(t)} className={`flex-1 py-2 rounded-lg text-sm font-semibold ${type === t ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}>
-                {t === "LOCAL" ? "Image" : "HTML"}
+            {(["IMAGE", "VIDEO", "HTML"] as const).map((c) => (
+              <button
+                key={c}
+                onClick={() => setCreative(c)}
+                className={`flex-1 py-2 rounded-lg text-sm font-semibold ${creative === c ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
+              >
+                {c === "IMAGE" ? "Image / GIF" : c === "VIDEO" ? "Video" : "HTML / Script"}
               </button>
             ))}
           </div>
         </div>
 
-        {type === "HTML" ? (
+        {creative === "HTML" ? (
           <div>
-            <label className="block text-xs text-slate-400 mb-1">HTML content</label>
-            <textarea value={htmlContent} onChange={(e) => setHtmlContent(e.target.value)} rows={4} className={inputCls} placeholder="<div>...</div>" />
+            <label className="block text-xs text-slate-400 mb-1">
+              HTML content (scripts / ad-network tags run in a sandboxed frame)
+            </label>
+            <textarea value={htmlContent} onChange={(e) => setHtmlContent(e.target.value)} rows={4} className={inputCls} placeholder="<div>...</div> or <script>…</script>" />
+          </div>
+        ) : creative === "VIDEO" ? (
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Ad video (MP4 / WebM)</label>
+            <ImageUploadField value={videoUrl} onChange={setVideoUrl} previewSize="md" fileType="VIDEO" />
           </div>
         ) : (
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Ad image</label>
+            <label className="block text-xs text-slate-400 mb-1">Ad image or GIF</label>
             <ImageUploadField value={contentUrl} onChange={setContentUrl} previewSize="md" />
           </div>
         )}
+
+        <div>
+          <label className="block text-xs text-slate-400 mb-1">Size</label>
+          <select value={size} onChange={(e) => setSize(e.target.value)} className={inputCls}>
+            {AD_SIZES.map((s) => (
+              <option key={s.key} value={s.key}>{s.label}</option>
+            ))}
+          </select>
+          {size === "custom" && (
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              <input type="number" min={1} value={width} onChange={(e) => setWidth(e.target.value)} placeholder="Width (px)" className={inputCls} />
+              <input type="number" min={1} value={height} onChange={(e) => setHeight(e.target.value)} placeholder="Height (px)" className={inputCls} />
+            </div>
+          )}
+        </div>
 
         <div>
           <label className="block text-xs text-slate-400 mb-1">Target URL (click destination)</label>
@@ -845,34 +984,127 @@ function AdModal({
           </div>
         )}
 
-        {/* Targeting */}
-        <div className="rounded-lg border border-slate-800 p-3 space-y-2.5">
-          <p className="text-xs font-bold text-slate-400">Targeting (optional)</p>
+        {/* Audience targeting */}
+        <div className="rounded-lg border border-slate-800 p-3 space-y-3">
+          <p className="text-xs font-bold text-slate-400">
+            Audience targeting <span className="font-normal">(all blank = everyone)</span>
+          </p>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Country</label>
-              <input value={tgCountry} onChange={(e) => setTgCountry(e.target.value)} className={inputCls} placeholder="Any" />
+              <label className="block text-xs text-slate-400 mb-1">Countries (comma)</label>
+              <input value={tgCountries} onChange={(e) => setTgCountries(e.target.value)} className={inputCls} placeholder="BD, IN, US" />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Min level</label>
-              <input type="number" min={0} value={tgMinLevel} onChange={(e) => setTgMinLevel(e.target.value)} className={inputCls} />
+              <label className="block text-xs text-slate-400 mb-1">Cities (comma)</label>
+              <input value={tgCities} onChange={(e) => setTgCities(e.target.value)} className={inputCls} placeholder="Dhaka, Delhi" />
             </div>
           </div>
+
           <div>
             <label className="block text-xs text-slate-400 mb-1">Gender</label>
             <div className="flex gap-1.5">
-              {["MALE", "FEMALE", "OTHER"].map((g) => {
+              {GENDER_OPTIONS.map((g) => {
                 const on = tgGenders.includes(g);
                 return (
                   <button
                     key={g}
-                    onClick={() => setTgGenders((prev) => (on ? prev.filter((x) => x !== g) : [...prev, g]))}
+                    type="button"
+                    onClick={() => setTgGenders((prev) => toggleIn(prev, g))}
                     className={`flex-1 py-1.5 rounded-md text-[11px] font-semibold capitalize ${on ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
                   >
                     {g.toLowerCase()}
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-2">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Min age</label>
+              <input type="number" min={0} value={tgMinAge} onChange={(e) => setTgMinAge(e.target.value)} className={inputCls} placeholder="—" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Max age</label>
+              <input type="number" min={0} value={tgMaxAge} onChange={(e) => setTgMaxAge(e.target.value)} className={inputCls} placeholder="—" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Min level</label>
+              <input type="number" min={0} value={tgMinLevel} onChange={(e) => setTgMinLevel(e.target.value)} className={inputCls} placeholder="—" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Max level</label>
+              <input type="number" min={0} value={tgMaxLevel} onChange={(e) => setTgMaxLevel(e.target.value)} className={inputCls} placeholder="—" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Packages (slug, comma)</label>
+              <input value={tgPackages} onChange={(e) => setTgPackages(e.target.value)} className={inputCls} placeholder="pro, elite" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">
+                Languages ({LANGUAGE_OPTIONS.slice(0, 3).map((l) => l.code).join("/")}…)
+              </label>
+              <input value={tgLanguages} onChange={(e) => setTgLanguages(e.target.value)} className={inputCls} placeholder="en, bn" />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">KYC status</label>
+            <div className="flex flex-wrap gap-1.5">
+              {KYC_OPTIONS.map((k) => {
+                const on = tgKyc.includes(k);
+                return (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setTgKyc((prev) => toggleIn(prev, k))}
+                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${on ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
+                  >
+                    {k.replace(/_/g, " ")}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                onClick={() => setTgVerified((v) => !v)}
+                className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${tgVerified ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"}`}
+              >
+                ✓ Verified only
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Interests / tags</label>
+            <div className="flex flex-wrap gap-1.5">
+              {TAG_OPTIONS.map((t) => {
+                const on = tgTags.includes(t);
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTgTags((prev) => toggleIn(prev, t))}
+                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold capitalize ${on ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-300"}`}
+                  >
+                    {t.replace(/_/g, " ").toLowerCase()}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Min account age (days)</label>
+              <input type="number" min={0} value={tgAccountAge} onChange={(e) => setTgAccountAge(e.target.value)} className={inputCls} placeholder="—" />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Active within (days)</label>
+              <input type="number" min={0} value={tgActiveWithin} onChange={(e) => setTgActiveWithin(e.target.value)} className={inputCls} placeholder="—" />
             </div>
           </div>
         </div>

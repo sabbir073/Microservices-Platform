@@ -58,7 +58,7 @@ export function BottomTabBar({ features }: { features?: string[] }) {
 
   return (
     <nav
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-gray-800/80 bg-gray-950/85 backdrop-blur-xl"
+      className="lg:hidden fixed bottom-0 inset-x-0 z-40 glass-strong rounded-none border-0 border-t border-gray-800/70"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <div

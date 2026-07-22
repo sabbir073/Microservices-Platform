@@ -72,6 +72,10 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
   const submittedRef = useRef(false);
   const watchedRef = useRef(0);
   const lastTimeRef = useRef(0);
+  // Actual media duration (seconds), captured from the player. Sent on submit
+  // so the server can cap the required watch time at the real video length —
+  // otherwise a video shorter than watchSeconds is impossible to complete.
+  const durationRef = useRef(0);
   // Gating refs — watch time only accrues while the video is genuinely
   // playing AND the tab is both visible and focused. Kept in refs so the
   // per-frame timeupdate handler and the heartbeat interval read live values
@@ -147,6 +151,8 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
   const handleTimeUpdate = (
     e: React.SyntheticEvent<HTMLVideoElement>
   ) => {
+    const dur = e.currentTarget.duration;
+    if (Number.isFinite(dur) && dur > 0) durationRef.current = dur;
     const t = e.currentTarget.currentTime;
     if (!Number.isFinite(t)) return;
     const delta = t - lastTimeRef.current;
@@ -234,6 +240,7 @@ export function VideoTaskPlayer({ task, submissionId, onClose }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           submissionId,
+          videoDuration: durationRef.current || undefined,
           proof: videoUrl,
           proofImages: screenshotUrl ? [screenshotUrl] : [],
           uniqueKey,

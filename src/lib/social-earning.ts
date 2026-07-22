@@ -15,7 +15,6 @@
  */
 import { prisma } from "@/lib/prisma";
 import {
-  Prisma,
   TransactionStatus,
   TransactionType,
   NotificationType,
@@ -278,7 +277,8 @@ interface CreditCtx {
 async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   const { userId, role, rule, cfg, action, postId, sourceUserId } = ctx;
 
-  if (!rule.enabled || (rule.points <= 0 && rule.xp <= 0)) {
+  // Global enable is the master switch for this action.
+  if (!rule.enabled) {
     return { points: 0, xp: 0, skipped: "disabled" };
   }
 
@@ -289,7 +289,13 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
       id: true,
       status: true,
       createdAt: true,
-      package: { select: { socialEarningMultiplier: true } },
+      package: {
+        select: {
+          socialEarningMultiplier: true,
+          socialEarningEnabled: true,
+          socialEarningConfig: true,
+        },
+      },
     },
   });
   if (!user || user.status !== "ACTIVE") {
@@ -301,10 +307,50 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
     return { points: 0, xp: 0, skipped: "min_age" };
   }
 
+  const pkg = (
+    user as unknown as {
+      package: {
+        socialEarningMultiplier: number;
+        socialEarningEnabled: boolean;
+        socialEarningConfig: unknown;
+      } | null;
+    }
+  ).package;
+
+  // Plan-level hard gate — this package earns nothing socially.
+  if (pkg && pkg.socialEarningEnabled === false) {
+    return { points: 0, xp: 0, skipped: "disabled" };
+  }
+
   // Per-plan multiplier (defaults to 1× if no plan).
-  const planMultiplier =
-    (user as unknown as { package: { socialEarningMultiplier: number } | null }).package
-      ?.socialEarningMultiplier ?? 1;
+  const planMultiplier = pkg?.socialEarningMultiplier ?? 1;
+
+  // Per-package points override (recipient side): the plan can define its own
+  // points per action, replacing the global base. null/missing → global.
+  let basePoints = rule.points;
+  if (
+    role === "recipient" &&
+    pkg?.socialEarningConfig &&
+    typeof pkg.socialEarningConfig === "object"
+  ) {
+    const KEY: Partial<Record<SocialAction, string>> = {
+      LIKE_RECEIVED: "likePoints",
+      COMMENT_RECEIVED: "commentPoints",
+      POST_CREATE: "postPoints",
+      SHARE_RECEIVED: "sharePoints",
+      VOTE_RECEIVED: "votePoints",
+    };
+    const key = KEY[action];
+    const override = key
+      ? (pkg.socialEarningConfig as Record<string, unknown>)[key]
+      : undefined;
+    if (typeof override === "number" && override >= 0) basePoints = override;
+  }
+
+  // Nothing to pay for this action/plan.
+  if (basePoints <= 0 && rule.xp <= 0) {
+    return { points: 0, xp: 0, skipped: "disabled" };
+  }
 
   // Per-post cap (only counted against recipient credits — the post is what fills up)
   let postEarned = 0;
@@ -351,7 +397,7 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   }
 
   // Cap points (apply plan multiplier first, then daily/post caps)
-  let allowPoints = Math.max(0, Math.floor(rule.points * planMultiplier));
+  let allowPoints = Math.max(0, Math.floor(basePoints * planMultiplier));
   if (allowPoints > 0) {
     if (postId && role === "recipient") {
       allowPoints = Math.min(allowPoints, cfg.capPerPost - postEarned);
@@ -398,98 +444,83 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
       ? ACTION_DESCRIPTION_RECIPIENT[action]
       : ACTION_DESCRIPTION_ACTOR[action];
 
-  const ops: Prisma.PrismaPromise<unknown>[] = [];
+  // Serialize concurrent credits for this user — Transaction.reference has no
+  // DB unique constraint, so the pre-flight check above can race. Lock the user
+  // row and re-check the duplicate INSIDE the lock before crediting, so two
+  // racing engagements (e.g. rapid like/unlike/like) can't both pay out.
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+      const raceDup = await tx.transaction.findFirst({
+        where: { reference },
+        select: { id: true },
+      });
+      if (raceDup) return null;
 
-  ops.push(
-    prisma.transaction.create({
-      data: {
-        userId,
-        type: TransactionType.EARNING,
-        status: TransactionStatus.COMPLETED,
-        points: allowPoints,
-        amount: allowPoints / 1000,
-        description,
-        reference,
-        metadata: {
-          action,
-          role,
-          postId: postId ?? null,
-          sourceUserId: sourceUserId ?? null,
-          xp: allowXp,
-        },
-      },
-    })
-  );
-
-  ops.push(
-    prisma.user.update({
-      where: { id: userId },
-      data: {
-        pointsBalance: { increment: allowPoints },
-        totalEarnings: { increment: allowPoints / 1000 },
-        xp: { increment: allowXp },
-      },
-    })
-  );
-
-  if (postId && role === "recipient" && allowPoints > 0) {
-    ops.push(
-      prisma.post.update({
-        where: { id: postId },
-        data: { socialEarnings: { increment: allowPoints } },
-      })
-    );
-  }
-
-  if (allowPoints > 0 || allowXp > 0) {
-    const parts: string[] = [];
-    if (allowPoints > 0) parts.push(`+${allowPoints} pts`);
-    if (allowXp > 0) parts.push(`+${allowXp} XP`);
-    ops.push(
-      prisma.notification.create({
+      await tx.transaction.create({
         data: {
           userId,
-          type: NotificationType.WALLET,
-          title: parts.join(" · "),
-          message: description,
-          data: {
+          type: TransactionType.EARNING,
+          status: TransactionStatus.COMPLETED,
+          points: allowPoints,
+          amount: allowPoints / 1000,
+          description,
+          reference,
+          metadata: {
             action,
             role,
             postId: postId ?? null,
             sourceUserId: sourceUserId ?? null,
-            points: allowPoints,
             xp: allowXp,
           },
         },
-      })
-    );
-  }
+      });
 
-  // Actor-side: log to SocialActionLog so daily missions can count it
-  if (role === "actor" && cfg.countTowardDailyMissions) {
-    const logAction = ACTOR_LOG_ACTION[action];
-    if (logAction) {
-      ops.push(
-        prisma.socialActionLog.create({
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          pointsBalance: { increment: allowPoints },
+          totalEarnings: { increment: allowPoints / 1000 },
+          xp: { increment: allowXp },
+        },
+      });
+
+      if (postId && role === "recipient" && allowPoints > 0) {
+        await tx.post.update({
+          where: { id: postId },
+          data: { socialEarnings: { increment: allowPoints } },
+        });
+      }
+
+      if (allowPoints > 0 || allowXp > 0) {
+        const parts: string[] = [];
+        if (allowPoints > 0) parts.push(`+${allowPoints} pts`);
+        if (allowXp > 0) parts.push(`+${allowXp} XP`);
+        await tx.notification.create({
           data: {
             userId,
-            action: logAction,
-            postId: postId ?? null,
-            dateKey: utcDateKey(),
+            type: NotificationType.WALLET,
+            title: parts.join(" · "),
+            message: description,
+            data: {
+              action,
+              role,
+              postId: postId ?? null,
+              sourceUserId: sourceUserId ?? null,
+              points: allowPoints,
+              xp: allowXp,
+            },
           },
-        })
-      );
-    }
-  }
+        });
+      }
 
-  try {
-    await prisma.$transaction(ops);
-    return { points: allowPoints, xp: allowXp };
+      // Note: SocialActionLog (daily-mission counting) is written in
+      // awardSocialEarning, independent of these earning gates/caps.
+      return { points: allowPoints, xp: allowXp };
+    });
+    if (!result) return { points: 0, xp: 0, skipped: "duplicate" };
+    return result;
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("Unique constraint") || msg.includes("duplicate key")) {
-      return { points: 0, xp: 0, skipped: "duplicate" };
-    }
     console.error("[social-earning] credit failed:", err);
     return { points: 0, xp: 0, skipped: "duplicate" };
   }
@@ -514,6 +545,31 @@ export async function awardSocialEarning(
   };
 
   const cfg = await getSocialEarningConfig();
+
+  // Daily-mission counting is DECOUPLED from earning: log the actor's action
+  // whenever mission-counting is on, regardless of whether social earning is
+  // enabled/disabled, its per-action rule, or the daily caps. This is what
+  // makes SOCIAL_LIKE/COMMENT/POST/SHARE/VOTE missions actually progress
+  // (for POST_CREATE the actor === the poster). One row per action call; the
+  // mission progress builder de-dupes by distinct post when configured.
+  if (cfg.countTowardDailyMissions && actorUserId) {
+    const logAction = ACTOR_LOG_ACTION[action];
+    if (logAction) {
+      try {
+        await prisma.socialActionLog.create({
+          data: {
+            userId: actorUserId,
+            action: logAction,
+            postId: postId ?? null,
+            dateKey: utcDateKey(),
+          },
+        });
+      } catch (err) {
+        console.error("[social-earning] mission log failed:", err);
+      }
+    }
+  }
+
   if (!cfg.enabled) {
     return {
       recipient: { points: 0, xp: 0, skipped: "disabled" },

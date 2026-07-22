@@ -320,6 +320,45 @@ textarea,
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
+   Glass surfaces — one reusable frosted-glass recipe (translucent fill +
+   backdrop blur + hairline top-highlight border + layered depth). Replaces the
+   ad-hoc translucent-bg + backdrop-blur combos scattered across the app so
+   panels, nav bars and popovers share one premium material. Opt-in classes.
+   ───────────────────────────────────────────────────────────────────────── */
+@utility glass {
+  background-color: color-mix(in oklab, var(--color-gray-900) 70%, transparent);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid color-mix(in oklab, var(--color-gray-600) 38%, transparent);
+  border-radius: 1rem;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+    0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 16px 40px -18px rgba(0, 0, 0, 0.7);
+}
+
+/* Denser variant for sticky headers / bottom nav / overlays that sit over
+   scrolling content and need more opacity for legibility. */
+@utility glass-strong {
+  background-color: color-mix(in oklab, var(--color-gray-950) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border-color: color-mix(in oklab, var(--color-gray-700) 55%, transparent);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+    0 8px 30px -12px rgba(0, 0, 0, 0.6);
+}
+
+/* Hover affordance for interactive glass tiles — a brand-tinted lift. */
+@utility glass-hover {
+  transition: background-color 0.18s ease, border-color 0.18s ease,
+    box-shadow 0.18s ease, transform 0.18s ease;
+  &:hover {
+    border-color: color-mix(in oklab, var(--color-brand) 40%, var(--color-gray-600));
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.07),
+      0 0 0 1px color-mix(in oklab, var(--color-brand) 20%, transparent),
+      0 18px 44px -18px rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
    Light theme overrides — activated when <html data-theme="light">
    The app is built dark-first (raw bg-gray-900/950, text-white, etc.). To make
    the user-facing dark/light toggle actually flip the UI, we map the most
@@ -334,6 +373,21 @@ html[data-theme="light"] {
 html[data-theme="light"] body {
   background-color: #f8fafc;
   color: #0f172a;
+}
+
+/* Glass surfaces — light-mode material (frosted white instead of dark) */
+html[data-theme="light"] .glass {
+  background-color: rgba(255, 255, 255, 0.72) !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.7),
+    0 1px 2px 0 rgba(15, 23, 42, 0.06),
+    0 16px 40px -20px rgba(15, 23, 42, 0.18) !important;
+}
+html[data-theme="light"] .glass-strong {
+  background-color: rgba(248, 250, 252, 0.85) !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.7),
+    0 8px 30px -14px rgba(15, 23, 42, 0.16) !important;
 }
 
 /* Surfaces — page background, cards, elevated surfaces */

@@ -11,7 +11,9 @@ export type TaskStatus =
   | "COOLDOWN"
   | "PENDING"
   | "IN_PROGRESS"
-  | "SUBMITTED";
+  | "SUBMITTED"
+  | "REVISION"
+  | "REJECTED";
 export type TaskDifficulty = "EASY" | "MEDIUM" | "HARD";
 
 interface TaskCardProps {
@@ -45,8 +47,10 @@ const STATUS_TONE: Record<TaskStatus, string> = {
   COMPLETED: "bg-emerald-500/15 text-emerald-400 cursor-default",
   COOLDOWN: "bg-gray-800 text-gray-500 cursor-not-allowed",
   PENDING: "bg-amber-500/15 text-amber-400 cursor-default",
-  IN_PROGRESS: "bg-blue-500 hover:bg-blue-600 text-white",
+  IN_PROGRESS: "bg-indigo-500 hover:bg-indigo-600 text-white",
   SUBMITTED: "bg-amber-500/15 text-amber-400",
+  REVISION: "bg-orange-500 hover:bg-orange-600 text-white",
+  REJECTED: "bg-red-500/15 text-red-400 hover:bg-red-500/25",
 };
 
 export function TaskCard({
@@ -84,12 +88,18 @@ export function TaskCard({
       ? "Pending review"
       : status === "PENDING"
       ? "Pending"
+      : status === "REVISION"
+      ? "Revise →"
+      : status === "REJECTED"
+      ? "Rejected"
       : "Start →");
 
   const navigable =
     status === "AVAILABLE" ||
     status === "IN_PROGRESS" ||
-    status === "SUBMITTED";
+    status === "SUBMITTED" ||
+    status === "REVISION" ||
+    status === "REJECTED";
   const ActionTag: "a" | "button" = href && navigable ? "a" : "button";
 
   return (

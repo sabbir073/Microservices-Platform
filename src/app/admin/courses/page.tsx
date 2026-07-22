@@ -27,6 +27,7 @@ import { CourseRowFeatureMenu } from "./_components/CourseRowFeatureMenu";
 import { AdminBroadcastDialog } from "./_components/AdminBroadcastDialog";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
+import { AdminTable } from "@/components/admin/ui/admin-table";
 
 interface PageProps {
   searchParams: Promise<{
@@ -297,125 +298,128 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-800/50 border-b border-slate-800">
-                <tr>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Course
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Tutor
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Category
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Lessons
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Enrollments
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Status
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {courses.map((c) => (
-                  <tr key={c.id} className="hover:bg-slate-800/40">
-                    <td className="py-4 px-6">
-                      <p className="font-medium text-white truncate max-w-70">
-                        {c.title}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {formatDistanceToNow(c.createdAt, { addSuffix: true })}
-                      </p>
-                    </td>
-                    <td className="py-4 px-6 text-sm">
-                      {c.tutor ? (
-                        <div className="flex items-center gap-2 min-w-0">
-                          {c.tutor.avatar ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={c.tutor.avatar}
-                              alt=""
-                              className="w-7 h-7 rounded-full object-cover bg-slate-800"
-                            />
-                          ) : (
-                            <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-[10px] text-white font-bold">
-                              {(c.tutor.name ?? c.tutor.email ?? "?").slice(0, 1).toUpperCase()}
-                            </div>
-                          )}
-                          <span className="text-slate-300 truncate">
-                            {c.tutor.name ?? c.tutor.email}
-                          </span>
-                        </div>
+          <AdminTable
+            bare
+            rows={courses}
+            getRowKey={(c) => c.id}
+            columns={[
+              {
+                key: "course",
+                header: "Course",
+                primary: true,
+                cell: (c) => (
+                  <div className="min-w-0">
+                    <p className="font-medium text-white truncate max-w-70">
+                      {c.title}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {formatDistanceToNow(c.createdAt, { addSuffix: true })}
+                    </p>
+                  </div>
+                ),
+              },
+              {
+                key: "tutor",
+                header: "Tutor",
+                cell: (c) =>
+                  c.tutor ? (
+                    <div className="flex items-center gap-2 min-w-0">
+                      {c.tutor.avatar ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={c.tutor.avatar}
+                          alt=""
+                          className="w-7 h-7 rounded-full object-cover bg-slate-800 shrink-0"
+                        />
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-slate-500 text-xs">
-                          <UserCog className="w-3.5 h-3.5" /> Admin-built
-                        </span>
+                        <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-[10px] text-white font-bold shrink-0">
+                          {(c.tutor.name ?? c.tutor.email ?? "?").slice(0, 1).toUpperCase()}
+                        </div>
                       )}
-                    </td>
-                    <td className="py-4 px-6 text-sm text-slate-300">
-                      {c.category}
-                    </td>
-                    <td className="py-4 px-6 tabular-nums">
-                      {c._count.lessons}
-                    </td>
-                    <td className="py-4 px-6 tabular-nums">
-                      {c._count.enrollments}
-                    </td>
-                    <td className="py-4 px-6">
-                      <StatusBadge status={c.status} />
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex items-center gap-1">
-                        <Link
-                          href={`/admin/courses/${c.id}`}
-                          className="p-1.5 rounded hover:bg-slate-700 text-blue-400"
-                          title="View"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Link>
-                        {canManage && (
-                          <Link
-                            href={`/admin/courses/${c.id}/edit`}
-                            className="p-1.5 rounded hover:bg-slate-700 text-emerald-400"
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </Link>
-                        )}
-                        <Link
-                          href={`/admin/courses/${c.id}/analytics`}
-                          className="p-1.5 rounded hover:bg-slate-700 text-indigo-300"
-                          title="Analytics"
-                        >
-                          <BarChart3 className="w-4 h-4" />
-                        </Link>
-                        {canManage && c.status === "PENDING_REVIEW" && (
-                          <ApproveRejectButtons courseId={c.id} />
-                        )}
-                        {canManage &&
-                          (c.status === "PUBLISHED" || c.status === "SUSPENDED") && (
-                            <CourseRowFeatureMenu
-                              courseId={c.id}
-                              isFeatured={c.isFeatured}
-                              isPromoted={c.isPromoted}
-                              status={c.status}
-                            />
-                          )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                      <span className="text-slate-300 truncate text-sm">
+                        {c.tutor.name ?? c.tutor.email}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-slate-500 text-xs">
+                      <UserCog className="w-3.5 h-3.5" /> Admin-built
+                    </span>
+                  ),
+              },
+              {
+                key: "category",
+                header: "Category",
+                mobileHidden: true,
+                cell: (c) => (
+                  <span className="text-sm text-slate-300">{c.category}</span>
+                ),
+              },
+              {
+                key: "lessons",
+                header: "Lessons",
+                mobileHidden: true,
+                cell: (c) => (
+                  <span className="tabular-nums">{c._count.lessons}</span>
+                ),
+              },
+              {
+                key: "enrollments",
+                header: "Enrollments",
+                mobileHidden: true,
+                cell: (c) => (
+                  <span className="tabular-nums">{c._count.enrollments}</span>
+                ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                cell: (c) => <StatusBadge status={c.status} />,
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                cell: (c) => (
+                  <div className="flex items-center gap-1">
+                    <Link
+                      href={`/admin/courses/${c.id}`}
+                      className="p-1.5 rounded hover:bg-slate-700 text-blue-400"
+                      title="View"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Link>
+                    {canManage && (
+                      <Link
+                        href={`/admin/courses/${c.id}/edit`}
+                        className="p-1.5 rounded hover:bg-slate-700 text-emerald-400"
+                        title="Edit"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Link>
+                    )}
+                    <Link
+                      href={`/admin/courses/${c.id}/analytics`}
+                      className="p-1.5 rounded hover:bg-slate-700 text-indigo-300"
+                      title="Analytics"
+                    >
+                      <BarChart3 className="w-4 h-4" />
+                    </Link>
+                    {canManage && c.status === "PENDING_REVIEW" && (
+                      <ApproveRejectButtons courseId={c.id} />
+                    )}
+                    {canManage &&
+                      (c.status === "PUBLISHED" || c.status === "SUSPENDED") && (
+                        <CourseRowFeatureMenu
+                          courseId={c.id}
+                          isFeatured={c.isFeatured}
+                          isPromoted={c.isPromoted}
+                          status={c.status}
+                        />
+                      )}
+                  </div>
+                ),
+              },
+            ]}
+          />
         )}
         {total > pageSize && (
           <div className="p-4 border-t border-slate-800 flex items-center justify-between">

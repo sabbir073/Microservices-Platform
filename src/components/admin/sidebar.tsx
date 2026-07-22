@@ -36,6 +36,7 @@ import {
   Megaphone,
   Newspaper,
   Layout,
+  LayoutList,
   Activity,
   Sparkles,
   ChevronLeft,
@@ -95,6 +96,7 @@ const iconMap: Record<string, LucideIcon> = {
   Gamepad2,
   Newspaper,
   Layout,
+  LayoutList,
   Activity,
   BarChart3,
   Sparkles,
@@ -218,8 +220,8 @@ function AdminSidebarContent({
                         "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
                         collapsed && "justify-center",
                         isActive
-                          ? "bg-blue-600 text-white"
-                          : "text-slate-400 hover:text-white hover:bg-slate-800"
+                          ? "bg-indigo-500/15 text-indigo-300 ring-1 ring-inset ring-indigo-500/25"
+                          : "text-slate-400 hover:text-white hover:bg-slate-800/70"
                       )}
                     >
                       <Icon className="w-5 h-5 shrink-0" />
@@ -346,7 +348,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
           collapsed ? "lg:w-20" : "lg:w-72"
         )}
       >
-        <div className="flex flex-col h-full bg-slate-900 border-r border-slate-800">
+        <div className="flex flex-col h-full glass-strong rounded-none border-0 border-r border-slate-800/70">
           <AdminSidebarContent
             user={user}
             userRole={userRole}

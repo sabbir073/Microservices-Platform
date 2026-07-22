@@ -12,6 +12,7 @@ import {
   Check,
   PlayCircle,
   CheckCircle2,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
 import { notifyCenter } from "@/lib/notify-center";
@@ -40,6 +41,73 @@ function isWatchLocked(item: SocialTaskItemView): boolean {
   return isWatchAction(item.action) && !!item.watchSeconds && item.watchSeconds > 0;
 }
 
+/**
+ * Build the AI prompt for an action from the task's own title/description, the
+ * admin's reference content (the AI-generatable field the admin filled), and any
+ * extra guidance the admin added. Comment actions produce a short 1–2 line unique
+ * comment; content/post actions produce an original variant of the reference.
+ */
+function buildAiPrompt(
+  def: { aiGeneratableFields?: string[]; key?: string; label?: string } | null,
+  item: SocialTaskItemView,
+  task: { title?: string | null; description?: string | null }
+): string {
+  const genFields = def?.aiGeneratableFields ?? [];
+  const keyLabel = `${def?.key ?? ""} ${def?.label ?? ""}`;
+  const isReview = /review/i.test(keyLabel);
+  const isComment =
+    !isReview &&
+    (genFields.some((k) => /comment/i.test(k)) || /comment|reply/i.test(keyLabel));
+  // Use EVERY AI-generatable field the admin filled as the reference (multi-field
+  // actions like postTitle+postBody / pinTitle+pinDescription would otherwise lose
+  // the body).
+  const adminContent = genFields
+    .map((k) => (item.fields?.[k] ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
+  const extra = (item.aiPrompt ?? "").trim();
+  const topic = [task.title ?? "", task.description ?? ""]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(". ");
+
+  if (isComment) {
+    return [
+      "Write ONE short, original, natural-sounding comment (1 to 2 lines maximum, no quotation marks, no hashtags unless they fit naturally).",
+      topic && `It is about: ${topic}.`,
+      adminContent &&
+        `Keep a similar tone/style to this example but reword it and make it unique: "${adminContent}".`,
+      extra && `Extra guidance: ${extra}.`,
+      "Make it unique, human and specific. Return ONLY the comment text.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  if (isReview) {
+    return [
+      "Write an original, honest-sounding review (2 to 4 sentences) in first person.",
+      topic && `It is about: ${topic}.`,
+      adminContent &&
+        `Similar in spirit to this example, but reworded and unique: "${adminContent}".`,
+      extra && `Extra guidance: ${extra}.`,
+      "Make it natural, specific and unique. Return ONLY the review text.",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  return [
+    "Write an original social media post — same topic and tone as the reference, but reworded and unique (do not copy it).",
+    adminContent && `Reference: "${adminContent}".`,
+    topic && `Topic: ${topic}.`,
+    extra && `Extra guidance: ${extra}.`,
+    "Keep it engaging and natural. Return ONLY the post text.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function SocialTaskRunView({ taskId }: { taskId: string }) {
   const [task, setTask] = useState<SocialTaskView | null>(null);
   const [loading, setLoading] = useState(true);
@@ -49,6 +117,9 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
   const [proofByIndex, setProofByIndex] = useState<Record<number, ItemProof>>({});
   const [aiOutputByIndex, setAiOutputByIndex] = useState<Record<number, string>>({});
   const [watchedByIndex, setWatchedByIndex] = useState<Record<number, boolean>>({});
+  // Explicit "I did this" marks for actions that have no watch/proof to gauge
+  // completion — only used to unlock the next action in a sequential bundle.
+  const [doneByIndex, setDoneByIndex] = useState<Record<number, boolean>>({});
   const [watchModal, setWatchModal] = useState<
     { idx: number; url: string; seconds: number; title: string } | null
   >(null);
@@ -63,6 +134,40 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
   // first render never overwrites previously-saved progress.
   const [hydrated, setHydrated] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirror of submissionId for async callers, plus a shared in-flight /start
+  // promise so mount + submit never fire two concurrent /start calls (which
+  // would create duplicate PENDING submissions / double-count the daily limit).
+  const submissionIdRef = useRef<string | null>(null);
+  const startPromiseRef = useRef<Promise<{
+    id: string | null;
+    metadata?: unknown;
+  }> | null>(null);
+
+  const ensureSubmission = () => {
+    if (submissionIdRef.current)
+      return Promise.resolve({
+        id: submissionIdRef.current,
+        metadata: undefined as unknown,
+      });
+    if (startPromiseRef.current) return startPromiseRef.current;
+    const p = (async () => {
+      const sr = await fetch(`/api/tasks/${taskId}/start`, { method: "POST" });
+      const sd = await sr.json().catch(() => ({}));
+      if (!sr.ok) throw new Error(sd?.error || "Couldn't start the task");
+      const id = (sd.submission?.id as string | undefined) ?? null;
+      if (id) {
+        submissionIdRef.current = id;
+        setSubmissionId(id);
+      }
+      return { id, metadata: sd.submission?.metadata };
+    })();
+    startPromiseRef.current = p;
+    // On failure clear the cache so a later attempt (e.g. submit) can retry.
+    p.catch(() => {
+      startPromiseRef.current = null;
+    });
+    return p;
+  };
 
   // Restore per-action progress saved earlier (watched flags, proof, AI) from
   // the resumed submission's metadata so a reload resumes instead of restarting.
@@ -79,16 +184,19 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
           >)
         : null;
     if (!rawItems) return;
-    const byAction = new Map<string, Record<string, unknown>>();
-    for (const it of rawItems) {
-      if (it && typeof it.action === "string") byAction.set(it.action, it);
-    }
     const proof: Record<number, ItemProof> = {};
     const watched: Record<number, boolean> = {};
+    const done: Record<number, boolean> = {};
     const ai: Record<number, string> = {};
+    // Progress is saved positionally (items[idx] ⟷ task.items[idx]). Match by
+    // INDEX, not action key — action keys aren't unique (a task can bundle the
+    // same action twice), so a by-action map would collapse duplicates and, e.g.,
+    // mark an unwatched item as watched.
     loadedTask.items.forEach((item, idx) => {
-      const s = byAction.get(item.action);
-      if (!s) return;
+      const s = rawItems[idx];
+      // Guard against a stale/reordered save: only apply when the action matches.
+      if (!s || (typeof s.action === "string" && s.action !== item.action))
+        return;
       const url = typeof s.proofUrl === "string" ? s.proofUrl : "";
       const screenshot =
         typeof s.screenshotUrl === "string" ? s.screenshotUrl : "";
@@ -98,9 +206,11 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
       if (typeof s.generatedContent === "string" && s.generatedContent.trim())
         ai[idx] = s.generatedContent;
       if (s.watched === true) watched[idx] = true;
+      if (s.done === true) done[idx] = true;
     });
     if (Object.keys(proof).length) setProofByIndex(proof);
     if (Object.keys(watched).length) setWatchedByIndex(watched);
+    if (Object.keys(done).length) setDoneByIndex(done);
     if (Object.keys(ai).length) setAiOutputByIndex(ai);
   };
 
@@ -120,16 +230,13 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
         setTask(mapped);
         // Start (or resume) the submission so we have an id to submit with.
         // Failures here are non-fatal — submit() will retry and surface them.
+        // ensureSubmission() de-dupes concurrent /start calls (see M2).
         try {
-          const sr = await fetch(`/api/tasks/${taskId}/start`, {
-            method: "POST",
-          });
-          const sd = await sr.json().catch(() => ({}));
-          if (!cancelled && sr.ok && sd?.submission?.id) {
-            setSubmissionId(sd.submission.id as string);
+          const started = await ensureSubmission();
+          if (!cancelled && started.id) {
             // Resume: rehydrate per-action progress saved earlier so a reload
             // (or leaving the page mid-task) doesn't start from scratch.
-            hydrateProgress(mapped, sd.submission?.metadata);
+            hydrateProgress(mapped, started.metadata);
           }
         } catch {
           /* submit() retries /start */
@@ -146,6 +253,9 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
     return () => {
       cancelled = true;
     };
+    // ensureSubmission only closes over taskId (+ stable refs/setters); keying
+    // the effect on taskId alone is intentional — it must run once per task.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
   // Auto-save partial progress (debounced) whenever watched/proof/AI changes,
@@ -165,6 +275,7 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
         if (p.username) out.username = p.username;
         if (ai && ai.trim()) out.generatedContent = ai;
         if (watchedByIndex[idx]) out.watched = true;
+        if (doneByIndex[idx]) out.done = true;
         return out;
       });
       void fetch(`/api/tasks/${t.id}/progress`, {
@@ -185,6 +296,7 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
     proofByIndex,
     aiOutputByIndex,
     watchedByIndex,
+    doneByIndex,
   ]);
 
   const platform = task ? PLATFORM_LOOKUP[task.platform] : null;
@@ -206,6 +318,31 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
     return true;
   };
 
+  // Sequential-unlock helpers ----------------------------------------------
+  // An action has a "requirement" if it's watch-locked or asks for any proof —
+  // otherwise we can't tell it's done without an explicit "I did this" tap.
+  const itemHasRequirement = (item: SocialTaskItemView): boolean =>
+    isWatchLocked(item) ||
+    item.proofRequirements.url ||
+    item.proofRequirements.screenshot ||
+    item.proofRequirements.username;
+
+  // "Previous step finished" — what unlocks the next action in a sequential
+  // bundle: its watch/proof requirement met, or (if it has none) marked done.
+  const isItemDone = (item: SocialTaskItemView, idx: number): boolean => {
+    if (!isItemReady(item, idx)) return false;
+    if (itemHasRequirement(item)) return true;
+    return !!doneByIndex[idx];
+  };
+
+  // Whether an item is interactive. Non-sequential tasks are all unlocked; a
+  // sequential task unlocks item N only once item N-1 is done.
+  const isItemUnlocked = (idx: number): boolean => {
+    if (!task?.sequential || idx === 0) return true;
+    const prev = task.items[idx - 1];
+    return !!prev && isItemDone(prev, idx - 1);
+  };
+
   const generateAi = async (idx: number, prompt: string) => {
     setGeneratingAi(idx);
     try {
@@ -215,14 +352,15 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
         body: JSON.stringify({ prompt }),
       });
       if (!res.ok) {
-        toast.info("AI not available — write your post manually using the prompt above");
+        const d = await res.json().catch(() => ({}));
+        toast.info(d.error || "AI not available — please write it yourself");
         return;
       }
       const d = await res.json();
       setAiOutputByIndex((prev) => ({ ...prev, [idx]: d.text ?? d.content ?? "" }));
       toast.success("Generated — review and post it");
     } catch {
-      toast.info("Use the prompt to write your post manually");
+      toast.info("Please write it yourself this time");
     } finally {
       setGeneratingAi(null);
     }
@@ -263,20 +401,19 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
         toast.error(`${label}: your username is required`);
         return;
       }
+      // Sequential bundle: a no-requirement action must be explicitly marked
+      // done (otherwise a middle step could be skipped past).
+      if (task.sequential && !itemHasRequirement(item) && !doneByIndex[idx]) {
+        toast.error(`${label}: tap "I did this" first`);
+        return;
+      }
     }
     setBusy(true);
     try {
       // Ensure a PENDING submission exists (the submit route requires one).
-      let sid = submissionId;
-      if (!sid) {
-        const sr = await fetch(`/api/tasks/${task.id}/start`, {
-          method: "POST",
-        });
-        const sd = await sr.json().catch(() => ({}));
-        if (!sr.ok) throw new Error(sd.error || "Couldn't start the task");
-        sid = (sd.submission?.id as string | undefined) ?? null;
-        setSubmissionId(sid);
-      }
+      // Shares the in-flight /start promise with mount so we never create two.
+      const sid = submissionId ?? (await ensureSubmission()).id;
+      if (!sid) throw new Error("Couldn't start the task");
 
       const payloadItems = items.map((item, idx) => {
         const req = item.proofRequirements;
@@ -288,6 +425,7 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
         if (req.username) out.username = p.username;
         if (ai && ai.trim()) out.generatedContent = ai;
         if (isWatchLocked(item) && watchedByIndex[idx]) out.watched = true;
+        if (doneByIndex[idx]) out.done = true;
         return out;
       });
 
@@ -488,24 +626,39 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
         const aiOutput = aiOutputByIndex[idx] ?? "";
         const req = item.proofRequirements;
         const ready = isItemReady(item, idx);
+        const unlocked = isItemUnlocked(idx);
+        const noReq = !itemHasRequirement(item);
+        const markedDone = !!doneByIndex[idx];
         return (
           <div
             key={idx}
             className={cn(
               "rounded-xl border bg-gray-900 p-4 space-y-3 transition-colors",
-              ready ? "border-emerald-500/40" : "border-gray-800"
+              !unlocked
+                ? "border-gray-800 opacity-60"
+                : ready
+                  ? "border-emerald-500/40"
+                  : "border-gray-800"
             )}
           >
             <div className="flex items-center gap-2">
               <span
                 className={cn(
                   "w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center shrink-0",
-                  ready
-                    ? "bg-emerald-500 text-white"
-                    : "bg-indigo-500/20 text-indigo-300"
+                  !unlocked
+                    ? "bg-gray-800 text-gray-500"
+                    : ready
+                      ? "bg-emerald-500 text-white"
+                      : "bg-indigo-500/20 text-indigo-300"
                 )}
               >
-                {ready ? <Check className="w-4 h-4" /> : idx + 1}
+                {!unlocked ? (
+                  <Lock className="w-3.5 h-3.5" />
+                ) : ready ? (
+                  <Check className="w-4 h-4" />
+                ) : (
+                  idx + 1
+                )}
               </span>
               <p className="text-sm font-bold text-white">
                 {def ? `${def.emoji} ${def.label}` : item.action}
@@ -515,7 +668,14 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
               </span>
             </div>
 
-            {isWatchLocked(item) ? (
+            {!unlocked ? (
+              <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 shrink-0" />
+                Complete step {idx} first to unlock this action.
+              </p>
+            ) : (
+              <>
+                {isWatchLocked(item) ? (
               watchedByIndex[idx] ? (
                 <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-semibold">
                   <CheckCircle2 className="w-3.5 h-3.5" />
@@ -552,21 +712,22 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
               )
             )}
 
-            {/* AI prompt */}
-            {item.aiPromptEnabled && item.aiPrompt && (
+            {/* AI generate — builds a unique variant from the task + your content */}
+            {item.aiPromptEnabled && (
               <div className="rounded-lg bg-purple-500/5 border border-purple-500/30 p-3 space-y-2">
                 <div className="flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-purple-400" />
                   <p className="text-sm font-bold text-purple-300">
-                    Generate content with AI
+                    Generate your own with AI
                   </p>
                 </div>
-                <div className="rounded bg-gray-950 border border-purple-500/20 p-2 text-xs text-purple-200 whitespace-pre-wrap">
-                  {item.aiPrompt}
-                </div>
+                <p className="text-xs text-purple-200/80">
+                  Creates a unique {def?.label ?? "content"} from this task — each
+                  user gets a different one. Review, then post it and submit proof.
+                </p>
                 <button
                   type="button"
-                  onClick={() => generateAi(idx, item.aiPrompt!)}
+                  onClick={() => generateAi(idx, buildAiPrompt(def ?? null, item, task))}
                   disabled={generatingAi === idx}
                   className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-purple-500 hover:bg-purple-600 text-white text-xs font-bold disabled:opacity-50"
                 >
@@ -644,6 +805,29 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
                   );
                 })}
 
+            {/* Explicit "I did this" — only when sequential and there's no
+                watch/proof to auto-detect completion (else the next action
+                could never unlock). */}
+            {task.sequential && noReq && (
+              markedDone ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  Done — next action unlocked
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setDoneByIndex((prev) => ({ ...prev, [idx]: true }))
+                  }
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  I did this
+                </button>
+              )
+            )}
+
             {/* Proof inputs */}
             <div className="space-y-3 pt-1 border-t border-gray-800">
               <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
@@ -695,6 +879,8 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
                 </div>
               )}
             </div>
+              </>
+            )}
           </div>
         );
       })}

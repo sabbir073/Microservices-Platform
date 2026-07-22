@@ -155,7 +155,7 @@ export function PublicProfileView({ userId, viewerId }: Props) {
   return (
     <div className="space-y-5">
       {/* Header — cover + avatar */}
-      <div className="rounded-2xl overflow-hidden border border-gray-800">
+      <div className="rounded-2xl overflow-hidden glass">
         <div className="relative h-32 sm:h-44 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
           {user.coverPhoto && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -269,7 +269,7 @@ export function PublicProfileView({ userId, viewerId }: Props) {
 
       {/* Stats — Social group + Lifetime panel, both privacy-gated */}
       {statsHidden ? (
-        <div className="rounded-xl bg-gray-900 border border-gray-800 p-4 text-center text-xs text-gray-500 inline-flex items-center justify-center gap-2 w-full">
+        <div className="glass p-4 text-center text-xs text-gray-500 inline-flex items-center justify-center gap-2 w-full">
           <Lock className="w-4 h-4" />
           This user&apos;s stats are private.
         </div>
@@ -365,7 +365,7 @@ function PostsTab({ userId }: { userId: string }) {
   return (
     <div className="space-y-3">
       {items.map((p) => (
-        <div key={p.id} className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+        <div key={p.id} className="glass p-4">
           {p.content && (
             <p className="text-sm text-gray-200 whitespace-pre-wrap">{p.content}</p>
           )}
@@ -471,7 +471,7 @@ function UserListTab({
         return (
           <div
             key={u.id}
-            className="flex items-center gap-3 p-3 rounded-xl border border-gray-800 bg-gray-900"
+            className="flex items-center gap-3 p-3 glass glass-hover"
           >
             <Link href={profileHref(u)}>
               <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden">
