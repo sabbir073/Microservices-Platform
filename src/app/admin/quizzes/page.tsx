@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
+import { AdminTable } from "@/components/admin/ui/admin-table";
 
 interface PageProps {
   searchParams: Promise<{
@@ -215,119 +216,127 @@ export default async function QuizzesAdminPage({ searchParams }: PageProps) {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-800/50 border-b border-slate-800">
-                <tr>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Quiz
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Category
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Difficulty
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Reward
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Stats
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Status
-                  </th>
-                  <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {quizzes.map((q) => {
+          <AdminTable
+            bare
+            rows={quizzes}
+            getRowKey={(q) => q.id}
+            columns={[
+              {
+                key: "quiz",
+                header: "Quiz",
+                primary: true,
+                cell: (q) => (
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium text-white truncate max-w-70">
+                        {q.title}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {formatDistanceToNow(q.createdAt, { addSuffix: true })}
+                      </p>
+                    </div>
+                    {q.aiGenerated && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-400 text-[10px] font-bold">
+                        <Sparkles className="w-3 h-3" />
+                        AI
+                      </span>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                key: "category",
+                header: "Category",
+                mobileHidden: true,
+                cell: (q) => (
+                  <span className="text-sm text-slate-300">{q.category}</span>
+                ),
+              },
+              {
+                key: "difficulty",
+                header: "Difficulty",
+                cell: (q) => (
+                  <span
+                    className={`px-2 py-1 rounded-full text-xs font-medium ${
+                      DIFFICULTY_BADGES[q.difficulty] ?? "bg-slate-800"
+                    }`}
+                  >
+                    {q.difficulty}
+                  </span>
+                ),
+              },
+              {
+                key: "reward",
+                header: "Reward",
+                mobileHidden: true,
+                cell: (q) => (
+                  <span className="text-sm">
+                    <span className="text-amber-400 font-bold tabular-nums">
+                      {q.pointsReward.toLocaleString()}
+                    </span>{" "}
+                    <span className="text-slate-500">pts</span>
+                  </span>
+                ),
+              },
+              {
+                key: "stats",
+                header: "Stats",
+                mobileHidden: true,
+                cell: (q) => (
+                  <span className="text-sm text-slate-400 tabular-nums">
+                    {q._count.questions}q · {q._count.attempts} attempts
+                  </span>
+                ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                cell: (q) => {
                   const statusCfg = STATUS_BADGES[q.status] ?? STATUS_BADGES.DRAFT;
                   return (
-                    <tr key={q.id} className="hover:bg-slate-800/40">
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-2">
-                          <div>
-                            <p className="font-medium text-white truncate max-w-70">
-                              {q.title}
-                            </p>
-                            <p className="text-xs text-slate-500">
-                              {formatDistanceToNow(q.createdAt, { addSuffix: true })}
-                            </p>
-                          </div>
-                          {q.aiGenerated && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-400 text-[10px] font-bold">
-                              <Sparkles className="w-3 h-3" />
-                              AI
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-4 px-6 text-sm text-slate-300">
-                        {q.category}
-                      </td>
-                      <td className="py-4 px-6">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            DIFFICULTY_BADGES[q.difficulty] ?? "bg-slate-800"
-                          }`}
-                        >
-                          {q.difficulty}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6 text-sm">
-                        <span className="text-amber-400 font-bold tabular-nums">
-                          {q.pointsReward.toLocaleString()}
-                        </span>{" "}
-                        <span className="text-slate-500">pts</span>
-                      </td>
-                      <td className="py-4 px-6 text-sm text-slate-400 tabular-nums">
-                        {q._count.questions}q · {q._count.attempts} attempts
-                      </td>
-                      <td className="py-4 px-6">
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs font-medium ${statusCfg.color}`}
-                        >
-                          {statusCfg.label}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-1">
-                          <Link
-                            href={`/admin/quizzes/${q.id}`}
-                            className="p-1.5 rounded hover:bg-slate-700 text-blue-400"
-                            title="View"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </Link>
-                          {canManage && (
-                            <>
-                              <Link
-                                href={`/admin/quizzes/${q.id}/edit`}
-                                className="p-1.5 rounded hover:bg-slate-700 text-emerald-400"
-                                title="Edit"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </Link>
-                              <Link
-                                href={`/admin/quizzes/${q.id}?archive=1`}
-                                className="p-1.5 rounded hover:bg-slate-700 text-red-400"
-                                title="Archive"
-                              >
-                                <Archive className="w-4 h-4" />
-                              </Link>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${statusCfg.color}`}
+                    >
+                      {statusCfg.label}
+                    </span>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                },
+              },
+              {
+                key: "actions",
+                header: "Actions",
+                cell: (q) => (
+                  <div className="flex items-center gap-1">
+                    <Link
+                      href={`/admin/quizzes/${q.id}`}
+                      className="p-1.5 rounded hover:bg-slate-700 text-blue-400"
+                      title="View"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Link>
+                    {canManage && (
+                      <>
+                        <Link
+                          href={`/admin/quizzes/${q.id}/edit`}
+                          className="p-1.5 rounded hover:bg-slate-700 text-emerald-400"
+                          title="Edit"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Link>
+                        <Link
+                          href={`/admin/quizzes/${q.id}?archive=1`}
+                          className="p-1.5 rounded hover:bg-slate-700 text-red-400"
+                          title="Archive"
+                        >
+                          <Archive className="w-4 h-4" />
+                        </Link>
+                      </>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
         )}
 
         {/* Pagination */}

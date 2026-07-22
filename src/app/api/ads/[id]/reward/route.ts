@@ -21,35 +21,39 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Ad not available" }, { status: 400 });
   }
 
-  // Cooldown check against the most recent view.
-  const last = await prisma.adView.findFirst({
-    where: { userId, adId: id },
-    orderBy: { createdAt: "desc" },
-  });
-  if (last) {
-    const readyAt = last.createdAt.getTime() + ad.rewardCooldownSec * 1000;
-    if (Date.now() < readyAt) {
-      return NextResponse.json(
-        { error: "This ad is on cooldown", cooldownRemaining: Math.ceil((readyAt - Date.now()) / 1000) },
-        { status: 429 }
-      );
-    }
-  }
-
   const points = ad.rewardPoints;
 
-  const [, user] = await prisma.$transaction([
-    prisma.adView.create({
+  // Serialize concurrent claims per user by locking the user row, then
+  // re-checking the cooldown INSIDE the lock. Without this, N parallel POSTs
+  // all read the same "last view", all pass the cooldown gate, and all credit
+  // (the reward was farmable by firing concurrent requests).
+  const outcome = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
+
+    const last = await tx.adView.findFirst({
+      where: { userId, adId: id },
+      orderBy: { createdAt: "desc" },
+    });
+    if (last) {
+      const readyAt = last.createdAt.getTime() + ad.rewardCooldownSec * 1000;
+      if (Date.now() < readyAt) {
+        return {
+          cooldownRemaining: Math.ceil((readyAt - Date.now()) / 1000),
+        } as const;
+      }
+    }
+
+    await tx.adView.create({
       data: { userId, adId: id, rewardedPoints: points },
-    }),
-    prisma.user.update({
+    });
+    const user = await tx.user.update({
       where: { id: userId },
       data: {
         pointsBalance: { increment: points },
         totalEarnings: { increment: points * 0.001 },
       },
-    }),
-    prisma.transaction.create({
+    });
+    await tx.transaction.create({
       data: {
         userId,
         type: TransactionType.BONUS,
@@ -59,13 +63,24 @@ export async function POST(_request: NextRequest, { params }: RouteParams) {
         description: "Ad view reward",
         reference: `ad_${id}_${Date.now()}`,
       },
-    }),
-    prisma.ad.update({ where: { id }, data: { clicks: { increment: 1 } } }),
-  ]);
+    });
+    await tx.ad.update({ where: { id }, data: { clicks: { increment: 1 } } });
+    return { newBalance: user.pointsBalance } as const;
+  });
+
+  if ("cooldownRemaining" in outcome) {
+    return NextResponse.json(
+      {
+        error: "This ad is on cooldown",
+        cooldownRemaining: outcome.cooldownRemaining,
+      },
+      { status: 429 }
+    );
+  }
 
   return NextResponse.json({
     success: true,
     rewarded: points,
-    newBalance: user.pointsBalance,
+    newBalance: outcome.newBalance,
   });
 }

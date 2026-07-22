@@ -343,9 +343,14 @@ model Ad {
   placement   AdPlacement @relation(fields: [placementId], references: [id])
   type        String      @default("LOCAL")
   format      String      @default("BANNER") // BANNER | NATIVE (feed post-like)
-  contentUrl  String?
+  contentUrl  String?     // image / GIF creative URL
+  videoUrl    String?     // MP4/WebM video creative URL
   targetUrl   String?
   htmlContent String?     @db.Text
+  // Creative size — preset key (see src/lib/ad-sizes.ts); width/height used for "custom"
+  size        String?     @default("responsive")
+  width       Int?
+  height      Int?
   weight      Int         @default(10)
   status      String      @default("ACTIVE")
   impressions Int         @default(0)

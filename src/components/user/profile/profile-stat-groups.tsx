@@ -41,7 +41,7 @@ export function StatTile({
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 flex items-center gap-3 min-w-0">
+    <div className="glass glass-hover p-3 flex items-center gap-3 min-w-0">
       <div className={cn("p-2 rounded-lg shrink-0", TONES[tone])}>{icon}</div>
       <div className="min-w-0 flex-1">
         <p className="text-xs text-gray-500 truncate">{label}</p>

@@ -380,7 +380,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
           </div>
 
           {/* Listings Table */}
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+          <div className="glass overflow-x-auto scrollbar-thin">
             {listings.rows.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full">
@@ -556,7 +556,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
               )
             )}
           </div>
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+          <div className="glass overflow-x-auto scrollbar-thin">
             {orders.rows.length > 0 ? (
               <table className="w-full">
                 <thead>
@@ -654,7 +654,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
               )
             )}
           </div>
-          <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
+          <div className="glass overflow-x-auto scrollbar-thin">
             {disputes.rows.length > 0 ? (
               <table className="w-full">
                 <thead>

@@ -58,6 +58,9 @@ import {
   type RailFollowUser,
   type RailPromo,
 } from "@/components/user/feed/feed-right-rail";
+import type { FeedWidgetConfig } from "@/lib/feed-widgets";
+import type { QuickEarnTile } from "@/lib/feed-quick-earn";
+import type { CustomWidget } from "@/lib/feed-custom-widgets";
 
 interface SessionUser {
   id: string;
@@ -140,6 +143,9 @@ interface Props {
   whoToFollow: RailFollowUser[];
   trendingHashtags: { tag: string; count: number }[];
   promo?: RailPromo | null;
+  widgetConfig?: FeedWidgetConfig;
+  quickEarn?: QuickEarnTile[];
+  customWidgets?: CustomWidget[];
 }
 
 type ViewTab = "feed" | "groups";
@@ -154,6 +160,9 @@ export function SocialFeedView({
   whoToFollow,
   trendingHashtags,
   promo,
+  widgetConfig,
+  quickEarn,
+  customWidgets,
 }: Props) {
   const [tab, setTab] = useState<ViewTab>("feed");
   const [sort, setSort] = useState<Sort>("recent");
@@ -205,14 +214,17 @@ export function SocialFeedView({
         {tab === "groups" && <GroupsTab />}
       </div>
 
-      {/* Right sidebar — desktop only (xl+). Mobile/tablet unchanged. */}
-      <aside className="hidden xl:block w-80 shrink-0">
+      {/* Right sidebar — desktop/laptop (lg+). Mobile/tablet unchanged. */}
+      <aside className="hidden lg:block w-80 shrink-0">
         <div className="sticky top-20 space-y-4">
           <FeedRightRail
             bestEarners={bestEarners}
             whoToFollow={whoToFollow}
             trendingHashtags={trendingHashtags}
             promo={promo}
+            widgetConfig={widgetConfig}
+            quickEarn={quickEarn}
+            customWidgets={customWidgets}
           />
         </div>
       </aside>
@@ -243,8 +255,12 @@ function FeedTab({
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // Native in-feed ad pool — prefetched and cycled through, one every 2 posts.
+  // Native in-feed ad pool — each ad is consumed once, in order, spaced through
+  // the feed (no repeats while scrolling). We fetch more (excluding already-seen
+  // ids) as the pool is consumed; de-dupe on append so a server fallback repeat
+  // is never re-added.
   const [feedAds, setFeedAds] = useState<FeedAd[]>([]);
+  const feedAdIdsRef = useRef<Set<string>>(new Set());
   const loadingAdsRef = useRef(false);
 
   const PAGE_SIZE = 20;
@@ -253,10 +269,19 @@ function FeedTab({
     if (loadingAdsRef.current) return;
     loadingAdsRef.current = true;
     try {
-      const res = await fetch("/api/ads/feed?count=10");
+      const exclude = Array.from(feedAdIdsRef.current).join(",");
+      const res = await fetch(
+        `/api/ads/feed?count=10${exclude ? `&exclude=${encodeURIComponent(exclude)}` : ""}`
+      );
       const data = await res.json();
       if (Array.isArray(data.ads) && data.ads.length > 0) {
-        setFeedAds((prev) => [...prev, ...data.ads]);
+        const fresh = (data.ads as FeedAd[]).filter(
+          (a) => !feedAdIdsRef.current.has(a.adId)
+        );
+        if (fresh.length > 0) {
+          fresh.forEach((a) => feedAdIdsRef.current.add(a.adId));
+          setFeedAds((prev) => [...prev, ...fresh]);
+        }
       }
     } catch {
       /* no ads — feed just shows posts */
@@ -405,10 +430,12 @@ function FeedTab({
       {!loading && sortedPosts.length > 0 && (
         <div className="space-y-3">
           {sortedPosts.map((post, i) => {
-            // One native ad after every 2 posts, cycling the prefetched pool.
-            const showAd = (i + 1) % 2 === 0 && feedAds.length > 0;
-            const ad = showAd
-              ? feedAds[Math.floor(i / 2) % feedAds.length]
+            // One native ad after every 2 posts. Each ad is consumed once (no
+            // modulo wrap) so nothing repeats while scrolling; empty slots (pool
+            // not yet grown) simply show no ad.
+            const slot = Math.floor(i / 2);
+            const ad = (i + 1) % 2 === 0 && slot < feedAds.length
+              ? feedAds[slot]
               : null;
             return (
               <Fragment key={post.id}>

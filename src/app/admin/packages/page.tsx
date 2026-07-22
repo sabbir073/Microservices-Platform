@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { AdminTableShell } from "@/components/admin/ui/admin-table-shell";
 
 export default async function AdminPackagesPage() {
   const session = await auth();
@@ -137,9 +138,8 @@ export default async function AdminPackagesPage() {
           </p>
         </div>
       ) : (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        <AdminTableShell>
+            <table className="w-full text-sm min-w-220">
               <thead>
                 <tr className="text-[10px] uppercase tracking-wider text-gray-500 border-b border-gray-800 bg-gray-950">
                   <th className="text-left py-3 px-4">Plan</th>
@@ -232,8 +232,7 @@ export default async function AdminPackagesPage() {
                 })}
               </tbody>
             </table>
-          </div>
-        </div>
+        </AdminTableShell>
       )}
 
       {/* Recent Subscriptions */}

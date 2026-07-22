@@ -5,6 +5,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { FileText, Clock, CheckCircle, XCircle, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
+import { AdminTable } from "@/components/admin/ui/admin-table";
 
 interface PageProps {
   searchParams: Promise<{ status?: string }>;
@@ -124,21 +125,47 @@ export default async function OfferwallCallbacksPage({
           </p>
         </div>
       ) : (
-        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-800/50 border-b border-slate-800">
-              <tr>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">User</th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">Transaction</th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">Payout</th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">Fraud Score</th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">Status</th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">When</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {callbacks.map((c) => {
+        <AdminTable
+          rows={callbacks}
+          getRowKey={(c) => c.id}
+          columns={[
+            {
+              key: "user",
+              header: "User",
+              primary: true,
+              cell: (c) => {
                 const u = userMap.get(c.userId);
+                return (
+                  <span className="text-sm text-white">
+                    {u?.name ?? u?.email ?? "—"}
+                  </span>
+                );
+              },
+            },
+            {
+              key: "transaction",
+              header: "Transaction",
+              mobileHidden: true,
+              cell: (c) => (
+                <span className="font-mono text-xs text-slate-300">
+                  {c.transactionId.slice(0, 12)}…
+                </span>
+              ),
+            },
+            {
+              key: "payout",
+              header: "Payout",
+              cell: (c) => (
+                <span className="text-sm">
+                  <span className="text-amber-400 tabular-nums">{c.userPayout}</span>{" "}
+                  <span className="text-slate-500">pts</span>
+                </span>
+              ),
+            },
+            {
+              key: "fraud",
+              header: "Fraud Score",
+              cell: (c) => {
                 const fraudCls =
                   c.fraudScore >= 70
                     ? "bg-red-500/15 text-red-400"
@@ -146,50 +173,43 @@ export default async function OfferwallCallbacksPage({
                     ? "bg-amber-500/15 text-amber-400"
                     : "bg-emerald-500/15 text-emerald-400";
                 return (
-                  <tr key={c.id} className="hover:bg-slate-800/40">
-                    <td className="py-3 px-6 text-sm text-white">
-                      {u?.name ?? u?.email ?? "—"}
-                    </td>
-                    <td className="py-3 px-6 font-mono text-xs text-slate-300">
-                      {c.transactionId.slice(0, 12)}…
-                    </td>
-                    <td className="py-3 px-6 text-sm">
-                      <span className="text-amber-400 tabular-nums">
-                        {c.userPayout}
-                      </span>{" "}
-                      <span className="text-slate-500">pts</span>
-                    </td>
-                    <td className="py-3 px-6">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-bold ${fraudCls}`}
-                      >
-                        {c.fraudScore}%
-                      </span>
-                    </td>
-                    <td className="py-3 px-6">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          c.status === "APPROVED"
-                            ? "bg-emerald-500/15 text-emerald-400"
-                            : c.status === "PENDING"
-                            ? "bg-amber-500/15 text-amber-400"
-                            : c.status === "REJECTED"
-                            ? "bg-red-500/15 text-red-400"
-                            : "bg-purple-500/15 text-purple-400"
-                        }`}
-                      >
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-6 text-xs text-slate-400">
-                      {format(c.createdAt, "MMM d, HH:mm")}
-                    </td>
-                  </tr>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${fraudCls}`}>
+                    {c.fraudScore}%
+                  </span>
                 );
-              })}
-            </tbody>
-          </table>
-        </div>
+              },
+            },
+            {
+              key: "status",
+              header: "Status",
+              cell: (c) => (
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                    c.status === "APPROVED"
+                      ? "bg-emerald-500/15 text-emerald-400"
+                      : c.status === "PENDING"
+                      ? "bg-amber-500/15 text-amber-400"
+                      : c.status === "REJECTED"
+                      ? "bg-red-500/15 text-red-400"
+                      : "bg-purple-500/15 text-purple-400"
+                  }`}
+                >
+                  {c.status}
+                </span>
+              ),
+            },
+            {
+              key: "when",
+              header: "When",
+              mobileHidden: true,
+              cell: (c) => (
+                <span className="text-xs text-slate-400">
+                  {format(c.createdAt, "MMM d, HH:mm")}
+                </span>
+              ),
+            },
+          ]}
+        />
       )}
     </div>
   );

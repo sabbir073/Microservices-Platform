@@ -45,8 +45,12 @@ export async function POST(request: NextRequest) {
       type: AD_TYPES.includes(body.type) ? body.type : "LOCAL",
       format: body.format ? String(body.format) : "BANNER",
       contentUrl: body.contentUrl ? String(body.contentUrl) : null,
+      videoUrl: body.videoUrl ? String(body.videoUrl) : null,
       targetUrl: body.targetUrl ? String(body.targetUrl) : null,
       htmlContent: body.htmlContent ? String(body.htmlContent) : null,
+      size: body.size ? String(body.size) : "responsive",
+      width: Number.isFinite(Number(body.width)) && Number(body.width) > 0 ? Math.round(Number(body.width)) : null,
+      height: Number.isFinite(Number(body.height)) && Number(body.height) > 0 ? Math.round(Number(body.height)) : null,
       weight: Number.isFinite(Number(body.weight)) ? Math.max(1, Number(body.weight)) : 10,
       status: AD_STATUSES.includes(body.status) ? body.status : "ACTIVE",
       // Native (post-like) creative

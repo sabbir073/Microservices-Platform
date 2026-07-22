@@ -9,6 +9,13 @@ import { getProfileGateState } from "@/lib/profile-gate-server";
 import { ProfileCompletionBanner } from "@/components/user/primitives/profile-completion-banner";
 import { getKycPromptState } from "@/lib/kyc-prompt-server";
 import { KycPromptBanner } from "@/components/user/primitives/kyc-prompt-banner";
+import { getSetting } from "@/lib/system-settings";
+import {
+  DEFAULT_WIDGET_CONFIG,
+  normalizeWidgetConfig,
+} from "@/lib/feed-widgets";
+import { normalizeQuickEarn } from "@/lib/feed-quick-earn";
+import { normalizeCustomWidgets } from "@/lib/feed-custom-widgets";
 
 export default async function SocialPage() {
   const session = await auth();
@@ -32,6 +39,9 @@ export default async function SocialPage() {
     trendingHashtags,
     gate,
     kycPrompt,
+    widgetConfigRaw,
+    quickEarnRaw,
+    customWidgetsRaw,
   ] = await Promise.all([
       prisma.banner.findMany({
         where: {
@@ -75,7 +85,17 @@ export default async function SocialPage() {
       getTrendingHashtags(6),
       getProfileGateState(userId),
       getKycPromptState(userId),
+      getSetting("feed.sidebar_widgets", DEFAULT_WIDGET_CONFIG),
+      getSetting("feed.quick_earn_tiles", null),
+      getSetting("feed.custom_widgets", null),
     ]);
+
+  const quickEarn = normalizeQuickEarn(quickEarnRaw);
+  const customWidgets = normalizeCustomWidgets(customWidgetsRaw);
+  const widgetConfig = normalizeWidgetConfig(
+    widgetConfigRaw,
+    customWidgets.map((c) => c.id)
+  );
 
   const bestEarners = bestEarnersRaw.map((r) => ({
     id: r.id,
@@ -134,6 +154,9 @@ export default async function SocialPage() {
       whoToFollow={whoToFollowRows}
       trendingHashtags={trendingHashtags}
       promo={promo}
+      widgetConfig={widgetConfig}
+      quickEarn={quickEarn}
+      customWidgets={customWidgets}
       initialTicker={tickerPayload?.items ?? []}
       tickerConfig={
         tickerPayload

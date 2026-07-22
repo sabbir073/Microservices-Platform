@@ -2,10 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { Menu, Bell, Search, Wallet, X, Sparkles, Settings, LogOut, User, ChevronDown, LayoutDashboard, ListTodo, Users, Gift, Trophy, GraduationCap, Store, Ticket, MessageSquare, FileText, Check } from "lucide-react";
+import { Menu, Bell, Search, Wallet, Sparkles, Settings, LogOut, User, ChevronDown, FileText, Check } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
-import { usePathname } from "next/navigation";
 import { useMobileNav } from "@/lib/stores/mobile-nav-store";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
@@ -28,31 +27,15 @@ interface Notification {
   createdAt: string;
 }
 
-const mobileNavigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Tasks", href: "/tasks", icon: ListTodo },
-  { name: "Wallet", href: "/wallet", icon: Wallet },
-  { name: "Referrals", href: "/referrals", icon: Users },
-  { name: "Earn", href: "/earn", icon: Gift },
-  { name: "Leaderboard", href: "/leaderboard", icon: Trophy },
-  { name: "Courses", href: "/courses", icon: GraduationCap },
-  { name: "Marketplace", href: "/marketplace", icon: Store },
-  { name: "Lottery", href: "/lottery", icon: Ticket },
-  { name: "Social", href: "/social", icon: MessageSquare },
-  { name: "Notifications", href: "/notifications", icon: Bell },
-  { name: "Settings", href: "/settings", icon: Settings },
-];
-
 export function Header({ user }: HeaderProps) {
-  // Shared with the bottom tab bar's "Menu" tab.
-  const isMobileMenuOpen = useMobileNav((s) => s.open);
+  // The hamburger opens the shared mobile drawer (rendered by Sidebar, the
+  // canonical feature-filtered menu). Also opened by the bottom-bar Menu tab.
   const setIsMobileMenuOpen = useMobileNav((s) => s.setOpen);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
-  const pathname = usePathname();
 
   // Fetch notifications + wallet balance. Kept fresh site-wide: on mount, on
   // every route change, on tab refocus, and on a 15s timer (see useAutoRefresh).
@@ -119,7 +102,7 @@ export function Header({ user }: HeaderProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 bg-gray-950/80 backdrop-blur-sm border-b border-gray-800 safe-t">
+      <header className="sticky top-0 z-30 glass-strong border-0 border-b border-gray-800/60 rounded-none safe-t">
         <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* Left: Mobile Menu Button & Logo (mobile only) */}
           <div className="flex items-center gap-4 lg:hidden">
@@ -331,121 +314,6 @@ export function Header({ user }: HeaderProps) {
           </div>
         </div>
       </header>
-
-      {/* Mobile Menu Overlay */}
-      {isMobileMenuOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
-      )}
-
-      {/* Mobile Menu */}
-      <div
-        className={cn(
-          "fixed inset-y-0 left-0 z-50 w-72 bg-gray-900 transform transition-transform duration-300 lg:hidden",
-          isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
-        )}
-      >
-        <div className="flex flex-col h-full">
-          {/* Header */}
-          <div className="flex items-center justify-between h-16 px-4 border-b border-gray-800">
-            <Link
-              href="/social"
-              className="flex items-center gap-2"
-              onClick={() => setIsMobileMenuOpen(false)}
-            >
-              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-              <span className="text-lg font-bold bg-linear-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
-                EarnGPT
-              </span>
-            </Link>
-            <button
-              onClick={() => setIsMobileMenuOpen(false)}
-              className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-
-          {/* User Info */}
-          <div className="px-3 py-3 border-b border-gray-800">
-            <Link
-              href="/profile"
-              onClick={() => setIsMobileMenuOpen(false)}
-              aria-label="Open profile"
-              className={cn(
-                "flex items-center gap-3 px-2 py-2 rounded-lg transition-colors",
-                pathname.startsWith("/profile")
-                  ? "bg-indigo-500/10"
-                  : "hover:bg-gray-800"
-              )}
-            >
-              <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium shrink-0">
-                {user.name?.charAt(0) || user.email?.charAt(0) || "U"}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p
-                  className={cn(
-                    "text-sm font-medium truncate",
-                    pathname.startsWith("/profile")
-                      ? "text-indigo-400"
-                      : "text-white"
-                  )}
-                >
-                  {user.name || "User"}
-                </p>
-                <p className="text-xs text-gray-500 truncate">{user.email}</p>
-              </div>
-            </Link>
-          </div>
-
-          {/* Navigation */}
-          <nav className="flex-1 overflow-y-auto px-3 py-4">
-            <ul className="space-y-1">
-              {mobileNavigation.map((item) => {
-                const isActive =
-                  pathname === item.href || pathname.startsWith(`${item.href}/`);
-                return (
-                  <li key={item.name}>
-                    <Link
-                      href={item.href}
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      className={cn(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                        isActive
-                          ? "bg-indigo-500/10 text-indigo-400"
-                          : "text-gray-400 hover:text-white hover:bg-gray-800"
-                      )}
-                    >
-                      <item.icon className="w-5 h-5" />
-                      {item.name}
-                      {item.name === "Notifications" && unreadCount > 0 && (
-                        <span className="ml-auto px-2 py-0.5 text-xs font-bold text-white bg-red-500 rounded-full">
-                          {unreadCount > 9 ? "9+" : unreadCount}
-                        </span>
-                      )}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
-
-          {/* Sign Out */}
-          <div className="border-t border-gray-800 px-3 py-4">
-            <button
-              onClick={handleSignOut}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-gray-800 transition-colors"
-            >
-              <LogOut className="w-5 h-5" />
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </div>
     </>
   );
 }

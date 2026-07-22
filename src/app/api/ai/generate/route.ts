@@ -28,9 +28,12 @@ export async function POST(request: NextRequest) {
   }
 
   // Per-user daily rate limit (admin-configurable; -1/0 = unlimited).
-  const limit = await getSetting<number>("ai.daily_limit_per_user", 50);
-  if (typeof limit === "number" && limit > 0) {
-    const dateKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+  // Settings can round-trip as strings, so coerce before comparing.
+  const rawLimit = await getSetting<number>("ai.daily_limit_per_user", 50);
+  const limit = Number(rawLimit);
+  const dateKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+  const rateLimited = Number.isFinite(limit) && limit > 0;
+  if (rateLimited) {
     const existing = await prisma.aiUsageDaily.findUnique({
       where: { userId_dateKey: { userId: session.user.id, dateKey } },
       select: { count: true },
@@ -43,11 +46,6 @@ export async function POST(request: NextRequest) {
         { status: 429 }
       );
     }
-    await prisma.aiUsageDaily.upsert({
-      where: { userId_dateKey: { userId: session.user.id, dateKey } },
-      create: { userId: session.user.id, dateKey, count: 1 },
-      update: { count: { increment: 1 } },
-    });
   }
 
   const result = await generateText(v.data.prompt);
@@ -57,5 +55,16 @@ export async function POST(request: NextRequest) {
       { status: 502 }
     );
   }
+
+  // Only bill quota after a successful generation — a failed call shouldn't
+  // burn the user's daily allowance.
+  if (rateLimited) {
+    await prisma.aiUsageDaily.upsert({
+      where: { userId_dateKey: { userId: session.user.id, dateKey } },
+      create: { userId: session.user.id, dateKey, count: 1 },
+      update: { count: { increment: 1 } },
+    });
+  }
+
   return NextResponse.json({ text: result.text });
 }

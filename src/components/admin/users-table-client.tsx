@@ -227,8 +227,8 @@ export function UsersTableClient({
         }}
       />
 
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="glass overflow-hidden">
+        <div className="hidden md:block overflow-x-auto scrollbar-thin">
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-800 bg-slate-800/50">
@@ -456,6 +456,122 @@ export function UsersTableClient({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile cards */}
+        <div className="md:hidden divide-y divide-slate-800">
+          {users.length > 0 ? (
+            users.map((u) => {
+              const roleConfig =
+                ROLE_CONFIG[u.role as UserRole] || ROLE_CONFIG.USER;
+              const isSelected = selected.has(u.id);
+              return (
+                <div
+                  key={u.id}
+                  className={cn("p-4", isSelected && "bg-blue-500/5")}
+                >
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleOne(u.id)}
+                      className="mt-1 rounded bg-slate-800 border-slate-600 text-blue-500 focus:ring-blue-500"
+                      aria-label={`Select ${u.email}`}
+                    />
+                    <Link
+                      href={`/admin/users/${u.id}`}
+                      className="flex items-center gap-3 min-w-0 flex-1"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium shrink-0">
+                        {u.name?.charAt(0) || u.email?.charAt(0) || "U"}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-white truncate">
+                          {u.name || "Unnamed"}
+                        </p>
+                        <p className="text-xs text-slate-500 truncate">
+                          {u.email}
+                        </p>
+                      </div>
+                    </Link>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "px-2 py-0.5 rounded-full text-xs font-medium",
+                        u.status === "ACTIVE"
+                          ? "bg-emerald-500/10 text-emerald-400"
+                          : u.status === "PENDING_VERIFICATION"
+                          ? "bg-amber-500/10 text-amber-400"
+                          : u.status === "SUSPENDED"
+                          ? "bg-orange-500/10 text-orange-400"
+                          : "bg-red-500/10 text-red-400"
+                      )}
+                    >
+                      {u.status.replace(/_/g, " ")}
+                    </span>
+                    <span
+                      className={cn(
+                        "px-2 py-0.5 rounded-full text-xs font-medium",
+                        roleConfig.bgColor,
+                        roleConfig.color
+                      )}
+                    >
+                      {roleConfig.label}
+                    </span>
+                    {u.package && (
+                      <PackageBadge
+                        tier={u.package.slug}
+                        name={u.package.name}
+                        size="sm"
+                      />
+                    )}
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <p className="text-sm text-white tabular-nums">
+                      ${u.cashBalance.toFixed(2)}
+                      <span className="text-xs text-slate-500 ml-1.5">
+                        {u.pointsBalance.toLocaleString()} pts
+                      </span>
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <Link
+                        href={`/admin/users/${u.id}`}
+                        className="p-1.5 rounded hover:bg-slate-700 text-blue-400"
+                        title="View details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Link>
+                      {permissions.canEdit && (
+                        <Link
+                          href={`/admin/users/${u.id}/edit`}
+                          className="p-1.5 rounded hover:bg-slate-700 text-emerald-400"
+                          title="Edit user"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </Link>
+                      )}
+                      {permissions.canBan && (
+                        <Link
+                          href={`/admin/users/${u.id}?ban=1`}
+                          className="p-1.5 rounded hover:bg-slate-700 text-yellow-400"
+                          title="Ban user"
+                        >
+                          <Ban className="w-4 h-4" />
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="py-16 text-center text-slate-500">
+              <UsersIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p className="font-medium">No users found</p>
+              <p className="text-sm mt-1">Try adjusting your filters</p>
+            </div>
+          )}
         </div>
 
         {/* Pagination */}

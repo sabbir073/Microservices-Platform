@@ -159,7 +159,12 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       // Preserve the admin's chosen action order (drag-and-drop) verbatim.
       const items = norm.items;
       pointsRewardOut = bundleTotalPoints(items);
-      socialConfigOut = { platform: norm.platform, items, version: 2 };
+      socialConfigOut = {
+        platform: norm.platform,
+        items,
+        version: 2,
+        sequential: norm.sequential,
+      };
       socialPlatformOut = norm.platform;
       socialActionOut = items[0]?.action ?? null;
       socialUrlOut =

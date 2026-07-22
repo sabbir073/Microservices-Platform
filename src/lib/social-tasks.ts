@@ -2992,6 +2992,8 @@ export interface SocialBundleConfig {
   platform: string | null;
   items: BundleItem[];
   version: 2;
+  /** When true the user must complete each action before the next unlocks. */
+  sequential?: boolean;
 }
 
 const DEFAULT_PROOF: ProofRequirements = {
@@ -3039,9 +3041,11 @@ function coerceBundleItem(raw: unknown): BundleItem | null {
  */
 export function normalizeSocialConfig(
   raw: unknown
-): { platform: string | null; items: BundleItem[] } {
-  if (!raw || typeof raw !== "object") return { platform: null, items: [] };
+): { platform: string | null; items: BundleItem[]; sequential: boolean } {
+  if (!raw || typeof raw !== "object")
+    return { platform: null, items: [], sequential: false };
   const cfg = raw as Record<string, unknown>;
+  const sequential = cfg.sequential === true;
 
   // v2 bundle
   if (Array.isArray(cfg.items)) {
@@ -3051,6 +3055,7 @@ export function normalizeSocialConfig(
     return {
       platform: typeof cfg.platform === "string" ? cfg.platform : null,
       items,
+      sequential,
     };
   }
 
@@ -3072,18 +3077,20 @@ export function normalizeSocialConfig(
           aiPrompt: typeof cfg.aiPrompt === "string" ? cfg.aiPrompt : null,
         },
       ],
+      sequential,
     };
   }
 
   return {
     platform: typeof cfg.platform === "string" ? cfg.platform : null,
     items: [],
+    sequential,
   };
 }
 
 /** A fresh empty bundle config for a new task. */
 export function emptyBundleConfig(): SocialBundleConfig {
-  return { platform: null, items: [], version: 2 };
+  return { platform: null, items: [], version: 2, sequential: false };
 }
 
 // -----------------------------------------------------------------------------
@@ -3111,6 +3118,8 @@ export interface SocialTaskView {
   action: string;
   targetUrl: string;
   items: SocialTaskItemView[];
+  /** When true actions unlock one-by-one (each done before the next). */
+  sequential: boolean;
   instructions: string | null;
   instructionVideoUrl: string | null;
 }
@@ -3162,6 +3171,7 @@ export function mapSocialTaskRow(t: SocialTaskRow): SocialTaskView {
     action: first?.action ?? (t.socialAction ?? "FOLLOW").toUpperCase(),
     targetUrl: first?.targetUrl ?? t.socialUrl ?? "",
     items,
+    sequential: norm.sequential,
     instructions: t.instructions,
     instructionVideoUrl: t.instructionVideoUrl,
   };
@@ -3317,6 +3327,7 @@ export interface BundleValidationResult {
 export function validateSocialBundle(cfg: {
   platform: string | null;
   items: BundleItem[];
+  sequential?: boolean;
 }): BundleValidationResult {
   if (!cfg.platform) return { ok: false, error: "Pick a platform." };
   if (!getPlatform(cfg.platform)) {
@@ -3338,7 +3349,10 @@ export function validateSocialBundle(cfg: {
     }
     // Proof is optional — an action may require none (e.g. WATCH actions are
     // verified by the locked player, not by uploaded proof).
-    const aiOn = item.aiPromptEnabled && !!(item.aiPrompt ?? "").trim();
+    // When "users AI-generate their own" is on, the content field becomes an
+    // optional reference (users can generate purely from the task), so don't
+    // require it — regardless of whether the admin added extra AI guidance.
+    const aiOn = item.aiPromptEnabled;
     const missing = def.adminFields.find((f) => {
       if (!f.required) return false;
       if (aiOn && def.aiGeneratableFields?.includes(f.key)) return false;

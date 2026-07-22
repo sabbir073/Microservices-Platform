@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
+import { AdminTable } from "@/components/admin/ui/admin-table";
 
 const SEVERITY_CONFIG = {
   CRITICAL: { color: "text-red-400 bg-red-500/15", border: "border-red-500/50" },
@@ -128,80 +129,80 @@ export default async function FraudMonitorPage() {
           </p>
         </div>
       ) : (
-        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-slate-800/50 border-b border-slate-800">
-              <tr>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                  Event
-                </th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                  User
-                </th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                  Severity
-                </th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                  IP
-                </th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                  Detected
-                </th>
-                <th className="text-left py-3 px-6 text-sm font-medium text-slate-400">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {events.map((e) => {
-                const sev = SEVERITY_CONFIG[e.severity];
+        <AdminTable
+          rows={events}
+          getRowKey={(e) => e.id}
+          columns={[
+            {
+              key: "event",
+              header: "Event",
+              primary: true,
+              cell: (e) => (
+                <p className="font-mono text-xs text-white">{e.eventType}</p>
+              ),
+            },
+            {
+              key: "user",
+              header: "User",
+              cell: (e) => {
                 const u = e.userId ? userMap.get(e.userId) : null;
-                return (
-                  <tr key={e.id} className="hover:bg-slate-800/40">
-                    <td className="py-3 px-6">
-                      <p className="font-mono text-xs text-white">
-                        {e.eventType}
-                      </p>
-                    </td>
-                    <td className="py-3 px-6 text-sm">
-                      {u ? (
-                        <Link
-                          href={`/admin/users/${u.id}`}
-                          className="text-blue-400 hover:underline"
-                        >
-                          {u.name ?? u.email}
-                        </Link>
-                      ) : (
-                        <span className="text-slate-500">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-6">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-bold ${sev.color}`}
-                      >
-                        {e.severity}
-                      </span>
-                    </td>
-                    <td className="py-3 px-6 text-xs font-mono text-slate-400">
-                      {e.ipAddress ?? "—"}
-                    </td>
-                    <td className="py-3 px-6 text-sm text-slate-400">
-                      {format(e.createdAt, "MMM d, HH:mm")}
-                    </td>
-                    <td className="py-3 px-6">
-                      <button
-                        className="p-1.5 rounded hover:bg-slate-700 text-blue-400"
-                        title="View details"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
+                return u ? (
+                  <Link
+                    href={`/admin/users/${u.id}`}
+                    className="text-blue-400 hover:underline text-sm"
+                  >
+                    {u.name ?? u.email}
+                  </Link>
+                ) : (
+                  <span className="text-slate-500">—</span>
                 );
-              })}
-            </tbody>
-          </table>
-        </div>
+              },
+            },
+            {
+              key: "severity",
+              header: "Severity",
+              cell: (e) => (
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-bold ${SEVERITY_CONFIG[e.severity].color}`}
+                >
+                  {e.severity}
+                </span>
+              ),
+            },
+            {
+              key: "ip",
+              header: "IP",
+              mobileHidden: true,
+              cell: (e) => (
+                <span className="text-xs font-mono text-slate-400">
+                  {e.ipAddress ?? "—"}
+                </span>
+              ),
+            },
+            {
+              key: "detected",
+              header: "Detected",
+              mobileHidden: true,
+              cell: (e) => (
+                <span className="text-sm text-slate-400">
+                  {format(e.createdAt, "MMM d, HH:mm")}
+                </span>
+              ),
+            },
+            {
+              key: "actions",
+              header: "Actions",
+              cell: () => (
+                <button
+                  className="p-1.5 rounded hover:bg-slate-700 text-blue-400"
+                  title="View details"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
+              ),
+            },
+          ]}
+        />
       )}
     </div>
   );

@@ -1,4 +1,5 @@
 "use client";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -437,7 +438,7 @@ export function ProfileView() {
       )}
 
       {/* Profile Header */}
-      <div className="relative rounded-2xl overflow-hidden border border-gray-800">
+      <div className="relative rounded-2xl overflow-hidden glass">
         <div className="relative h-40 sm:h-56 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
           {profile.coverPhoto && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -611,7 +612,7 @@ export function ProfileView() {
       <LifetimeStatsGroup stats={stats.lifetime} />
 
       {/* Sticky Facebook-style primary tabs */}
-      <nav className="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 bg-gray-950/95 backdrop-blur-md border-y border-gray-800">
+      <nav className="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 glass-strong rounded-none border-0 border-y border-gray-800/60">
         <div className="flex gap-1 overflow-x-auto scrollbar-thin py-1">
           {(
             [
@@ -707,6 +708,8 @@ export function ProfileView() {
           }}
         />
       )}
+
+      <AdRenderer placement="PROFILE_BOTTOM" />
     </div>
   );
 }
@@ -733,7 +736,7 @@ function StatTile({
     purple: "text-purple-400 bg-purple-500/10",
   } as const;
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 flex items-center gap-3">
+    <div className="glass p-3 flex items-center gap-3">
       <div className={cn("p-2 rounded-lg", tones[tone])}>{icon}</div>
       <div>
         <p className="text-xs text-gray-500">{label}</p>
@@ -1804,7 +1807,7 @@ function ProfileTabBody({
       <div ref={editAnchorRef} className="scroll-mt-20">
         <button
           onClick={() => setEditOpen(!editOpen)}
-          className="w-full flex items-center justify-between gap-3 p-4 rounded-xl bg-gray-900 border border-gray-800 hover:border-gray-700"
+          className="w-full flex items-center justify-between gap-3 p-4 glass glass-hover"
         >
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center">
@@ -2058,7 +2061,7 @@ function PostsListTab({ userId }: { userId: string }) {
       {items.map((p) => (
         <div
           key={p.id}
-          className="rounded-xl border border-gray-800 bg-gray-900 p-4 hover:border-gray-700 transition-colors"
+          className="glass glass-hover p-4"
         >
           {p.isPinned && (
             <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-2">
@@ -2201,7 +2204,7 @@ function UserListTab({
         return (
           <div
             key={u.id}
-            className="flex items-center gap-3 p-3 rounded-xl border border-gray-800 bg-gray-900 hover:border-gray-700 transition-colors"
+            className="flex items-center gap-3 p-3 glass glass-hover"
           >
             <Link href={profileHref(u)} className="shrink-0">
               <div className="w-11 h-11 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden">
@@ -2862,7 +2865,7 @@ function Card({
     sky: "bg-sky-500/10 text-sky-400 border-sky-500/30",
   };
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-5 space-y-3 hover:border-gray-700 transition-colors">
+    <div className="glass glass-hover p-4 sm:p-5 space-y-3">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           {icon && (
@@ -2928,7 +2931,7 @@ function Modal({
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative bg-gray-900 border border-gray-800 rounded-xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col">
+      <div className="relative glass-strong rounded-xl shadow-2xl max-w-lg w-full max-h-[92vh] flex flex-col">
         <div className="flex items-start justify-between px-5 py-3 border-b border-gray-800">
           <div>
             <h2 className="text-base font-semibold text-white">{title}</h2>

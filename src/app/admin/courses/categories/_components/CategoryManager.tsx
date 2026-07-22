@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, Plus, Save, Trash2, Edit3, X } from "lucide-react";
+import { AdminTableShell } from "@/components/admin/ui/admin-table-shell";
 
 interface CategoryRow {
   id: string;
@@ -54,8 +55,8 @@ export function CategoryManager({ initial, canManage }: Props) {
         />
       )}
 
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-        <table className="w-full text-sm">
+      <AdminTableShell>
+        <table className="w-full text-sm min-w-180">
           <thead className="bg-slate-950 text-xs uppercase text-slate-400">
             <tr>
               <th className="text-left px-4 py-3">Order</th>
@@ -86,7 +87,7 @@ export function CategoryManager({ initial, canManage }: Props) {
             ))}
           </tbody>
         </table>
-      </div>
+      </AdminTableShell>
     </div>
   );
 }

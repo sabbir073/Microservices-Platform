@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
   /** Adds hover lift + brand ring for clickable cards. */
   interactive?: boolean;
+  /** Frosted-glass surface instead of the solid `card` fill. */
+  glass?: boolean;
   /** Inner padding preset. */
   padding?: "none" | "sm" | "md" | "lg";
 }
@@ -21,12 +23,12 @@ const PAD: Record<NonNullable<CardProps["padding"]>, string> = {
  * `bg-gray-900 border border-gray-800 rounded-xl` pattern.
  */
 export const Card = forwardRef<HTMLDivElement, CardProps>(
-  ({ className, interactive, padding = "md", ...props }, ref) => (
+  ({ className, interactive, glass, padding = "md", ...props }, ref) => (
     <div
       ref={ref}
       className={cn(
-        "card",
-        interactive && "card-interactive cursor-pointer",
+        glass ? "glass" : "card",
+        interactive && (glass ? "glass-hover cursor-pointer" : "card-interactive cursor-pointer"),
         PAD[padding],
         className
       )}

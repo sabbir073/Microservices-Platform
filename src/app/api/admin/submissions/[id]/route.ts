@@ -173,9 +173,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       // Approve the submission. For non-board tasks award points/XP and write
       // a transaction; for board tasks just mark APPROVED and bump the
       // task's completedCount counter.
-      const txnOps: Prisma.PrismaPromise<unknown>[] = [
-        prisma.taskSubmission.update({
-          where: { id },
+      // Atomically claim the review inside one transaction. The updateMany CAS
+      // (only matches while still PENDING) means two concurrent approvals /
+      // a double-click can't both mint points — the loser matches 0 rows and
+      // credits nothing (there is no unique backstop on Transaction.reference).
+      const submission = await prisma.$transaction(async (tx) => {
+        const claim = await tx.taskSubmission.updateMany({
+          where: { id, status: "PENDING" },
           data: {
             status: finalStatus,
             reviewedBy: session.user.id,
@@ -184,29 +188,25 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             xpEarned: earnedXp,
             ...(metadataUpdate ? { metadata: metadataUpdate } : {}),
           },
-        }),
-      ];
+        });
+        if (claim.count === 0) return null; // lost the race — already reviewed
 
-      if (finalStatus === "APPROVED") {
-        txnOps.push(
-          prisma.task.update({
+        if (finalStatus === "APPROVED") {
+          await tx.task.update({
             where: { id: existingSubmission.taskId },
             data: { completedCount: { increment: 1 } },
-          })
-        );
-      }
-
-      if (awardsPoints) {
-        txnOps.push(
-          prisma.user.update({
+          });
+        }
+        if (awardsPoints) {
+          await tx.user.update({
             where: { id: existingSubmission.userId },
             data: {
               pointsBalance: { increment: earnedPoints },
               xp: { increment: earnedXp },
               totalEarnings: { increment: earnedPoints * 0.001 },
             },
-          }),
-          prisma.transaction.create({
+          });
+          await tx.transaction.create({
             data: {
               userId: existingSubmission.userId,
               type: "EARNING",
@@ -216,11 +216,17 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
               description: `Earned from task: ${task.title}`,
               reference: existingSubmission.id,
             },
-          })
+          });
+        }
+        return tx.taskSubmission.findUnique({ where: { id } });
+      });
+
+      if (!submission) {
+        return NextResponse.json(
+          { error: "Submission has already been reviewed" },
+          { status: 400 }
         );
       }
-
-      const [submission] = await prisma.$transaction(txnOps);
 
       // Process referral commissions (after transaction completes) — skip
       // for board tasks and when no points were minted.

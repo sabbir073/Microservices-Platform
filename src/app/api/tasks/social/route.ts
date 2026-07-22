@@ -22,23 +22,29 @@ export async function GET(request: NextRequest) {
   }
   const userPackage = await getEffectivePackage(session.user.id);
 
-  // For non-"available", look up the user's submissions for SOCIAL tasks
+  // For non-"available", look up the user's submissions for SOCIAL tasks.
+  // In-progress vs submitted are BOTH status PENDING — the difference is the
+  // submittedAt pivot (null ⇒ still being worked on, set ⇒ awaiting review).
   if (status !== "available") {
-    const statusMap: Record<string, "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED"> = {
-      submitted: "PENDING",
-      in_progress: "PENDING",
-      approved: "APPROVED",
-      rejected: "REJECTED",
-      expired: "EXPIRED",
-    };
-    const subStatus = statusMap[status];
-    const submissions = await prisma.taskSubmission.findMany({
-      where: {
-        userId: user.id,
-        ...(subStatus === "EXPIRED"
-          ? { task: { type: TaskType.SOCIAL, expiresAt: { lt: new Date() } } }
-          : { status: subStatus, task: { type: TaskType.SOCIAL } }),
+    const socialTask = { task: { type: TaskType.SOCIAL } };
+    const filterByStatus: Record<string, Record<string, unknown>> = {
+      in_progress: { ...socialTask, status: "PENDING", submittedAt: null },
+      submitted: { ...socialTask, status: "PENDING", submittedAt: { not: null } },
+      approved: { ...socialTask, status: { in: ["APPROVED", "AUTO_APPROVED"] } },
+      rejected: {
+        ...socialTask,
+        status: { in: ["REJECTED", "REVISION_REQUESTED"] },
       },
+      expired: {
+        task: { type: TaskType.SOCIAL, expiresAt: { lt: new Date() } },
+      },
+    };
+    const where = filterByStatus[status] ?? {
+      ...socialTask,
+      status: "PENDING",
+    };
+    const submissions = await prisma.taskSubmission.findMany({
+      where: { userId: user.id, ...where },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
@@ -61,6 +67,19 @@ export async function GET(request: NextRequest) {
 
   const accessLevel = userPackage?.accessLevel ?? 0;
 
+  // Hide tasks the user has already started or finished — they belong in the
+  // In Progress / Submitted / Approved tabs, not "Available" (was showing a
+  // "Start" button on already-submitted tasks).
+  const actedSubs = await prisma.taskSubmission.findMany({
+    where: {
+      userId: user.id,
+      task: { type: TaskType.SOCIAL },
+      status: { in: ["PENDING", "APPROVED", "AUTO_APPROVED"] },
+    },
+    select: { taskId: true },
+  });
+  const excludeTaskIds = [...new Set(actedSubs.map((s) => s.taskId))];
+
   const tasks = await prisma.task.findMany({
     where: {
       type: TaskType.SOCIAL,
@@ -68,6 +87,7 @@ export async function GET(request: NextRequest) {
       minLevel: { lte: user.level },
       requiredAccessLevel: { lte: accessLevel },
       OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      ...(excludeTaskIds.length ? { id: { notIn: excludeTaskIds } } : {}),
     },
     orderBy: { createdAt: "desc" },
     take: 100,

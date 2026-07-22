@@ -3,9 +3,11 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { resolveAdSize } from "@/lib/ad-sizes";
 
 export type AdPlacement =
   | "IN_FEED"
+  | "FEED_SIDEBAR"
   | "TASK_LIST"
   | "TASK_START"
   | "VIDEO_ABOVE"
@@ -26,12 +28,16 @@ export interface AdResponse {
   id: string;
   type: AdType;
   imageUrl?: string;
+  videoUrl?: string;
   title?: string;
   body?: string;
   ctaLabel?: string;
   ctaUrl?: string;
   html?: string;
   sponsor?: string;
+  size?: string;
+  width?: number;
+  height?: number;
 }
 
 interface AdRendererProps {
@@ -45,10 +51,28 @@ export function AdRenderer({ placement, className }: AdRendererProps) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`/api/ads/serve?placement=${placement}`)
+    // Exclude the ad shown last time in this placement (this session) so a
+    // reload / re-navigate rotates to a different creative when possible.
+    const storeKey = `ad-last-${placement}`;
+    let last: string | null = null;
+    try {
+      last = sessionStorage.getItem(storeKey);
+    } catch {
+      /* sessionStorage unavailable */
+    }
+    fetch(
+      `/api/ads/serve?placement=${placement}${last ? `&exclude=${encodeURIComponent(last)}` : ""}`
+    )
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (!cancelled && data?.ad) setAd(data.ad);
+        if (!cancelled && data?.ad) {
+          setAd(data.ad);
+          try {
+            sessionStorage.setItem(storeKey, data.ad.id);
+          } catch {
+            /* ignore */
+          }
+        }
       })
       .catch(() => !cancelled && setError(true));
     return () => {
@@ -62,15 +86,33 @@ export function AdRenderer({ placement, className }: AdRendererProps) {
     fetch(`/api/ads/${ad.id}/click`, { method: "POST" }).catch(() => {});
   };
 
+  const dim = resolveAdSize(ad.size, ad.width, ad.height);
+  // Fixed-size ads cap their width and honor the aspect ratio (no crop);
+  // responsive ads stretch to the container at natural height.
+  const mediaStyle = dim
+    ? { aspectRatio: `${dim.w} / ${dim.h}` }
+    : undefined;
+  const outerStyle = dim ? { maxWidth: dim.w } : undefined;
+
+  // HTML / ad-network tag creative — run inside a sandboxed iframe so injected
+  // <script> actually executes (dangerouslySetInnerHTML never runs scripts).
   if (ad.type === "HTML" && ad.html) {
     return (
       <div
         className={cn(
-          "relative rounded-xl overflow-hidden border border-gray-800 bg-gray-900",
+          "relative rounded-xl overflow-hidden border border-gray-800 bg-gray-900 mx-auto",
           className
         )}
-        dangerouslySetInnerHTML={{ __html: ad.html }}
-      />
+        style={outerStyle}
+      >
+        <iframe
+          title="Sponsored"
+          srcDoc={ad.html}
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          className="block w-full border-0"
+          style={{ height: dim?.h ?? 250 }}
+        />
+      </div>
     );
   }
 
@@ -80,8 +122,9 @@ export function AdRenderer({ placement, className }: AdRendererProps) {
       target="_blank"
       rel="noopener sponsored noreferrer"
       onClick={trackClick}
+      style={outerStyle}
       className={cn(
-        "relative block rounded-2xl overflow-hidden border border-gray-800 bg-gray-900 hover:border-indigo-500/40 hover:shadow-lg hover:shadow-indigo-500/5 transition-all group",
+        "relative block rounded-2xl overflow-hidden border border-gray-800 bg-gray-900 hover:border-indigo-500/40 hover:shadow-lg hover:shadow-indigo-500/5 transition-all group mx-auto",
         className
       )}
     >
@@ -89,13 +132,26 @@ export function AdRenderer({ placement, className }: AdRendererProps) {
         <Megaphone className="w-2.5 h-2.5" />
         Sponsored
       </span>
-      {ad.imageUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={ad.imageUrl}
-          alt={ad.title ?? "Ad"}
-          className="w-full h-32 object-cover"
+      {ad.videoUrl ? (
+        <video
+          src={ad.videoUrl}
+          autoPlay
+          muted
+          loop
+          playsInline
+          className={cn("w-full object-contain bg-black", !dim && "h-auto")}
+          style={mediaStyle}
         />
+      ) : (
+        ad.imageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={ad.imageUrl}
+            alt={ad.title ?? "Ad"}
+            className={cn("w-full object-contain", !dim && "h-auto")}
+            style={mediaStyle}
+          />
+        )
       )}
       <div className="p-3.5">
         {ad.title && (

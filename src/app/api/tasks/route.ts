@@ -77,37 +77,74 @@ export async function GET(request: NextRequest) {
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const userSubmissionsToday = await prisma.taskSubmission.findMany({
+    // Daily-limit counting — only states that consume a daily slot, today.
+    const countingSubs = await prisma.taskSubmission.findMany({
       where: {
         userId: session.user.id,
         createdAt: { gte: todayStart },
         status: { in: ["APPROVED", "AUTO_APPROVED", "PENDING"] },
       },
+      select: { taskId: true },
+    });
+
+    // Badge status — the actionable/informative state per task:
+    //   REVISION    — admin asked for changes (must resubmit)          [any day]
+    //   IN_PROGRESS — a PENDING submission started but not yet submitted [any day]
+    //   SUBMITTED   — a PENDING submission already submitted (awaiting review) [any day]
+    //   REJECTED    — rejected today (informational, can retry within limits) [today]
+    //   COMPLETED   — an APPROVED/AUTO_APPROVED submission today          [today]
+    // Pending review / in-progress / revision are queried across ALL days so a
+    // task submitted yesterday still shows its badge instead of resetting to
+    // "Available" (was scoped to today — the reported status bug).
+    type UserTaskStatus =
+      | "COMPLETED"
+      | "REJECTED"
+      | "SUBMITTED"
+      | "IN_PROGRESS"
+      | "REVISION";
+    const statusSubs = await prisma.taskSubmission.findMany({
+      where: {
+        userId: session.user.id,
+        OR: [
+          { status: { in: ["PENDING", "REVISION_REQUESTED"] } },
+          {
+            status: { in: ["APPROVED", "AUTO_APPROVED", "REJECTED"] },
+            createdAt: { gte: todayStart },
+          },
+        ],
+      },
       select: { taskId: true, status: true, submittedAt: true },
     });
 
-    // Per-task per-user status for the list badges:
-    //   COMPLETED   — an APPROVED/AUTO_APPROVED submission today
-    //   SUBMITTED   — a PENDING submission the user already submitted (pending review)
-    //   IN_PROGRESS — a PENDING submission started but not yet submitted
-    type UserTaskStatus = "COMPLETED" | "SUBMITTED" | "IN_PROGRESS";
     const userTodayCounts = new Map<string, number>();
     const pendingTaskIds = new Set<string>();
     const userStatusByTask = new Map<string, UserTaskStatus>();
+    // Higher rank wins when a task has several submissions. Actionable states
+    // (revision → in-progress → submitted) outrank terminal ones so a completed
+    // attempt never hides a fresh in-progress/pending one (rank-collapse bug).
     const rank: Record<UserTaskStatus, number> = {
-      IN_PROGRESS: 1,
-      SUBMITTED: 2,
-      COMPLETED: 3,
+      REJECTED: 1,
+      COMPLETED: 2,
+      SUBMITTED: 3,
+      IN_PROGRESS: 4,
+      REVISION: 5,
     };
-    for (const s of userSubmissionsToday) {
+    const mapStatus = (s: {
+      status: string;
+      submittedAt: Date | null;
+    }): UserTaskStatus => {
+      if (s.status === "REVISION_REQUESTED") return "REVISION";
+      if (s.status === "REJECTED") return "REJECTED";
+      if (s.status === "PENDING")
+        return s.submittedAt ? "SUBMITTED" : "IN_PROGRESS";
+      return "COMPLETED";
+    };
+    for (const s of countingSubs) {
       userTodayCounts.set(s.taskId, (userTodayCounts.get(s.taskId) ?? 0) + 1);
+    }
+    for (const s of statusSubs) {
       if (s.status === "PENDING") pendingTaskIds.add(s.taskId);
-      const st: UserTaskStatus =
-        s.status === "PENDING"
-          ? s.submittedAt
-            ? "SUBMITTED"
-            : "IN_PROGRESS"
-          : "COMPLETED";
+      const st = mapStatus(s);
       const prev = userStatusByTask.get(s.taskId);
       if (!prev || rank[st] > rank[prev]) userStatusByTask.set(s.taskId, st);
     }
@@ -249,11 +286,12 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // Show startable tasks (available / in-progress / submitted) AND tasks the
-    // user has completed today (so they see a "Done" badge instead of the task
-    // silently vanishing). Only globally-unavailable tasks stay hidden.
+    // Show startable tasks AND any task that already has a user status
+    // (completed today, pending review, in-progress, revision, rejected) so the
+    // badge shows instead of the task silently vanishing. Only globally
+    // unavailable tasks with no user history stay hidden.
     const visibleTasks = processedTasks.filter(
-      (t) => t.canStart || t.userStatus === "COMPLETED"
+      (t) => t.canStart || t.userStatus !== "AVAILABLE"
     );
 
     return NextResponse.json({

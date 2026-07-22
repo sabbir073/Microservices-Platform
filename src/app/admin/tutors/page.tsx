@@ -6,6 +6,7 @@ import { UserCog, ClipboardList, Inbox, ShieldOff } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { TutorRowActions } from "./_components/TutorRowActions";
+import { AdminTable } from "@/components/admin/ui/admin-table";
 
 export default async function AdminTutorsPage() {
   const session = await auth();
@@ -103,89 +104,102 @@ export default async function AdminTutorsPage() {
         />
       </div>
 
-      <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-950 text-slate-400 text-xs uppercase">
-              <tr>
-                <th className="text-left px-4 py-3">Tutor</th>
-                <th className="text-left px-4 py-3">Headline</th>
-                <th className="text-left px-4 py-3">Courses</th>
-                <th className="text-left px-4 py-3">Earnings</th>
-                <th className="text-left px-4 py-3">Status</th>
-                <th className="text-left px-4 py-3">Joined</th>
-                <th className="text-right px-4 py-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {tutors.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="py-10 text-center text-slate-500">
-                    No tutors yet. Approve an application to add the first one.
-                  </td>
-                </tr>
-              )}
-              {tutors.map((t) => (
-                <tr key={t.id} className="hover:bg-slate-800/40">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      {t.user.avatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={t.user.avatar}
-                          alt=""
-                          className="w-8 h-8 rounded-full object-cover bg-slate-800"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs text-slate-200 font-bold">
-                          {(t.user.name ?? t.user.email ?? "?")
-                            .slice(0, 1)
-                            .toUpperCase()}
-                        </div>
-                      )}
-                      <div className="leading-tight">
-                        <p className="text-white font-medium">
-                          {t.user.name ?? "—"}
-                        </p>
-                        <p className="text-xs text-slate-500">{t.user.email}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-300 max-w-[260px] truncate">
-                    {t.headline ?? <span className="text-slate-600">—</span>}
-                  </td>
-                  <td className="px-4 py-3 text-slate-300 tabular-nums">
-                    {t.totalCourses}
-                  </td>
-                  <td className="px-4 py-3 text-emerald-300 tabular-nums">
-                    ${(t.totalEarningsCents / 100).toFixed(2)}
-                  </td>
-                  <td className="px-4 py-3">
-                    {t.isSuspended ? (
-                      <span className="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 text-xs font-medium">
-                        Suspended
-                      </span>
-                    ) : (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-medium">
-                        Active
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {formatDistanceToNow(t.createdAt, { addSuffix: true })}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <TutorRowActions
-                      tutorId={t.id}
-                      isSuspended={t.isSuspended}
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <AdminTable
+        rows={tutors}
+        getRowKey={(t) => t.id}
+        empty={
+          <div className="glass py-10 text-center text-slate-500">
+            No tutors yet. Approve an application to add the first one.
+          </div>
+        }
+        columns={[
+          {
+            key: "tutor",
+            header: "Tutor",
+            primary: true,
+            cell: (t) => (
+              <div className="flex items-center gap-2">
+                {t.user.avatar ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={t.user.avatar}
+                    alt=""
+                    className="w-8 h-8 rounded-full object-cover bg-slate-800 shrink-0"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-slate-700 flex items-center justify-center text-xs text-slate-200 font-bold shrink-0">
+                    {(t.user.name ?? t.user.email ?? "?").slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <div className="leading-tight min-w-0">
+                  <p className="text-white font-medium truncate">
+                    {t.user.name ?? "—"}
+                  </p>
+                  <p className="text-xs text-slate-500 truncate">{t.user.email}</p>
+                </div>
+              </div>
+            ),
+          },
+          {
+            key: "headline",
+            header: "Headline",
+            mobileHidden: true,
+            cell: (t) => (
+              <span className="text-slate-300 max-w-65 truncate inline-block">
+                {t.headline ?? <span className="text-slate-600">—</span>}
+              </span>
+            ),
+          },
+          {
+            key: "courses",
+            header: "Courses",
+            mobileHidden: true,
+            cell: (t) => (
+              <span className="text-slate-300 tabular-nums">{t.totalCourses}</span>
+            ),
+          },
+          {
+            key: "earnings",
+            header: "Earnings",
+            cell: (t) => (
+              <span className="text-emerald-300 tabular-nums">
+                ${(t.totalEarningsCents / 100).toFixed(2)}
+              </span>
+            ),
+          },
+          {
+            key: "status",
+            header: "Status",
+            cell: (t) =>
+              t.isSuspended ? (
+                <span className="px-2 py-0.5 rounded-full bg-rose-500/15 text-rose-300 text-xs font-medium">
+                  Suspended
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 text-xs font-medium">
+                  Active
+                </span>
+              ),
+          },
+          {
+            key: "joined",
+            header: "Joined",
+            mobileHidden: true,
+            cell: (t) => (
+              <span className="text-slate-400">
+                {formatDistanceToNow(t.createdAt, { addSuffix: true })}
+              </span>
+            ),
+          },
+          {
+            key: "actions",
+            header: "Actions",
+            cell: (t) => (
+              <TutorRowActions tutorId={t.id} isSuspended={t.isSuspended} />
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }

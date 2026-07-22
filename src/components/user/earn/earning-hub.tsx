@@ -1,4 +1,5 @@
 "use client";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 import { useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
@@ -420,6 +421,7 @@ function LevelUpTab({ user }: { user: UserSummary }) {
 
   return (
     <div className="space-y-4">
+      <AdRenderer placement="EARN_HUB" />
       {/* Current Level Card */}
       <div
         className={`rounded-2xl p-5 bg-linear-to-r ${currentTier.gradient} shadow-2xl`}

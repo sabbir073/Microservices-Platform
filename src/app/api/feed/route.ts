@@ -263,8 +263,10 @@ export async function POST(request: NextRequest) {
     const pkg = await getEffectivePackage(session.user.id);
     const dailyPostLimit = pkg?.dailyPostLimit ?? -1;
     if (dailyPostLimit !== -1) {
+      // Use UTC day boundary to match how every other daily counter here
+      // (AI usage, mission logs) keys its day — avoids a server-timezone skew.
       const dayStart = new Date();
-      dayStart.setHours(0, 0, 0, 0);
+      dayStart.setUTCHours(0, 0, 0, 0);
       const postsToday = await prisma.post.count({
         where: { userId: session.user.id, createdAt: { gte: dayStart } },
       });

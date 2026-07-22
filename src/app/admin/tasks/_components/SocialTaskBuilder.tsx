@@ -217,6 +217,29 @@ export function SocialTaskBuilder({ value, onChange }: Props) {
         </Reorder.Group>
       )}
 
+      {/* Sequential-unlock toggle — only meaningful with 2+ actions */}
+      {items.length > 1 && (
+        <label className="flex items-start gap-3 rounded-lg border border-gray-800 bg-gray-900/60 px-4 py-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={value.sequential ?? false}
+            onChange={(e) =>
+              onChange({ ...value, sequential: e.target.checked, version: 2 })
+            }
+            className="mt-0.5 h-4 w-4 shrink-0 accent-indigo-500"
+          />
+          <span>
+            <span className="block text-sm font-semibold text-white">
+              Complete actions in order
+            </span>
+            <span className="block text-xs text-gray-500">
+              Each action stays locked until the previous one is done — drag the
+              handles above to set the order.
+            </span>
+          </span>
+        </label>
+      )}
+
       {/* Live bundle summary */}
       {platform && items.length > 0 && (
         <div className="flex items-center justify-between rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-4 py-3">

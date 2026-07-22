@@ -5,6 +5,7 @@ import { Shield, ChevronLeft, ChevronRight, User, Settings, Wallet, Package, Sto
 import Link from "next/link";
 import { format } from "date-fns";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { AdminTable } from "@/components/admin/ui/admin-table";
 
 interface PageProps {
   searchParams: Promise<{
@@ -192,87 +193,91 @@ export default async function AdminAuditLogsPage({ searchParams }: PageProps) {
       {/* Logs Table */}
       <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
         {logs.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-800">
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Timestamp
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    User
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Action
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Entity
-                  </th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">
-                    Details
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {logs.map((log) => {
-                  const entityConfig = ENTITY_CONFIG[log.entity] || ENTITY_CONFIG.USER;
-                  const EntityIcon = entityConfig.icon;
+          <AdminTable
+            bare
+            rows={logs}
+            getRowKey={(log) => log.id}
+            columns={[
+              {
+                key: "timestamp",
+                header: "Timestamp",
+                cell: (log) => (
+                  <div>
+                    <p className="text-sm text-white">
+                      {format(new Date(log.createdAt), "MMM d, yyyy")}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {format(new Date(log.createdAt), "h:mm:ss a")}
+                    </p>
+                  </div>
+                ),
+              },
+              {
+                key: "user",
+                header: "User",
+                cell: (log) => {
                   const user = log.userId ? userMap[log.userId] : null;
-                  const actionColor = ACTION_COLORS[log.action.toUpperCase()] || ACTION_COLORS.UPDATE;
-
-                  return (
-                    <tr key={log.id} className="hover:bg-gray-800/50 transition-colors">
-                      <td className="py-4 px-6">
-                        <div>
-                          <p className="text-sm text-white">
-                            {format(new Date(log.createdAt), "MMM d, yyyy")}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {format(new Date(log.createdAt), "h:mm:ss a")}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="py-4 px-6">
-                        {user ? (
-                          <Link
-                            href={`/admin/users/${user.id}`}
-                            className="text-sm text-white hover:text-indigo-400"
-                          >
-                            {user.name || user.email}
-                          </Link>
-                        ) : (
-                          <span className="text-sm text-gray-500">System</span>
-                        )}
-                      </td>
-                      <td className="py-4 px-6">
-                        <span
-                          className={`inline-flex px-2 py-1 rounded text-xs font-medium ${actionColor}`}
-                        >
-                          {log.action}
-                        </span>
-                      </td>
-                      <td className="py-4 px-6">
-                        <div className="flex items-center gap-2">
-                          <EntityIcon className={`w-4 h-4 ${entityConfig.color.split(" ")[0]}`} />
-                          <span className="text-sm text-white">{entityConfig.label}</span>
-                          {log.entityId && (
-                            <code className="text-xs text-gray-500 bg-gray-800 px-1 rounded">
-                              {log.entityId.slice(0, 8)}...
-                            </code>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-4 px-6">
-                        <div className="text-xs text-gray-500 max-w-xs truncate">
-                          {log.ipAddress && <span>IP: {log.ipAddress}</span>}
-                        </div>
-                      </td>
-                    </tr>
+                  return user ? (
+                    <Link
+                      href={`/admin/users/${user.id}`}
+                      className="text-sm text-white hover:text-indigo-400"
+                    >
+                      {user.name || user.email}
+                    </Link>
+                  ) : (
+                    <span className="text-sm text-gray-500">System</span>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
+                },
+              },
+              {
+                key: "action",
+                header: "Action",
+                primary: true,
+                cell: (log) => {
+                  const actionColor =
+                    ACTION_COLORS[log.action.toUpperCase()] || ACTION_COLORS.UPDATE;
+                  return (
+                    <span
+                      className={`inline-flex px-2 py-1 rounded text-xs font-medium ${actionColor}`}
+                    >
+                      {log.action}
+                    </span>
+                  );
+                },
+              },
+              {
+                key: "entity",
+                header: "Entity",
+                mobileHidden: true,
+                cell: (log) => {
+                  const entityConfig =
+                    ENTITY_CONFIG[log.entity] || ENTITY_CONFIG.USER;
+                  const EntityIcon = entityConfig.icon;
+                  return (
+                    <div className="flex items-center gap-2">
+                      <EntityIcon className={`w-4 h-4 ${entityConfig.color.split(" ")[0]}`} />
+                      <span className="text-sm text-white">{entityConfig.label}</span>
+                      {log.entityId && (
+                        <code className="text-xs text-gray-500 bg-gray-800 px-1 rounded">
+                          {log.entityId.slice(0, 8)}...
+                        </code>
+                      )}
+                    </div>
+                  );
+                },
+              },
+              {
+                key: "details",
+                header: "Details",
+                mobileHidden: true,
+                cell: (log) => (
+                  <div className="text-xs text-gray-500 max-w-xs truncate">
+                    {log.ipAddress && <span>IP: {log.ipAddress}</span>}
+                  </div>
+                ),
+              },
+            ]}
+          />
         ) : (
           <div className="p-16 text-center">
             <Shield className="w-12 h-12 mx-auto mb-4 text-gray-600" />

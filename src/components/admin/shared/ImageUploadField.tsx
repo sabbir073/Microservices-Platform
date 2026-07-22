@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Image as ImageIcon, X } from "lucide-react";
+import { Image as ImageIcon, Video as VideoIcon, X } from "lucide-react";
 import { MediaSelector } from "@/components/media/MediaSelector";
 import type { MediaItem } from "@/types/media";
 
@@ -16,6 +16,8 @@ interface Props {
   hideUrlFallback?: boolean;
   /** Placeholder for the URL input. */
   urlPlaceholder?: string;
+  /** Media kind — IMAGE (incl. GIF) or VIDEO. Defaults to IMAGE. */
+  fileType?: "IMAGE" | "VIDEO";
 }
 
 const SIZE_CLASSES: Record<NonNullable<Props["previewSize"]>, string> = {
@@ -28,12 +30,17 @@ const SIZE_CLASSES: Record<NonNullable<Props["previewSize"]>, string> = {
 export function ImageUploadField({
   value,
   onChange,
-  title = "Select Image",
+  title,
   previewSize = "md",
   hideUrlFallback = false,
   urlPlaceholder = "…or paste a URL",
+  fileType = "IMAGE",
 }: Props) {
   const [open, setOpen] = useState(false);
+  const isVideo = fileType === "VIDEO";
+  const Icon = isVideo ? VideoIcon : ImageIcon;
+  const kindLabel = isVideo ? "Video" : "Image / GIF";
+  const modalTitle = title ?? (isVideo ? "Select Video" : "Select Image");
 
   const handleSelect = (media: MediaItem | MediaItem[]) => {
     const m = Array.isArray(media) ? media[0] : media;
@@ -48,20 +55,29 @@ export function ImageUploadField({
       <div className="flex items-start gap-3">
         {value ? (
           <div className="relative shrink-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={value}
-              alt=""
-              className={`${previewClass} rounded-lg object-cover bg-slate-950 border border-slate-700`}
-              onError={(e) => {
-                e.currentTarget.style.opacity = "0.3";
-              }}
-            />
+            {isVideo ? (
+              <video
+                src={value}
+                muted
+                playsInline
+                className={`${previewClass} rounded-lg object-cover bg-slate-950 border border-slate-700`}
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={value}
+                alt=""
+                className={`${previewClass} rounded-lg object-cover bg-slate-950 border border-slate-700`}
+                onError={(e) => {
+                  e.currentTarget.style.opacity = "0.3";
+                }}
+              />
+            )}
             <button
               type="button"
               onClick={() => onChange("")}
               className="absolute -top-2 -right-2 p-1 bg-red-500 rounded-full text-white hover:bg-red-600"
-              title="Remove image"
+              title={`Remove ${isVideo ? "video" : "image"}`}
             >
               <X className="w-3 h-3" />
             </button>
@@ -70,7 +86,7 @@ export function ImageUploadField({
           <div
             className={`${previewClass} bg-slate-950 border border-slate-700 border-dashed rounded-lg flex items-center justify-center shrink-0`}
           >
-            <ImageIcon className="w-7 h-7 text-slate-600" />
+            <Icon className="w-7 h-7 text-slate-600" />
           </div>
         )}
         <div className="flex-1 space-y-2 min-w-0">
@@ -79,8 +95,8 @@ export function ImageUploadField({
             onClick={() => setOpen(true)}
             className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-700 border border-slate-700"
           >
-            <ImageIcon className="w-4 h-4" />
-            {value ? "Change Image" : "Upload / Pick Image"}
+            <Icon className="w-4 h-4" />
+            {value ? `Change ${kindLabel}` : `Upload / Pick ${kindLabel}`}
           </button>
           {!hideUrlFallback && (
             <input
@@ -98,8 +114,8 @@ export function ImageUploadField({
         isOpen={open}
         onClose={() => setOpen(false)}
         onSelect={handleSelect}
-        fileType="IMAGE"
-        title={title}
+        fileType={fileType}
+        title={modalTitle}
       />
     </>
   );
