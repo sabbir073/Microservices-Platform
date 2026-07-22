@@ -87,11 +87,12 @@ export default async function RootLayout({
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <body className="font-sans antialiased" suppressHydrationWarning>
-        {/* Set the saved theme before first paint so a reload never flashes the
-            wrong theme. This runs synchronously before the body content paints. */}
+        {/* Set the saved theme + accent before first paint so a reload never
+            flashes the wrong theme/color. Resolves "system" via prefers-color-
+            scheme. Runs synchronously before the body content paints. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('earngpt-theme');if(t){document.documentElement.setAttribute('data-theme',t)}}catch(e){}`,
+            __html: `try{var d=document.documentElement;var t=localStorage.getItem('earngpt-theme')||'dark';var r=t==='system'?(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):t;d.setAttribute('data-theme',r);var a=localStorage.getItem('earngpt-accent')||'indigo';d.setAttribute('data-accent',a);}catch(e){}`,
           }}
         />
         <ThemeProvider defaultTheme="dark" storageKey="earngpt-theme">

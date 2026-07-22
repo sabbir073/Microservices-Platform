@@ -59,7 +59,11 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { LifetimeStatsGroup } from "@/components/user/profile/profile-stat-groups";
 import { LocationSelector } from "@/components/shared/location-selector";
-import { useTheme } from "@/components/providers/theme-provider";
+import {
+  useTheme,
+  type Theme,
+  type Accent,
+} from "@/components/providers/theme-provider";
 import {
   PackageBadge,
   LevelBadge,
@@ -305,20 +309,22 @@ export function ProfileView() {
     load();
   }, []);
 
-  // Sync live theme with the user's saved preference whenever data loads
-  const { setTheme } = useTheme();
+  // Sync live theme + accent with the user's saved preference on load. The
+  // provider now handles "system" (OS-reactive) natively, so pass it raw.
+  const { setTheme, setAccent } = useTheme();
   useEffect(() => {
     const saved = data?.preferences?.theme;
-    if (!saved) return;
-    if (saved === "dark" || saved === "light") {
+    if (saved === "dark" || saved === "light" || saved === "system") {
       setTheme(saved);
-    } else if (saved === "system") {
-      const prefersDark =
-        typeof window !== "undefined" &&
-        window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-      setTheme(prefersDark ? "dark" : "light");
     }
-  }, [data?.preferences?.theme, setTheme]);
+    const savedAccent = data?.preferences?.themeAccent;
+    if (savedAccent) setAccent(savedAccent as Accent);
+  }, [
+    data?.preferences?.theme,
+    data?.preferences?.themeAccent,
+    setTheme,
+    setAccent,
+  ]);
 
   // Auto-country detection — only fires when country is missing
   useEffect(() => {
@@ -1194,22 +1200,16 @@ function ThemeTab({
   preferences: { theme: string; themeAccent: string; notifications: { enabled: boolean; email: boolean; push: boolean } };
   patch: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
-  const { setTheme } = useTheme();
+  const { setTheme, setAccent } = useTheme();
 
-  const applyTheme = (mode: "dark" | "light" | "system") => {
-    let resolved: "dark" | "light";
-    if (mode === "system") {
-      resolved =
-        typeof window !== "undefined" &&
-        window.matchMedia &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
-    } else {
-      resolved = mode;
-    }
-    setTheme(resolved);
+  const applyTheme = (mode: Theme) => {
+    setTheme(mode); // provider resolves "system" (OS-reactive) + persists
     patch({ theme: mode });
+  };
+
+  const applyAccent = (id: Accent) => {
+    setAccent(id);
+    patch({ themeAccent: id });
   };
 
   return (
@@ -1219,9 +1219,13 @@ function ThemeTab({
         <div className="grid grid-cols-3 gap-2">
           {(
             [
-              { id: "dark", label: "Dark", swatch: "bg-slate-900" },
-              { id: "light", label: "Light", swatch: "bg-slate-100" },
-              { id: "system", label: "System", swatch: "bg-linear-to-br from-slate-100 to-slate-900" },
+              { id: "dark", label: "Dark", style: { backgroundColor: "#0f172a" } },
+              { id: "light", label: "Light", style: { backgroundColor: "#f1f5f9" } },
+              {
+                id: "system",
+                label: "System",
+                style: { backgroundImage: "linear-gradient(135deg,#f1f5f9 50%,#0f172a 50%)" },
+              },
             ] as const
           ).map((t) => (
             <button
@@ -1235,10 +1239,8 @@ function ThemeTab({
               )}
             >
               <span
-                className={cn(
-                  "w-10 h-10 rounded-lg border border-white/10 shadow-inner",
-                  t.swatch
-                )}
+                className="w-10 h-10 rounded-lg border border-white/10 shadow-inner"
+                style={t.style}
               />
               {t.label}
             </button>
@@ -1247,20 +1249,22 @@ function ThemeTab({
 
         <p className="text-xs text-gray-400 uppercase tracking-wider font-bold mt-4 mb-2">Accent Color</p>
         <div className="flex flex-wrap gap-2">
-          {[
-            { id: "indigo", className: "bg-indigo-500" },
-            { id: "purple", className: "bg-purple-500" },
-            { id: "emerald", className: "bg-emerald-500" },
-            { id: "amber", className: "bg-amber-500" },
-            { id: "blue", className: "bg-blue-500" },
-            { id: "rose", className: "bg-rose-500" },
-          ].map((c) => (
+          {(
+            [
+              { id: "indigo", hex: "#6366f1" },
+              { id: "purple", hex: "#a855f7" },
+              { id: "emerald", hex: "#10b981" },
+              { id: "amber", hex: "#f59e0b" },
+              { id: "blue", hex: "#3b82f6" },
+              { id: "rose", hex: "#f43f5e" },
+            ] as const
+          ).map((c) => (
             <button
               key={c.id}
-              onClick={() => patch({ themeAccent: c.id })}
+              onClick={() => applyAccent(c.id)}
+              style={{ backgroundColor: c.hex }}
               className={cn(
                 "w-9 h-9 rounded-full ring-2 ring-offset-2 ring-offset-gray-900 transition-all",
-                c.className,
                 preferences.themeAccent === c.id ? "ring-white" : "ring-transparent"
               )}
               title={c.id}

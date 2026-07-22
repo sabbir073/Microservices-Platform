@@ -1,23 +1,49 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
-type Theme = "dark" | "light" | "dark-blue";
+export type Theme = "dark" | "light" | "system";
+export type Accent = "indigo" | "purple" | "emerald" | "amber" | "blue" | "rose";
+
+const ACCENTS: Accent[] = ["indigo", "purple", "emerald", "amber", "blue", "rose"];
 
 type ThemeContextType = {
-  theme: Theme;
+  theme: Theme; // the raw preference (may be "system")
   setTheme: (theme: Theme) => void;
+  accent: Accent;
+  setAccent: (accent: Accent) => void;
 };
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
-// Use a simple ref-like pattern for mounted state
+const ACCENT_KEY = "earngpt-accent";
+
 function useHasMounted() {
   return useSyncExternalStore(
     () => () => {},
     () => true,
     () => false
   );
+}
+
+/** Resolve the raw theme preference to the concrete "dark"/"light" applied. */
+function resolveTheme(theme: Theme): "dark" | "light" {
+  if (theme === "system") {
+    if (
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-color-scheme: light)").matches
+    ) {
+      return "light";
+    }
+    return "dark";
+  }
+  return theme;
 }
 
 export function ThemeProvider({
@@ -31,35 +57,58 @@ export function ThemeProvider({
 }) {
   const hasMounted = useHasMounted();
 
-  // Initialize theme from localStorage during client-side render
   const [theme, setThemeState] = useState<Theme>(() => {
     if (typeof window !== "undefined") {
-      const storedTheme = localStorage.getItem(storageKey) as Theme | null;
-      return storedTheme || defaultTheme;
+      const stored = localStorage.getItem(storageKey) as Theme | null;
+      if (stored === "dark" || stored === "light" || stored === "system") {
+        return stored;
+      }
     }
     return defaultTheme;
   });
 
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
+  const [accent, setAccentState] = useState<Accent>(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem(storageKey, newTheme);
+      const stored = localStorage.getItem(ACCENT_KEY) as Accent | null;
+      if (stored && ACCENTS.includes(stored)) return stored;
     }
+    return "indigo";
+  });
+
+  const setTheme = (next: Theme) => {
+    setThemeState(next);
+    if (typeof window !== "undefined") localStorage.setItem(storageKey, next);
   };
 
-  // Apply theme to document
+  const setAccent = (next: Accent) => {
+    setAccentState(next);
+    if (typeof window !== "undefined") localStorage.setItem(ACCENT_KEY, next);
+  };
+
+  // Apply the resolved theme; when "system", follow OS changes live.
   useEffect(() => {
-    if (hasMounted) {
-      document.documentElement.setAttribute("data-theme", theme);
+    if (!hasMounted) return;
+    const apply = () =>
+      document.documentElement.setAttribute("data-theme", resolveTheme(theme));
+    apply();
+    if (theme === "system" && window.matchMedia) {
+      const mq = window.matchMedia("(prefers-color-scheme: dark)");
+      mq.addEventListener("change", apply);
+      return () => mq.removeEventListener("change", apply);
     }
   }, [theme, hasMounted]);
 
-  if (!hasMounted) {
-    return null;
-  }
+  // Apply the accent as a data attribute (CSS remaps the brand ramp).
+  useEffect(() => {
+    if (hasMounted) {
+      document.documentElement.setAttribute("data-accent", accent);
+    }
+  }, [accent, hasMounted]);
+
+  if (!hasMounted) return null;
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, accent, setAccent }}>
       {children}
     </ThemeContext.Provider>
   );
