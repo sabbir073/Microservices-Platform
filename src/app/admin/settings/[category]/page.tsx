@@ -70,7 +70,7 @@ const DEFAULT_SETTINGS: Record<string, Array<{ key: string; label: string; descr
     { key: "timezone", label: "Default Timezone", description: "Default timezone for the platform", type: "select", defaultValue: "UTC" },
   ],
   earning: [
-    { key: "points_to_usd", label: "Points to USD Ratio", description: "How many points equal $1 USD", type: "number", defaultValue: 100 },
+    { key: "points_per_usd", label: "Points per $1 (USD)", description: "How many points equal $1 USD — controls all earnings & withdrawals", type: "number", defaultValue: 1000 },
     { key: "min_withdrawal", label: "Minimum Withdrawal ($)", description: "Minimum amount for withdrawal", type: "number", defaultValue: 5 },
     { key: "max_withdrawal", label: "Maximum Withdrawal ($)", description: "Maximum amount per withdrawal", type: "number", defaultValue: 1000 },
     { key: "withdrawal_fee_percent", label: "Withdrawal Fee (%)", description: "Fee percentage on withdrawals", type: "number", defaultValue: 5 },

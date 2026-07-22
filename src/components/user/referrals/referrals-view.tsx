@@ -249,7 +249,7 @@ export function ReferralsView({
       </section>
 
       {/* Referral link & code */}
-      <section className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+      <section className="glass rounded-xl p-4 space-y-3">
         <div>
           <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1.5">
             Your Code
@@ -339,7 +339,7 @@ export function ReferralsView({
             }
           />
         ) : (
-          <div className="rounded-xl border border-gray-800 bg-gray-900 divide-y divide-gray-800 mt-2">
+          <div className="glass rounded-xl divide-y divide-gray-800 mt-2">
             {filteredTeam.slice(0, 50).map((m) => {
               const tone =
                 m.level === 1

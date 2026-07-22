@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { WithdrawalStatus } from "@/generated/prisma";
 import { getSubscriptionStatus } from "@/lib/packages";
+import { getPointsPerUsd } from "@/lib/economy";
 
 // GET /api/wallet - Get user wallet details
 export async function GET() {
@@ -74,7 +75,8 @@ export async function GET() {
       },
     });
 
-    const availablePoints = user.pointsBalance - Math.floor(pendingWithdrawalsAmount * 1000);
+    const pointsPerUsd = await getPointsPerUsd();
+    const availablePoints = user.pointsBalance - Math.floor(pendingWithdrawalsAmount * pointsPerUsd);
 
     const pkg = sub.effective;
 
@@ -82,7 +84,7 @@ export async function GET() {
       balance: {
         points: user.pointsBalance,
         availablePoints: Math.max(0, availablePoints),
-        cashEquivalent: user.pointsBalance / 1000,
+        cashEquivalent: user.pointsBalance / pointsPerUsd,
         pendingWithdrawal: pendingWithdrawalsAmount,
         totalEarnings: user.totalEarnings,
         totalWithdrawals: user.totalWithdrawals,
@@ -111,7 +113,7 @@ export async function GET() {
       canWithdraw:
         !!pkg?.withdrawalsEnabled &&
         user.kycStatus === "APPROVED" &&
-        availablePoints >= (pkg?.minWithdrawal ?? 5) * 1000,
+        availablePoints >= (pkg?.minWithdrawal ?? 5) * pointsPerUsd,
     });
   } catch (error) {
     console.error("Error fetching wallet:", error);

@@ -9,6 +9,7 @@ import {
   MessageSquare,
   Share2,
   TrendingUp,
+  Coins,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -69,7 +70,13 @@ export function AnalyticsPanel({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
+        <AnalyticsTile
+          icon={<Coins className="w-4 h-4" />}
+          label="Earned"
+          value={`${totals.earnings.toLocaleString()} pts`}
+          tone="gold"
+        />
         <AnalyticsTile
           icon={<ImageIcon className="w-4 h-4" />}
           label="Posts"
@@ -108,7 +115,7 @@ export function AnalyticsPanel({
         />
       </div>
 
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-5 space-y-3">
+      <div className="glass rounded-xl p-4 sm:p-5 space-y-3">
         <h3 className="text-sm font-bold text-white">Daily views (last 14 days)</h3>
         <div className="flex items-end gap-1 h-32 sm:h-40">
           {viewsByDay.map((d) => {
@@ -136,7 +143,7 @@ export function AnalyticsPanel({
         </div>
       </div>
 
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-5 space-y-3">
+      <div className="glass rounded-xl p-4 sm:p-5 space-y-3">
         <h3 className="text-sm font-bold text-white">Top performing posts</h3>
         {topPosts.length === 0 ? (
           <p className="text-sm text-gray-500 italic">No posts yet.</p>
@@ -207,7 +214,7 @@ function AnalyticsTile({
   icon: React.ReactNode;
   label: string;
   value: string;
-  tone: "indigo" | "sky" | "rose" | "purple" | "emerald" | "amber";
+  tone: "indigo" | "sky" | "rose" | "purple" | "emerald" | "amber" | "gold";
 }) {
   const tones: Record<typeof tone, string> = {
     indigo: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
@@ -216,9 +223,10 @@ function AnalyticsTile({
     purple: "text-purple-400 bg-purple-500/10 border-purple-500/20",
     emerald: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
     amber: "text-amber-400 bg-amber-500/10 border-amber-500/20",
+    gold: "text-yellow-300 bg-yellow-400/10 border-yellow-400/25",
   };
   return (
-    <div className="rounded-xl bg-gray-900 border border-gray-800 p-3 flex items-center gap-3 min-w-0">
+    <div className="glass p-3 flex items-center gap-3 min-w-0">
       <div className={cn("p-2 rounded-lg border shrink-0", tones[tone])}>{icon}</div>
       <div className="min-w-0 flex-1">
         <p className="text-[10px] text-gray-500 uppercase tracking-wider font-bold truncate">

@@ -7,6 +7,7 @@ import {
   TransactionStatus,
   NotificationType,
 } from "@/generated/prisma";
+import { getPointsPerUsd } from "@/lib/economy";
 
 // Platform fee percentage
 const PLATFORM_FEE_PERCENT = 5;
@@ -165,7 +166,8 @@ export async function POST(request: NextRequest) {
       select: { pointsBalance: true },
     });
 
-    const totalCost = Math.ceil(listing.price * 1000); // Convert to points
+    const pointsPerUsd = await getPointsPerUsd();
+    const totalCost = Math.ceil(listing.price * pointsPerUsd); // Convert to points
     const fee = listing.price * (PLATFORM_FEE_PERCENT / 100);
     const sellerAmount = listing.price - fee;
 
@@ -200,7 +202,7 @@ export async function POST(request: NextRequest) {
       prisma.user.update({
         where: { id: listing.sellerId },
         data: {
-          pointsBalance: { increment: Math.ceil(sellerAmount * 1000) },
+          pointsBalance: { increment: Math.ceil(sellerAmount * pointsPerUsd) },
           totalEarnings: { increment: sellerAmount },
         },
       }),
@@ -223,7 +225,7 @@ export async function POST(request: NextRequest) {
           userId: listing.sellerId,
           type: TransactionType.EARNING,
           status: TransactionStatus.COMPLETED,
-          points: Math.ceil(sellerAmount * 1000),
+          points: Math.ceil(sellerAmount * pointsPerUsd),
           amount: sellerAmount,
           description: `Sale: ${listing.title}`,
           reference: `sale_${listingId}`,

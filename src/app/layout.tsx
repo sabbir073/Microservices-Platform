@@ -9,6 +9,11 @@ import "@fontsource/plus-jakarta-sans/600.css";
 import "@fontsource/plus-jakarta-sans/700.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
+// Bengali (বাংলা) glyph coverage — the Latin faces above have none.
+import "@fontsource/noto-sans-bengali/400.css";
+import "@fontsource/noto-sans-bengali/500.css";
+import "@fontsource/noto-sans-bengali/600.css";
+import "@fontsource/noto-sans-bengali/700.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { Toaster } from "sonner";
 import { CookieConsent } from "@/components/user/primitives/cookie-consent";

@@ -2,8 +2,8 @@
 
 /* Font family definitions using Fontsource */
 :root {
-  --font-inter: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-plus-jakarta: "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-inter: "Inter", "Noto Sans Bengali", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-plus-jakarta: "Plus Jakarta Sans", "Noto Sans Bengali", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-jetbrains: "JetBrains Mono", "Fira Code", "Consolas", monospace;
 }
 
@@ -55,30 +55,95 @@
    every brand button, tab, gradient, ring and tint at once (Tailwind v4
    utilities read `var(--color-indigo-500)` etc.). `indigo` is the default.
    ───────────────────────────────────────────────────────────────────────── */
-html[data-accent="purple"] {
-  --color-indigo-300: #d8b4fe; --color-indigo-400: #c084fc; --color-indigo-500: #a855f7;
-  --color-indigo-600: #9333ea; --color-indigo-700: #7e22ce;
-  --color-brand: #a855f7; --color-brand-2: #c084fc;
+html[data-accent="red"] {
+  --color-indigo-300: #fca5a5; --color-indigo-400: #f87171; --color-indigo-500: #ef4444;
+  --color-indigo-600: #dc2626; --color-indigo-700: #b91c1c;
+  --color-brand: #ef4444; --color-brand-2: #f87171;
 }
-html[data-accent="emerald"] {
-  --color-indigo-300: #6ee7b7; --color-indigo-400: #34d399; --color-indigo-500: #10b981;
-  --color-indigo-600: #059669; --color-indigo-700: #047857;
-  --color-brand: #10b981; --color-brand-2: #34d399;
+html[data-accent="orange"] {
+  --color-indigo-300: #fdba74; --color-indigo-400: #fb923c; --color-indigo-500: #f97316;
+  --color-indigo-600: #ea580c; --color-indigo-700: #c2410c;
+  --color-brand: #f97316; --color-brand-2: #fb923c;
 }
 html[data-accent="amber"] {
   --color-indigo-300: #fcd34d; --color-indigo-400: #fbbf24; --color-indigo-500: #f59e0b;
   --color-indigo-600: #d97706; --color-indigo-700: #b45309;
   --color-brand: #f59e0b; --color-brand-2: #fbbf24;
 }
+html[data-accent="yellow"] {
+  --color-indigo-300: #fde047; --color-indigo-400: #facc15; --color-indigo-500: #eab308;
+  --color-indigo-600: #ca8a04; --color-indigo-700: #a16207;
+  --color-brand: #eab308; --color-brand-2: #facc15;
+}
+html[data-accent="lime"] {
+  --color-indigo-300: #bef264; --color-indigo-400: #a3e635; --color-indigo-500: #84cc16;
+  --color-indigo-600: #65a30d; --color-indigo-700: #4d7c0f;
+  --color-brand: #84cc16; --color-brand-2: #a3e635;
+}
+html[data-accent="green"] {
+  --color-indigo-300: #86efac; --color-indigo-400: #4ade80; --color-indigo-500: #22c55e;
+  --color-indigo-600: #16a34a; --color-indigo-700: #15803d;
+  --color-brand: #22c55e; --color-brand-2: #4ade80;
+}
+html[data-accent="emerald"] {
+  --color-indigo-300: #6ee7b7; --color-indigo-400: #34d399; --color-indigo-500: #10b981;
+  --color-indigo-600: #059669; --color-indigo-700: #047857;
+  --color-brand: #10b981; --color-brand-2: #34d399;
+}
+html[data-accent="teal"] {
+  --color-indigo-300: #5eead4; --color-indigo-400: #2dd4bf; --color-indigo-500: #14b8a6;
+  --color-indigo-600: #0d9488; --color-indigo-700: #0f766e;
+  --color-brand: #14b8a6; --color-brand-2: #2dd4bf;
+}
+html[data-accent="cyan"] {
+  --color-indigo-300: #67e8f9; --color-indigo-400: #22d3ee; --color-indigo-500: #06b6d4;
+  --color-indigo-600: #0891b2; --color-indigo-700: #0e7490;
+  --color-brand: #06b6d4; --color-brand-2: #22d3ee;
+}
+html[data-accent="sky"] {
+  --color-indigo-300: #7dd3fc; --color-indigo-400: #38bdf8; --color-indigo-500: #0ea5e9;
+  --color-indigo-600: #0284c7; --color-indigo-700: #0369a1;
+  --color-brand: #0ea5e9; --color-brand-2: #38bdf8;
+}
 html[data-accent="blue"] {
   --color-indigo-300: #93c5fd; --color-indigo-400: #60a5fa; --color-indigo-500: #3b82f6;
   --color-indigo-600: #2563eb; --color-indigo-700: #1d4ed8;
   --color-brand: #3b82f6; --color-brand-2: #60a5fa;
 }
+html[data-accent="violet"] {
+  --color-indigo-300: #c4b5fd; --color-indigo-400: #a78bfa; --color-indigo-500: #8b5cf6;
+  --color-indigo-600: #7c3aed; --color-indigo-700: #6d28d9;
+  --color-brand: #8b5cf6; --color-brand-2: #a78bfa;
+}
+html[data-accent="purple"] {
+  --color-indigo-300: #d8b4fe; --color-indigo-400: #c084fc; --color-indigo-500: #a855f7;
+  --color-indigo-600: #9333ea; --color-indigo-700: #7e22ce;
+  --color-brand: #a855f7; --color-brand-2: #c084fc;
+}
+html[data-accent="fuchsia"] {
+  --color-indigo-300: #f0abfc; --color-indigo-400: #e879f9; --color-indigo-500: #d946ef;
+  --color-indigo-600: #c026d3; --color-indigo-700: #a21caf;
+  --color-brand: #d946ef; --color-brand-2: #e879f9;
+}
+html[data-accent="pink"] {
+  --color-indigo-300: #f9a8d4; --color-indigo-400: #f472b6; --color-indigo-500: #ec4899;
+  --color-indigo-600: #db2777; --color-indigo-700: #be185d;
+  --color-brand: #ec4899; --color-brand-2: #f472b6;
+}
 html[data-accent="rose"] {
   --color-indigo-300: #fda4af; --color-indigo-400: #fb7185; --color-indigo-500: #f43f5e;
   --color-indigo-600: #e11d48; --color-indigo-700: #be123c;
   --color-brand: #f43f5e; --color-brand-2: #fb7185;
+}
+html[data-accent="gold"] {
+  --color-indigo-300: #f0d98a; --color-indigo-400: #e3c15a; --color-indigo-500: #d4af37;
+  --color-indigo-600: #b0891f; --color-indigo-700: #8a6b18;
+  --color-brand: #d4af37; --color-brand-2: #e3c15a;
+}
+html[data-accent="silver"] {
+  --color-indigo-300: #dfe4ec; --color-indigo-400: #c7ced9; --color-indigo-500: #a8b2c0;
+  --color-indigo-600: #8692a3; --color-indigo-700: #6b7688;
+  --color-brand: #a8b2c0; --color-brand-2: #c7ced9;
 }
 
 /* Base styles */
@@ -310,10 +375,10 @@ textarea,
    ───────────────────────────────────────────────────────────────────────── */
 @utility card {
   background-color: var(--color-gray-900);
-  border: 1px solid color-mix(in oklab, var(--color-gray-700) 55%, var(--color-gray-800));
+  border: 1px solid color-mix(in oklab, var(--color-gray-700) 62%, var(--color-gray-800));
   border-radius: 1rem;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04),
-    0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 14px 30px -14px rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+    0 1px 2px 0 rgba(0, 0, 0, 0.45), 0 18px 38px -16px rgba(0, 0, 0, 0.68);
 }
 
 @utility card-interactive {
@@ -358,13 +423,13 @@ textarea,
    panels, nav bars and popovers share one premium material. Opt-in classes.
    ───────────────────────────────────────────────────────────────────────── */
 @utility glass {
-  background-color: color-mix(in oklab, var(--color-gray-900) 70%, transparent);
-  backdrop-filter: blur(16px) saturate(140%);
-  -webkit-backdrop-filter: blur(16px) saturate(140%);
-  border: 1px solid color-mix(in oklab, var(--color-gray-600) 38%, transparent);
+  background-color: color-mix(in oklab, var(--color-gray-900) 80%, transparent);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  border: 1px solid color-mix(in oklab, var(--color-gray-500) 42%, transparent);
   border-radius: 1rem;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
-    0 1px 2px 0 rgba(0, 0, 0, 0.4), 0 16px 40px -18px rgba(0, 0, 0, 0.7);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 1px 2px 0 rgba(0, 0, 0, 0.45), 0 20px 46px -20px rgba(0, 0, 0, 0.75);
 }
 
 /* Denser variant for sticky headers / bottom nav / overlays that sit over
@@ -399,11 +464,11 @@ textarea,
 
 html[data-theme="light"] {
   color-scheme: light;
-  background-color: #f8fafc;
+  background-color: #eaeef5;
 }
 
 html[data-theme="light"] body {
-  background-color: #f8fafc;
+  background-color: #eaeef5;
   color: #0f172a;
 }
 
@@ -416,56 +481,77 @@ html[data-theme="light"] body {
    their explicit overrides further below.
    ───────────────────────────────────────────────────────────────────────── */
 html[data-theme="light"] {
+  /* Text ramp (low numbers → dark ink) */
   --color-gray-50: #0f172a;
-  --color-gray-100: #0f172a;
+  --color-gray-100: #131a26;
   --color-gray-200: #1e293b;
   --color-gray-300: #334155;
   --color-gray-400: #475569;
-  --color-gray-500: #64748b;
-  --color-gray-600: #94a3b8;
-  --color-gray-700: #cbd5e1;
-  --color-gray-800: #e2e8f0;
-  --color-gray-900: #f1f5f9;
-  --color-gray-950: #ffffff;
+  --color-gray-500: #5b6675;
+  --color-gray-600: #7a8598;
+  /* Surface ramp (high numbers → light) tuned for DEPTH:
+     page (950) off-white < raised (800) < card (900) white so cards pop. */
+  --color-gray-700: #e2e6ee;
+  --color-gray-800: #eef1f7;
+  --color-gray-900: #ffffff;
+  --color-gray-950: #eaeef5;
 
   --color-slate-50: #0f172a;
-  --color-slate-100: #0f172a;
+  --color-slate-100: #131a26;
   --color-slate-200: #1e293b;
   --color-slate-300: #334155;
   --color-slate-400: #475569;
-  --color-slate-500: #64748b;
-  --color-slate-600: #94a3b8;
-  --color-slate-700: #cbd5e1;
-  --color-slate-800: #e2e8f0;
-  --color-slate-900: #f1f5f9;
-  --color-slate-950: #ffffff;
+  --color-slate-500: #5b6675;
+  --color-slate-600: #7a8598;
+  --color-slate-700: #e2e6ee;
+  --color-slate-800: #eef1f7;
+  --color-slate-900: #ffffff;
+  --color-slate-950: #eaeef5;
 }
 
 /* Glass surfaces — light-mode material (frosted white instead of dark) */
 html[data-theme="light"] .glass {
-  background-color: rgba(255, 255, 255, 0.72) !important;
+  background-color: rgba(255, 255, 255, 0.82) !important;
   border-color: rgba(15, 23, 42, 0.08) !important;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.7),
-    0 1px 2px 0 rgba(15, 23, 42, 0.06),
-    0 16px 40px -20px rgba(15, 23, 42, 0.18) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px 0 rgba(16, 24, 40, 0.06),
+    0 18px 44px -20px rgba(16, 24, 40, 0.22) !important;
 }
 html[data-theme="light"] .glass-strong {
-  background-color: rgba(248, 250, 252, 0.85) !important;
+  background-color: rgba(255, 255, 255, 0.9) !important;
   border-color: rgba(15, 23, 42, 0.1) !important;
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.7),
-    0 8px 30px -14px rgba(15, 23, 42, 0.16) !important;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
+    0 8px 30px -14px rgba(16, 24, 40, 0.18) !important;
 }
 
-/* Surfaces — page background, cards, elevated surfaces */
-html[data-theme="light"] .bg-gray-950 { background-color: #ffffff !important; }
-html[data-theme="light"] .bg-gray-900 { background-color: #f8fafc !important; }
-html[data-theme="light"] .bg-gray-800 { background-color: #e2e8f0 !important; }
-html[data-theme="light"] .bg-gray-800\/50 { background-color: rgba(226, 232, 240, 0.5) !important; }
+/* Solid card / elevation utilities — light-tuned shadows (dark ones look muddy) */
+html[data-theme="light"] .card {
+  background-color: #ffffff;
+  border-color: #e6eaf2;
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px 0 rgba(16, 24, 40, 0.06),
+    0 16px 34px -18px rgba(16, 24, 40, 0.16);
+}
+html[data-theme="light"] .elevate-1 {
+  box-shadow: 0 1px 2px 0 rgba(16, 24, 40, 0.06),
+    0 6px 16px -8px rgba(16, 24, 40, 0.12);
+}
+html[data-theme="light"] .elevate-2 {
+  box-shadow: 0 6px 16px -8px rgba(16, 24, 40, 0.1),
+    0 20px 40px -18px rgba(16, 24, 40, 0.18);
+}
+
+/* Surfaces — page (950) off-white, cards (900) white, raised (800) tint */
+html[data-theme="light"] .bg-gray-950 { background-color: #eaeef5 !important; }
+html[data-theme="light"] .bg-gray-900 { background-color: #ffffff !important; }
+html[data-theme="light"] .bg-gray-800 { background-color: #eef1f7 !important; }
+html[data-theme="light"] .bg-gray-800\/50 { background-color: rgba(238, 241, 247, 0.7) !important; }
+html[data-theme="light"] .bg-gray-900\/50 { background-color: rgba(255, 255, 255, 0.6) !important; }
 
 /* Hover states on dark surfaces */
-html[data-theme="light"] .hover\:bg-gray-800:hover { background-color: #e2e8f0 !important; }
-html[data-theme="light"] .hover\:bg-gray-700:hover { background-color: #cbd5e1 !important; }
-html[data-theme="light"] .hover\:bg-gray-900:hover { background-color: #f1f5f9 !important; }
+html[data-theme="light"] .hover\:bg-gray-800:hover { background-color: #e6eaf2 !important; }
+html[data-theme="light"] .hover\:bg-gray-700:hover { background-color: #dce1ea !important; }
+html[data-theme="light"] .hover\:bg-gray-900:hover { background-color: #f4f6fb !important; }
 
 /* Inputs use bg-gray-950 + border-gray-700 in this codebase */
 html[data-theme="light"] input.bg-gray-950,
@@ -475,20 +561,66 @@ html[data-theme="light"] select.bg-gray-950 {
   color: #0f172a !important;
 }
 
-/* Text */
+/* Text — neutral surfaces get dark ink… */
 html[data-theme="light"] .text-white { color: #0f172a !important; }
 html[data-theme="light"] .text-gray-200 { color: #1e293b !important; }
 html[data-theme="light"] .text-gray-300 { color: #334155 !important; }
 html[data-theme="light"] .text-gray-400 { color: #475569 !important; }
-html[data-theme="light"] .text-gray-500 { color: #64748b !important; }
-html[data-theme="light"] .text-gray-600 { color: #94a3b8 !important; }
+html[data-theme="light"] .text-gray-500 { color: #5b6675 !important; }
+html[data-theme="light"] .text-gray-600 { color: #7a8598 !important; }
 html[data-theme="light"] .placeholder-gray-500::placeholder { color: #94a3b8 !important; }
 
+/* …but text on saturated colored fills / gradients MUST stay white. This wins
+   over the blanket `.text-white → dark` rule above via higher specificity. */
+html[data-theme="light"] [class*="bg-gradient"].text-white,
+html[data-theme="light"] [class*="bg-linear"].text-white,
+html[data-theme="light"] .bg-brand.text-white,
+html[data-theme="light"] .bg-indigo-500.text-white, html[data-theme="light"] .bg-indigo-600.text-white, html[data-theme="light"] .bg-indigo-700.text-white,
+html[data-theme="light"] .bg-violet-500.text-white, html[data-theme="light"] .bg-violet-600.text-white,
+html[data-theme="light"] .bg-purple-500.text-white, html[data-theme="light"] .bg-purple-600.text-white,
+html[data-theme="light"] .bg-blue-500.text-white, html[data-theme="light"] .bg-blue-600.text-white,
+html[data-theme="light"] .bg-sky-500.text-white, html[data-theme="light"] .bg-sky-600.text-white,
+html[data-theme="light"] .bg-cyan-500.text-white, html[data-theme="light"] .bg-cyan-600.text-white,
+html[data-theme="light"] .bg-teal-500.text-white, html[data-theme="light"] .bg-teal-600.text-white,
+html[data-theme="light"] .bg-emerald-500.text-white, html[data-theme="light"] .bg-emerald-600.text-white,
+html[data-theme="light"] .bg-green-500.text-white, html[data-theme="light"] .bg-green-600.text-white,
+html[data-theme="light"] .bg-lime-500.text-white, html[data-theme="light"] .bg-lime-600.text-white,
+html[data-theme="light"] .bg-amber-500.text-white, html[data-theme="light"] .bg-amber-600.text-white,
+html[data-theme="light"] .bg-orange-500.text-white, html[data-theme="light"] .bg-orange-600.text-white,
+html[data-theme="light"] .bg-yellow-500.text-white, html[data-theme="light"] .bg-yellow-600.text-white,
+html[data-theme="light"] .bg-red-500.text-white, html[data-theme="light"] .bg-red-600.text-white,
+html[data-theme="light"] .bg-rose-500.text-white, html[data-theme="light"] .bg-rose-600.text-white,
+html[data-theme="light"] .bg-pink-500.text-white, html[data-theme="light"] .bg-pink-600.text-white,
+html[data-theme="light"] .bg-fuchsia-500.text-white, html[data-theme="light"] .bg-fuchsia-600.text-white {
+  color: #ffffff !important;
+}
+
+/* Faint accent-label text (bg-hue/10 tint pills, text-hue-400 labels) is unreadable
+   on white, so darken to the -600 shade. The indigo ramp is accent-remapped, so
+   using its var keeps the chosen accent hue while gaining contrast. */
+html[data-theme="light"] .text-indigo-300, html[data-theme="light"] .text-indigo-400, html[data-theme="light"] .text-indigo-500 { color: var(--color-indigo-600) !important; }
+html[data-theme="light"] .text-violet-300, html[data-theme="light"] .text-violet-400 { color: #6d28d9 !important; }
+html[data-theme="light"] .text-purple-300, html[data-theme="light"] .text-purple-400 { color: #7e22ce !important; }
+html[data-theme="light"] .text-blue-300, html[data-theme="light"] .text-blue-400 { color: #1d4ed8 !important; }
+html[data-theme="light"] .text-sky-300, html[data-theme="light"] .text-sky-400 { color: #0369a1 !important; }
+html[data-theme="light"] .text-cyan-300, html[data-theme="light"] .text-cyan-400 { color: #0e7490 !important; }
+html[data-theme="light"] .text-teal-300, html[data-theme="light"] .text-teal-400 { color: #0f766e !important; }
+html[data-theme="light"] .text-emerald-300, html[data-theme="light"] .text-emerald-400 { color: #047857 !important; }
+html[data-theme="light"] .text-green-300, html[data-theme="light"] .text-green-400 { color: #15803d !important; }
+html[data-theme="light"] .text-lime-300, html[data-theme="light"] .text-lime-400 { color: #4d7c0f !important; }
+html[data-theme="light"] .text-amber-300, html[data-theme="light"] .text-amber-400 { color: #b45309 !important; }
+html[data-theme="light"] .text-orange-300, html[data-theme="light"] .text-orange-400 { color: #c2410c !important; }
+html[data-theme="light"] .text-yellow-300, html[data-theme="light"] .text-yellow-400 { color: #a16207 !important; }
+html[data-theme="light"] .text-red-300, html[data-theme="light"] .text-red-400 { color: #b91c1c !important; }
+html[data-theme="light"] .text-rose-300, html[data-theme="light"] .text-rose-400 { color: #be123c !important; }
+html[data-theme="light"] .text-pink-300, html[data-theme="light"] .text-pink-400 { color: #be185d !important; }
+html[data-theme="light"] .text-fuchsia-300, html[data-theme="light"] .text-fuchsia-400 { color: #a21caf !important; }
+
 /* Borders */
-html[data-theme="light"] .border-gray-800 { border-color: #e2e8f0 !important; }
-html[data-theme="light"] .border-gray-700 { border-color: #cbd5e1 !important; }
+html[data-theme="light"] .border-gray-800 { border-color: #e6eaf2 !important; }
+html[data-theme="light"] .border-gray-700 { border-color: #dce1ea !important; }
 html[data-theme="light"] .hover\:border-gray-700:hover { border-color: #cbd5e1 !important; }
-html[data-theme="light"] .divide-gray-800 > :not([hidden]) ~ :not([hidden]) { border-color: #e2e8f0 !important; }
+html[data-theme="light"] .divide-gray-800 > :not([hidden]) ~ :not([hidden]) { border-color: #e6eaf2 !important; }
 
 /* Translucent overlays — keep some contrast */
 html[data-theme="light"] .bg-black\/50 { background-color: rgba(15, 23, 42, 0.45) !important; }
@@ -497,33 +629,35 @@ html[data-theme="light"] .bg-black\/60 { background-color: rgba(15, 23, 42, 0.55
 html[data-theme="light"] .bg-black\/70 { background-color: rgba(15, 23, 42, 0.7) !important; }
 html[data-theme="light"] .bg-black\/75 { background-color: rgba(15, 23, 42, 0.75) !important; }
 
-/* Sticky tab bar — fall back from dark translucent to white */
-html[data-theme="light"] .bg-gray-950\/95 { background-color: rgba(248, 250, 252, 0.95) !important; }
+/* Sticky tab bar — fall back from dark translucent to frosted white */
+html[data-theme="light"] .bg-gray-950\/95 { background-color: rgba(255, 255, 255, 0.92) !important; }
+html[data-theme="light"] .bg-gray-950\/90 { background-color: rgba(255, 255, 255, 0.9) !important; }
+html[data-theme="light"] .bg-gray-950\/80 { background-color: rgba(234, 238, 245, 0.8) !important; }
 
 /* Slate variants — admin pages use bg-slate-* / text-slate-* / border-slate-* */
-html[data-theme="light"] .bg-slate-950 { background-color: #ffffff !important; }
-html[data-theme="light"] .bg-slate-900 { background-color: #f8fafc !important; }
-html[data-theme="light"] .bg-slate-800 { background-color: #e2e8f0 !important; }
-html[data-theme="light"] .bg-slate-700 { background-color: #cbd5e1 !important; }
-html[data-theme="light"] .bg-slate-800\/40 { background-color: rgba(226, 232, 240, 0.4) !important; }
-html[data-theme="light"] .bg-slate-800\/50 { background-color: rgba(226, 232, 240, 0.5) !important; }
+html[data-theme="light"] .bg-slate-950 { background-color: #eaeef5 !important; }
+html[data-theme="light"] .bg-slate-900 { background-color: #ffffff !important; }
+html[data-theme="light"] .bg-slate-800 { background-color: #eef1f7 !important; }
+html[data-theme="light"] .bg-slate-700 { background-color: #dce1ea !important; }
+html[data-theme="light"] .bg-slate-800\/40 { background-color: rgba(238, 241, 247, 0.6) !important; }
+html[data-theme="light"] .bg-slate-800\/50 { background-color: rgba(238, 241, 247, 0.7) !important; }
 
-html[data-theme="light"] .hover\:bg-slate-800:hover { background-color: #e2e8f0 !important; }
-html[data-theme="light"] .hover\:bg-slate-700:hover { background-color: #cbd5e1 !important; }
-html[data-theme="light"] .hover\:bg-slate-900:hover { background-color: #f1f5f9 !important; }
+html[data-theme="light"] .hover\:bg-slate-800:hover { background-color: #e6eaf2 !important; }
+html[data-theme="light"] .hover\:bg-slate-700:hover { background-color: #dce1ea !important; }
+html[data-theme="light"] .hover\:bg-slate-900:hover { background-color: #f4f6fb !important; }
 
 html[data-theme="light"] .text-slate-200 { color: #1e293b !important; }
 html[data-theme="light"] .text-slate-300 { color: #334155 !important; }
 html[data-theme="light"] .text-slate-400 { color: #475569 !important; }
-html[data-theme="light"] .text-slate-500 { color: #64748b !important; }
-html[data-theme="light"] .text-slate-600 { color: #94a3b8 !important; }
+html[data-theme="light"] .text-slate-500 { color: #5b6675 !important; }
+html[data-theme="light"] .text-slate-600 { color: #7a8598 !important; }
 
-html[data-theme="light"] .border-slate-800 { border-color: #e2e8f0 !important; }
-html[data-theme="light"] .border-slate-700 { border-color: #cbd5e1 !important; }
-html[data-theme="light"] .border-slate-600 { border-color: #94a3b8 !important; }
+html[data-theme="light"] .border-slate-800 { border-color: #e6eaf2 !important; }
+html[data-theme="light"] .border-slate-700 { border-color: #dce1ea !important; }
+html[data-theme="light"] .border-slate-600 { border-color: #cbd5e1 !important; }
 html[data-theme="light"] .hover\:border-slate-700:hover { border-color: #cbd5e1 !important; }
 
 /* Scrollbar in light mode */
-html[data-theme="light"] ::-webkit-scrollbar-track { background: #e2e8f0; }
-html[data-theme="light"] ::-webkit-scrollbar-thumb { background: #94a3b8; }
-html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+html[data-theme="light"] ::-webkit-scrollbar-track { background: #eaeef5; }
+html[data-theme="light"] ::-webkit-scrollbar-thumb { background: #c3ccd9; }
+html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #9aa6b8; }

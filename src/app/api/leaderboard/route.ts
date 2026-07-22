@@ -6,6 +6,7 @@ import {
   computeCombinedUserRank,
   getEligiblePackages,
 } from "@/lib/leaderboard";
+import { getPointsPerUsd } from "@/lib/economy";
 
 // GET /api/leaderboard - Get leaderboard data
 export async function GET(request: NextRequest) {
@@ -68,6 +69,8 @@ export async function GET(request: NextRequest) {
       });
     }
 
+    const pointsPerUsd = await getPointsPerUsd();
+
     let leaderboard: Array<{
       rank: number;
       userId: string;
@@ -108,7 +111,7 @@ export async function GET(request: NextRequest) {
         avatar: u.avatar,
         level: u.level,
         packageTier: u.package?.slug ?? "default",
-        value: Math.round(u.totalEarnings * 1000),
+        value: Math.round(u.totalEarnings * pointsPerUsd),
       }));
     } else if (type === "xp") {
       const usersRaw = await prisma.user.findMany({
@@ -229,7 +232,7 @@ export async function GET(request: NextRequest) {
         if (user) {
           let userValue = 0;
           if (type === "points") {
-            userValue = Math.round(user.totalEarnings * 1000);
+            userValue = Math.round(user.totalEarnings * pointsPerUsd);
           } else if (type === "xp") {
             userValue = user.xp;
           } else if (type === "referrals") {

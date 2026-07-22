@@ -341,7 +341,7 @@ export function PackagesView({
 
       {step === 4 && selectedPkg && (
         <div className="space-y-3">
-          <div className="rounded-2xl border border-gray-800 bg-gray-900 p-4 space-y-2 text-sm">
+          <div className="glass rounded-2xl p-4 space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-gray-400">Plan</span>
               <span className="font-bold text-white">{selectedPkg.name}</span>

@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { TransactionType, TransactionStatus, NotificationType } from "@/generated/prisma";
 import { notifyUser } from "@/lib/notify";
+import { getPointsPerUsd } from "@/lib/economy";
 
 /**
  * Process referral commissions for a user's task completion.
@@ -38,6 +39,8 @@ export async function processReferralCommissions(
         updatedAt: new Date(),
       });
     }
+
+    const pointsPerUsd = await getPointsPerUsd();
 
     let currentUser = await prisma.user.findUnique({
       where: { id: userId },
@@ -85,7 +88,8 @@ export async function processReferralCommissions(
         if (referrerConfig.commissionType === "PERCENTAGE") {
           commission = Math.floor(pointsEarned * (referrerConfig.commissionValue / 100));
         } else {
-          commission = Math.floor(referrerConfig.commissionValue * 1000);
+          // FLAT_RATE commissionValue is denominated in USD → convert to points.
+          commission = Math.floor(referrerConfig.commissionValue * pointsPerUsd);
         }
 
         if (commission > 0) {
@@ -93,7 +97,7 @@ export async function processReferralCommissions(
             where: { id: currentUser.referredById },
             data: {
               pointsBalance: { increment: commission },
-              totalEarnings: { increment: commission / 1000 },
+              totalEarnings: { increment: commission / pointsPerUsd },
             },
           });
 
@@ -103,7 +107,7 @@ export async function processReferralCommissions(
               type: TransactionType.REFERRAL,
               status: TransactionStatus.COMPLETED,
               points: commission,
-              amount: commission / 1000,
+              amount: commission / pointsPerUsd,
               description: `Level ${level} referral commission (${
                 referrerConfig.commissionType === "PERCENTAGE"
                   ? `${referrerConfig.commissionValue}%`
@@ -125,7 +129,7 @@ export async function processReferralCommissions(
               userId: currentUser.referredById,
               referredUserId: userId,
               level,
-              amount: commission / 1000,
+              amount: commission / pointsPerUsd,
               sourceType: "TASK",
               sourceId: taskId,
             },

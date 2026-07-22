@@ -11,6 +11,7 @@ import {
   resolveUserFeature,
   parseFeatureOverrides,
 } from "@/lib/packages";
+import { getPointsPerUsd } from "@/lib/economy";
 
 function utcDateKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
@@ -196,7 +197,8 @@ export async function POST() {
       ? userPackage.dailyReferralPoints
       : DEFAULT_DAILY_PER_REFERRAL;
   const points = Math.round(perReferral * referralCount);
-  const cashAmount = points / 1000;
+  const pointsPerUsd = await getPointsPerUsd();
+  const cashAmount = points / pointsPerUsd;
 
   await prisma.$transaction([
     prisma.dailyReferralClaim.create({

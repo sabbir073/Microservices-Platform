@@ -85,7 +85,7 @@ export function AchievementsView() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="bg-gray-900 rounded-2xl border border-gray-800 p-6 max-w-sm w-full text-center"
+            className="glass rounded-2xl p-6 max-w-sm w-full text-center"
           >
             <div className="text-6xl mb-3">
               {active.unlocked ? active.emoji ?? "🏆" : "🔒"}

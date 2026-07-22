@@ -341,7 +341,7 @@ export function ListingDetailView({
           </p>
 
           {/* Price block */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-2">
+          <div className="glass rounded-xl p-4 space-y-2">
             <p className="text-[11px] uppercase tracking-wider font-bold text-gray-500">
               {listing.auctionMode ? "Current price" : "Asking price"}
             </p>
@@ -549,7 +549,7 @@ export function ListingDetailView({
 
       {/* Rich description */}
       {listing.richDescription && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-5">
+        <section className="glass rounded-xl p-4 sm:p-5">
           <h3 className="text-base font-bold text-white mb-2">About this asset</h3>
           <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
             {listing.richDescription}
@@ -580,7 +580,7 @@ export function ListingDetailView({
 
       {/* Category-specific details */}
       {groupedFields.length > 0 && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-5">
+        <section className="glass rounded-xl p-4 sm:p-5">
           <h3 className="text-base font-bold text-white mb-3">
             Asset details
           </h3>
@@ -608,7 +608,7 @@ export function ListingDetailView({
 
       {/* Proof screenshots */}
       {listing.screenshots.length > 0 && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-5">
+        <section className="glass rounded-xl p-4 sm:p-5">
           <h3 className="text-base font-bold text-white mb-3 inline-flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-emerald-400" />
             Proof screenshots
@@ -631,7 +631,7 @@ export function ListingDetailView({
 
       {/* Attachments */}
       {listing.attachments.length > 0 && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-5">
+        <section className="glass rounded-xl p-4 sm:p-5">
           <h3 className="text-base font-bold text-white mb-3 inline-flex items-center gap-2">
             <Paperclip className="w-4 h-4 text-indigo-400" />
             Attachments
@@ -655,7 +655,7 @@ export function ListingDetailView({
       )}
 
       {/* Seller card */}
-      <section className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-5">
+      <section className="glass rounded-xl p-4 sm:p-5">
         <div className="flex items-center gap-3">
           <div className="w-12 h-12 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 overflow-hidden flex items-center justify-center text-white font-bold">
             {listing.seller.avatar ? (
@@ -739,7 +739,7 @@ function MetricCard({
     purple: "text-purple-300 bg-purple-500/10 border-purple-500/30",
   };
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-3">
+    <div className="glass rounded-xl p-3">
       <div className="flex items-center gap-2 mb-1">
         <span className={cn("p-1.5 rounded-md border", tones[tone])}>{icon}</span>
         <span className="text-[10px] uppercase tracking-wider font-bold text-gray-500">

@@ -9,9 +9,9 @@ interface BalanceCardProps {
   withdrawHref?: string;
   className?: string;
   compact?: boolean;
+  /** Admin-configurable points-per-$1 rate (default 1000). */
+  pointsPerUsd?: number;
 }
-
-const PT_TO_USD = 0.001;
 
 export function BalanceCard({
   points,
@@ -20,8 +20,9 @@ export function BalanceCard({
   withdrawHref = "/withdrawal",
   className,
   compact = false,
+  pointsPerUsd = 1000,
 }: BalanceCardProps) {
-  const ptInUsd = points * PT_TO_USD;
+  const ptInUsd = points / pointsPerUsd;
   return (
     <div
       className={cn(

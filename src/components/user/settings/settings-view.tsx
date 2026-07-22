@@ -11,12 +11,22 @@ import {
   Shield,
   Globe,
   Moon,
+  Sun,
+  Monitor,
   Mail,
   Key,
   ChevronRight,
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  useTheme,
+  ACCENTS,
+  ACCENT_HEX,
+  ACCENT_GRADIENT,
+  type Theme,
+} from "@/components/providers/theme-provider";
+import { cn } from "@/lib/utils";
 
 interface Props {
   email: string | null;
@@ -36,7 +46,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-6">
+    <div className="glass rounded-2xl p-4 sm:p-6">
       <div className="mb-6">
         <h3 className="font-semibold text-white">{title}</h3>
         {description && <p className="text-sm text-gray-500 mt-1">{description}</p>}
@@ -77,6 +87,7 @@ export function SettingsView({
   language: languageInit,
 }: Props) {
   const router = useRouter();
+  const { theme, setTheme, accent, setAccent } = useTheme();
   const [emailNotif, setEmailNotif] = useState(emailNotifInit);
   const [pushNotif, setPushNotif] = useState(pushNotifInit);
   const [twoFA, setTwoFA] = useState(twoFAInit);
@@ -128,6 +139,14 @@ export function SettingsView({
     const prev = language;
     setLanguage(v);
     if (!(await patchProfile({ language: v }))) setLanguage(prev);
+  };
+  const applyTheme = (mode: Theme) => {
+    setTheme(mode);
+    patchProfile({ theme: mode });
+  };
+  const applyAccent = (id: (typeof ACCENTS)[number]) => {
+    setAccent(id);
+    patchProfile({ themeAccent: id });
   };
 
   const changePassword = async () => {
@@ -383,14 +402,58 @@ export function SettingsView({
           <div id="preferences">
             <Section title="Preferences" description="Customize your experience">
               <div className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
+                <div className="space-y-3">
                   <div className="flex items-center gap-4">
                     <div className="p-2 bg-gray-800 rounded-lg">
                       <Moon className="w-5 h-5 text-gray-400" />
                     </div>
                     <div>
                       <p className="font-medium text-white">Theme</p>
-                      <p className="text-sm text-gray-500">Change it from the top bar toggle</p>
+                      <p className="text-sm text-gray-500">Choose your appearance & accent color</p>
+                    </div>
+                  </div>
+                  {/* Mode segmented control */}
+                  <div className="grid grid-cols-3 gap-2">
+                    {(
+                      [
+                        { id: "dark", label: "Dark", Icon: Moon },
+                        { id: "light", label: "Light", Icon: Sun },
+                        { id: "system", label: "System", Icon: Monitor },
+                      ] as const
+                    ).map(({ id, label, Icon }) => (
+                      <button
+                        key={id}
+                        onClick={() => applyTheme(id)}
+                        className={cn(
+                          "flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-sm font-medium transition-all",
+                          theme === id
+                            ? "border-indigo-500 bg-indigo-500/10 text-white"
+                            : "border-gray-800 bg-gray-800/40 text-gray-400 hover:text-white hover:border-gray-700"
+                        )}
+                      >
+                        <Icon className="w-5 h-5" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Accent swatches */}
+                  <div>
+                    <p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-2">
+                      Accent Color
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {ACCENTS.map((id) => (
+                        <button
+                          key={id}
+                          onClick={() => applyAccent(id)}
+                          style={{ background: ACCENT_GRADIENT[id] ?? ACCENT_HEX[id] }}
+                          className={cn(
+                            "w-8 h-8 rounded-full ring-2 ring-offset-2 ring-offset-gray-900 transition-all capitalize",
+                            accent === id ? "ring-white" : "ring-transparent hover:ring-white/40"
+                          )}
+                          title={id}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>

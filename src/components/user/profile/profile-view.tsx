@@ -61,6 +61,9 @@ import { LifetimeStatsGroup } from "@/components/user/profile/profile-stat-group
 import { LocationSelector } from "@/components/shared/location-selector";
 import {
   useTheme,
+  ACCENTS,
+  ACCENT_HEX,
+  ACCENT_GRADIENT,
   type Theme,
   type Accent,
 } from "@/components/providers/theme-provider";
@@ -165,6 +168,8 @@ interface ProfileResponse {
     marketplacePurchases: number;
     marketplaceSales: number;
     marketplaceSalesAmount: number;
+    socialEarningsPoints: number;
+    socialEarningsUsd: number;
     lifetime: {
       totalEarnedPoints: number | null;
       totalEarnedUsd: number | null;
@@ -445,7 +450,7 @@ export function ProfileView() {
 
       {/* Profile Header */}
       <div className="relative rounded-2xl overflow-hidden glass">
-        <div className="relative h-40 sm:h-56 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
+        <div className="relative h-36 sm:h-48 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
           {profile.coverPhoto && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={profile.coverPhoto} alt="" className="w-full h-full object-cover" />
@@ -575,42 +580,61 @@ export function ProfileView() {
             </button>
           </div>
 
-          {/* Inline social stats — Facebook style */}
-          <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-gray-800">
+          {/* Inline social stats — compact Facebook-style counter row */}
+          <div className="grid grid-cols-3 gap-1 mt-3 pt-3 border-t border-gray-800">
             <button
               onClick={() => setPrimaryTab("posts")}
-              className="text-center hover:bg-gray-800/50 rounded-lg py-2 transition-colors"
+              className="flex items-baseline justify-center gap-1.5 hover:bg-gray-800/50 rounded-lg py-1.5 transition-colors"
             >
-              <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+              <span className="text-base font-bold text-white tabular-nums">
                 {stats.postsCount.toLocaleString()}
-              </p>
-              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mt-0.5">
-                Posts
-              </p>
+              </span>
+              <span className="text-[11px] text-gray-400 font-medium">Posts</span>
             </button>
             <button
               onClick={() => setPrimaryTab("followers")}
-              className="text-center hover:bg-gray-800/50 rounded-lg py-2 transition-colors border-x border-gray-800"
+              className="flex items-baseline justify-center gap-1.5 hover:bg-gray-800/50 rounded-lg py-1.5 transition-colors border-x border-gray-800"
             >
-              <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+              <span className="text-base font-bold text-white tabular-nums">
                 {stats.followersCount.toLocaleString()}
-              </p>
-              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mt-0.5">
-                Followers
-              </p>
+              </span>
+              <span className="text-[11px] text-gray-400 font-medium">Followers</span>
             </button>
             <button
               onClick={() => setPrimaryTab("following")}
-              className="text-center hover:bg-gray-800/50 rounded-lg py-2 transition-colors"
+              className="flex items-baseline justify-center gap-1.5 hover:bg-gray-800/50 rounded-lg py-1.5 transition-colors"
             >
-              <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+              <span className="text-base font-bold text-white tabular-nums">
                 {stats.followingCount.toLocaleString()}
-              </p>
-              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mt-0.5">
-                Following
-              </p>
+              </span>
+              <span className="text-[11px] text-gray-400 font-medium">Following</span>
             </button>
           </div>
+
+          {/* Social earnings highlight — points earned from posts & engagement */}
+          <button
+            onClick={() => setPrimaryTab("analytics")}
+            className="w-full mt-3 flex items-center gap-3 rounded-xl px-3 py-2.5 bg-amber-500/10 border border-amber-500/25 hover:bg-amber-500/15 transition-colors text-left"
+          >
+            <div className="p-1.5 rounded-lg bg-amber-500/15 text-amber-400 shrink-0">
+              <Coins className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] uppercase tracking-wider font-bold text-amber-400/90">
+                Social Earnings
+              </p>
+              <p className="text-xs text-gray-400 -mt-0.5">From posts &amp; engagement</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-sm font-extrabold text-white tabular-nums leading-tight">
+                {stats.socialEarningsPoints.toLocaleString()}{" "}
+                <span className="text-[11px] font-semibold text-gray-400">pts</span>
+              </p>
+              <p className="text-[11px] text-gray-500 tabular-nums leading-tight">
+                ≈ ${stats.socialEarningsUsd.toFixed(2)}
+              </p>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -1249,25 +1273,16 @@ function ThemeTab({
 
         <p className="text-xs text-gray-400 uppercase tracking-wider font-bold mt-4 mb-2">Accent Color</p>
         <div className="flex flex-wrap gap-2">
-          {(
-            [
-              { id: "indigo", hex: "#6366f1" },
-              { id: "purple", hex: "#a855f7" },
-              { id: "emerald", hex: "#10b981" },
-              { id: "amber", hex: "#f59e0b" },
-              { id: "blue", hex: "#3b82f6" },
-              { id: "rose", hex: "#f43f5e" },
-            ] as const
-          ).map((c) => (
+          {ACCENTS.map((id) => (
             <button
-              key={c.id}
-              onClick={() => applyAccent(c.id)}
-              style={{ backgroundColor: c.hex }}
+              key={id}
+              onClick={() => applyAccent(id)}
+              style={{ background: ACCENT_GRADIENT[id] ?? ACCENT_HEX[id] }}
               className={cn(
-                "w-9 h-9 rounded-full ring-2 ring-offset-2 ring-offset-gray-900 transition-all",
-                preferences.themeAccent === c.id ? "ring-white" : "ring-transparent"
+                "w-9 h-9 rounded-full ring-2 ring-offset-2 ring-offset-gray-900 transition-all capitalize",
+                preferences.themeAccent === id ? "ring-white" : "ring-transparent"
               )}
-              title={c.id}
+              title={id}
             />
           ))}
         </div>

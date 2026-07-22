@@ -112,7 +112,7 @@ export function LeaderboardView({ currentUserId }: { currentUserId: string }) {
           <Loader2 className="w-6 h-6 text-gray-500 animate-spin" />
         </div>
       ) : rows.length === 0 ? (
-        <div className="bg-gray-900 rounded-xl border border-gray-800 py-16 text-center text-gray-500">
+        <div className="glass rounded-xl py-16 text-center text-gray-500">
           <Trophy className="w-12 h-12 mx-auto mb-3 opacity-50" />
           <p>No rankings yet</p>
           <p className="text-sm mt-1">Complete tasks to appear on the leaderboard!</p>
@@ -126,7 +126,7 @@ export function LeaderboardView({ currentUserId }: { currentUserId: string }) {
                 <div
                   key={row.userId}
                   className={cn(
-                    "bg-gray-900 rounded-xl border border-gray-800 p-4 sm:p-6 text-center",
+                    "glass rounded-xl p-4 sm:p-6 text-center",
                     i === 1 ? "-mt-4" : "mt-4"
                   )}
                 >
@@ -153,7 +153,7 @@ export function LeaderboardView({ currentUserId }: { currentUserId: string }) {
                 <div
                   key={i}
                   className={cn(
-                    "bg-gray-900/50 rounded-xl border border-gray-800/60 p-4 sm:p-6 text-center",
+                    "glass rounded-xl p-4 sm:p-6 text-center",
                     i === 1 ? "-mt-4" : "mt-4"
                   )}
                 >
@@ -182,7 +182,7 @@ export function LeaderboardView({ currentUserId }: { currentUserId: string }) {
           )}
 
           {/* Full table */}
-          <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+          <div className="glass rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>

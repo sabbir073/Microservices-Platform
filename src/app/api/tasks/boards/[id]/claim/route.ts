@@ -8,6 +8,7 @@ import {
   TransactionStatus,
   NotificationType,
 } from "@/generated/prisma/client";
+import { getPointsPerUsd } from "@/lib/economy";
 
 export async function POST(
   _req: Request,
@@ -112,6 +113,7 @@ export async function POST(
 
   const points = board.pointsReward ?? 0;
   const xp = board.xpReward ?? 0;
+  const pointsPerUsd = await getPointsPerUsd();
 
   const [, , tx, claim] = await prisma.$transaction([
     prisma.user.update({
@@ -119,7 +121,7 @@ export async function POST(
       data: {
         pointsBalance: { increment: points },
         xp: { increment: xp },
-        totalEarnings: { increment: points / 1000 },
+        totalEarnings: { increment: points / pointsPerUsd },
       },
     }),
     prisma.notification.create({
@@ -137,7 +139,7 @@ export async function POST(
         type: TransactionType.EARNING,
         status: TransactionStatus.COMPLETED,
         points,
-        amount: points / 1000,
+        amount: points / pointsPerUsd,
         description: `Board reward: ${board.title}`,
         reference,
         metadata: { boardId: board.id, xp },

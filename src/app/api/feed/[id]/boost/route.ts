@@ -5,6 +5,7 @@ import {
   TransactionType,
   TransactionStatus,
 } from "@/generated/prisma/client";
+import { getPointsPerUsd } from "@/lib/economy";
 
 const BOOST_COST_POINTS = 100;
 
@@ -50,6 +51,7 @@ export async function POST(
     );
   }
 
+  const pointsPerUsd = await getPointsPerUsd();
   await prisma.$transaction([
     prisma.user.update({
       where: { id: userId },
@@ -65,7 +67,7 @@ export async function POST(
         type: TransactionType.PURCHASE,
         status: TransactionStatus.COMPLETED,
         points: -BOOST_COST_POINTS,
-        amount: BOOST_COST_POINTS / 1000,
+        amount: BOOST_COST_POINTS / pointsPerUsd,
         description: "Boosted social post",
         reference: `boost_${id}_${Date.now()}`,
         metadata: { postId: id },

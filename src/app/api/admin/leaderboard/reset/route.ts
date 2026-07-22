@@ -12,6 +12,7 @@ import {
   computeCombinedTopUsers,
   getEligiblePackages,
 } from "@/lib/leaderboard";
+import { getPointsPerUsd } from "@/lib/economy";
 
 const schema = z.object({
   period: z.enum(["daily", "weekly", "monthly"]),
@@ -86,6 +87,7 @@ async function topUsers(metric: Metric, take: number, eligibleSet: Set<string>) 
   ) => rows.filter((u) => u.package?.slug && eligibleSet.has(u.package.slug.toUpperCase())).slice(0, take);
 
   if (metric === "POINTS_EARNED") {
+    const pointsPerUsd = await getPointsPerUsd();
     const usersRaw = await prisma.user.findMany({
       orderBy: { totalEarnings: "desc" },
       take: POOL,
@@ -105,7 +107,7 @@ async function topUsers(metric: Metric, take: number, eligibleSet: Set<string>) 
     return filterByEligibility(users).map((u) => ({
       userId: u.id,
       name: u.name,
-      value: Math.round(u.totalEarnings * 1000),
+      value: Math.round(u.totalEarnings * pointsPerUsd),
     }));
   }
   if (metric === "XP_EARNED") {
@@ -246,6 +248,7 @@ export async function POST(request: NextRequest) {
   }
 
   const prizes = distributePrizes(totalPrize, winners.length, customDistribution);
+  const pointsPerUsd = await getPointsPerUsd();
   const cycleId = `${Date.now()}_${period}`;
   const cycledAt = new Date();
 
@@ -258,7 +261,7 @@ export async function POST(request: NextRequest) {
         where: { id: w.userId },
         data: {
           pointsBalance: { increment: points },
-          totalEarnings: { increment: points / 1000 },
+          totalEarnings: { increment: points / pointsPerUsd },
         },
       }),
       prisma.transaction.create({
@@ -267,7 +270,7 @@ export async function POST(request: NextRequest) {
           type: TransactionType.EARNING,
           status: TransactionStatus.COMPLETED,
           points,
-          amount: points / 1000,
+          amount: points / pointsPerUsd,
           description: `Leaderboard prize: ${period} #${i + 1}`,
           reference: `leaderboard_${cycleId}_${w.userId}`,
           metadata: {

@@ -7,6 +7,7 @@ import {
   NotificationType,
 } from "@/generated/prisma";
 import { getEffectivePackage } from "@/lib/packages";
+import { getPointsPerUsd } from "@/lib/economy";
 
 // Daily reward configuration (points per streak day)
 const DAILY_REWARDS = [
@@ -170,6 +171,7 @@ export async function POST() {
 
     const pointsEarned = reward.points;
     const xpEarned = Math.round(reward.xp * xpMultiplier);
+    const pointsPerUsd = await getPointsPerUsd();
 
     // Update user and create transaction
     const [updatedUser] = await prisma.$transaction([
@@ -188,7 +190,7 @@ export async function POST() {
           type: TransactionType.EARNING,
           status: TransactionStatus.COMPLETED,
           points: pointsEarned,
-          amount: pointsEarned / 1000,
+          amount: pointsEarned / pointsPerUsd,
           description: `Daily reward (Day ${rewardDay})`,
           reference: `daily_${Date.now()}`,
           metadata: {
@@ -289,6 +291,7 @@ async function claimMysteryBox(
 
   // Apply bonus
   if (selectedBonus.type === "points") {
+    const pointsPerUsd = await getPointsPerUsd();
     await prisma.user.update({
       where: { id: userId },
       data: { pointsBalance: { increment: value } },
@@ -300,7 +303,7 @@ async function claimMysteryBox(
         type: TransactionType.BONUS,
         status: TransactionStatus.COMPLETED,
         points: value,
-        amount: value / 1000,
+        amount: value / pointsPerUsd,
         description: "Mystery Box reward",
         reference: `mystery_${Date.now()}`,
       },

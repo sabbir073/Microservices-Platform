@@ -6,6 +6,7 @@ import {
   TransactionStatus,
   NotificationType,
 } from "@/generated/prisma/client";
+import { getPointsPerUsd } from "@/lib/economy";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -108,6 +109,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     pointsAwarded = quiz.pointsReward;
     xpAwarded = quiz.xpReward;
     const cash = quiz.cashReward || 0;
+    const pointsPerUsd = await getPointsPerUsd();
     await prisma.$transaction([
       prisma.user.update({
         where: { id: userId },
@@ -115,7 +117,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           pointsBalance: { increment: pointsAwarded },
           xp: { increment: xpAwarded },
           cashBalance: { increment: cash },
-          totalEarnings: { increment: pointsAwarded / 1000 + cash },
+          totalEarnings: { increment: pointsAwarded / pointsPerUsd + cash },
         },
       }),
       prisma.transaction.create({
@@ -124,7 +126,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           type: TransactionType.EARNING,
           status: TransactionStatus.COMPLETED,
           points: pointsAwarded,
-          amount: pointsAwarded / 1000 + cash,
+          amount: pointsAwarded / pointsPerUsd + cash,
           description: `Passed quiz: ${quiz.title}`,
           reference: `quiz_${id}_${attempt.id}`,
           metadata: { quizId: id, attemptId: attempt.id, percent, xp: xpAwarded, cash },
