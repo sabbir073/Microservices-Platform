@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@/generated/prisma/client";
 import { z } from "zod";
+import { userCanFeature } from "@/lib/packages";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -72,6 +73,13 @@ export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Selling is an admin-granted capability.
+  if (!(await userCanFeature(session.user.id, "sellMarketplace"))) {
+    return NextResponse.json(
+      { error: "Selling on the marketplace isn't enabled for your account." },
+      { status: 403 }
+    );
   }
   const body = await request.json();
   const v = createSchema.safeParse(body);

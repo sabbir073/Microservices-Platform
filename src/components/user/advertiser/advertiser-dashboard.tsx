@@ -41,6 +41,8 @@ export function AdvertiserDashboard() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [budget, setBudget] = useState(50);
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = async () => {
@@ -72,7 +74,13 @@ export function AdvertiserDashboard() {
       const res = await fetch("/api/advertiser/campaigns", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, budget }),
+        body: JSON.stringify({
+          title,
+          description,
+          budget,
+          startAt: startAt ? new Date(startAt).toISOString() : null,
+          endAt: endAt ? new Date(endAt).toISOString() : null,
+        }),
       });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
@@ -83,6 +91,8 @@ export function AdvertiserDashboard() {
       setTitle("");
       setDescription("");
       setBudget(50);
+      setStartAt("");
+      setEndAt("");
       load();
     } catch (err) {
       toast.error("Failed", {
@@ -135,7 +145,7 @@ export function AdvertiserDashboard() {
             <Target className="w-6 h-6" />
           </div>
           <div className="flex-1 min-w-0">
-            <h1 className="text-lg font-bold text-white">Advertiser</h1>
+            <h1 className="text-lg font-bold text-white">Create Ad</h1>
             <p className="text-xs text-gray-400">Promote your posts &amp; run native feed ads.</p>
           </div>
           <button
@@ -316,6 +326,30 @@ export function AdvertiserDashboard() {
               onChange={(e) => setBudget(Number(e.target.value))}
               className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
             />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-400 mb-1.5">
+                Start date (optional)
+              </label>
+              <input
+                type="date"
+                value={startAt}
+                onChange={(e) => setStartAt(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1.5">
+                End date (optional)
+              </label>
+              <input
+                type="date"
+                value={endAt}
+                onChange={(e) => setEndAt(e.target.value)}
+                className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+              />
+            </div>
           </div>
         </div>
       </BottomSheet>

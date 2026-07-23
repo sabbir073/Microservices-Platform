@@ -6,6 +6,7 @@ import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { QuizPlayer } from "./quiz-player";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { cn } from "@/lib/utils";
 
 interface QuizRow {
@@ -54,6 +55,8 @@ export function QuizTasksView() {
       <h1 className="text-xl font-bold text-white flex items-center gap-2">
         🧠 Quiz Tasks
       </h1>
+
+      <AdRenderer placement="TASK_LIST" />
 
       {loading && <ListSkeleton rows={3} />}
 

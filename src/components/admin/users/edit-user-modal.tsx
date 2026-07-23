@@ -1110,10 +1110,14 @@ export function UserEditForm({
                 Override this user&apos;s feature access. <b>Default</b> follows
                 their plan; <b>On</b>/<b>Off</b> force it regardless of package.
               </p>
-              {(["section", "task"] as const).map((grp) => (
+              {(["creator", "section", "task"] as const).map((grp) => (
                 <div key={grp} className="space-y-2">
                   <p className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">
-                    {grp === "section" ? "Sections" : "Task categories"}
+                    {grp === "creator"
+                      ? "Creator Access"
+                      : grp === "section"
+                        ? "Sections"
+                        : "Task categories"}
                   </p>
                   {FEATURES.filter((f) => f.group === grp).map((f) => {
                     const cur = form.featureOverrides[f.key];

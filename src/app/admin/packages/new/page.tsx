@@ -41,6 +41,11 @@ export default async function NewPackagePage() {
     gamesEnabled: true,
     adFree: false,
 
+    createTasksEnabled: false,
+    sellCoursesEnabled: false,
+    sellMarketplaceEnabled: false,
+    agencyModeEnabled: false,
+
     socialTasksEnabled: true,
     proxyTasksEnabled: true,
     articleTasksEnabled: true,

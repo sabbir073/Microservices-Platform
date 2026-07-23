@@ -17,6 +17,11 @@ import {
   ShoppingBag,
   Video,
   Award,
+  LayoutDashboard,
+  Brain,
+  GraduationCap,
+  Package,
+  Megaphone,
   type LucideIcon,
 } from "lucide-react";
 
@@ -54,6 +59,11 @@ export const QUICK_EARN_ICONS: Record<string, LucideIcon> = {
   shopping: ShoppingBag,
   video: Video,
   award: Award,
+  layoutDashboard: LayoutDashboard,
+  brain: Brain,
+  graduation: GraduationCap,
+  package: Package,
+  megaphone: Megaphone,
 };
 
 export const ICON_OPTIONS: { key: string; label: string }[] = [
@@ -75,6 +85,11 @@ export const ICON_OPTIONS: { key: string; label: string }[] = [
   { key: "shopping", label: "Shopping" },
   { key: "video", label: "Video" },
   { key: "award", label: "Award" },
+  { key: "layoutDashboard", label: "Dashboard" },
+  { key: "brain", label: "Brain" },
+  { key: "graduation", label: "Graduation" },
+  { key: "package", label: "Package" },
+  { key: "megaphone", label: "Megaphone" },
 ];
 
 /** Color tone the admin can pick (key → Tailwind text class). */
@@ -98,12 +113,18 @@ export const COLOR_OPTIONS = Object.keys(COLOR_CLASSES).map((key) => ({
 
 /** The shipped default tiles (used when no admin config exists). */
 export const DEFAULT_QUICK_EARN: QuickEarnTile[] = [
-  { id: "qe-watch", label: "Watch Ads", href: "/watch-ads", icon: "playCircle", color: "rose", enabled: true },
-  { id: "qe-tasks", label: "Tasks", href: "/tasks", icon: "zap", color: "indigo", enabled: true },
+  { id: "qe-dashboard", label: "Dashboard", href: "/dashboard", icon: "layoutDashboard", color: "indigo", enabled: true },
+  { id: "qe-mission", label: "Mission", href: "/daily-mission", icon: "target", color: "violet", enabled: true },
+  { id: "qe-tasks", label: "Task", href: "/tasks", icon: "zap", color: "sky", enabled: true },
+  { id: "qe-leaderboard", label: "Leaderboard", href: "/leaderboard", icon: "trophy", color: "amber", enabled: true },
+  { id: "qe-quizzes", label: "Quizzes", href: "/quizzes", icon: "brain", color: "purple", enabled: true },
+  { id: "qe-lottery", label: "Lottery", href: "/lottery", icon: "ticket", color: "rose", enabled: true },
+  { id: "qe-referral", label: "My Team", href: "/referrals", icon: "users", color: "emerald", enabled: true },
+  { id: "qe-course", label: "Course", href: "/courses", icon: "graduation", color: "cyan", enabled: true },
+  { id: "qe-marketplace", label: "Marketplace", href: "/marketplace", icon: "shopping", color: "pink", enabled: true },
+  { id: "qe-packages", label: "Packages", href: "/packages", icon: "package", color: "orange", enabled: true },
+  { id: "qe-advertiser", label: "Create Ad", href: "/advertiser", icon: "megaphone", color: "indigo", enabled: true },
   { id: "qe-games", label: "Games", href: "/games", icon: "gamepad", color: "violet", enabled: true },
-  { id: "qe-lottery", label: "Lottery", href: "/lottery", icon: "ticket", color: "amber", enabled: true },
-  { id: "qe-offers", label: "Offers", href: "/offerwalls", icon: "layers", color: "cyan", enabled: true },
-  { id: "qe-earn", label: "Earn Hub", href: "/earn", icon: "coins", color: "emerald", enabled: true },
 ];
 
 /** Coerce stored data into valid tiles; falls back to defaults when empty. */

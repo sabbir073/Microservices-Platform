@@ -18,6 +18,7 @@ import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
 import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -252,6 +253,8 @@ export function ProxyTasksView() {
       <h1 className="text-xl font-bold text-white flex items-center gap-2">
         🔗 Proxy Tasks
       </h1>
+
+      <AdRenderer placement="TASK_LIST" />
 
       <div className="rounded-xl bg-indigo-500/5 border border-indigo-500/20 p-3 flex items-start gap-2">
         <ShieldCheck className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />

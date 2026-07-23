@@ -6,6 +6,8 @@ import {
   type ReferralUser,
 } from "@/components/user/referrals/referrals-view";
 
+export const metadata = { title: "My Team" };
+
 export default async function ReferralsPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");

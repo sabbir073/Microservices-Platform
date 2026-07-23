@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ProofImageUpload } from "@/components/user/tasks/proof-image-upload";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { type AppInstallConfig } from "@/lib/app-install-tasks";
 
 interface AppInstallTask {
@@ -232,6 +233,8 @@ export function AppInstallDetailView({ taskId }: { taskId: string }) {
           )}
         </div>
       </div>
+
+      <AdRenderer placement="TASK_START" />
 
       {/* Steps */}
       {steps.length > 0 && (

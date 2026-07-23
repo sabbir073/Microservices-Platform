@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveAdSize } from "@/lib/ad-sizes";
@@ -45,40 +45,110 @@ interface AdRendererProps {
   className?: string;
 }
 
+// How many recently-shown ad ids to remember per placement, so reloads +
+// auto-rotation cycle evenly across the pool instead of bouncing A→B→A.
+const RECENT_KEEP = 4;
+
 export function AdRenderer({ placement, className }: AdRendererProps) {
   const [ad, setAd] = useState<AdResponse | null>(null);
   const [error, setError] = useState(false);
+  const [fading, setFading] = useState(false);
+  // Rotation interval (ms) reported by the server; 0 = don't auto-rotate
+  // (single-ad space or ad-free viewer).
+  const rotateMsRef = useRef(0);
+
+  // Fetch an ad, excluding the recently-shown ids kept in sessionStorage. On
+  // success it records the new id and updates the rotation interval.
+  const loadAd = useCallback(
+    async (opts?: { rotate?: boolean; initial?: boolean }) => {
+      const storeKey = `ad-recent-${placement}`;
+      let recent: string[] = [];
+      try {
+        recent = JSON.parse(sessionStorage.getItem(storeKey) ?? "[]");
+        if (!Array.isArray(recent)) recent = [];
+      } catch {
+        recent = [];
+      }
+      try {
+        const qs = recent.length
+          ? `&exclude=${encodeURIComponent(recent.join(","))}`
+          : "";
+        const res = await fetch(`/api/ads/serve?placement=${placement}${qs}`);
+        const data = res.ok ? await res.json() : null;
+        if (!data?.ad) {
+          // Only hide the slot when the very first load finds nothing; a failed
+          // rotation keeps the current creative on screen.
+          if (opts?.initial) setError(true);
+          return false;
+        }
+        rotateMsRef.current =
+          data.poolSize > 1 && typeof data.rotateMs === "number"
+            ? data.rotateMs
+            : 0;
+        // Smoothly swap when this is a rotation (not the first paint).
+        if (opts?.rotate) {
+          setFading(true);
+          await new Promise((r) => setTimeout(r, 180));
+        }
+        setAd(data.ad);
+        setFading(false);
+        try {
+          const next = [data.ad.id, ...recent.filter((id) => id !== data.ad.id)]
+            .slice(0, RECENT_KEEP);
+          sessionStorage.setItem(storeKey, JSON.stringify(next));
+        } catch {
+          /* ignore */
+        }
+        return true;
+      } catch {
+        if (opts?.initial) setError(true);
+        return false;
+      }
+    },
+    [placement]
+  );
 
   useEffect(() => {
     let cancelled = false;
-    // Exclude the ad shown last time in this placement (this session) so a
-    // reload / re-navigate rotates to a different creative when possible.
-    const storeKey = `ad-last-${placement}`;
-    let last: string | null = null;
-    try {
-      last = sessionStorage.getItem(storeKey);
-    } catch {
-      /* sessionStorage unavailable */
-    }
-    fetch(
-      `/api/ads/serve?placement=${placement}${last ? `&exclude=${encodeURIComponent(last)}` : ""}`
-    )
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!cancelled && data?.ad) {
-          setAd(data.ad);
-          try {
-            sessionStorage.setItem(storeKey, data.ad.id);
-          } catch {
-            /* ignore */
-          }
-        }
-      })
-      .catch(() => !cancelled && setError(true));
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    const startTimer = () => {
+      if (timer || rotateMsRef.current <= 0) return;
+      timer = setInterval(() => {
+        if (!document.hidden) void loadAd({ rotate: true });
+      }, rotateMsRef.current);
+    };
+    const stopTimer = () => {
+      if (timer) {
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+    // Pause rotation on hidden tabs (don't churn impressions); resume + rotate
+    // once on return.
+    const onVisibility = () => {
+      if (document.hidden) {
+        stopTimer();
+      } else {
+        void loadAd({ rotate: true }).then(() => !cancelled && startTimer());
+      }
+    };
+
+    // loadAd only setState()s after an `await fetch` (a real async boundary), so
+    // this is not a synchronous cascading render — the rule is a false positive.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadAd({ initial: true }).then((ok) => {
+      if (cancelled || !ok) return;
+      startTimer();
+      document.addEventListener("visibilitychange", onVisibility);
+    });
+
     return () => {
       cancelled = true;
+      stopTimer();
+      document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, [placement]);
+  }, [loadAd]);
 
   if (error || !ad) return null;
 
@@ -92,7 +162,12 @@ export function AdRenderer({ placement, className }: AdRendererProps) {
   const mediaStyle = dim
     ? { aspectRatio: `${dim.w} / ${dim.h}` }
     : undefined;
-  const outerStyle = dim ? { maxWidth: dim.w } : undefined;
+  // Merge the rotation fade into the outer style.
+  const outerStyle = {
+    ...(dim ? { maxWidth: dim.w } : {}),
+    opacity: fading ? 0 : 1,
+    transition: "opacity 180ms ease",
+  } as const;
 
   // HTML / ad-network tag creative — run inside a sandboxed iframe so injected
   // <script> actually executes (dangerouslySetInnerHTML never runs scripts).

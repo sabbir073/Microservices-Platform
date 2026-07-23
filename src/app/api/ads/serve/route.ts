@@ -4,6 +4,8 @@ import { auth } from "@/lib/auth";
 import { getEffectivePackage } from "@/lib/packages";
 import { getAdClickCost } from "@/lib/ad-billing";
 import { matchesTargeting, type TargetableUser } from "@/lib/ad-targeting";
+import { getSetting } from "@/lib/system-settings";
+import { bumpAdDailyStat } from "@/lib/ad-stats";
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -58,11 +60,20 @@ export async function GET(request: NextRequest) {
   // Get active ads for this placement. Exclude campaigns whose remaining budget
   // can't cover another billed click so we never show an ad we can't charge for.
   const cost = await getAdClickCost();
+  const now = new Date();
   const allAds = await prisma.ad.findMany({
     where: {
       placementId: placementRow.id,
       status: "ACTIVE",
-      campaign: { status: "ACTIVE", budget: { gte: cost } },
+      campaign: {
+        status: "ACTIVE",
+        budget: { gte: cost },
+        // Flight window — only serve while now ∈ [startAt, endAt] (nulls = open).
+        AND: [
+          { OR: [{ startAt: null }, { startAt: { lte: now } }] },
+          { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+        ],
+      },
     },
     include: { campaign: { select: { title: true } } },
   });
@@ -92,15 +103,28 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Increment impression counter (fire-and-forget)
+  // Increment impression counter (fire-and-forget) — both the lifetime counter
+  // and the daily rollup, so Analytics' time-series matches the lifetime totals
+  // (feed ads already write AdDailyStat; banners previously did not).
   prisma.ad
     .update({
       where: { id: chosen.id },
       data: { impressions: { increment: 1 } },
     })
     .catch(() => {});
+  void bumpAdDailyStat(chosen.id, { impressions: 1 });
+
+  // Rotation interval (admin-configurable), delivered so the client can auto-
+  // rotate creatives. Only meaningful when poolSize > 1.
+  const rotateSecondsRaw = await getSetting<number>("ads.rotation_seconds", 12);
+  const rotateSeconds = Math.min(
+    60,
+    Math.max(5, Number(rotateSecondsRaw) || 12)
+  );
 
   return NextResponse.json({
+    poolSize: targeted.length,
+    rotateMs: rotateSeconds * 1000,
     ad: {
       id: chosen.id,
       type: chosen.type,

@@ -515,6 +515,26 @@ export async function POST(
         },
       });
 
+      // Funded (user-created) task: draw the reward from its pool (defensive —
+      // funded tasks are manual-review, but never mint unfunded points here).
+      if (task.fundedByUserId) {
+        const drawn = await prisma.task.updateMany({
+          where: { id: task.id, remainingBudget: { gte: effectivePoints } },
+          data: { remainingBudget: { decrement: effectivePoints } },
+        });
+        if (drawn.count === 0) {
+          await prisma.task.update({
+            where: { id: task.id },
+            data: { remainingBudget: 0, status: "COMPLETED" },
+          });
+        } else if (task.remainingBudget - effectivePoints < task.pointsReward) {
+          await prisma.task.update({
+            where: { id: task.id },
+            data: { status: "COMPLETED" },
+          });
+        }
+      }
+
       // Check for level up
       const newLevel = calculateLevel(user.xp + effectiveXp);
       if (newLevel > user.level) {

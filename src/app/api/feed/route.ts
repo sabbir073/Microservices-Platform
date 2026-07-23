@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     // Build query
     const where: Record<string, unknown> = {
       isPublic: true,
+      isHidden: false, // agency-moderator soft-hidden posts never surface
     };
 
     if (userId) {

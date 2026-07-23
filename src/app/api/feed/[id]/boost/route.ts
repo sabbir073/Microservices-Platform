@@ -6,6 +6,7 @@ import {
   TransactionStatus,
 } from "@/generated/prisma/client";
 import { getPointsPerUsd } from "@/lib/economy";
+import { userCanFeature } from "@/lib/packages";
 
 const BOOST_COST_POINTS = 100;
 
@@ -19,6 +20,14 @@ export async function POST(
   }
   const userId = session.user.id;
   const { id } = await params;
+
+  // Post boost is an admin-granted capability — not open to everyone.
+  if (!(await userCanFeature(userId, "boost"))) {
+    return NextResponse.json(
+      { error: "Post boosting isn't enabled for your account." },
+      { status: 403 }
+    );
+  }
 
   const post = await prisma.post.findUnique({
     where: { id },

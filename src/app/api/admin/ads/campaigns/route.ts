@@ -27,12 +27,19 @@ export async function POST(request: NextRequest) {
   if (title.length < 2) {
     return NextResponse.json({ error: "Title is required" }, { status: 400 });
   }
+  const parseDate = (v: unknown): Date | null => {
+    if (!v) return null;
+    const d = new Date(String(v));
+    return isNaN(d.getTime()) ? null : d;
+  };
   const campaign = await prisma.adCampaign.create({
     data: {
       title,
       description: body.description ? String(body.description) : null,
       budget: Number(body.budget) || 0,
       status: ["ACTIVE", "PAUSED", "ENDED"].includes(body.status) ? body.status : "ACTIVE",
+      startAt: parseDate(body.startAt),
+      endAt: parseDate(body.endAt),
     },
   });
   return NextResponse.json({ campaign });

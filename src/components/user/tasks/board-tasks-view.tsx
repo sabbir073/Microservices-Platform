@@ -21,6 +21,7 @@ import {
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -203,6 +204,8 @@ export function BoardTasksView() {
           <ChevronLeft className="w-4 h-4" />
           Back to boards
         </button>
+
+        <AdRenderer placement="TASK_LIST" />
 
         {detailLoading && <ListSkeleton rows={5} />}
 

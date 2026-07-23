@@ -38,6 +38,8 @@ import {
   CreditCard,
   ClipboardCheck,
   Smartphone,
+  ClipboardPlus,
+  ShieldCheck,
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { useMobileNav } from "@/lib/stores/mobile-nav-store";
@@ -74,7 +76,7 @@ const navigationGroups: { section: string; items: NavItem[] }[] = [
       { name: "Daily Mission", href: "/daily-mission", icon: Target, feature: "dailyMission" },
       { name: "Quizzes", href: "/quizzes", icon: Brain },
       { name: "Wallet", href: "/wallet", icon: Wallet },
-      { name: "Referrals", href: "/referrals", icon: Users, feature: "referrals" },
+      { name: "My Team", href: "/referrals", icon: Users, feature: "referrals" },
     ],
   },
   {
@@ -106,7 +108,10 @@ const navigationGroups: { section: string; items: NavItem[] }[] = [
       { name: "Games", href: "/games", icon: Gamepad2, feature: "games" },
       { name: "Lottery", href: "/lottery", icon: Ticket, feature: "lottery" },
       { name: "Packages", href: "/packages", icon: Package },
-      { name: "Advertiser", href: "/advertiser", icon: Briefcase, feature: "advertiser" },
+      { name: "Create Ad", href: "/advertiser", icon: Briefcase, feature: "advertiser" },
+      { name: "Sell on Marketplace", href: "/marketplace/create", icon: Store, feature: "sellMarketplace" },
+      { name: "Create Task", href: "/create-task", icon: ClipboardPlus, feature: "createTasks" },
+      { name: "Agency Console", href: "/agency", icon: ShieldCheck, feature: "agencyMode" },
     ],
   },
   {

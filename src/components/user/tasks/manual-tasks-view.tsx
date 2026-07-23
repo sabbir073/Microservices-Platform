@@ -8,6 +8,7 @@ import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
 import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { format } from "date-fns";
 import { toast } from "sonner";
@@ -117,6 +118,8 @@ export function ManualTasksView() {
       <h1 className="text-xl font-bold text-white flex items-center gap-2">
         📋 Manual Tasks
       </h1>
+
+      <AdRenderer placement="TASK_LIST" />
 
       <FilterChips
         value={tab}

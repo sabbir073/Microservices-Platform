@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { ensureDefaultPlacements } from "@/lib/ad-placements-server";
+import { getSetting } from "@/lib/system-settings";
 
 export async function GET() {
   const session = await auth();
@@ -53,7 +54,16 @@ export async function GET() {
       },
   }));
 
-  return NextResponse.json({ placements: withStats });
+  const rotationSeconds = Math.min(
+    60,
+    Math.max(5, Number(await getSetting<number>("ads.rotation_seconds", 12)) || 12)
+  );
+  const cpcUsd = Math.min(
+    100,
+    Math.max(0.001, Number(await getSetting<number>("ads.cpcUsd", 0.05)) || 0.05)
+  );
+
+  return NextResponse.json({ placements: withStats, rotationSeconds, cpcUsd });
 }
 
 export async function POST(request: NextRequest) {

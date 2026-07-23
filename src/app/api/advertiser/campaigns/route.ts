@@ -89,6 +89,8 @@ const createSchema = z.object({
   title: z.string().min(2).max(120),
   description: z.string().optional(),
   budget: z.number().min(5),
+  startAt: z.string().datetime().optional().nullable(),
+  endAt: z.string().datetime().optional().nullable(),
 });
 
 export async function POST(request: NextRequest) {
@@ -131,6 +133,8 @@ export async function POST(request: NextRequest) {
           budget: amount,
           advertiserId,
           status: "ACTIVE",
+          startAt: v.data.startAt ? new Date(v.data.startAt) : null,
+          endAt: v.data.endAt ? new Date(v.data.endAt) : null,
         },
       });
       await tx.transaction.create({

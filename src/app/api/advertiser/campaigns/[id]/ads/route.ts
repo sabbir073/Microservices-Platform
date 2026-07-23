@@ -18,7 +18,9 @@ const targetingSchema = z
 
 const createAdSchema = z.object({
   format: z.enum(["NATIVE", "BANNER"]).default("NATIVE"),
+  // Back-compat single placement; `placements` (names) enables multi-space.
   placement: z.string().default("IN_FEED"),
+  placements: z.array(z.string()).optional(),
   promotedPostId: z.string().optional().nullable(),
   brandName: z.string().max(60).optional().nullable(),
   brandLogo: z.string().optional().nullable(),
@@ -90,38 +92,50 @@ export async function POST(
     );
   }
 
-  // Resolve placement by name (ensuring canonical rows exist first).
+  // Resolve placement(s) by name (ensuring canonical rows exist first).
   await ensureDefaultPlacements();
-  const placement = await prisma.adPlacement.findFirst({
-    where: { name: d.placement, isActive: true },
+  const wantedNames =
+    d.placements && d.placements.length > 0 ? d.placements : [d.placement];
+  const placements = await prisma.adPlacement.findMany({
+    where: { name: { in: wantedNames }, isActive: true },
     select: { id: true },
   });
-  if (!placement) {
+  if (placements.length === 0) {
     return NextResponse.json({ error: "Unknown placement" }, { status: 400 });
   }
 
-  const ad = await prisma.ad.create({
-    data: {
-      campaignId,
-      placementId: placement.id,
-      type: "LOCAL",
-      format: d.format,
-      promotedPostId: d.promotedPostId || null,
-      brandName: d.brandName || null,
-      brandLogo: d.brandLogo || null,
-      headline: d.headline || null,
-      contentUrl: d.contentUrl || null,
-      ctaLabel: d.ctaLabel || null,
-      targetUrl: d.targetUrl,
-      targeting:
-        (normalizeTargeting(d.targeting ?? {}) as
-          | Prisma.InputJsonValue
-          | null) ?? Prisma.JsonNull,
-      weight: d.weight,
-      status: d.status,
-    },
-    select: { id: true },
-  });
+  const targeting =
+    (normalizeTargeting(d.targeting ?? {}) as Prisma.InputJsonValue | null) ??
+    Prisma.JsonNull;
 
-  return NextResponse.json({ success: true, id: ad.id }, { status: 201 });
+  // Advertiser-submitted ads await admin approval before serving.
+  const created = await prisma.$transaction(
+    placements.map((p) =>
+      prisma.ad.create({
+        data: {
+          campaignId,
+          placementId: p.id,
+          type: "LOCAL",
+          format: d.format,
+          promotedPostId: d.promotedPostId || null,
+          brandName: d.brandName || null,
+          brandLogo: d.brandLogo || null,
+          headline: d.headline || null,
+          contentUrl: d.contentUrl || null,
+          ctaLabel: d.ctaLabel || null,
+          targetUrl: d.targetUrl,
+          targeting,
+          weight: d.weight,
+          status: "PENDING",
+          submittedById: session.user.id,
+        },
+        select: { id: true },
+      })
+    )
+  );
+
+  return NextResponse.json(
+    { success: true, count: created.length, pending: true },
+    { status: 201 }
+  );
 }

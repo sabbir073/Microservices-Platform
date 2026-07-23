@@ -51,6 +51,8 @@ enum TaskStatus {
   PAUSED
   COMPLETED
   EXPIRED
+  PENDING_REVIEW
+  REJECTED
 }
 
 enum SubmissionStatus {
@@ -302,10 +304,14 @@ model DailyReferralClaim {
 model AdCampaign {
   id            String   @id @default(cuid())
   advertiserId  String?
+  advertiser    User?    @relation("UserAdCampaigns", fields: [advertiserId], references: [id], onDelete: SetNull)
   title         String
   description   String?  @db.Text
   budget        Float    @default(0)
   status        String   @default("ACTIVE") // ACTIVE | PAUSED | ENDED
+  // Optional flight window — ads only serve while now is within [startAt, endAt].
+  startAt       DateTime?
+  endAt         DateTime?
   ads           Ad[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -352,7 +358,13 @@ model Ad {
   width       Int?
   height      Int?
   weight      Int         @default(10)
+  // ACTIVE | PAUSED | INACTIVE | PENDING (awaiting admin review) | REJECTED
   status      String      @default("ACTIVE")
+  // Review workflow (advertiser-submitted ads land as PENDING until an admin acts)
+  submittedById   String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  rejectionReason String?  @db.Text
   impressions Int         @default(0)
   clicks      Int         @default(0)
   // Native (post-like) creative fields — used when format = NATIVE
@@ -876,6 +888,7 @@ model User {
   courseRefundsProcessed CourseRefundRequest[] @relation("CourseRefundAdmin")
   courseViews         CourseListingView[]
   lotteryTickets    LotteryTicket[]
+  adCampaigns       AdCampaign[]       @relation("UserAdCampaigns")
   posts             Post[]
   comments          Comment[]
   likes             Like[]
@@ -1061,6 +1074,11 @@ model Task {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
   createdById     String?
+  // User-created tasks fund their reward pool from the creator's wallet.
+  fundedByUserId  String?
+  budgetPoints    Int          @default(0)
+  remainingBudget Int          @default(0)
+  rejectionReason String?      @db.Text
   submissions     TaskSubmission[]
   categories      TaskCategory[]
   // Article-task key-pool relations (only used when articleConfig.useKeyPool=true)
@@ -1069,6 +1087,7 @@ model Task {
   @@index([type])
   @@index([requiredAccessLevel])
   @@index([status, createdAt])
+  @@index([createdById])
 }
 
 model TaskCategory {
@@ -1249,6 +1268,11 @@ model Package {
   advertiserEnabled   Boolean @default(true)
   gamesEnabled        Boolean @default(true)
   adFree              Boolean @default(false)
+  // Creator/monetization capabilities — default OFF (granted per-user by admin)
+  createTasksEnabled     Boolean @default(false)
+  sellCoursesEnabled     Boolean @default(false)
+  sellMarketplaceEnabled Boolean @default(false)
+  agencyModeEnabled      Boolean @default(false)
 
   // Per-task-type toggles
   socialTasksEnabled    Boolean @default(true)
@@ -2044,6 +2068,8 @@ model Post {
   backgroundStyle String?
   isPublic    Boolean   @default(true)
   isPinned    Boolean   @default(false)
+  // Soft-moderation: hidden by an agency moderator (kept for audit, excluded from feed)
+  isHidden    Boolean   @default(false)
   // Admin-set OFFICIAL announcement. Pinned to the very top of the feed
   // and shown with an OFFICIAL badge. Created via /api/admin/feed/announce.
   isAnnouncement   Boolean   @default(false)
@@ -2287,6 +2313,8 @@ model Comment {
   parent      Comment? @relation("CommentReplies", fields: [parentId], references: [id])
   replies     Comment[] @relation("CommentReplies")
   mentions    Mention[]
+  // Soft-moderation: hidden by an agency moderator
+  isHidden    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   @@index([postId])

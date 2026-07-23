@@ -47,6 +47,10 @@ export interface PackageRow {
   advertiserEnabled: boolean;
   gamesEnabled: boolean;
   adFree: boolean;
+  createTasksEnabled: boolean;
+  sellCoursesEnabled: boolean;
+  sellMarketplaceEnabled: boolean;
+  agencyModeEnabled: boolean;
   socialTasksEnabled: boolean;
   proxyTasksEnabled: boolean;
   articleTasksEnabled: boolean;

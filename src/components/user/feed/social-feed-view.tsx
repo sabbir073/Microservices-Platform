@@ -52,6 +52,7 @@ import { ShareModal } from "@/components/user/primitives/share-modal";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { PostAnalyticsPanel } from "@/components/user/feed/post-analytics-panel";
+import { MobileEarnBlock } from "@/components/user/feed/mobile-earn-block";
 import {
   FeedRightRail,
   type RailEarner,
@@ -146,6 +147,7 @@ interface Props {
   widgetConfig?: FeedWidgetConfig;
   quickEarn?: QuickEarnTile[];
   customWidgets?: CustomWidget[];
+  canBoost?: boolean;
 }
 
 type ViewTab = "feed" | "groups";
@@ -163,6 +165,7 @@ export function SocialFeedView({
   widgetConfig,
   quickEarn,
   customWidgets,
+  canBoost,
 }: Props) {
   const [tab, setTab] = useState<ViewTab>("feed");
   const [sort, setSort] = useState<Sort>("recent");
@@ -173,6 +176,9 @@ export function SocialFeedView({
       <div className="w-full max-w-xl min-w-0 space-y-4">
         {/* Banner — above the tabs, visible on both Feed and Groups */}
         {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
+
+        {/* Mobile/tablet earn strip — Daily Bonus + Quick Earn (desktop uses the rail) */}
+        <MobileEarnBlock quickEarn={quickEarn} className="lg:hidden" />
 
         {/* Top tabs */}
         <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
@@ -208,6 +214,7 @@ export function SocialFeedView({
             tickerConfig={tickerConfig}
             sort={sort}
             onSortChange={setSort}
+            canBoost={canBoost}
           />
         )}
 
@@ -242,12 +249,14 @@ function FeedTab({
   tickerConfig,
   sort,
   onSortChange,
+  canBoost,
 }: {
   user: SessionUser;
   initialTicker: WithdrawalTickerItem[];
   tickerConfig?: TickerConfig;
   sort: Sort;
   onSortChange: (s: Sort) => void;
+  canBoost?: boolean;
 }) {
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -443,6 +452,7 @@ function FeedTab({
                   post={post}
                   currentUserId={user.id}
                   currentUserRole={user.role ?? null}
+                  canBoost={canBoost}
                   onUpdated={(patch) => handlePostUpdated(post.id, patch)}
                   onDeleted={() => handlePostDeleted(post.id)}
                 />
@@ -1203,12 +1213,14 @@ function FeedPostCard({
   post,
   currentUserId,
   currentUserRole,
+  canBoost,
   onUpdated,
   onDeleted,
 }: {
   post: FeedPost;
   currentUserId: string;
   currentUserRole: string | null;
+  canBoost?: boolean;
   onUpdated: (patch: Partial<FeedPost>) => void;
   onDeleted: () => void;
 }) {
@@ -1650,7 +1662,7 @@ function FeedPostCard({
           <Share2 className="w-4 h-4" />
           Share
         </button>
-        {post.isOwner && !post.isPinned && (
+        {post.isOwner && !post.isPinned && canBoost && (
           <button
             onClick={async () => {
               if (
