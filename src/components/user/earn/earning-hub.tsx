@@ -331,7 +331,7 @@ function LearnTab() {
             <Link
               key={c.id}
               href={`/courses/${c.id}`}
-              className="group rounded-xl border border-gray-800 bg-gray-900 hover:border-indigo-500/40 p-4 transition-colors"
+              className="group glass rounded-xl hover:border-indigo-500/40 p-4 transition-colors"
             >
               <div className="flex gap-3">
                 {c.thumbnail ? (
@@ -639,7 +639,7 @@ function PromoteTab() {
               return (
                 <div
                   key={m.id}
-                  className="rounded-xl border border-gray-800 bg-gray-900 p-3"
+                  className="glass rounded-xl p-3"
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -776,7 +776,7 @@ function LeaderboardTab({ user }: { user: UserSummary }) {
           </div>
 
           {/* Full ranking */}
-          <div className="rounded-xl border border-gray-800 bg-gray-900 divide-y divide-gray-800">
+          <div className="glass rounded-xl divide-y divide-gray-800">
             {list.slice(3).map((e) => (
               <div
                 key={e.userId}
@@ -921,7 +921,7 @@ function OfferwallTab() {
                   href={p.url ?? "#"}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="group rounded-xl border border-gray-800 bg-gray-900 hover:border-indigo-500/40 p-4 transition-colors"
+                  className="group glass rounded-xl hover:border-indigo-500/40 p-4 transition-colors"
                 >
                   <div className="flex items-start gap-3">
                     <div className="w-12 h-12 rounded-xl bg-linear-to-br from-fuchsia-500 to-pink-600 flex items-center justify-center text-white">

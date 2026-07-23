@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { LotteryStatus, TransactionType, TransactionStatus, NotificationType } from "@/generated/prisma";
+import { getPointsPerUsd } from "@/lib/economy";
 
 // GET /api/lottery - Get available lotteries and user's tickets
 export async function GET(request: NextRequest) {
@@ -245,6 +246,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const pointsPerUsd = await getPointsPerUsd();
+
     // Generate tickets
     const tickets = [];
     for (let i = 0; i < ticketCount; i++) {
@@ -278,7 +281,7 @@ export async function POST(request: NextRequest) {
           type: TransactionType.PURCHASE,
           status: TransactionStatus.COMPLETED,
           points: -totalCost,
-          amount: -totalCost / 1000,
+          amount: -totalCost / pointsPerUsd,
           description: `Purchased ${ticketCount} lottery ticket(s) for "${lottery.title}"`,
           reference: `lottery_${lotteryId}_${Date.now()}`,
           metadata: {

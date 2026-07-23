@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { KYCStatus } from "@/generated/prisma";
 import { calculateProfileCompletion } from "@/lib/profile-completion";
 import { getXpRank, calculateXpForLevel } from "@/lib/user-rank";
+import { getPointsPerUsd } from "@/lib/economy";
 
 const PROFILE_FIELDS = {
   id: true,
@@ -165,6 +166,18 @@ export async function GET() {
       0
     );
 
+    // Social-earning points = sum of what this user's posts have earned from
+    // engagement (Post.socialEarnings, credited in lib/social-earning.ts).
+    const socialEarnAgg = await safe(
+      prisma.post.aggregate({
+        where: { userId: session.user.id },
+        _sum: { socialEarnings: true },
+      }),
+      { _sum: { socialEarnings: null } }
+    );
+    const socialEarningsPoints = socialEarnAgg._sum.socialEarnings ?? 0;
+    const pointsPerUsd = await getPointsPerUsd();
+
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -281,8 +294,10 @@ export async function GET() {
         marketplacePurchases: u._count.marketplacePurchases,
         marketplaceSales: marketplaceSalesCount,
         marketplaceSalesAmount: marketplaceTotalSalesAmount._sum.sellerAmount ?? 0,
+        socialEarningsPoints,
+        socialEarningsUsd: socialEarningsPoints / pointsPerUsd,
         lifetime: {
-          totalEarnedPoints: Math.round(u.totalEarnings * 1000),
+          totalEarnedPoints: Math.round(u.totalEarnings * pointsPerUsd),
           totalEarnedUsd: u.totalEarnings,
           tasksCompleted: u._count.taskSubmissions,
           rank: xpRank,
@@ -512,7 +527,12 @@ export async function PATCH(request: NextRequest) {
       updateData.theme = body.theme;
     }
     if (body.themeAccent !== undefined) {
-      if (!["indigo", "purple", "emerald", "amber", "blue", "rose"].includes(body.themeAccent)) {
+      const validAccents = [
+        "red", "orange", "amber", "yellow", "lime", "green", "emerald",
+        "teal", "cyan", "sky", "blue", "indigo", "violet", "purple",
+        "fuchsia", "pink", "rose", "gold", "silver",
+      ];
+      if (!validAccents.includes(body.themeAccent)) {
         return NextResponse.json({ error: "Invalid accent color" }, { status: 400 });
       }
       updateData.themeAccent = body.themeAccent;

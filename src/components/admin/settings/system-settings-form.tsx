@@ -62,7 +62,7 @@ const DEFAULTS: SettingsBag = {
   referral_l2_pct: 5,
   referral_l3_pct: 2,
   task_reward_multiplier: 1.0,
-  points_to_usd_rate: 0.001,
+  points_per_usd: 1000,
   // Security
   session_timeout_seconds: 3600,
   max_login_attempts: 5,
@@ -124,7 +124,7 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   currency: "financial", min_withdrawal: "financial", max_withdrawal: "financial",
   withdrawal_fee_pct: "financial", referral_l1_pct: "financial",
   referral_l2_pct: "financial", referral_l3_pct: "financial",
-  task_reward_multiplier: "financial", points_to_usd_rate: "financial",
+  task_reward_multiplier: "financial", points_per_usd: "financial",
   // Security
   session_timeout_seconds: "security", max_login_attempts: "security",
   password_min_length: "security", require_kyc: "security", require_2fa: "security",
@@ -456,13 +456,19 @@ export function SystemSettingsForm({
                 className={inp}
               />
             </Field>
-            <Field label="Points to USD Rate" hint={`1 pt = $${Number(values.points_to_usd_rate ?? 0).toFixed(4)}`}>
+            <Field
+              label="Points per $1 (USD)"
+              hint={`${Number(values.points_per_usd ?? 1000).toLocaleString()} pts = $1 · 1 pt = $${(
+                1 / Math.max(1, Number(values.points_per_usd ?? 1000))
+              ).toFixed(4)} — controls all earnings & withdrawals`}
+            >
               <input
                 type="number"
-                step={0.0001}
-                value={Number(values.points_to_usd_rate ?? 0)}
+                step={1}
+                min={1}
+                value={Number(values.points_per_usd ?? 1000)}
                 onChange={(e) =>
-                  set("points_to_usd_rate", parseFloat(e.target.value))
+                  set("points_per_usd", parseFloat(e.target.value))
                 }
                 disabled={!canEdit}
                 className={inp}

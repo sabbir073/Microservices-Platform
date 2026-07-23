@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateTaskQuiz, isGeminiConfigured } from "@/lib/gemini";
 import { TaskType, TaskStatus } from "@/generated/prisma";
+import { getPointsPerUsd } from "@/lib/economy";
 
 // GET /api/tasks/quiz - Get quiz for a specific task or generate new one
 export async function GET(request: NextRequest) {
@@ -208,13 +209,14 @@ export async function POST(request: NextRequest) {
 
     // If passed, update user balance and XP
     if (passed) {
+      const pointsPerUsd = await getPointsPerUsd();
       await prisma.$transaction([
         prisma.user.update({
           where: { id: session.user.id },
           data: {
             pointsBalance: { increment: pointsEarned },
             xp: { increment: xpEarned },
-            totalEarnings: { increment: pointsEarned / 1000 },
+            totalEarnings: { increment: pointsEarned / pointsPerUsd },
           },
         }),
         prisma.task.update({
@@ -227,7 +229,7 @@ export async function POST(request: NextRequest) {
             type: "EARNING",
             status: "COMPLETED",
             points: pointsEarned,
-            amount: pointsEarned / 1000,
+            amount: pointsEarned / pointsPerUsd,
             description: `Quiz completed: ${task.title} (Score: ${score}%)`,
             reference: `quiz_${submission.id}`,
             metadata: { taskId, score, correctAnswers, totalQuestions },

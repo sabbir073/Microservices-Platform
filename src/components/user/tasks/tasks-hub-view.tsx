@@ -160,25 +160,25 @@ export function TasksHubView() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <div className="glass rounded-xl p-4">
           <p className="text-sm text-gray-400">Available Tasks</p>
           <p className="text-2xl font-bold text-white mt-1 tabular-nums">
             {stats.available}
           </p>
         </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <div className="glass rounded-xl p-4">
           <p className="text-sm text-gray-400">Completed Today</p>
           <p className="text-2xl font-bold text-white mt-1 tabular-nums">
             {stats.completedToday}
           </p>
         </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <div className="glass rounded-xl p-4">
           <p className="text-sm text-gray-400">Points Earned</p>
           <p className="text-2xl font-bold text-amber-400 mt-1 tabular-nums">
             {stats.pointsEarned}
           </p>
         </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+        <div className="glass rounded-xl p-4">
           <p className="text-sm text-gray-400">XP Earned</p>
           <p className="text-2xl font-bold text-purple-400 mt-1 tabular-nums">
             {stats.xpEarned}

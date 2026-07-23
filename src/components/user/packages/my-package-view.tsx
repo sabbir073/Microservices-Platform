@@ -214,7 +214,7 @@ export function MyPackageView({
       {/* Cancel confirm modal */}
       {showCancelModal && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm rounded-2xl border border-gray-800 bg-gray-900 p-5 space-y-4">
+          <div className="w-full max-w-sm glass rounded-2xl p-5 space-y-4">
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5" />
@@ -280,7 +280,7 @@ function OverviewTab({
     <div className="space-y-4">
       {/* Benefits checklist */}
       {currentPackage && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+        <section className="glass rounded-xl p-4">
           <p className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-3 flex items-center gap-1.5">
             <Shield className="w-3.5 h-3.5" />
             Your Benefits
@@ -304,7 +304,7 @@ function OverviewTab({
 
       {/* Earning power table */}
       {currentPackage && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+        <section className="glass rounded-xl p-4">
           <p className="text-xs uppercase tracking-wider font-bold text-gray-500 mb-3 flex items-center gap-1.5">
             <Zap className="w-3.5 h-3.5" />
             Earning Power
@@ -455,7 +455,7 @@ function HistoryTab({
 }) {
   if (subscriptions.length === 0) {
     return (
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
+      <div className="glass rounded-xl p-8 text-center">
         <Receipt className="w-10 h-10 text-gray-600 mx-auto mb-2" />
         <p className="text-sm font-bold text-white">No billing history yet</p>
         <p className="text-xs text-gray-500 mt-1">
@@ -467,7 +467,7 @@ function HistoryTab({
   }
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 divide-y divide-gray-800">
+    <div className="glass rounded-xl divide-y divide-gray-800">
       {subscriptions.map((s) => {
         const tierGradient = TIER_GRADIENT[s.packageTier] ?? TIER_GRADIENT.FREE;
         // `s.isActive` is set server-side via the cancel/expire flow; we trust it

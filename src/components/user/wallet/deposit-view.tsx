@@ -121,7 +121,7 @@ export function DepositView() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 sm:p-6 space-y-4">
+      <div className="glass rounded-xl p-4 sm:p-6 space-y-4">
         <div>
           <label className="block text-sm font-medium text-gray-400 mb-1.5">
             Amount (USD)

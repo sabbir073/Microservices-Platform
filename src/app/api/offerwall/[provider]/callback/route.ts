@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { getPointsPerUsd } from "@/lib/economy";
 
 /**
  * Generic offerwall server-to-server postback. Provider-agnostic:
@@ -49,7 +50,10 @@ async function handle(request: NextRequest, provider: string) {
   const signature = pick(url, body, "signature", "sig", "hash");
   const payoutAmount = Number(pick(url, body, "payoutAmount", "payout", "amount", "revenue")) || 0;
   let userPayout = Math.round(Number(pick(url, body, "userPayout", "points", "currency_amount")) || 0);
-  if (userPayout <= 0 && payoutAmount > 0) userPayout = Math.round(payoutAmount * 1000);
+  if (userPayout <= 0 && payoutAmount > 0) {
+    const pointsPerUsd = await getPointsPerUsd();
+    userPayout = Math.round(payoutAmount * pointsPerUsd);
+  }
   const offerId = pick(url, body, "offerId", "offer_id") || null;
   const offerName = pick(url, body, "offerName", "offer_name") || null;
   const ip = (request.headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim() || null;

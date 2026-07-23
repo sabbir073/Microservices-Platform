@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getPointsPerUsd } from "@/lib/economy";
 
 // GET /api/achievements - Get all achievements and user's progress
 export async function GET() {
@@ -50,6 +51,7 @@ export async function GET() {
     });
 
     // Calculate progress for each achievement
+    const pointsPerUsd = await getPointsPerUsd();
     const processedAchievements = achievements.map((achievement) => {
       const userProgress = unlockedMap.get(achievement.id);
 
@@ -67,7 +69,7 @@ export async function GET() {
             currentProgress = user.xp;
             break;
           case "points_earned":
-            currentProgress = Math.round(user.totalEarnings * 1000);
+            currentProgress = Math.round(user.totalEarnings * pointsPerUsd);
             break;
           case "referrals_made":
             currentProgress = user._count.referrals;

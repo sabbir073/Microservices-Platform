@@ -9,6 +9,7 @@ import {
 } from "@/generated/prisma";
 import { processReferralCommissions } from "@/lib/referral-commissions";
 import { notifyUser } from "@/lib/notify";
+import { getPointsPerUsd } from "@/lib/economy";
 import {
   compareUniqueKey,
   type ArticleConfig,
@@ -475,6 +476,7 @@ export async function POST(
           ?.taskRewardMultiplier ?? 1;
       const effectivePoints = Math.round(task.pointsReward * multiplier);
       const effectiveXp = Math.round(task.xpReward * multiplier);
+      const pointsPerUsd = await getPointsPerUsd();
 
       // Update user points and XP
       const user = await prisma.user.update({
@@ -482,7 +484,7 @@ export async function POST(
         data: {
           pointsBalance: { increment: effectivePoints },
           xp: { increment: effectiveXp },
-          totalEarnings: { increment: effectivePoints / 1000 },
+          totalEarnings: { increment: effectivePoints / pointsPerUsd },
         },
       });
 
@@ -493,7 +495,7 @@ export async function POST(
           type: TransactionType.EARNING,
           status: TransactionStatus.COMPLETED,
           points: effectivePoints,
-          amount: effectivePoints / 1000,
+          amount: effectivePoints / pointsPerUsd,
           description: `Completed task: ${task.title}`,
           reference: `task_${task.id}_${submission.id}`,
           metadata: {

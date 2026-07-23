@@ -64,7 +64,7 @@ export function CreateListingView() {
     <div className="space-y-3">
       <h1 className="text-xl font-bold text-white">Create Listing</h1>
 
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+      <div className="glass rounded-xl p-4 space-y-3">
         <div>
           <label className="block text-xs font-medium text-gray-400 mb-1.5">
             Title *

@@ -14,6 +14,7 @@
  * sides cannot collide. POST_CREATE keeps its date-keyed once-per-day reference.
  */
 import { prisma } from "@/lib/prisma";
+import { getPointsPerUsd } from "@/lib/economy";
 import {
   TransactionStatus,
   TransactionType,
@@ -448,6 +449,7 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   // DB unique constraint, so the pre-flight check above can race. Lock the user
   // row and re-check the duplicate INSIDE the lock before crediting, so two
   // racing engagements (e.g. rapid like/unlike/like) can't both pay out.
+  const pointsPerUsd = await getPointsPerUsd();
   try {
     const result = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "User" WHERE id = ${userId} FOR UPDATE`;
@@ -463,7 +465,7 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
           type: TransactionType.EARNING,
           status: TransactionStatus.COMPLETED,
           points: allowPoints,
-          amount: allowPoints / 1000,
+          amount: allowPoints / pointsPerUsd,
           description,
           reference,
           metadata: {
@@ -480,7 +482,7 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
         where: { id: userId },
         data: {
           pointsBalance: { increment: allowPoints },
-          totalEarnings: { increment: allowPoints / 1000 },
+          totalEarnings: { increment: allowPoints / pointsPerUsd },
           xp: { increment: allowXp },
         },
       });

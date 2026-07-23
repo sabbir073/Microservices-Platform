@@ -27,6 +27,7 @@ export interface WalletTransaction {
   points: number;
   amount: number;
   description: string | null;
+  reference?: string | null;
   createdAt: string;
 }
 
@@ -49,6 +50,8 @@ export interface WalletViewProps {
   transactions: WalletTransaction[];
   referralStats: ReferralStats;
   pendingWithdrawals: number;
+  /** Admin-configurable points-per-$1 rate (default 1000). */
+  pointsPerUsd?: number;
 }
 
 type Tab = "balance" | "referral" | "withdraw";
@@ -66,7 +69,6 @@ const TX_TYPE_MAP: Record<string, TxType> = {
   PENALTY: "EARN_OTHER",
 };
 
-const PT_TO_USD = 0.001;
 const MIN_WITHDRAW_PTS = 5000;
 
 export function WalletView(props: WalletViewProps) {
@@ -74,6 +76,7 @@ export function WalletView(props: WalletViewProps) {
 
   const isFreeTier = props.packageTier === "FREE";
   const withdrawablePts = Math.max(0, props.pointsBalance);
+  const pointsPerUsd = props.pointsPerUsd ?? 1000;
 
   return (
     <div className="space-y-5">
@@ -93,6 +96,7 @@ export function WalletView(props: WalletViewProps) {
         points={props.pointsBalance}
         cash={props.cashBalance}
         packageTier={props.packageTier}
+        pointsPerUsd={pointsPerUsd}
       />
 
       {/* Tabs */}
@@ -141,6 +145,7 @@ export function WalletView(props: WalletViewProps) {
           withdrawablePts={withdrawablePts}
           pendingWithdrawals={props.pendingWithdrawals}
           packageTier={props.packageTier}
+          pointsPerUsd={pointsPerUsd}
         />
       )}
     </div>
@@ -160,31 +165,49 @@ function BalanceTab({
   totalWithdrawn: number;
   transactions: WalletTransaction[];
 }) {
-  // Aggregate earnings by type for the breakdown chart
+  // Aggregate earnings by type for the breakdown chart. Social credits are
+  // generic EARNING rows tagged with a `social_` reference — split them out so
+  // "social earn points" get their own slice; anything else lands in "Other".
   const breakdown = useMemo(() => {
-    const buckets: Record<string, number> = {
-      EARNING: 0,
-      REFERRAL: 0,
-      LOTTERY_WIN: 0,
-      BONUS: 0,
-      CHECKIN: 0,
-      GIFT: 0,
-    };
+    // Every earning source is itemised. Spend / payout / deposit / refund types
+    // are NOT earnings and are skipped even though they carry positive `points`.
+    const SPEND = new Set([
+      "WITHDRAWAL", "PURCHASE", "PENALTY", "COURSE_PURCHASE",
+      "DEPOSIT", "REFUND", "COURSE_REFUND",
+    ]);
+    // Display order + styling for each earning source. `OTHER` is a forward-safe
+    // catch-all so any future credit type still shows up (never silently lost).
+    const META: { key: string; label: string; color: string }[] = [
+      { key: "TASK", label: "Task Earnings", color: "bg-indigo-500" },
+      { key: "SOCIAL", label: "Social Earnings", color: "bg-rose-500" },
+      { key: "REFERRAL", label: "Referral Earnings", color: "bg-purple-500" },
+      { key: "BONUS", label: "Bonuses", color: "bg-amber-500" },
+      { key: "LOTTERY_WIN", label: "Lottery", color: "bg-pink-500" },
+      { key: "CHECKIN", label: "Check-ins", color: "bg-emerald-500" },
+      { key: "GIFT", label: "Gifts", color: "bg-teal-500" },
+      { key: "COURSE_TUTOR_EARNING", label: "Course Earnings", color: "bg-sky-500" },
+      { key: "OTHER", label: "Other", color: "bg-gray-500" },
+    ];
+    const buckets: Record<string, number> = Object.fromEntries(
+      META.map((m) => [m.key, 0])
+    );
     for (const tx of transactions) {
       if (tx.status !== "COMPLETED") continue;
       if (tx.points <= 0) continue;
-      if (tx.type in buckets) buckets[tx.type] += tx.points;
+      if (SPEND.has(tx.type)) continue;
+      if (tx.type === "EARNING") {
+        // Social credits are EARNING rows tagged with a `social_` reference.
+        if (tx.reference?.startsWith("social_")) buckets.SOCIAL += tx.points;
+        else buckets.TASK += tx.points;
+      } else if (tx.type in buckets) {
+        buckets[tx.type] += tx.points;
+      } else {
+        buckets.OTHER += tx.points;
+      }
     }
     const total = Object.values(buckets).reduce((a, b) => a + b, 0);
     if (total === 0) return [];
-    return [
-      { key: "EARNING", label: "Tasks", color: "bg-indigo-500", value: buckets.EARNING },
-      { key: "REFERRAL", label: "Referrals", color: "bg-purple-500", value: buckets.REFERRAL },
-      { key: "LOTTERY_WIN", label: "Lottery", color: "bg-pink-500", value: buckets.LOTTERY_WIN },
-      { key: "BONUS", label: "Bonuses", color: "bg-amber-500", value: buckets.BONUS },
-      { key: "CHECKIN", label: "Check-ins", color: "bg-emerald-500", value: buckets.CHECKIN },
-      { key: "GIFT", label: "Gifts", color: "bg-rose-500", value: buckets.GIFT },
-    ]
+    return META.map((m) => ({ ...m, value: buckets[m.key] }))
       .filter((b) => b.value > 0)
       .map((b) => ({ ...b, pct: (b.value / total) * 100 }));
   }, [transactions]);
@@ -217,9 +240,21 @@ function BalanceTab({
         </div>
       </div>
 
-      {/* Earnings Breakdown bar */}
-      {breakdown.length > 0 && (
-        <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+      {/* Earnings Breakdown bar — always shown (empty-state when no points yet) */}
+      {breakdown.length === 0 ? (
+        <div className="glass rounded-xl p-4 flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-amber-500/10 text-amber-400 shrink-0">
+            <Coins className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-white">Points Breakdown</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              No points earned yet — complete tasks or post to start earning.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="glass rounded-xl p-4 space-y-3">
           <div className="flex items-center justify-between">
             <p className="text-sm font-bold text-white">Earnings Breakdown</p>
             <p className="text-[10px] text-gray-500 uppercase tracking-wider">
@@ -431,12 +466,15 @@ function WithdrawTab({
   withdrawablePts,
   pendingWithdrawals,
   packageTier,
+  pointsPerUsd,
 }: {
   isFreeTier: boolean;
   withdrawablePts: number;
   pendingWithdrawals: number;
   packageTier: string;
+  pointsPerUsd: number;
 }) {
+  const PT_TO_USD = 1 / pointsPerUsd;
   const meetsThreshold = withdrawablePts >= MIN_WITHDRAW_PTS;
   const usdValue = withdrawablePts * PT_TO_USD;
   const minUsd = MIN_WITHDRAW_PTS * PT_TO_USD;
@@ -467,7 +505,7 @@ function WithdrawTab({
         </div>
       )}
 
-      <div className="rounded-2xl border border-gray-800 bg-gray-900 p-5">
+      <div className="glass rounded-2xl p-5">
         <p className="text-xs uppercase tracking-wider text-gray-500 font-bold">
           Withdrawable
         </p>
@@ -517,7 +555,7 @@ function WithdrawTab({
       </div>
 
       {/* Withdrawal info */}
-      <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-2 text-xs text-gray-400">
+      <div className="glass rounded-xl p-4 space-y-2 text-xs text-gray-400">
         <p className="font-semibold text-white text-sm flex items-center gap-1.5">
           <Gift className="w-4 h-4 text-amber-400" />
           How withdrawals work

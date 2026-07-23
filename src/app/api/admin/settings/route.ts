@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
+import { invalidatePointsRateCache } from "@/lib/economy";
 
 export async function GET() {
   try {
@@ -74,6 +75,9 @@ export async function POST(request: NextRequest) {
     );
 
     await Promise.all(upsertPromises);
+
+    // Flush the points-rate cache so a changed conversion rate takes effect now.
+    if ("points_per_usd" in settings) invalidatePointsRateCache();
 
     return NextResponse.json({
       success: true,

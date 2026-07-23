@@ -10,6 +10,7 @@ import {
   buildDailyProgress,
   resolveTaskTypeBucket,
 } from "@/lib/daily-mission-progress";
+import { getPointsPerUsd } from "@/lib/economy";
 
 function utcDateKey(d = new Date()): string {
   return d.toISOString().slice(0, 10);
@@ -115,6 +116,7 @@ export async function POST() {
 
   const points = mission.completionPointsReward;
   const xp = mission.completionXpReward;
+  const pointsPerUsd = await getPointsPerUsd();
 
   await prisma.$transaction([
     prisma.dailyMissionClaim.create({
@@ -125,7 +127,7 @@ export async function POST() {
       data: {
         pointsBalance: { increment: points },
         xp: { increment: xp },
-        totalEarnings: { increment: points / 1000 },
+        totalEarnings: { increment: points / pointsPerUsd },
       },
     }),
     prisma.transaction.create({
@@ -134,7 +136,7 @@ export async function POST() {
         type: TransactionType.EARNING,
         status: TransactionStatus.COMPLETED,
         points,
-        amount: points / 1000,
+        amount: points / pointsPerUsd,
         description: `Daily mission completed: ${mission.name}`,
         reference: `daily_mission_${mission.id}_${today}`,
         metadata: { missionId: mission.id, xp, streak, date: today },

@@ -3,12 +3,13 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { WithdrawalView } from "@/components/user/wallet/withdrawal-view";
 import { getUiToggles } from "@/lib/ui-toggles-server";
+import { getPointsPerUsd } from "@/lib/economy";
 
 export default async function WithdrawalPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const [user, methods, toggles] = await Promise.all([
+  const [user, methods, toggles, pointsPerUsd] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
       select: {
@@ -23,6 +24,7 @@ export default async function WithdrawalPage() {
       orderBy: { createdAt: "desc" },
     }),
     getUiToggles(),
+    getPointsPerUsd(),
   ]);
 
   return (
@@ -32,6 +34,7 @@ export default async function WithdrawalPage() {
       packageTier={user?.package?.slug ?? "default"}
       kycStatus={user?.kycStatus ?? "NOT_SUBMITTED"}
       requireKyc={toggles.requireKycForWithdrawal}
+      pointsPerUsd={pointsPerUsd}
       methods={methods.map((m) => ({
         id: m.id,
         type: m.method,

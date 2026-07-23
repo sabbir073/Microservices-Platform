@@ -393,7 +393,7 @@ function ListingCardV2({ listing }: { listing: Listing }) {
   return (
     <Link
       href={`/marketplace/${listing.id}`}
-      className="group block bg-gray-900 rounded-xl border border-gray-800 overflow-hidden hover:border-indigo-500/40 transition-colors"
+      className="group block glass rounded-xl overflow-hidden hover:border-indigo-500/40 transition-colors"
     >
       <div className="relative aspect-video bg-gray-950 overflow-hidden">
         {cover ? (

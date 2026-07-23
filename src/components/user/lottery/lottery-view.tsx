@@ -161,7 +161,7 @@ export function LotteryView() {
               .map((l) => (
                 <div
                   key={l.id}
-                  className="rounded-xl border border-gray-800 bg-gray-900 p-3 flex items-center gap-3"
+                  className="glass rounded-xl p-3 flex items-center gap-3"
                 >
                   <div className="w-10 h-10 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white">
                     <Ticket className="w-5 h-5" />
@@ -374,7 +374,7 @@ function LotteryRow({
 }) {
   const isActive = lottery.status === "ACTIVE" && lottery.canBuyTicket;
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-3 flex items-center gap-3">
+    <div className="glass rounded-xl p-3 flex items-center gap-3">
       <div className="w-11 h-11 rounded-xl bg-linear-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white">
         <Ticket className="w-5 h-5" />
       </div>

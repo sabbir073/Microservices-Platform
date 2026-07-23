@@ -193,7 +193,7 @@ export function CartView() {
             ))}
           </div>
 
-          <div className="rounded-xl bg-gray-900 border border-gray-800 p-4 space-y-2">
+          <div className="glass rounded-xl p-4 space-y-2">
             <div className="flex justify-between text-sm text-gray-400">
               <span>
                 {items.length} listing{items.length === 1 ? "" : "s"}

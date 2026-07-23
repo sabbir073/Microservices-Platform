@@ -59,7 +59,14 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { LifetimeStatsGroup } from "@/components/user/profile/profile-stat-groups";
 import { LocationSelector } from "@/components/shared/location-selector";
-import { useTheme } from "@/components/providers/theme-provider";
+import {
+  useTheme,
+  ACCENTS,
+  ACCENT_HEX,
+  ACCENT_GRADIENT,
+  type Theme,
+  type Accent,
+} from "@/components/providers/theme-provider";
 import {
   PackageBadge,
   LevelBadge,
@@ -161,6 +168,8 @@ interface ProfileResponse {
     marketplacePurchases: number;
     marketplaceSales: number;
     marketplaceSalesAmount: number;
+    socialEarningsPoints: number;
+    socialEarningsUsd: number;
     lifetime: {
       totalEarnedPoints: number | null;
       totalEarnedUsd: number | null;
@@ -305,20 +314,22 @@ export function ProfileView() {
     load();
   }, []);
 
-  // Sync live theme with the user's saved preference whenever data loads
-  const { setTheme } = useTheme();
+  // Sync live theme + accent with the user's saved preference on load. The
+  // provider now handles "system" (OS-reactive) natively, so pass it raw.
+  const { setTheme, setAccent } = useTheme();
   useEffect(() => {
     const saved = data?.preferences?.theme;
-    if (!saved) return;
-    if (saved === "dark" || saved === "light") {
+    if (saved === "dark" || saved === "light" || saved === "system") {
       setTheme(saved);
-    } else if (saved === "system") {
-      const prefersDark =
-        typeof window !== "undefined" &&
-        window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-      setTheme(prefersDark ? "dark" : "light");
     }
-  }, [data?.preferences?.theme, setTheme]);
+    const savedAccent = data?.preferences?.themeAccent;
+    if (savedAccent) setAccent(savedAccent as Accent);
+  }, [
+    data?.preferences?.theme,
+    data?.preferences?.themeAccent,
+    setTheme,
+    setAccent,
+  ]);
 
   // Auto-country detection — only fires when country is missing
   useEffect(() => {
@@ -439,7 +450,7 @@ export function ProfileView() {
 
       {/* Profile Header */}
       <div className="relative rounded-2xl overflow-hidden glass">
-        <div className="relative h-40 sm:h-56 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
+        <div className="relative h-36 sm:h-48 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
           {profile.coverPhoto && (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={profile.coverPhoto} alt="" className="w-full h-full object-cover" />
@@ -569,42 +580,61 @@ export function ProfileView() {
             </button>
           </div>
 
-          {/* Inline social stats — Facebook style */}
-          <div className="grid grid-cols-3 gap-2 mt-4 pt-4 border-t border-gray-800">
+          {/* Inline social stats — compact Facebook-style counter row */}
+          <div className="grid grid-cols-3 gap-1 mt-3 pt-3 border-t border-gray-800">
             <button
               onClick={() => setPrimaryTab("posts")}
-              className="text-center hover:bg-gray-800/50 rounded-lg py-2 transition-colors"
+              className="flex items-baseline justify-center gap-1.5 hover:bg-gray-800/50 rounded-lg py-1.5 transition-colors"
             >
-              <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+              <span className="text-base font-bold text-white tabular-nums">
                 {stats.postsCount.toLocaleString()}
-              </p>
-              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mt-0.5">
-                Posts
-              </p>
+              </span>
+              <span className="text-[11px] text-gray-400 font-medium">Posts</span>
             </button>
             <button
               onClick={() => setPrimaryTab("followers")}
-              className="text-center hover:bg-gray-800/50 rounded-lg py-2 transition-colors border-x border-gray-800"
+              className="flex items-baseline justify-center gap-1.5 hover:bg-gray-800/50 rounded-lg py-1.5 transition-colors border-x border-gray-800"
             >
-              <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+              <span className="text-base font-bold text-white tabular-nums">
                 {stats.followersCount.toLocaleString()}
-              </p>
-              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mt-0.5">
-                Followers
-              </p>
+              </span>
+              <span className="text-[11px] text-gray-400 font-medium">Followers</span>
             </button>
             <button
               onClick={() => setPrimaryTab("following")}
-              className="text-center hover:bg-gray-800/50 rounded-lg py-2 transition-colors"
+              className="flex items-baseline justify-center gap-1.5 hover:bg-gray-800/50 rounded-lg py-1.5 transition-colors"
             >
-              <p className="text-lg sm:text-xl font-extrabold text-white tabular-nums">
+              <span className="text-base font-bold text-white tabular-nums">
                 {stats.followingCount.toLocaleString()}
-              </p>
-              <p className="text-[11px] text-gray-400 uppercase tracking-wider font-bold mt-0.5">
-                Following
-              </p>
+              </span>
+              <span className="text-[11px] text-gray-400 font-medium">Following</span>
             </button>
           </div>
+
+          {/* Social earnings highlight — points earned from posts & engagement */}
+          <button
+            onClick={() => setPrimaryTab("analytics")}
+            className="w-full mt-3 flex items-center gap-3 rounded-xl px-3 py-2.5 bg-amber-500/10 border border-amber-500/25 hover:bg-amber-500/15 transition-colors text-left"
+          >
+            <div className="p-1.5 rounded-lg bg-amber-500/15 text-amber-400 shrink-0">
+              <Coins className="w-4 h-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] uppercase tracking-wider font-bold text-amber-400/90">
+                Social Earnings
+              </p>
+              <p className="text-xs text-gray-400 -mt-0.5">From posts &amp; engagement</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-sm font-extrabold text-white tabular-nums leading-tight">
+                {stats.socialEarningsPoints.toLocaleString()}{" "}
+                <span className="text-[11px] font-semibold text-gray-400">pts</span>
+              </p>
+              <p className="text-[11px] text-gray-500 tabular-nums leading-tight">
+                ≈ ${stats.socialEarningsUsd.toFixed(2)}
+              </p>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -1194,22 +1224,16 @@ function ThemeTab({
   preferences: { theme: string; themeAccent: string; notifications: { enabled: boolean; email: boolean; push: boolean } };
   patch: (body: Record<string, unknown>) => Promise<boolean>;
 }) {
-  const { setTheme } = useTheme();
+  const { setTheme, setAccent } = useTheme();
 
-  const applyTheme = (mode: "dark" | "light" | "system") => {
-    let resolved: "dark" | "light";
-    if (mode === "system") {
-      resolved =
-        typeof window !== "undefined" &&
-        window.matchMedia &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches
-          ? "dark"
-          : "light";
-    } else {
-      resolved = mode;
-    }
-    setTheme(resolved);
+  const applyTheme = (mode: Theme) => {
+    setTheme(mode); // provider resolves "system" (OS-reactive) + persists
     patch({ theme: mode });
+  };
+
+  const applyAccent = (id: Accent) => {
+    setAccent(id);
+    patch({ themeAccent: id });
   };
 
   return (
@@ -1219,9 +1243,13 @@ function ThemeTab({
         <div className="grid grid-cols-3 gap-2">
           {(
             [
-              { id: "dark", label: "Dark", swatch: "bg-slate-900" },
-              { id: "light", label: "Light", swatch: "bg-slate-100" },
-              { id: "system", label: "System", swatch: "bg-linear-to-br from-slate-100 to-slate-900" },
+              { id: "dark", label: "Dark", style: { backgroundColor: "#0f172a" } },
+              { id: "light", label: "Light", style: { backgroundColor: "#f1f5f9" } },
+              {
+                id: "system",
+                label: "System",
+                style: { backgroundImage: "linear-gradient(135deg,#f1f5f9 50%,#0f172a 50%)" },
+              },
             ] as const
           ).map((t) => (
             <button
@@ -1235,10 +1263,8 @@ function ThemeTab({
               )}
             >
               <span
-                className={cn(
-                  "w-10 h-10 rounded-lg border border-white/10 shadow-inner",
-                  t.swatch
-                )}
+                className="w-10 h-10 rounded-lg border border-white/10 shadow-inner"
+                style={t.style}
               />
               {t.label}
             </button>
@@ -1247,23 +1273,16 @@ function ThemeTab({
 
         <p className="text-xs text-gray-400 uppercase tracking-wider font-bold mt-4 mb-2">Accent Color</p>
         <div className="flex flex-wrap gap-2">
-          {[
-            { id: "indigo", className: "bg-indigo-500" },
-            { id: "purple", className: "bg-purple-500" },
-            { id: "emerald", className: "bg-emerald-500" },
-            { id: "amber", className: "bg-amber-500" },
-            { id: "blue", className: "bg-blue-500" },
-            { id: "rose", className: "bg-rose-500" },
-          ].map((c) => (
+          {ACCENTS.map((id) => (
             <button
-              key={c.id}
-              onClick={() => patch({ themeAccent: c.id })}
+              key={id}
+              onClick={() => applyAccent(id)}
+              style={{ background: ACCENT_GRADIENT[id] ?? ACCENT_HEX[id] }}
               className={cn(
-                "w-9 h-9 rounded-full ring-2 ring-offset-2 ring-offset-gray-900 transition-all",
-                c.className,
-                preferences.themeAccent === c.id ? "ring-white" : "ring-transparent"
+                "w-9 h-9 rounded-full ring-2 ring-offset-2 ring-offset-gray-900 transition-all capitalize",
+                preferences.themeAccent === id ? "ring-white" : "ring-transparent"
               )}
-              title={c.id}
+              title={id}
             />
           ))}
         </div>

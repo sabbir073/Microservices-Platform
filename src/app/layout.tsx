@@ -9,6 +9,11 @@ import "@fontsource/plus-jakarta-sans/600.css";
 import "@fontsource/plus-jakarta-sans/700.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
+// Bengali (বাংলা) glyph coverage — the Latin faces above have none.
+import "@fontsource/noto-sans-bengali/400.css";
+import "@fontsource/noto-sans-bengali/500.css";
+import "@fontsource/noto-sans-bengali/600.css";
+import "@fontsource/noto-sans-bengali/700.css";
 import { ThemeProvider } from "@/components/providers/theme-provider";
 import { Toaster } from "sonner";
 import { CookieConsent } from "@/components/user/primitives/cookie-consent";
@@ -87,11 +92,12 @@ export default async function RootLayout({
   return (
     <html lang="en" data-theme="dark" suppressHydrationWarning>
       <body className="font-sans antialiased" suppressHydrationWarning>
-        {/* Set the saved theme before first paint so a reload never flashes the
-            wrong theme. This runs synchronously before the body content paints. */}
+        {/* Set the saved theme + accent before first paint so a reload never
+            flashes the wrong theme/color. Resolves "system" via prefers-color-
+            scheme. Runs synchronously before the body content paints. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('earngpt-theme');if(t){document.documentElement.setAttribute('data-theme',t)}}catch(e){}`,
+            __html: `try{var d=document.documentElement;var t=localStorage.getItem('earngpt-theme')||'dark';var r=t==='system'?(window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'):t;d.setAttribute('data-theme',r);var a=localStorage.getItem('earngpt-accent')||'indigo';d.setAttribute('data-accent',a);}catch(e){}`,
           }}
         />
         <ThemeProvider defaultTheme="dark" storageKey="earngpt-theme">

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { PaymentMethod } from "@/generated/prisma/client";
+import { getPointsPerUsd } from "@/lib/economy";
 
 const schema = z.object({
   packageId: z.string().min(1),
@@ -62,7 +63,8 @@ export async function POST(request: NextRequest) {
   const months = DURATION_MONTHS[v.data.duration];
   const discount = DURATION_DISCOUNT[v.data.duration];
   const totalUsd = pkg.priceMonthly * months * (1 - discount);
-  const totalPoints = Math.ceil(totalUsd * 1000);
+  const pointsPerUsd = await getPointsPerUsd();
+  const totalPoints = Math.ceil(totalUsd * pointsPerUsd);
 
   const user = await prisma.user.findUnique({
     where: { id: userId },

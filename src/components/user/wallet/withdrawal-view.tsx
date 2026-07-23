@@ -21,6 +21,8 @@ interface WithdrawalViewProps {
   methods: PaymentMethod[];
   kycStatus: string;
   requireKyc: boolean;
+  /** Admin-configurable points-per-$1 rate (default 1000). */
+  pointsPerUsd?: number;
 }
 
 const TIER_LIMITS: Record<string, { min: number; max: number }> = {
@@ -48,6 +50,7 @@ export function WithdrawalView({
   methods,
   kycStatus,
   requireKyc,
+  pointsPerUsd = 1000,
 }: WithdrawalViewProps) {
   const router = useRouter();
   const limits = TIER_LIMITS[packageTier] ?? TIER_LIMITS.FREE;
@@ -107,7 +110,7 @@ export function WithdrawalView({
         </p>
         <p className="text-[11px] text-gray-500">
           Plus {pointsBalance.toLocaleString()} points (≈ $
-          {(pointsBalance * 0.001).toFixed(2)})
+          {(pointsBalance / pointsPerUsd).toFixed(2)})
         </p>
       </div>
 
@@ -164,7 +167,7 @@ export function WithdrawalView({
 
       {!isFree && !kycLocked && (
         <>
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+          <div className="glass rounded-xl p-4 space-y-3">
             <div>
               <label className="block text-xs font-medium text-gray-400 mb-1.5">
                 Amount (USD)
@@ -224,7 +227,7 @@ export function WithdrawalView({
             </div>
           </div>
 
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+          <div className="glass rounded-xl p-4">
             <div className="flex items-center justify-between mb-2">
               <p className="text-sm font-semibold text-white">Payment Method</p>
               <Link

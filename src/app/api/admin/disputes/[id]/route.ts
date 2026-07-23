@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { DisputeStatus, NotificationType, TransactionType, TransactionStatus } from "@/generated/prisma";
+import { getPointsPerUsd } from "@/lib/economy";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -310,6 +311,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
         // Handle refund if resolving in favor of buyer
         const refundAmount = inFavorOf === "BUYER" && resolvedAmount ? resolvedAmount : 0;
+        const pointsPerUsd = await getPointsPerUsd();
 
         await prisma.$transaction(async (tx) => {
           // Update dispute
@@ -329,7 +331,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
             // Credit buyer
             await tx.user.update({
               where: { id: purchase.buyerId },
-              data: { pointsBalance: { increment: Math.round(refundAmount * 1000) } },
+              data: { pointsBalance: { increment: Math.round(refundAmount * pointsPerUsd) } },
             });
 
             // Create transaction record
@@ -338,7 +340,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
                 userId: purchase.buyerId,
                 type: TransactionType.REFUND,
                 status: TransactionStatus.COMPLETED,
-                points: Math.round(refundAmount * 1000),
+                points: Math.round(refundAmount * pointsPerUsd),
                 amount: refundAmount,
                 description: `Refund from dispute resolution for "${listing?.title}"`,
                 reference: `dispute_refund_${id}`,

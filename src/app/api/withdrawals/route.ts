@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { getPointsPerUsd } from "@/lib/economy";
 import {
   WithdrawalStatus,
   PaymentMethod,
@@ -231,8 +232,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert amount to points needed
-    const pointsNeeded = Math.ceil(amount * 1000);
+    // Convert amount to points needed (admin-configurable rate)
+    const pointsPerUsd = await getPointsPerUsd();
+    const pointsNeeded = Math.ceil(amount * pointsPerUsd);
 
     // Check pending withdrawals
     const pendingWithdrawalsList = await prisma.withdrawal.findMany({
@@ -267,7 +269,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if user has enough balance (including pending)
-    const pendingAmountPoints = pendingWithdrawalsTotal * 1000;
+    const pendingAmountPoints = pendingWithdrawalsTotal * pointsPerUsd;
     const availablePoints = user.pointsBalance - pendingAmountPoints;
 
     if (pointsNeeded > availablePoints) {

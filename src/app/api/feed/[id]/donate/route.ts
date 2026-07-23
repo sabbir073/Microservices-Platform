@@ -7,6 +7,7 @@ import {
   NotificationType,
 } from "@/generated/prisma/client";
 import { z } from "zod";
+import { getPointsPerUsd } from "@/lib/economy";
 
 const schema = z.object({
   points: z.number().int().min(1).max(100000),
@@ -66,6 +67,7 @@ export async function POST(
     );
   }
 
+  const pointsPerUsd = await getPointsPerUsd();
   const [, , , donation, updated] = await prisma.$transaction([
     prisma.user.update({
       where: { id: donorId },
@@ -75,7 +77,7 @@ export async function POST(
       where: { id: post.userId },
       data: {
         pointsBalance: { increment: v.data.points },
-        totalEarnings: { increment: v.data.points / 1000 },
+        totalEarnings: { increment: v.data.points / pointsPerUsd },
       },
     }),
     prisma.transaction.create({
@@ -84,7 +86,7 @@ export async function POST(
         type: TransactionType.PURCHASE,
         status: TransactionStatus.COMPLETED,
         points: -v.data.points,
-        amount: v.data.points / 1000,
+        amount: v.data.points / pointsPerUsd,
         description: `Donation to post`,
         reference: `donation_${id}_${Date.now()}`,
         metadata: { postId: id, recipientId: post.userId },
