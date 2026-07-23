@@ -38,6 +38,7 @@ interface AdRow {
   format: string;
   placement: string | null;
   status: string;
+  rejectionReason?: string | null;
   brandName: string | null;
   headline: string | null;
   contentUrl: string | null;
@@ -309,15 +310,7 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
                         Promoted post
                       </span>
                     )}
-                    <span
-                      className={`text-[9px] px-1 py-0.5 rounded font-bold uppercase ${
-                        ad.status === "ACTIVE"
-                          ? "bg-emerald-500/10 text-emerald-400"
-                          : "bg-amber-500/10 text-amber-400"
-                      }`}
-                    >
-                      {ad.status}
-                    </span>
+                    <AdStatusBadge status={ad.status} rejectionReason={ad.rejectionReason} />
                   </div>
                   <p className="text-[11px] text-gray-500 mt-0.5 tabular-nums">
                     {ad.impressions.toLocaleString()} impr · {ad.clicks.toLocaleString()} clicks · {ad.ctr.toFixed(1)}% CTR
@@ -359,5 +352,43 @@ export function CampaignDetailView({ campaignId }: { campaignId: string }) {
         }}
       />
     </div>
+  );
+}
+
+function AdStatusBadge({
+  status,
+  rejectionReason,
+}: {
+  status: string;
+  rejectionReason?: string | null;
+}) {
+  const s = status?.toUpperCase();
+  if (s === "PENDING") {
+    return (
+      <span className="text-[9px] px-1 py-0.5 rounded font-bold uppercase bg-amber-500/10 text-amber-400">
+        Pending review
+      </span>
+    );
+  }
+  if (s === "REJECTED") {
+    return (
+      <span
+        title={rejectionReason || "Rejected"}
+        className="text-[9px] px-1 py-0.5 rounded font-bold uppercase bg-red-500/10 text-red-400"
+      >
+        Rejected
+      </span>
+    );
+  }
+  return (
+    <span
+      className={`text-[9px] px-1 py-0.5 rounded font-bold uppercase ${
+        s === "ACTIVE"
+          ? "bg-emerald-500/10 text-emerald-400"
+          : "bg-amber-500/10 text-amber-400"
+      }`}
+    >
+      {status}
+    </span>
   );
 }

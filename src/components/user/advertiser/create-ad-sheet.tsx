@@ -4,8 +4,11 @@ import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
+import { AudienceBuilder } from "@/components/admin/ads/audience-builder";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { AD_PLACEMENTS } from "@/lib/ad-placements";
+import { type AdTargeting } from "@/lib/ad-targeting";
 
 interface OwnPost {
   id: string;
@@ -14,7 +17,18 @@ interface OwnPost {
   likesCount: number;
 }
 
-const GENDERS = ["MALE", "FEMALE", "OTHER"] as const;
+const ADVERTISER_PLACEMENT_NAMES = [
+  "IN_FEED",
+  "FEED_SIDEBAR",
+  "DASHBOARD",
+  "EARN_HUB",
+  "WALLET_TOP",
+  "MARKETPLACE_TOP",
+  "PROFILE_BOTTOM",
+];
+const ADVERTISER_PLACEMENTS = AD_PLACEMENTS.filter((p) =>
+  ADVERTISER_PLACEMENT_NAMES.includes(p.name)
+);
 
 const inp =
   "w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500";
@@ -45,10 +59,11 @@ export function CreateAdSheet({
   const [posts, setPosts] = useState<OwnPost[]>([]);
   const [postId, setPostId] = useState<string | null>(null);
 
-  // Targeting
-  const [country, setCountry] = useState("");
-  const [genders, setGenders] = useState<string[]>([]);
-  const [minLevel, setMinLevel] = useState<number>(0);
+  // Ad spaces (placement names)
+  const [placements, setPlacements] = useState<string[]>(["IN_FEED"]);
+
+  // Targeting (single AdTargeting object owned by AudienceBuilder)
+  const [targeting, setTargeting] = useState<AdTargeting>({});
 
   useEffect(() => {
     if (!open || mode !== "post" || posts.length > 0) return;
@@ -66,9 +81,8 @@ export function CreateAdSheet({
     setCtaLabel("Learn More");
     setTargetUrl("");
     setPostId(null);
-    setCountry("");
-    setGenders([]);
-    setMinLevel(0);
+    setPlacements(["IN_FEED"]);
+    setTargeting({});
     setMode("custom");
   };
 
@@ -85,15 +99,14 @@ export function CreateAdSheet({
       toast.error("Add a headline or an image");
       return;
     }
-
-    const targeting: Record<string, unknown> = {};
-    if (country.trim()) targeting.countries = [country.trim()];
-    if (genders.length) targeting.genders = genders;
-    if (minLevel > 0) targeting.minLevel = minLevel;
+    if (placements.length === 0) {
+      toast.error("Pick at least one ad space");
+      return;
+    }
 
     const payload =
       mode === "post"
-        ? { format: "NATIVE", promotedPostId: postId, ctaLabel, targetUrl, targeting }
+        ? { format: "NATIVE", promotedPostId: postId, ctaLabel, targetUrl, targeting, placements }
         : {
             format: "NATIVE",
             brandName: brandName || null,
@@ -103,6 +116,7 @@ export function CreateAdSheet({
             ctaLabel,
             targetUrl,
             targeting,
+            placements,
           };
 
     setBusy(true);
@@ -116,7 +130,9 @@ export function CreateAdSheet({
         const d = await res.json().catch(() => ({}));
         throw new Error(d.error ?? `HTTP ${res.status}`);
       }
-      toast.success("Ad created");
+      toast.success("Ad submitted for review", {
+        description: "It will go live once an admin approves it.",
+      });
       reset();
       onCreated();
     } catch (err) {
@@ -236,45 +252,56 @@ export function CreateAdSheet({
           </div>
         </div>
 
+        {/* Ad spaces */}
+        <div className="rounded-lg border border-gray-800 p-3 space-y-2.5">
+          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+            Ad spaces ({placements.length} selected)
+          </p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {ADVERTISER_PLACEMENTS.map((p) => {
+              const on = placements.includes(p.name);
+              return (
+                <button
+                  key={p.name}
+                  type="button"
+                  onClick={() =>
+                    setPlacements((prev) =>
+                      on ? prev.filter((x) => x !== p.name) : [...prev, p.name]
+                    )
+                  }
+                  className={cn(
+                    "text-left rounded-lg border p-2",
+                    on
+                      ? "border-indigo-500 bg-indigo-500/10"
+                      : "border-gray-800 bg-gray-800/50"
+                  )}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className={cn(
+                        "w-3.5 h-3.5 rounded-sm grid place-items-center shrink-0 text-[9px] font-bold",
+                        on ? "bg-indigo-500 text-white" : "border border-gray-600"
+                      )}
+                    >
+                      {on ? "✓" : ""}
+                    </span>
+                    <span className="text-[11px] font-semibold text-gray-200 truncate">
+                      {p.label}
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-500 mt-0.5 line-clamp-1">{p.where}</p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Targeting */}
         <div className="rounded-lg border border-gray-800 p-3 space-y-2.5">
           <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
             Targeting (optional)
           </p>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-[11px] text-gray-400 mb-1">Country</label>
-              <input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="Any" className={inp} />
-            </div>
-            <div>
-              <label className="block text-[11px] text-gray-400 mb-1">Min level</label>
-              <input type="number" min={0} value={minLevel} onChange={(e) => setMinLevel(Number(e.target.value))} className={inp} />
-            </div>
-          </div>
-          <div>
-            <label className="block text-[11px] text-gray-400 mb-1">Gender</label>
-            <div className="flex gap-1.5">
-              {GENDERS.map((g) => {
-                const on = genders.includes(g);
-                return (
-                  <button
-                    key={g}
-                    onClick={() =>
-                      setGenders((prev) =>
-                        on ? prev.filter((x) => x !== g) : [...prev, g]
-                      )
-                    }
-                    className={cn(
-                      "flex-1 px-2 py-1.5 rounded-md text-[11px] font-semibold capitalize",
-                      on ? "bg-indigo-500 text-white" : "bg-gray-800 text-gray-400"
-                    )}
-                  >
-                    {g.toLowerCase()}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <AudienceBuilder value={targeting} onChange={setTargeting} />
         </div>
       </div>
     </BottomSheet>

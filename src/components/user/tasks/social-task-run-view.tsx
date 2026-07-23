@@ -28,6 +28,7 @@ import {
 import { ProofImageUpload } from "@/components/user/tasks/proof-image-upload";
 import { SocialWatchModal } from "@/components/user/tasks/social-watch-modal";
 import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 type ItemProof = { url: string; screenshot: string; username: string };
 const EMPTY_PROOF: ItemProof = { url: "", screenshot: "", username: "" };
@@ -571,6 +572,8 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
           </div>
         </div>
       </div>
+
+      <AdRenderer placement="TASK_START" />
 
       {/* Intro */}
       {task.description && (

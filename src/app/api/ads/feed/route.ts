@@ -50,12 +50,20 @@ export async function GET(request: NextRequest) {
   if (!placement) return NextResponse.json({ ads: [] });
 
   const cost = await getAdClickCost();
+  const now = new Date();
   const ads = await prisma.ad.findMany({
     where: {
       placementId: placement.id,
       status: "ACTIVE",
       format: "NATIVE",
-      campaign: { status: "ACTIVE", budget: { gte: cost } },
+      campaign: {
+        status: "ACTIVE",
+        budget: { gte: cost },
+        AND: [
+          { OR: [{ startAt: null }, { startAt: { lte: now } }] },
+          { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+        ],
+      },
     },
     select: {
       id: true,

@@ -21,6 +21,13 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (body.budget !== undefined) data.budget = Number(body.budget) || 0;
   if (body.status !== undefined && ["ACTIVE", "PAUSED", "ENDED"].includes(body.status))
     data.status = body.status;
+  const parseDate = (v: unknown): Date | null => {
+    if (!v) return null;
+    const d = new Date(String(v));
+    return isNaN(d.getTime()) ? null : d;
+  };
+  if (body.startAt !== undefined) data.startAt = parseDate(body.startAt);
+  if (body.endAt !== undefined) data.endAt = parseDate(body.endAt);
   const campaign = await prisma.adCampaign.update({ where: { id }, data });
   return NextResponse.json({ campaign });
 }

@@ -217,6 +217,34 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
               reference: existingSubmission.id,
             },
           });
+          // Funded (user-created) task: draw the reward from its budget pool and
+          // auto-complete when the pool is exhausted. CAS guard (gte) keeps the
+          // pool from going negative under concurrent approvals.
+          if (task.fundedByUserId) {
+            const drawn = await tx.task.updateMany({
+              where: { id: task.id, remainingBudget: { gte: earnedPoints } },
+              data: { remainingBudget: { decrement: earnedPoints } },
+            });
+            if (drawn.count === 0) {
+              // Pool can't cover this reward — zero it out and close the task
+              // (the worker is still credited above; the platform absorbs the tail).
+              await tx.task.update({
+                where: { id: task.id },
+                data: { remainingBudget: 0, status: "COMPLETED" },
+              });
+            } else {
+              const t = await tx.task.findUnique({
+                where: { id: task.id },
+                select: { remainingBudget: true, pointsReward: true },
+              });
+              if (t && t.remainingBudget < t.pointsReward) {
+                await tx.task.update({
+                  where: { id: task.id },
+                  data: { status: "COMPLETED" },
+                });
+              }
+            }
+          }
         }
         return tx.taskSubmission.findUnique({ where: { id } });
       });

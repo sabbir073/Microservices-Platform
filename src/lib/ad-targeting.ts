@@ -69,7 +69,66 @@ export const LANGUAGE_OPTIONS = [
   { code: "pt", label: "Portuguese" },
   { code: "id", label: "Indonesian" },
   { code: "ru", label: "Russian" },
+  { code: "de", label: "German" },
+  { code: "zh", label: "Chinese" },
 ] as const;
+
+/** Interests = the canonical profile tags (User.tags), with label + emoji for a
+ *  searchable picker. IDs match the profile TAG_OPTIONS. */
+export const INTEREST_OPTIONS: { id: string; label: string; emoji: string }[] = [
+  { id: "EARLY_ADOPTER", label: "Early Adopter", emoji: "🚀" },
+  { id: "VERIFIED", label: "Verified", emoji: "✓" },
+  { id: "CRYPTO", label: "Crypto", emoji: "₿" },
+  { id: "TRADER", label: "Trader", emoji: "📈" },
+  { id: "GAMER", label: "Gamer", emoji: "🎮" },
+  { id: "INFLUENCER", label: "Influencer", emoji: "📣" },
+  { id: "WHALE", label: "Whale", emoji: "🐋" },
+  { id: "PRO", label: "Pro", emoji: "🏆" },
+  { id: "ELITE", label: "Elite", emoji: "💎" },
+  { id: "CREATOR", label: "Creator", emoji: "🎨" },
+];
+
+/** Countries the platform serves — code + name + flag. `User.country` stores the
+ *  code. Shared by profile, settings and the ad audience builder. */
+export const COUNTRY_OPTIONS: { code: string; name: string; flag: string }[] = [
+  { code: "BD", name: "Bangladesh", flag: "🇧🇩" },
+  { code: "IN", name: "India", flag: "🇮🇳" },
+  { code: "PK", name: "Pakistan", flag: "🇵🇰" },
+  { code: "US", name: "United States", flag: "🇺🇸" },
+  { code: "UK", name: "United Kingdom", flag: "🇬🇧" },
+  { code: "CA", name: "Canada", flag: "🇨🇦" },
+  { code: "AU", name: "Australia", flag: "🇦🇺" },
+  { code: "AE", name: "UAE", flag: "🇦🇪" },
+  { code: "SA", name: "Saudi Arabia", flag: "🇸🇦" },
+  { code: "QA", name: "Qatar", flag: "🇶🇦" },
+  { code: "KW", name: "Kuwait", flag: "🇰🇼" },
+  { code: "OM", name: "Oman", flag: "🇴🇲" },
+  { code: "MY", name: "Malaysia", flag: "🇲🇾" },
+  { code: "SG", name: "Singapore", flag: "🇸🇬" },
+  { code: "ID", name: "Indonesia", flag: "🇮🇩" },
+  { code: "PH", name: "Philippines", flag: "🇵🇭" },
+  { code: "TH", name: "Thailand", flag: "🇹🇭" },
+  { code: "VN", name: "Vietnam", flag: "🇻🇳" },
+  { code: "NP", name: "Nepal", flag: "🇳🇵" },
+  { code: "LK", name: "Sri Lanka", flag: "🇱🇰" },
+  { code: "NG", name: "Nigeria", flag: "🇳🇬" },
+  { code: "EG", name: "Egypt", flag: "🇪🇬" },
+  { code: "ZA", name: "South Africa", flag: "🇿🇦" },
+  { code: "KE", name: "Kenya", flag: "🇰🇪" },
+  { code: "GH", name: "Ghana", flag: "🇬🇭" },
+  { code: "DE", name: "Germany", flag: "🇩🇪" },
+  { code: "FR", name: "France", flag: "🇫🇷" },
+  { code: "IT", name: "Italy", flag: "🇮🇹" },
+  { code: "ES", name: "Spain", flag: "🇪🇸" },
+  { code: "NL", name: "Netherlands", flag: "🇳🇱" },
+  { code: "TR", name: "Turkey", flag: "🇹🇷" },
+  { code: "BR", name: "Brazil", flag: "🇧🇷" },
+  { code: "MX", name: "Mexico", flag: "🇲🇽" },
+  { code: "RU", name: "Russia", flag: "🇷🇺" },
+  { code: "CN", name: "China", flag: "🇨🇳" },
+  { code: "JP", name: "Japan", flag: "🇯🇵" },
+  { code: "KR", name: "South Korea", flag: "🇰🇷" },
+];
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function toDate(v: Date | string | null | undefined): Date | null {

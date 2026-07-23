@@ -140,7 +140,7 @@ export function ReferralsView({
       <header>
         <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
           <Users className="w-6 h-6 text-purple-400" />
-          Referrals
+          My Team
         </h1>
         <p className="text-gray-400 text-sm mt-0.5">
           Invite friends, build a team, earn passive commission for life.

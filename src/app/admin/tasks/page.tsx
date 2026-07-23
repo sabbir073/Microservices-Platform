@@ -27,6 +27,7 @@ import { hasPermission, type UserRole } from "@/lib/rbac";
 import { taskDisplayId } from "@/lib/display-id";
 import { Prisma } from "@/generated/prisma/client";
 import { TaskActions } from "@/components/admin/task-actions";
+import { TaskReviewActions } from "@/components/admin/task-review-actions";
 
 interface PageProps {
   searchParams: Promise<{
@@ -116,6 +117,7 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
     completedCount,
     draftCount,
     pendingSubmissions,
+    pendingReviewCount,
   ] = await Promise.all([
     prisma.task.findMany({
       where,
@@ -136,6 +138,7 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
     prisma.task.count({ where: { status: "COMPLETED" } }),
     prisma.task.count({ where: { status: "DRAFT" } }),
     prisma.taskSubmission.count({ where: { status: "PENDING" } }),
+    prisma.task.count({ where: { status: "PENDING_REVIEW" } }),
   ]);
 
   const boards = await prisma.taskBoard.findMany({
@@ -177,6 +180,15 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
           </p>
         </div>
         <div className="flex gap-3">
+          {pendingReviewCount > 0 && (
+            <Link
+              href="/admin/tasks?status=PENDING_REVIEW"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 rounded-lg hover:bg-indigo-500/20 transition-colors"
+            >
+              <Clock className="w-4 h-4" />
+              Pending Review ({pendingReviewCount})
+            </Link>
+          )}
           {pendingSubmissions > 0 && (
             <Link
               href="/admin/submissions"
@@ -299,6 +311,7 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
           className="bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
         >
           <option value="all">All Status</option>
+          <option value="PENDING_REVIEW">Pending Review</option>
           <option value="DRAFT">Draft</option>
           <option value="ACTIVE">Active</option>
           <option value="PAUSED">Paused</option>
@@ -373,9 +386,11 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
                       ? "bg-amber-500/10 text-amber-400"
                       : task.status === "COMPLETED"
                       ? "bg-blue-500/10 text-blue-400"
+                      : task.status === "PENDING_REVIEW"
+                      ? "bg-indigo-500/10 text-indigo-300"
                       : "bg-red-500/10 text-red-400"
                   }`}>
-                    {task.status}
+                    {task.status === "PENDING_REVIEW" ? "PENDING REVIEW" : task.status}
                   </span>
                 </div>
 
@@ -413,6 +428,31 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
                   <span>{task._count.submissions} submissions</span>
                   <span>{task.completedCount} completed</span>
                 </div>
+
+                {/* Pending review — creator-funded task awaiting approval */}
+                {task.status === "PENDING_REVIEW" && (
+                  <div className="mt-4 pt-4 border-t border-slate-800 space-y-3">
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <p className="text-slate-500">Creator</p>
+                        <p className="text-slate-300 font-mono truncate">
+                          {task.createdById ?? "—"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Completions</p>
+                        <p className="text-slate-300">{task.totalLimit ?? "—"}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500">Budget</p>
+                        <p className="text-slate-300">
+                          {task.budgetPoints.toLocaleString()} pts
+                        </p>
+                      </div>
+                    </div>
+                    {canCreate && <TaskReviewActions taskId={task.id} />}
+                  </div>
+                )}
 
                 {/* Footer */}
                 <div className="flex items-center justify-between mt-4">

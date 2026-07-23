@@ -25,20 +25,19 @@ import {
   Wallet,
   ShoppingBag,
   User as UserIcon,
+  ShieldCheck,
+  Check,
+  Ban,
   type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { AdWizard } from "@/components/admin/ads/ad-wizard";
+import { AudienceBuilder } from "@/components/admin/ads/audience-builder";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 import { AD_PLACEMENTS } from "@/lib/ad-placements";
 import { AD_SIZES } from "@/lib/ad-sizes";
-import {
-  GENDER_OPTIONS,
-  KYC_OPTIONS,
-  TAG_OPTIONS,
-  LANGUAGE_OPTIONS,
-  type AdTargeting,
-} from "@/lib/ad-targeting";
+import { type AdTargeting } from "@/lib/ad-targeting";
 
 interface Campaign {
   id: string;
@@ -46,6 +45,8 @@ interface Campaign {
   description: string | null;
   budget: number;
   status: string;
+  startAt?: string | null;
+  endAt?: string | null;
   _count?: { ads: number };
 }
 interface PlacementStats {
@@ -84,12 +85,22 @@ interface Ad {
   brandLogo: string | null;
   ctaLabel: string | null;
   targeting: AdTargeting | null;
-  campaign: { id: string; title: string };
+  rejectionReason?: string | null;
+  campaign: {
+    id: string;
+    title: string;
+    status?: string | null;
+    budget?: number | null;
+    startAt?: string | null;
+    endAt?: string | null;
+    advertiser?: { id: string; name: string | null; username: string | null } | null;
+  };
   placement: { id: string; name: string };
 }
 
 const TABS = [
   { id: "ads", label: "Ads", icon: Newspaper },
+  { id: "approvals", label: "Approvals", icon: ShieldCheck },
   { id: "campaigns", label: "Campaigns", icon: Megaphone },
   { id: "placements", label: "Ad Spaces", icon: Layers },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
@@ -98,6 +109,7 @@ type TabId = (typeof TABS)[number]["id"];
 
 const PLACEMENT_LABEL = Object.fromEntries(AD_PLACEMENTS.map((p) => [p.name, p.label]));
 const PLACEMENT_DESC = Object.fromEntries(AD_PLACEMENTS.map((p) => [p.name, p.description]));
+const PLACEMENT_WHERE = Object.fromEntries(AD_PLACEMENTS.map((p) => [p.name, p.where]));
 const CANONICAL_NAMES = new Set<string>(AD_PLACEMENTS.map((p) => p.name));
 
 // Per-space icon for the Ad Spaces cards.
@@ -108,11 +120,14 @@ const PLACEMENT_ICON: Record<string, LucideIcon> = {
   VIDEO_BELOW: Film,
   TASK_COMPLETE: CheckCircle2,
   IN_FEED: Rss,
+  FEED_SIDEBAR: Rss,
   DASHBOARD: LayoutDashboard,
   EARN_HUB: Sparkles,
   WALLET_TOP: Wallet,
   MARKETPLACE_TOP: ShoppingBag,
   PROFILE_BOTTOM: UserIcon,
+  GAME_INTERSTITIAL: PlayCircle,
+  VIDEO_INTERSTITIAL: Film,
 };
 
 export function AdManagerView({ canManage }: { canManage: boolean }) {
@@ -122,9 +137,14 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   const [placements, setPlacements] = useState<Placement[]>([]);
   const [loading, setLoading] = useState(true);
   const [adModal, setAdModal] = useState<Ad | "new" | null>(null);
+  const [adWizard, setAdWizard] = useState(false);
   const [campModal, setCampModal] = useState<Campaign | "new" | null>(null);
   const [newPlacement, setNewPlacement] = useState("");
   const [demoBusy, setDemoBusy] = useState(false);
+  const [rotationSeconds, setRotationSeconds] = useState(12);
+  const [rotationBusy, setRotationBusy] = useState(false);
+  const [cpcUsd, setCpcUsd] = useState(0.01);
+  const [cpcBusy, setCpcBusy] = useState(false);
 
   const loadAll = async () => {
     setLoading(true);
@@ -137,6 +157,8 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
       setAds(a.ads ?? []);
       setCampaigns(c.campaigns ?? []);
       setPlacements(p.placements ?? []);
+      if (typeof p.rotationSeconds === "number") setRotationSeconds(p.rotationSeconds);
+      if (typeof p.cpcUsd === "number") setCpcUsd(p.cpcUsd);
     } catch {
       toast.error("Failed to load ad data");
     } finally {
@@ -156,6 +178,8 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
         setAds(a.ads ?? []);
         setCampaigns(c.campaigns ?? []);
         setPlacements(p.placements ?? []);
+        if (typeof p.rotationSeconds === "number") setRotationSeconds(p.rotationSeconds);
+        if (typeof p.cpcUsd === "number") setCpcUsd(p.cpcUsd);
       })
       .catch(() => active && toast.error("Failed to load ad data"))
       .finally(() => active && setLoading(false));
@@ -164,9 +188,55 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
     };
   }, []);
 
+  const saveRotationSeconds = async (secs: number) => {
+    const clamped = Math.min(60, Math.max(5, Math.round(secs) || 12));
+    setRotationSeconds(clamped);
+    setRotationBusy(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: "ads",
+          settings: { "ads.rotation_seconds": clamped },
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(`Ads rotate every ${clamped}s`);
+    } catch {
+      toast.error("Couldn't save rotation interval");
+    } finally {
+      setRotationBusy(false);
+    }
+  };
+
+  const saveCpc = async (value: number) => {
+    const clamped = Math.max(0.001, Number.isFinite(value) ? value : 0.01);
+    setCpcUsd(clamped);
+    setCpcBusy(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: "ads",
+          settings: { "ads.cpcUsd": clamped },
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(`Cost per click set to $${clamped}`);
+    } catch {
+      toast.error("Couldn't save cost per click");
+    } finally {
+      setCpcBusy(false);
+    }
+  };
+
   const totalImpr = ads.reduce((s, a) => s + a.impressions, 0);
   const totalClicks = ads.reduce((s, a) => s + a.clicks, 0);
   const ctr = totalImpr > 0 ? ((totalClicks / totalImpr) * 100).toFixed(2) : "0.00";
+  const pendingAds = ads.filter((a) => a.status?.toUpperCase() === "PENDING");
+  const pendingCount = pendingAds.length;
 
   const deletePlacement = async (id: string) => {
     if (!(await confirmDialog({ title: "Delete this placement?", tone: "danger", confirmLabel: "Delete" }))) return;
@@ -200,6 +270,26 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
     if (!(await confirmDialog({ title: "Delete this ad?", tone: "danger", confirmLabel: "Delete" }))) return;
     await fetch(`/api/admin/ads/${id}`, { method: "DELETE" });
     toast.success("Deleted");
+    loadAll();
+  };
+  const approveAd = async (id: string) => {
+    const res = await fetch(`/api/admin/ads/${id}/approve`, { method: "POST" });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(d.error ?? "Failed to approve");
+    toast.success("Ad approved & advertiser notified");
+    loadAll();
+  };
+  const rejectAd = async (id: string) => {
+    const reason = window.prompt("Reason for rejection?");
+    if (reason == null) return;
+    const res = await fetch(`/api/admin/ads/${id}/reject`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(d.error ?? "Failed to reject");
+    toast.success("Ad rejected & advertiser notified");
     loadAll();
   };
   const deleteCampaign = async (id: string) => {
@@ -275,7 +365,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
             </button>
             {tab === "ads" && (
               <button
-                onClick={() => setAdModal("new")}
+                onClick={() => setAdWizard(true)}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 <Plus className="w-4 h-4" /> New Ad
@@ -313,6 +403,11 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
           >
             <t.icon className="w-4 h-4" />
             {t.label}
+            {t.id === "approvals" && pendingCount > 0 && (
+              <span className="ml-0.5 min-w-4.5 px-1 h-4.5 grid place-items-center rounded-full bg-amber-500 text-slate-950 text-[10px] font-bold">
+                {pendingCount}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -325,6 +420,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
         <>
           {tab === "ads" && (
             <div className="space-y-2">
+              <p className="text-xs text-slate-400">Only ACTIVE ads in a funded, in-schedule campaign serve. Targeted ads show only to matching users — check the audience size. Use &quot;Remove demo&quot; to see only your own ads.</p>
               {ads.length === 0 && <Empty text="No ads yet. Create one to start." />}
               {ads.map((ad) => {
                 const thumb = ad.contentUrl || ad.brandLogo;
@@ -349,6 +445,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                             {isFeed ? "Feed" : "Banner"}
                           </span>
                           <StatusPill status={ad.status} />
+                          <ServingPill ad={ad} cpc={cpcUsd} />
                           <span className="text-[10px] text-slate-500">{PLACEMENT_LABEL[ad.placement.name] ?? ad.placement.name}</span>
                           {ad.rewardPoints > 0 && (
                             <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/10 text-emerald-400">+{ad.rewardPoints}pts</span>
@@ -374,8 +471,83 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
             </div>
           )}
 
+          {tab === "approvals" && (
+            <div className="space-y-2">
+              <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-100/90">
+                <b className="text-white">Approval queue.</b> Ads submitted by advertisers land here as
+                PENDING. Approve to set them ACTIVE (advertiser is notified), or reject with a reason.
+              </div>
+              {pendingAds.length === 0 ? (
+                <Empty text="No ads awaiting approval." />
+              ) : (
+                pendingAds.map((ad) => {
+                  const thumb = ad.contentUrl || ad.videoUrl || ad.brandLogo;
+                  const title = ad.brandName || ad.headline || ad.campaign.title;
+                  const advertiser =
+                    ad.campaign.advertiser?.name ?? ad.campaign.advertiser?.username ?? "—";
+                  const tgt = targetingSummary(ad.targeting);
+                  const isFeed = ad.format === "NATIVE";
+                  return (
+                    <div
+                      key={ad.id}
+                      className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-500/20 bg-slate-900 p-3"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {thumb ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={thumb} alt="" className="w-14 h-14 rounded-lg object-cover bg-slate-950 shrink-0" />
+                        ) : (
+                          <div className="w-14 h-14 rounded-lg bg-slate-950 grid place-items-center text-slate-600 shrink-0">
+                            {isFeed ? <Rss className="w-5 h-5" /> : <Newspaper className="w-5 h-5" />}
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-white truncate">{title}</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                            {ad.campaign.title} · by <span className="text-slate-300">{advertiser}</span>
+                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            <StatusPill status={ad.status} />
+                            <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider", isFeed ? "bg-indigo-500/15 text-indigo-300" : "bg-slate-800 text-slate-400")}>
+                              {isFeed ? "Feed" : "Banner"}
+                            </span>
+                            <span className="text-[10px] text-slate-500">{PLACEMENT_LABEL[ad.placement.name] ?? ad.placement.name}</span>
+                            {tgt && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-800 text-slate-300">🎯 {tgt}</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {canManage && (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => approveAd(ad.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold"
+                          >
+                            <Check className="w-4 h-4" /> Approve
+                          </button>
+                          <button
+                            onClick={() => rejectAd(ad.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-semibold"
+                          >
+                            <Ban className="w-4 h-4" /> Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
           {tab === "campaigns" && (
             <div className="space-y-2">
+              <div className="rounded-xl border border-blue-500/25 bg-blue-500/10 p-3 text-sm text-blue-100/90">
+                <b className="text-white">What is a campaign?</b> A campaign is a <b>budget pool</b>. Its ads
+                spend from the budget on each click; when the budget runs out the campaign auto-pauses. Pause a
+                campaign to pause all of its ads at once. Create a campaign first, then add ads to it.
+              </div>
               {campaigns.length === 0 && <Empty text="No campaigns yet." />}
               {campaigns.map((c) => (
                 <div key={c.id} className="rounded-2xl border border-slate-800 bg-slate-900 p-3.5 hover:border-slate-700 transition-colors">
@@ -404,10 +576,46 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
 
           {tab === "placements" && (
             <div className="space-y-4">
-              <p className="text-sm text-slate-400">
-                Every ad space maps to a slot in the app. Toggle a space off to stop showing ads there.
-                Live stats below are aggregated from all ads assigned to each space.
-              </p>
+              <div className="rounded-xl border border-blue-500/25 bg-blue-500/10 p-3 text-sm text-blue-100/90">
+                <b className="text-white">What is an ad space?</b> Each space is a fixed slot on a page
+                (see “Appears on” under each). Assign an ad to a space via the ad&apos;s <b>Placement</b>.
+                Put several active ads in one space and they <b>rotate automatically</b> — on reload and
+                every {rotationSeconds}s.
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-slate-400">
+                  Toggle a space off to stop showing ads there. Stats are aggregated from all ads in each space.
+                </p>
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-slate-400 whitespace-nowrap">Rotate every</label>
+                    <input
+                      type="number"
+                      min={5}
+                      max={60}
+                      value={rotationSeconds}
+                      disabled={!canManage || rotationBusy}
+                      onChange={(e) => setRotationSeconds(Number(e.target.value))}
+                      onBlur={(e) => saveRotationSeconds(Number(e.target.value))}
+                      className="w-16 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm text-center disabled:opacity-50"
+                    />
+                    <span className="text-xs text-slate-400">seconds</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-slate-400 whitespace-nowrap">Cost per click ($)</label>
+                    <input
+                      type="number"
+                      step={0.01}
+                      min={0.001}
+                      value={cpcUsd}
+                      disabled={!canManage || cpcBusy}
+                      onChange={(e) => setCpcUsd(Number(e.target.value))}
+                      onBlur={(e) => saveCpc(Number(e.target.value))}
+                      className="w-20 px-2 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm text-center disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+              </div>
               {canManage && (
                 <div className="flex gap-2 max-w-md">
                   <input
@@ -427,6 +635,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                     key={p.id}
                     placement={p}
                     canManage={canManage}
+                    rotationSeconds={rotationSeconds}
                     onToggle={() => togglePlacement(p)}
                     onDelete={() => deletePlacement(p.id)}
                   />
@@ -439,6 +648,17 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
         </>
       )}
 
+      {adWizard && (
+        <AdWizard
+          campaigns={campaigns}
+          placements={placements}
+          onClose={() => setAdWizard(false)}
+          onSaved={() => {
+            setAdWizard(false);
+            loadAll();
+          }}
+        />
+      )}
       {adModal && (
         <AdModal
           ad={adModal === "new" ? null : adModal}
@@ -506,10 +726,55 @@ function StatusPill({ status }: { status: string }) {
       ? "bg-emerald-500/15 text-emerald-400"
       : s === "PAUSED"
         ? "bg-amber-500/15 text-amber-400"
-        : "bg-slate-800 text-slate-400";
+        : s === "PENDING"
+          ? "bg-amber-500/15 text-amber-400"
+          : s === "REJECTED"
+            ? "bg-red-500/15 text-red-400"
+            : "bg-slate-800 text-slate-400";
   return (
     <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider", cls)}>
       {s}
+    </span>
+  );
+}
+
+type ServingTone = "amber" | "red" | "slate" | "sky" | "emerald";
+
+const SERVING_TONE_CLS: Record<ServingTone, string> = {
+  amber: "bg-amber-500/15 text-amber-400",
+  red: "bg-red-500/15 text-red-400",
+  slate: "bg-slate-800 text-slate-400",
+  sky: "bg-sky-500/15 text-sky-400",
+  emerald: "bg-emerald-500/15 text-emerald-400",
+};
+
+/**
+ * Whether (and why) an ad is actually serving to users — folds the ad's own
+ * status together with its campaign's status/budget/schedule so admins can see
+ * at a glance why an "ACTIVE" ad might not be showing.
+ */
+function servingState(ad: Ad, cpc: number): { label: string; tone: ServingTone } {
+  const s = ad.status?.toUpperCase();
+  if (s === "PENDING") return { label: "Pending review", tone: "amber" };
+  if (s === "REJECTED") return { label: "Rejected", tone: "red" };
+  if (s === "PAUSED") return { label: "Paused", tone: "slate" };
+  if (s === "INACTIVE") return { label: "Inactive", tone: "slate" };
+  if (ad.campaign?.status !== "ACTIVE") return { label: "Campaign paused", tone: "amber" };
+  if ((ad.campaign?.budget ?? 0) < cpc) return { label: "Out of budget", tone: "amber" };
+  if (ad.campaign?.startAt && new Date(ad.campaign.startAt) > new Date())
+    return { label: "Scheduled", tone: "sky" };
+  if (ad.campaign?.endAt && new Date(ad.campaign.endAt) < new Date())
+    return { label: "Ended", tone: "slate" };
+  const targeted =
+    !!ad.targeting && typeof ad.targeting === "object" && Object.keys(ad.targeting).length > 0;
+  return { label: targeted ? "Live · targeted" : "Live", tone: "emerald" };
+}
+
+function ServingPill({ ad, cpc }: { ad: Ad; cpc: number }) {
+  const { label, tone } = servingState(ad, cpc);
+  return (
+    <span className={cn("px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider", SERVING_TONE_CLS[tone])}>
+      {label}
     </span>
   );
 }
@@ -536,11 +801,13 @@ function targetingSummary(t: AdTargeting | null): string | null {
 function AdSpaceCard({
   placement: p,
   canManage,
+  rotationSeconds,
   onToggle,
   onDelete,
 }: {
   placement: Placement;
   canManage: boolean;
+  rotationSeconds: number;
   onToggle: () => void;
   onDelete: () => void;
 }) {
@@ -549,6 +816,7 @@ function AdSpaceCard({
   const stats = p.stats ?? { impressions: 0, clicks: 0, activeAds: 0, totalAds: 0 };
   const ctr = stats.impressions > 0 ? ((stats.clicks / stats.impressions) * 100).toFixed(1) : "0.0";
   const isCustom = !CANONICAL_NAMES.has(p.name);
+  const where = PLACEMENT_WHERE[p.name];
 
   return (
     <div
@@ -586,6 +854,22 @@ function AdSpaceCard({
           <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
             {PLACEMENT_DESC[p.name] ?? p.name}
           </p>
+          {where ? (
+            <p className="text-[11px] text-slate-400 mt-1">
+              <span className="text-slate-500">Appears on:</span> {where}
+            </p>
+          ) : (
+            isCustom && (
+              <p className="text-[11px] text-amber-400/80 mt-1">
+                Custom space — only renders where you mount &lt;AdRenderer placement=&quot;{p.name}&quot;&gt; in code.
+              </p>
+            )
+          )}
+          {stats.activeAds > 1 && (
+            <p className="text-[10px] text-emerald-400/80 mt-1">
+              {stats.activeAds} active ads · rotate every {rotationSeconds}s &amp; on reload
+            </p>
+          )}
         </div>
       </div>
 
@@ -720,13 +1004,16 @@ function IconBtn({ children, onClick, title, danger }: { children: React.ReactNo
 
 function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 overflow-y-auto">
-      <div className="w-full max-w-lg my-8 rounded-2xl border border-slate-800 bg-slate-900">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      {/* Cap the panel to the viewport and scroll the BODY internally so a tall
+          form never clips its header/top (the old items-center + scrim-scroll
+          pushed the header above the viewport). */}
+      <div className="w-full max-w-lg flex flex-col max-h-[90vh] rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 shrink-0">
           <h3 className="font-bold text-white">{title}</h3>
           <button onClick={onClose} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="p-4 overflow-y-auto">{children}</div>
       </div>
     </div>
   );
@@ -770,28 +1057,9 @@ function AdModal({
   const [brandName, setBrandName] = useState(ad?.brandName ?? "");
   const [brandLogo, setBrandLogo] = useState(ad?.brandLogo ?? "");
   const [ctaLabel, setCtaLabel] = useState(ad?.ctaLabel ?? "");
-  // Targeting (audience filters)
-  const tg = ad?.targeting ?? {};
-  const [tgCountries, setTgCountries] = useState((tg.countries ?? []).join(", "));
-  const [tgCities, setTgCities] = useState((tg.cities ?? []).join(", "));
-  const [tgGenders, setTgGenders] = useState<string[]>(tg.genders ?? []);
-  const [tgMinAge, setTgMinAge] = useState(String(tg.minAge ?? ""));
-  const [tgMaxAge, setTgMaxAge] = useState(String(tg.maxAge ?? ""));
-  const [tgMinLevel, setTgMinLevel] = useState(String(tg.minLevel ?? ""));
-  const [tgMaxLevel, setTgMaxLevel] = useState(String(tg.maxLevel ?? ""));
-  const [tgPackages, setTgPackages] = useState((tg.packages ?? []).join(", "));
-  const [tgKyc, setTgKyc] = useState<string[]>(tg.kycStatuses ?? []);
-  const [tgVerified, setTgVerified] = useState(!!tg.verifiedOnly);
-  const [tgTags, setTgTags] = useState<string[]>(tg.tags ?? []);
-  const [tgLanguages, setTgLanguages] = useState((tg.languages ?? []).join(", "));
-  const [tgAccountAge, setTgAccountAge] = useState(String(tg.minAccountAgeDays ?? ""));
-  const [tgActiveWithin, setTgActiveWithin] = useState(String(tg.activeWithinDays ?? ""));
+  // Targeting (audience filters) — single AdTargeting object owned by AudienceBuilder
+  const [targeting, setTargeting] = useState<AdTargeting>(ad?.targeting ?? {});
   const [busy, setBusy] = useState(false);
-
-  const toggleIn = (arr: string[], v: string) =>
-    arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v];
-  const csv = (s: string) =>
-    s.split(",").map((x) => x.trim()).filter(Boolean);
 
   const save = async () => {
     if (!campaignId || !placementId) {
@@ -800,21 +1068,6 @@ function AdModal({
     }
     setBusy(true);
     try {
-      const targeting: Record<string, unknown> = {};
-      if (csv(tgCountries).length) targeting.countries = csv(tgCountries);
-      if (csv(tgCities).length) targeting.cities = csv(tgCities);
-      if (tgGenders.length) targeting.genders = tgGenders;
-      if (Number(tgMinAge) > 0) targeting.minAge = Number(tgMinAge);
-      if (Number(tgMaxAge) > 0) targeting.maxAge = Number(tgMaxAge);
-      if (Number(tgMinLevel) > 0) targeting.minLevel = Number(tgMinLevel);
-      if (Number(tgMaxLevel) > 0) targeting.maxLevel = Number(tgMaxLevel);
-      if (csv(tgPackages).length) targeting.packages = csv(tgPackages);
-      if (tgKyc.length) targeting.kycStatuses = tgKyc;
-      if (tgVerified) targeting.verifiedOnly = true;
-      if (tgTags.length) targeting.tags = tgTags;
-      if (csv(tgLanguages).length) targeting.languages = csv(tgLanguages);
-      if (Number(tgAccountAge) > 0) targeting.minAccountAgeDays = Number(tgAccountAge);
-      if (Number(tgActiveWithin) > 0) targeting.activeWithinDays = Number(tgActiveWithin);
       const payload = {
         campaignId,
         placementId,
@@ -985,129 +1238,7 @@ function AdModal({
         )}
 
         {/* Audience targeting */}
-        <div className="rounded-lg border border-slate-800 p-3 space-y-3">
-          <p className="text-xs font-bold text-slate-400">
-            Audience targeting <span className="font-normal">(all blank = everyone)</span>
-          </p>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Countries (comma)</label>
-              <input value={tgCountries} onChange={(e) => setTgCountries(e.target.value)} className={inputCls} placeholder="BD, IN, US" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Cities (comma)</label>
-              <input value={tgCities} onChange={(e) => setTgCities(e.target.value)} className={inputCls} placeholder="Dhaka, Delhi" />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Gender</label>
-            <div className="flex gap-1.5">
-              {GENDER_OPTIONS.map((g) => {
-                const on = tgGenders.includes(g);
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    onClick={() => setTgGenders((prev) => toggleIn(prev, g))}
-                    className={`flex-1 py-1.5 rounded-md text-[11px] font-semibold capitalize ${on ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
-                  >
-                    {g.toLowerCase()}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-4 gap-2">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Min age</label>
-              <input type="number" min={0} value={tgMinAge} onChange={(e) => setTgMinAge(e.target.value)} className={inputCls} placeholder="—" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Max age</label>
-              <input type="number" min={0} value={tgMaxAge} onChange={(e) => setTgMaxAge(e.target.value)} className={inputCls} placeholder="—" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Min level</label>
-              <input type="number" min={0} value={tgMinLevel} onChange={(e) => setTgMinLevel(e.target.value)} className={inputCls} placeholder="—" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Max level</label>
-              <input type="number" min={0} value={tgMaxLevel} onChange={(e) => setTgMaxLevel(e.target.value)} className={inputCls} placeholder="—" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Packages (slug, comma)</label>
-              <input value={tgPackages} onChange={(e) => setTgPackages(e.target.value)} className={inputCls} placeholder="pro, elite" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">
-                Languages ({LANGUAGE_OPTIONS.slice(0, 3).map((l) => l.code).join("/")}…)
-              </label>
-              <input value={tgLanguages} onChange={(e) => setTgLanguages(e.target.value)} className={inputCls} placeholder="en, bn" />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">KYC status</label>
-            <div className="flex flex-wrap gap-1.5">
-              {KYC_OPTIONS.map((k) => {
-                const on = tgKyc.includes(k);
-                return (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setTgKyc((prev) => toggleIn(prev, k))}
-                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${on ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
-                  >
-                    {k.replace(/_/g, " ")}
-                  </button>
-                );
-              })}
-              <button
-                type="button"
-                onClick={() => setTgVerified((v) => !v)}
-                className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold ${tgVerified ? "bg-sky-600 text-white" : "bg-slate-800 text-slate-300"}`}
-              >
-                ✓ Verified only
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">Interests / tags</label>
-            <div className="flex flex-wrap gap-1.5">
-              {TAG_OPTIONS.map((t) => {
-                const on = tgTags.includes(t);
-                return (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTgTags((prev) => toggleIn(prev, t))}
-                    className={`px-2.5 py-1.5 rounded-md text-[11px] font-semibold capitalize ${on ? "bg-violet-600 text-white" : "bg-slate-800 text-slate-300"}`}
-                  >
-                    {t.replace(/_/g, " ").toLowerCase()}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Min account age (days)</label>
-              <input type="number" min={0} value={tgAccountAge} onChange={(e) => setTgAccountAge(e.target.value)} className={inputCls} placeholder="—" />
-            </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Active within (days)</label>
-              <input type="number" min={0} value={tgActiveWithin} onChange={(e) => setTgActiveWithin(e.target.value)} className={inputCls} placeholder="—" />
-            </div>
-          </div>
-        </div>
+        <AudienceBuilder value={targeting} onChange={setTargeting} />
 
         <div className="rounded-lg border border-slate-800 p-3">
           <p className="text-xs font-bold text-slate-400 mb-2">Reward (Watch &amp; Earn — optional)</p>
@@ -1138,6 +1269,9 @@ function CampaignModal({ campaign, onClose, onSaved }: { campaign: Campaign | nu
   const [description, setDescription] = useState(campaign?.description ?? "");
   const [budget, setBudget] = useState(String(campaign?.budget ?? 0));
   const [status, setStatus] = useState(campaign?.status ?? "ACTIVE");
+  const toDateInput = (v: string | null | undefined) => (v ? v.slice(0, 10) : "");
+  const [startAt, setStartAt] = useState(toDateInput(campaign?.startAt));
+  const [endAt, setEndAt] = useState(toDateInput(campaign?.endAt));
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -1150,7 +1284,14 @@ function CampaignModal({ campaign, onClose, onSaved }: { campaign: Campaign | nu
       const res = await fetch(campaign ? `/api/admin/ads/campaigns/${campaign.id}` : "/api/admin/ads/campaigns", {
         method: campaign ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, description, budget: Number(budget) || 0, status }),
+        body: JSON.stringify({
+          title,
+          description,
+          budget: Number(budget) || 0,
+          status,
+          startAt: startAt ? new Date(startAt).toISOString() : null,
+          endAt: endAt ? new Date(endAt).toISOString() : null,
+        }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error);
       toast.success(campaign ? "Campaign updated" : "Campaign created");
@@ -1176,7 +1317,8 @@ function CampaignModal({ campaign, onClose, onSaved }: { campaign: Campaign | nu
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Budget ($)</label>
-            <input type="number" min={0} value={budget} onChange={(e) => setBudget(e.target.value)} className={inputCls} />
+            <input type="number" min={1} value={budget} onChange={(e) => setBudget(e.target.value)} className={inputCls} />
+            <p className="text-[11px] text-slate-500 mt-1">Budget must be ≥ the per-click cost for ads to serve.</p>
           </div>
           <div>
             <label className="block text-xs text-slate-400 mb-1">Status</label>
@@ -1185,6 +1327,16 @@ function CampaignModal({ campaign, onClose, onSaved }: { campaign: Campaign | nu
               <option value="PAUSED">Paused</option>
               <option value="ENDED">Ended</option>
             </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Start date (optional)</label>
+            <input type="date" value={startAt} onChange={(e) => setStartAt(e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">End date (optional)</label>
+            <input type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} className={inputCls} />
           </div>
         </div>
         <button onClick={save} disabled={busy} className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold disabled:opacity-50">

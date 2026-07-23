@@ -19,6 +19,11 @@ export type PackageFeatureKey =
   | "courses"
   | "advertiser"
   | "games"
+  // Creator/monetization capabilities (admin-grantable per user)
+  | "createTasks"
+  | "sellCourses"
+  | "sellMarketplace"
+  | "agencyMode"
   // Per-task-type
   | "socialTasks"
   | "proxyTasks"
@@ -41,6 +46,10 @@ export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   courses: "coursesEnabled",
   advertiser: "advertiserEnabled",
   games: "gamesEnabled",
+  createTasks: "createTasksEnabled",
+  sellCourses: "sellCoursesEnabled",
+  sellMarketplace: "sellMarketplaceEnabled",
+  agencyMode: "agencyModeEnabled",
   socialTasks: "socialTasksEnabled",
   proxyTasks: "proxyTasksEnabled",
   articleTasks: "articleTasksEnabled",
@@ -60,19 +69,24 @@ export const FEATURE_KEYS = Object.keys(
 export const FEATURES: {
   key: PackageFeatureKey;
   label: string;
-  group: "section" | "task";
+  group: "section" | "task" | "creator";
 }[] = [
   { key: "tasks", label: "Tasks", group: "section" },
   { key: "socialFeed", label: "Social Feed", group: "section" },
   { key: "referrals", label: "Referrals", group: "section" },
   { key: "withdrawals", label: "Withdrawals", group: "section" },
   { key: "marketplace", label: "Marketplace", group: "section" },
-  { key: "boost", label: "Post Boost", group: "section" },
   { key: "dailyMission", label: "Daily Mission", group: "section" },
   { key: "lottery", label: "Lottery", group: "section" },
   { key: "courses", label: "Courses", group: "section" },
-  { key: "advertiser", label: "Advertiser (create ads)", group: "section" },
   { key: "games", label: "HTML5 Games", group: "section" },
+  // Creator/monetization capabilities (admin-grantable per user)
+  { key: "advertiser", label: "Run Ads (advertiser)", group: "creator" },
+  { key: "boost", label: "Boost Posts", group: "creator" },
+  { key: "createTasks", label: "Create Tasks", group: "creator" },
+  { key: "sellCourses", label: "Sell Courses / Tutor", group: "creator" },
+  { key: "sellMarketplace", label: "Sell on Marketplace", group: "creator" },
+  { key: "agencyMode", label: "Agency / Moderator Mode", group: "creator" },
   { key: "socialTasks", label: "Social Tasks", group: "task" },
   { key: "proxyTasks", label: "Proxy Tasks", group: "task" },
   { key: "articleTasks", label: "Article Tasks", group: "task" },

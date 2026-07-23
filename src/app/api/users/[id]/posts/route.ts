@@ -17,7 +17,7 @@ export async function GET(
   const cursor = searchParams.get("cursor");
 
   const posts = await prisma.post.findMany({
-    where: { userId: id, isPublic: true },
+    where: { userId: id, isPublic: true, isHidden: false },
     orderBy: { createdAt: "desc" },
     take: limit + 1,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),

@@ -18,6 +18,7 @@ import {
   validateCustomAnswers,
 } from "@/lib/custom-tasks";
 import { CustomFieldInput } from "./custom-field-input";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 interface CustomTask {
   id: string;
@@ -249,6 +250,8 @@ export function CustomTaskDetailView({ taskId }: { taskId: string }) {
           </div>
         </div>
       </div>
+
+      <AdRenderer placement="TASK_START" />
 
       {cfg?.introMessage && (
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 text-sm text-gray-200 whitespace-pre-wrap">

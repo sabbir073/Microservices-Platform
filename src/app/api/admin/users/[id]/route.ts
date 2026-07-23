@@ -246,6 +246,7 @@ export async function PATCH(
         ? new Date(data.packageExpiresAt)
         : null;
     }
+    let grantTutor = false;
     if (data.featureOverrides !== undefined) {
       // Keep only known feature keys → boolean; store null when empty.
       const fo =
@@ -253,6 +254,18 @@ export async function PATCH(
           ? {}
           : parseFeatureOverrides(data.featureOverrides);
       updateData.featureOverrides = Object.keys(fo).length ? fo : null;
+      // One-click tutor grant: turning on "Sell Courses" promotes a plain USER
+      // to TUTOR (+ profile) so course tools work without an application.
+      if (fo.sellCourses === true && data.role === undefined) {
+        const cur = await prisma.user.findUnique({
+          where: { id },
+          select: { role: true },
+        });
+        if (cur?.role === "USER") {
+          updateData.role = "TUTOR";
+          grantTutor = true;
+        }
+      }
     }
     if (data.kycStatus !== undefined) updateData.kycStatus = data.kycStatus;
     if (data.isBlueVerified !== undefined)
@@ -312,7 +325,7 @@ export async function PATCH(
     // If admin flipped the role to TUTOR, make sure a TutorProfile exists so
     // the tutor dashboard renders right away (no need to go through the
     // tutor-application flow when admin grants the role directly).
-    if (data.role === "TUTOR") {
+    if (data.role === "TUTOR" || grantTutor) {
       const { ensureTutorProfile } = await import("@/lib/tutor-application");
       await ensureTutorProfile(id);
     }

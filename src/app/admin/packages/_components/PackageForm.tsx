@@ -52,6 +52,12 @@ export interface PackageFormPkg {
   gamesEnabled: boolean;
   adFree: boolean;
 
+  // Creator / monetization capabilities
+  createTasksEnabled: boolean;
+  sellCoursesEnabled: boolean;
+  sellMarketplaceEnabled: boolean;
+  agencyModeEnabled: boolean;
+
   // Per-task-type toggles
   socialTasksEnabled: boolean;
   proxyTasksEnabled: boolean;
@@ -109,6 +115,14 @@ const SECTION_TOGGLES: Array<{ key: keyof PackageFormPkg; label: string; tooltip
   { key: "advertiserEnabled", label: "Advertiser", tooltip: "Create/fund ad campaigns on /advertiser." },
   { key: "gamesEnabled", label: "HTML5 Games", tooltip: "Access the games catalog at /games." },
   { key: "adFree", label: "Ad-Free", tooltip: "Hide all ads for users on this plan (Watch & Earn still works)." },
+];
+
+// Creator / monetization capabilities (grantable per plan).
+const CREATOR_TOGGLES: Array<{ key: keyof PackageFormPkg; label: string; tooltip: string }> = [
+  { key: "createTasksEnabled", label: "Create Tasks", tooltip: "Lets users on this plan create/publish their own tasks." },
+  { key: "sellCoursesEnabled", label: "Sell Courses / Tutor", tooltip: "Lets users create & sell courses (tutor tools)." },
+  { key: "sellMarketplaceEnabled", label: "Sell on Marketplace", tooltip: "Lets users list & sell items on the marketplace." },
+  { key: "agencyModeEnabled", label: "Agency / Moderator Mode", tooltip: "Unlocks the agency console / moderator capabilities." },
 ];
 
 // Per-task-type toggles (right grid). Each gates a TaskType in /api/tasks/*.
@@ -286,6 +300,18 @@ export function PackageForm({ pkg, mode = "edit" }: PackageFormProps) {
                 <ToggleRow key={t.key as string} label={t.label} tooltip={t.tooltip} checked={data[t.key] as boolean} onChange={() => toggle(t.key)} disabled={!data.tasksEnabled} disabledHint="Enable Tasks (left) first" />
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* Creator capabilities — monetization/creator grants for this plan. */}
+        <div className="mt-2">
+          <h3 className="text-xs font-bold uppercase tracking-wider text-fuchsia-300 mb-2 inline-flex items-center gap-1.5">
+            <Sparkles className="w-3 h-3" /> Creator Capabilities
+          </h3>
+          <div className="grid md:grid-cols-2 gap-1.5">
+            {CREATOR_TOGGLES.map((t) => (
+              <ToggleRow key={t.key as string} label={t.label} tooltip={t.tooltip} checked={data[t.key] as boolean} onChange={() => toggle(t.key)} />
+            ))}
           </div>
         </div>
       </Section>

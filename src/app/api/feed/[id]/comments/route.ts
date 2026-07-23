@@ -30,12 +30,12 @@ export async function GET(
     // Get comments
     const [commentsList, total] = await Promise.all([
       prisma.comment.findMany({
-        where: { postId: id },
+        where: { postId: id, isHidden: false },
         orderBy: { createdAt: "desc" },
         skip,
         take: limit,
       }),
-      prisma.comment.count({ where: { postId: id } }),
+      prisma.comment.count({ where: { postId: id, isHidden: false } }),
     ]);
 
     // Get users for comments

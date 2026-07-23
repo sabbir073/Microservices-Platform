@@ -60,6 +60,11 @@ export default async function EditPackagePage({ params }: PageProps) {
     gamesEnabled: pkg.gamesEnabled,
     adFree: pkg.adFree,
 
+    createTasksEnabled: pkg.createTasksEnabled,
+    sellCoursesEnabled: pkg.sellCoursesEnabled,
+    sellMarketplaceEnabled: pkg.sellMarketplaceEnabled,
+    agencyModeEnabled: pkg.agencyModeEnabled,
+
     socialTasksEnabled: pkg.socialTasksEnabled,
     proxyTasksEnabled: pkg.proxyTasksEnabled,
     articleTasksEnabled: pkg.articleTasksEnabled,

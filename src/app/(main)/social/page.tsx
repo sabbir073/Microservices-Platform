@@ -16,6 +16,7 @@ import {
 } from "@/lib/feed-widgets";
 import { normalizeQuickEarn } from "@/lib/feed-quick-earn";
 import { normalizeCustomWidgets } from "@/lib/feed-custom-widgets";
+import { getEffectiveFeatures } from "@/lib/packages";
 
 export default async function SocialPage() {
   const session = await auth();
@@ -42,6 +43,7 @@ export default async function SocialPage() {
     widgetConfigRaw,
     quickEarnRaw,
     customWidgetsRaw,
+    effectiveFeatures,
   ] = await Promise.all([
       prisma.banner.findMany({
         where: {
@@ -88,7 +90,10 @@ export default async function SocialPage() {
       getSetting("feed.sidebar_widgets", DEFAULT_WIDGET_CONFIG),
       getSetting("feed.quick_earn_tiles", null),
       getSetting("feed.custom_widgets", null),
+      getEffectiveFeatures(userId),
     ]);
+
+  const canBoost = effectiveFeatures.enabled.has("boost");
 
   const quickEarn = normalizeQuickEarn(quickEarnRaw);
   const customWidgets = normalizeCustomWidgets(customWidgetsRaw);
@@ -158,6 +163,7 @@ export default async function SocialPage() {
       quickEarn={quickEarn}
       customWidgets={customWidgets}
       initialTicker={tickerPayload?.items ?? []}
+      canBoost={canBoost}
       tickerConfig={
         tickerPayload
           ? {
