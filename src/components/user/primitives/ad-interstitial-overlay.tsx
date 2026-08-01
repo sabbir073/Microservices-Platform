@@ -8,6 +8,7 @@ interface Ad {
   id: string;
   type: string;
   imageUrl?: string;
+  videoUrl?: string;
   title?: string;
   body?: string;
   ctaLabel?: string;
@@ -44,14 +45,22 @@ export function AdInterstitialOverlay({
   useEffect(() => {
     if (!open) return;
     let cancel = false;
-    fetch(`/api/ads/serve?placement=${placement}`)
+    // Timeout so a hung request never blocks the host flow (the gate resolves).
+    fetch(`/api/spaces/panel?placement=${placement}`, {
+      signal: AbortSignal.timeout(8000),
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         if (cancel) return;
         if (d?.ad) {
           setAd(d.ad);
-          setLeft(skipSeconds);
-          fetch(`/api/ads/${d.ad.id}/impression`, { method: "POST" }).catch(() => {});
+          // Duration is admin-set per space (server), falling back to the prop.
+          setLeft(Number(d.interstitialSeconds) || skipSeconds);
+          fetch(`/api/spaces/${d.ad.id}/event`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kind: "view" }),
+          }).catch(() => {});
         } else {
           doneRef.current(); // no ad → don't block
         }
@@ -73,7 +82,11 @@ export function AdInterstitialOverlay({
   if (!open || !ad) return null;
 
   const trackClick = () => {
-    fetch(`/api/ads/${ad.id}/click`, { method: "POST" }).catch(() => {});
+    fetch(`/api/spaces/${ad.id}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "open" }),
+    }).catch(() => {});
   };
 
   return (
@@ -89,7 +102,31 @@ export function AdInterstitialOverlay({
         {left > 0 ? `Skip in ${left}s` : (<><X className="w-3.5 h-3.5" /> Close</>)}
       </button>
 
-      {ad.type === "HTML" && ad.html ? (
+      {ad.type === "VIDEO" && ad.videoUrl ? (
+        <div className="max-w-md w-full rounded-2xl overflow-hidden border border-white/10 bg-black">
+          {/* Autoplay must be muted to satisfy browser policies. */}
+          <video
+            src={ad.videoUrl}
+            autoPlay
+            muted
+            playsInline
+            controls
+            className="w-full max-h-[70vh] bg-black"
+          />
+          {ad.ctaUrl && (
+            <a
+              href={ad.ctaUrl}
+              target="_blank"
+              rel="noopener sponsored noreferrer"
+              onClick={trackClick}
+              className="flex items-center justify-center gap-1.5 px-3 py-2.5 bg-indigo-500 text-white text-sm font-bold"
+            >
+              {ad.ctaLabel || "Learn More"}
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          )}
+        </div>
+      ) : ad.type === "HTML" && ad.html ? (
         <div
           className="max-w-md w-full rounded-2xl overflow-hidden border border-white/10"
           dangerouslySetInnerHTML={{ __html: ad.html }}

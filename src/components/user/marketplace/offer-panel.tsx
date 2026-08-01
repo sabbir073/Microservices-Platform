@@ -10,9 +10,11 @@ import {
   Inbox,
   Send,
 } from "lucide-react";
+import { Avatar } from "@/components/user/primitives/avatar";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
+import { newIdempotencyKey } from "@/lib/idempotency-key";
 
 interface OfferRow {
   id: string;
@@ -71,7 +73,7 @@ export function OfferPanel({ listingId, askingPrice, isOwner, isSold }: Props) {
     try {
       const r = await fetch(`/api/marketplace/listings/${listingId}/offers`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey() },
         body: JSON.stringify({ amount: n, message: message || undefined }),
       });
       const d = await r.json().catch(() => ({}));
@@ -240,18 +242,12 @@ export function OfferPanel({ listingId, askingPrice, isOwner, isSold }: Props) {
               )}
             >
               <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 overflow-hidden flex items-center justify-center text-white font-bold text-xs shrink-0">
-                  {o.buyer.avatar ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={o.buyer.avatar}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    o.buyer.name.charAt(0).toUpperCase()
-                  )}
-                </div>
+                <Avatar
+                  src={o.buyer.avatar}
+                  size={32}
+                  name={o.buyer.name}
+                  className="shrink-0"
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-bold text-white">
                     {o.buyer.name}

@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { Star, Users, Globe } from "lucide-react";
+import { Avatar } from "@/components/user/primitives/avatar";
 
 interface Props {
   course: {
@@ -34,7 +35,7 @@ const LEVEL_LABEL: Record<string, string> = {
 export function CourseLandingHero({ course, tutor }: Props) {
   const bg = course.bannerUrl || course.thumbnail;
   return (
-    <section className="relative overflow-hidden rounded-3xl border border-gray-800 bg-gray-900">
+    <section className="card relative overflow-hidden">
       {bg && (
         <div className="absolute inset-0">
           <Image
@@ -86,12 +87,7 @@ export function CourseLandingHero({ course, tutor }: Props) {
           {tutor && (
             <span className="inline-flex items-center gap-2">
               {tutor.avatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={tutor.avatar}
-                  alt=""
-                  className="w-5 h-5 rounded-full object-cover bg-gray-800"
-                />
+                <Avatar src={tutor.avatar} size={20} className="inline-block" />
               ) : null}
               <span className="text-gray-400">
                 by <span className="text-white font-bold">{tutor.name}</span>

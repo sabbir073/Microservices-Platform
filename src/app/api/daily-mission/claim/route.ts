@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { withIdempotency } from "@/lib/idempotency";
 import { prisma } from "@/lib/prisma";
 import {
   TransactionType,
@@ -11,16 +12,14 @@ import {
   resolveTaskTypeBucket,
 } from "@/lib/daily-mission-progress";
 import { getPointsPerUsd } from "@/lib/economy";
+import { getUserDayContext, localDayKeyDaysAgo } from "@/lib/user-day";
 
-function utcDateKey(d = new Date()): string {
-  return d.toISOString().slice(0, 10);
-}
-
-export async function POST() {
+export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  return withIdempotency(request, session.user.id, async () => {
   const userId = session.user.id;
 
   const me = await prisma.user.findUnique({
@@ -59,7 +58,7 @@ export async function POST() {
   type ItemRow = { id: string; taskType: string; targetCount: number };
   const mission = missionRaw as typeof missionRaw & { items: ItemRow[] };
 
-  const today = utcDateKey();
+  const { dayKey: today, tz } = await getUserDayContext(userId);
 
   // Server-side completion check using shared progress builder
   const countByType = await buildDailyProgress(userId, mission.items);
@@ -102,13 +101,10 @@ export async function POST() {
   });
   const seen = new Set(recent.map((r) => r.date));
   let streak = 1;
-  const cursor = new Date();
-  cursor.setUTCDate(cursor.getUTCDate() - 1);
   for (let i = 0; i < 30; i++) {
-    const k = utcDateKey(cursor);
-    if (seen.has(k)) {
+    // Consecutive prior LOCAL days for this user.
+    if (seen.has(localDayKeyDaysAgo(tz, i + 1))) {
       streak += 1;
-      cursor.setUTCDate(cursor.getUTCDate() - 1);
     } else {
       break;
     }
@@ -161,5 +157,6 @@ export async function POST() {
     xp,
     streak,
     date: today,
+  });
   });
 }

@@ -78,6 +78,16 @@ enum TransactionType {
   COURSE_TUTOR_EARNING
   COURSE_REFUND
   DEPOSIT
+  AFFILIATE_COMMISSION
+}
+
+// What earning generated a referral commission. Currently only tasks pay
+// referral commissions; enumerated so new sources are added deliberately.
+enum ReferralSourceType {
+  TASK
+  PURCHASE
+  SUBSCRIPTION
+  COURSE
 }
 
 enum TransactionStatus {
@@ -197,12 +207,12 @@ model Campaign {
   endDate         DateTime
   targetType      String   @default("ALL") // ALL | TIER | NEW_USERS | COUNTRY
   targetValue     String?
-  budget          Float?
+  budget          Decimal? @db.Decimal(18, 6)
   bannerImage     String?
   termsAndConditions String? @db.Text
   status          String   @default("SCHEDULED") // SCHEDULED | ACTIVE | PAUSED | ENDED
   participantCount Int     @default(0)
-  rewardsDistributed Float @default(0)
+  rewardsDistributed Decimal @default(0) @db.Decimal(18, 6)
   createdById     String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -218,7 +228,7 @@ model Mission {
   type          String   // TASK_COMPLETION | LOGIN_STREAK | REFERRAL | SPEND | EARN
   targetValue   Int
   pointsReward  Int      @default(0)
-  cashReward    Float    @default(0)
+  cashReward    Decimal    @default(0) @db.Decimal(18, 6)
   xpReward      Int      @default(0)
   duration      String   @default("DAILY") // DAILY | WEEKLY
   autoRefresh   Boolean  @default(true)
@@ -293,7 +303,7 @@ model DailyReferralClaim {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   date      String   // YYYY-MM-DD (UTC)
-  amount    Float
+  amount    Decimal @db.Decimal(18, 6)
   points    Int
   claimedAt DateTime @default(now())
 
@@ -307,7 +317,7 @@ model AdCampaign {
   advertiser    User?    @relation("UserAdCampaigns", fields: [advertiserId], references: [id], onDelete: SetNull)
   title         String
   description   String?  @db.Text
-  budget        Float    @default(0)
+  budget        Decimal    @default(0) @db.Decimal(18, 6)
   status        String   @default("ACTIVE") // ACTIVE | PAUSED | ENDED
   // Optional flight window — ads only serve while now is within [startAt, endAt].
   startAt       DateTime?
@@ -318,6 +328,7 @@ model AdCampaign {
 
   @@index([advertiserId])
   @@index([status])
+  @@index([status, startAt, endAt])
 }
 
 model AdPlacement {
@@ -325,6 +336,12 @@ model AdPlacement {
   name      String   @unique
   platform  String   @default("ALL")
   isActive  Boolean  @default(true)
+  // Per-space ad-rotation interval (seconds). Null = use the global
+  // `ads.rotation_seconds` setting. Clamped 5–60 when set.
+  rotationSeconds Int?
+  // Per-space interstitial ad duration (seconds) — how long the full-screen ad
+  // shows before it can be closed. Null = default 5s. Clamped 3–60 when set.
+  interstitialSeconds Int?
   ads       Ad[]
   createdAt DateTime @default(now())
 }
@@ -390,6 +407,7 @@ model Ad {
   @@index([placementId])
   @@index([status])
   @@index([promotedPostId])
+  @@index([placementId, status])
 }
 
 // Per-day rollup of ad impressions/clicks/spend for time-series analytics.
@@ -400,7 +418,7 @@ model AdDailyStat {
   date        DateTime @db.Date
   impressions Int      @default(0)
   clicks      Int      @default(0)
-  spendUsd    Float    @default(0)
+  spendUsd    Decimal    @default(0) @db.Decimal(18, 6)
 
   @@unique([adId, date])
   @@index([adId, date])
@@ -416,6 +434,9 @@ model AdView {
 
   @@index([userId, adId])
   @@index([userId, createdAt])
+  @@index([adId])
+  @@index([userId, adId, createdAt])
+  @@index([createdAt])
 }
 
 model PushSubscription {
@@ -432,11 +453,13 @@ model PushSubscription {
 model Deposit {
   id         String   @id @default(cuid())
   userId     String
-  amount     Float
+  amount     Decimal @db.Decimal(18, 6)
   method     String   // MANUAL_BKASH | MANUAL_NAGAD | SSLCOMMERZ | ...
   status     String   @default("PENDING") // PENDING | APPROVED | REJECTED
   gatewayRef String?
-  txnId      String?
+  // Manual deposit provider txn id — unique so the same payment can't be
+  // submitted/approved twice (double-credit).
+  txnId      String?  @unique
   proofUrl   String?
   adminNote  String?
   reviewedBy String?
@@ -446,6 +469,7 @@ model Deposit {
 
   @@index([userId])
   @@index([status])
+  @@index([status, createdAt])
 }
 
 enum FraudSeverity {
@@ -503,7 +527,7 @@ model OfferwallCallback {
   offerId       String?
   offerName     String?
   transactionId String   @unique
-  payoutAmount  Float
+  payoutAmount  Decimal @db.Decimal(18, 6)
   userPayout    Int     // points
   currency      String   @default("USD")
   status        String   @default("PENDING") // PENDING | APPROVED | REJECTED | FRAUD | CHARGEBACK
@@ -598,6 +622,8 @@ model SocialReport {
   @@index([contentType])
   @@index([reporterId])
   @@index([createdAt])
+  @@index([status, contentType])
+  @@index([contentType, contentId])
 }
 
 model Quiz {
@@ -611,7 +637,7 @@ model Quiz {
   passingScore    Int            @default(60)
   pointsReward    Int            @default(50)
   xpReward        Int            @default(25)
-  cashReward      Float          @default(0)
+  cashReward      Decimal          @default(0) @db.Decimal(18, 6)
   maxAttempts     Int            @default(3)
   cooldownHours   Int            @default(24)
   requiredLevel   Int            @default(1)
@@ -660,6 +686,7 @@ model QuizAttempt {
   @@index([quizId])
   @@index([userId])
   @@index([completedAt])
+  @@index([quizId, userId])
 }
 
 enum MarketplaceListingStatus {
@@ -667,6 +694,8 @@ enum MarketplaceListingStatus {
   SOLD
   CANCELLED
   EXPIRED
+  PENDING_REVIEW
+  REJECTED
 }
 
 enum MarketplaceBidStatus {
@@ -789,13 +818,18 @@ model User {
   role              UserRole    @default(USER)
   status            UserStatus  @default(PENDING_VERIFICATION)
   pointsBalance     Int         @default(0)
-  cashBalance       Float       @default(0)
-  totalEarnings     Float       @default(0)
-  totalWithdrawals  Float       @default(0)
+  cashBalance       Decimal     @default(0) @db.Decimal(18, 6)
+  totalEarnings     Decimal     @default(0) @db.Decimal(18, 6)
+  totalWithdrawals  Decimal     @default(0) @db.Decimal(18, 6)
   xp                Int         @default(0)
   level             Int         @default(1)
   streak            Int         @default(0)
   lastCheckIn       DateTime?
+  // Anti-fraud reputation: 0–100, starts neutral. Approvals nudge up, fraud
+  // rejections nudge down; low trust forces manual review of otherwise
+  // auto-approvable submissions (see src/lib/trust.ts).
+  trustScore        Int         @default(50)
+  fraudStrikes      Int         @default(0)
   packageId         String?
   package           Package?    @relation(fields: [packageId], references: [id], onDelete: SetNull)
   packageExpiresAt  DateTime?
@@ -815,6 +849,9 @@ model User {
   referredById      String?
   referredBy        User?       @relation("ReferralRelation", fields: [referredById], references: [id])
   referrals         User[]      @relation("ReferralRelation")
+  // Affiliate program opt-in (earn commission promoting marketplace/course items).
+  affiliateJoinedAt DateTime?
+  affiliateCommissions AffiliateCommission[] @relation("AffiliateCommissions")
   // Extended profile fields (admin_oo.md §5.02)
   gender            String?
   dateOfBirth       DateTime?
@@ -907,6 +944,7 @@ model User {
   dailyMissionClaims  DailyMissionClaim[]
   dailyReferralClaims DailyReferralClaim[]
   socialAccounts      SocialAccount[]
+  linkedAccounts      LinkedPlatformAccount[]
   // Native social graph
   followers          Follow[]    @relation("Followers")
   following          Follow[]    @relation("Following")
@@ -925,13 +963,14 @@ model User {
   articleKeys        ArticleTaskKey[]
   mentionsReceived   Mention[]   @relation("Mentioned")
   mentionsMade       Mention[]   @relation("MentionedBy")
-  @@index([email])
-  @@index([referralCode])
+  // NB: email + referralCode are already @unique (own B-tree) — no extra @@index.
   @@index([referredById])
   @@index([status])
   @@index([role])
   @@index([totalEarnings])
   @@index([referredById, createdAt])
+  @@index([packageId])
+  @@index([xp])
 }
 
 model Account {
@@ -950,6 +989,22 @@ model Account {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([provider, providerAccountId])
   @@index([userId])
+}
+
+// Verified platform link — one row per (user × platform). Unlike SocialAccount
+// (self-reported handle/stats), this stores a REAL platform user-id captured via
+// Telegram Login Widget / Discord OAuth, so a bot can confirm channel/guild
+// membership for auto-verified JOIN tasks (anti-fraud Phase C).
+model LinkedPlatformAccount {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  platform       String   // "TELEGRAM" | "DISCORD"
+  platformUserId String
+  username       String?
+  linkedAt       DateTime @default(now())
+  @@unique([userId, platform])
+  @@index([platform, platformUserId])
 }
 
 // Connected social account — one row per (user × platform)
@@ -1042,7 +1097,7 @@ model Task {
   status          TaskStatus   @default(ACTIVE)
   difficulty      TaskDifficulty @default(MEDIUM)
   pointsReward    Int
-  cashReward      Float        @default(0)
+  cashReward      Decimal        @default(0) @db.Decimal(18, 6)
   xpReward        Int          @default(0)
   isBoardOnly     Boolean      @default(false)
   boardId         String?
@@ -1052,6 +1107,8 @@ model Task {
   completedCount  Int          @default(0)
   minLevel        Int          @default(1)
   requiredAccessLevel Int      @default(0)
+  // Sequential-unlock ordering — lower shows/unlocks first (feature #7).
+  order           Int          @default(0)
   countries       String[]     @default([])
   contentUrl      String?
   thumbnailUrl    String?
@@ -1087,7 +1144,9 @@ model Task {
   @@index([type])
   @@index([requiredAccessLevel])
   @@index([status, createdAt])
+  @@index([status, order])
   @@index([createdById])
+  @@index([fundedByUserId])
 }
 
 model TaskCategory {
@@ -1142,6 +1201,27 @@ model TaskSubmission {
   @@index([status])
   @@index([userId, status])
   @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([userId, status, createdAt])
+}
+
+// Anti-fraud fingerprint of a SOCIAL task's submitted proof values (feature #10).
+// One row per proof value (post/profile URL, screenshot URL, username) per
+// submission. On submit we look up matching (taskId, kind, value) rows from a
+// DIFFERENT user to flag likely duplicate/recycled proof for admin review.
+model SocialProofFingerprint {
+  id           String   @id @default(cuid())
+  taskId       String
+  userId       String
+  submissionId String
+  kind         String   // "URL" | "SCREENSHOT" | "USERNAME"
+  // SHA-256 of the normalized proof value — fixed length so the equality index
+  // is safe for arbitrarily long URLs (a raw-text btree index can overflow).
+  valueHash    String
+  createdAt    DateTime @default(now())
+
+  @@index([taskId, kind, valueHash])
+  @@index([submissionId])
 }
 
 // Pool of one-time-use unique keys for an ARTICLE task. Keys are claimed
@@ -1192,7 +1272,7 @@ model Transaction {
   type        TransactionType
   status      TransactionStatus @default(COMPLETED)
   points      Int               @default(0)
-  amount      Float             @default(0)
+  amount      Decimal           @default(0) @db.Decimal(18, 6)
   description String?
   reference   String?
   metadata    Json?
@@ -1203,15 +1283,46 @@ model Transaction {
   @@index([status])
   @@index([createdAt])
   @@index([userId, createdAt])
+  // Idempotency backstop: a deterministic `reference` for a once-only money event
+  // is unique per user, so a retry / concurrent-double / replay that reuses the
+  // same reference hits P2002 and is caught (see src/lib/idempotency.ts). Scoped
+  // to `userId` (not a global @unique on `reference`) because double-entry writes
+  // two rows — buyer debit + seller credit — that deliberately share one
+  // reference but have DIFFERENT userId. NULL references stay unconstrained
+  // (Postgres treats NULLs as distinct), so legitimately-repeatable events that
+  // use per-occurrence-distinct references are unaffected.
+  @@unique([userId, reference])
+  // Kept for reference-only lookups (findFirst by reference) that can't use the
+  // composite (userId, reference) index.
+  @@index([reference])
+}
+
+// Client-driven request idempotency. A money POST may send an `Idempotency-Key`
+// header (a per-action UUID); the server reserves a row here, runs the handler
+// once, stores the response, and replays the SAME response for any retry that
+// reuses the key. Complements the P5 ledger `@@unique([userId, reference])`
+// (which dedupes the money ROW) by deduping the whole HTTP request/response.
+model IdempotencyKey {
+  id             String   @id @default(cuid())
+  userId         String
+  key            String
+  method         String
+  endpoint       String
+  // 0 = reserved/in-flight; non-zero = completed HTTP status of the stored response.
+  responseStatus Int      @default(0)
+  response       Json     @default("{}")
+  createdAt      DateTime @default(now())
+  @@unique([userId, key])
+  @@index([createdAt])
 }
 
 model Withdrawal {
   id              String           @id @default(cuid())
   userId          String
   user            User             @relation(fields: [userId], references: [id])
-  amount          Float
-  fee             Float            @default(0)
-  netAmount       Float
+  amount          Decimal @db.Decimal(18, 6)
+  fee             Decimal            @default(0) @db.Decimal(18, 6)
+  netAmount       Decimal @db.Decimal(18, 6)
   method          PaymentMethod
   accountDetails  Json
   status          WithdrawalStatus @default(PENDING)
@@ -1251,8 +1362,8 @@ model Package {
   isDefault       Boolean  @default(false)
 
   // Pricing
-  priceMonthly    Float
-  priceYearly     Float?
+  priceMonthly    Decimal @db.Decimal(18, 6)
+  priceYearly     Decimal? @db.Decimal(18, 6)
   validityDays    Int?
 
   // Section-level feature toggles
@@ -1261,7 +1372,7 @@ model Package {
   referralsEnabled    Boolean @default(true)
   withdrawalsEnabled  Boolean @default(true)
   marketplaceEnabled  Boolean @default(true)
-  boostEnabled        Boolean @default(true)
+  boostEnabled        Boolean @default(false)
   dailyMissionEnabled Boolean @default(true)
   lotteryEnabled      Boolean @default(true)
   coursesEnabled      Boolean @default(true)
@@ -1273,6 +1384,9 @@ model Package {
   sellCoursesEnabled     Boolean @default(false)
   sellMarketplaceEnabled Boolean @default(false)
   agencyModeEnabled      Boolean @default(false)
+  // Post-composer sharing capabilities — default OFF (granted per-user by admin)
+  shareLinksEnabled      Boolean @default(false)
+  shareYoutubeEnabled    Boolean @default(false)
 
   // Per-task-type toggles
   socialTasksEnabled    Boolean @default(true)
@@ -1288,7 +1402,7 @@ model Package {
   dailyTaskLimit        Int   @default(-1)
   dailyPostLimit        Int   @default(-1)
   withdrawalFeeDiscount Float @default(0)
-  minWithdrawal         Float
+  minWithdrawal         Decimal @db.Decimal(18, 6)
 
   // Social earning (per-package). `socialEarningEnabled` is a hard on/off gate;
   // `socialEarningConfig` overrides the global per-action recipient points for
@@ -1331,7 +1445,7 @@ model Subscription {
   package       Package?    @relation(fields: [packageId], references: [id], onDelete: SetNull)
   startDate     DateTime    @default(now())
   endDate       DateTime
-  amount        Float
+  amount        Decimal @db.Decimal(18, 6)
   paymentMethod PaymentMethod?
   transactionId String?
   isActive      Boolean     @default(true)
@@ -1366,13 +1480,43 @@ model ReferralEarning {
   user            User     @relation(fields: [userId], references: [id])
   referredUserId  String
   level           Int
-  amount          Float
-  sourceType      String
+  amount          Decimal @db.Decimal(18, 6)
+  sourceType      ReferralSourceType
   sourceId        String?
   createdAt       DateTime @default(now())
   @@index([userId])
   @@index([createdAt])
   @@index([userId, createdAt])
+  @@index([referredUserId])
+  @@index([userId, level])
+}
+
+// Affiliate program: a user shares a product/course link and earns the
+// seller/tutor-set reward when a sale happens through it. Distinct from the
+// signup-referral system above (attribution is per-product link, not signup).
+model AffiliateClick {
+  id              String   @id @default(cuid())
+  affiliateUserId String
+  targetType      String   // "MARKETPLACE" | "COURSE"
+  targetId        String
+  createdAt       DateTime @default(now())
+  @@index([affiliateUserId, createdAt])
+  @@index([targetType, targetId])
+}
+
+model AffiliateCommission {
+  id               String   @id @default(cuid())
+  affiliateUserId  String
+  affiliate        User     @relation("AffiliateCommissions", fields: [affiliateUserId], references: [id])
+  sourceType       String   // "MARKETPLACE" | "COURSE"
+  sourceId         String   // listingId | courseId
+  orderRef         String   // purchaseId | enrollmentId (dedupe)
+  buyerId          String
+  saleAmount       Decimal  @db.Decimal(18, 6)
+  commissionAmount Decimal  @db.Decimal(18, 6)
+  createdAt        DateTime @default(now())
+  @@unique([sourceType, orderRef])
+  @@index([affiliateUserId, createdAt])
 }
 
 model MarketplaceListing {
@@ -1390,7 +1534,7 @@ model MarketplaceListing {
   subType         String?
   // Category-specific structured data (mirrors customConfig pattern on Task).
   details         Json?
-  price           Float
+  price           Decimal @db.Decimal(18, 6)
   currency        String                   @default("USD")
   images          String[]
   // Proof-of-asset screenshots (Search Console, analytics, ad dashboards,
@@ -1402,9 +1546,9 @@ model MarketplaceListing {
   // Long-form description (markdown). Short `description` stays for cards/list.
   richDescription String?                  @db.Text
   // Asset financials (where relevant — null for non-monetized assets).
-  monthlyRevenue  Float?
-  monthlyProfit   Float?
-  monthlyExpenses Float?
+  monthlyRevenue  Decimal? @db.Decimal(18, 6)
+  monthlyProfit   Decimal? @db.Decimal(18, 6)
+  monthlyExpenses Decimal? @db.Decimal(18, 6)
   monthlyTraffic  Int?
   assetAgeMonths  Int?
   niche           String?
@@ -1419,9 +1563,9 @@ model MarketplaceListing {
   ndaGated        Boolean                  @default(false)
   // Auction support. When false the listing is fixed-price buy-now only.
   auctionMode     Boolean                  @default(false)
-  startingBid     Float?
-  reservePrice    Float?
-  buyNowPrice     Float?
+  startingBid     Decimal? @db.Decimal(18, 6)
+  reservePrice    Decimal? @db.Decimal(18, 6)
+  buyNowPrice     Decimal? @db.Decimal(18, 6)
   auctionEndsAt   DateTime?
   isFeatured      Boolean                  @default(false)
   featuredUntil   DateTime?
@@ -1430,11 +1574,25 @@ model MarketplaceListing {
   // Override platform commission in basis points (100 bps = 1%).
   // Falls back to setting `marketplace_commission_rates` when null.
   commissionRateBps Int?
+  // Seller-set affiliate reward paid (from the seller's own cut) to an affiliate
+  // who drives a sale. type = "PERCENT" (value = % of sale) | "FIXED" (value =
+  // USD). null / 0 ⇒ not affiliate-eligible. See src/lib/affiliate.ts.
+  affiliateCommissionType  String?
+  affiliateCommissionValue Decimal? @db.Decimal(18, 6)
   // Pre-aggregated counters for fast list rendering.
   bidsCount       Int                      @default(0)
   bidderCount     Int                      @default(0)
   uniqueViewers   Int                      @default(0)
   directPurchasesCount Int                 @default(0)
+  // Seller-listing moderation (admin approve/reject). New user listings start
+  // PENDING_REVIEW; rejection stores a reason shown back to the seller.
+  rejectionReason String?                  @db.Text
+  reviewedAt      DateTime?
+  reviewedById    String?
+  // Extracted micro-data of the uploaded deliverable (stock media): EXIF,
+  // codec/duration, hash, perceptual hash + heuristic hints. Surfaced to the
+  // admin to judge original vs downloaded/edited. See src/lib/media-metadata.ts.
+  fileMeta        Json?
   status          MarketplaceListingStatus @default(ACTIVE)
   views           Int                      @default(0)
   createdAt       DateTime                 @default(now())
@@ -1459,9 +1617,9 @@ model MarketplacePurchase {
   listing     MarketplaceListing @relation(fields: [listingId], references: [id])
   buyerId     String
   buyer       User               @relation(fields: [buyerId], references: [id])
-  amount      Float
-  fee         Float
-  sellerAmount Float
+  amount      Decimal @db.Decimal(18, 6)
+  fee         Decimal @db.Decimal(18, 6)
+  sellerAmount Decimal @db.Decimal(18, 6)
   status      String             @default("COMPLETED")
   createdAt   DateTime           @default(now())
   disputes    MarketplaceDispute[]
@@ -1525,7 +1683,7 @@ model MarketplaceBid {
   listing   MarketplaceListing   @relation(fields: [listingId], references: [id], onDelete: Cascade)
   bidderId  String
   bidder    User                 @relation(fields: [bidderId], references: [id], onDelete: Cascade)
-  amount    Float
+  amount    Decimal @db.Decimal(18, 6)
   status    MarketplaceBidStatus @default(ACTIVE)
   message   String?              @db.Text
   createdAt DateTime             @default(now())
@@ -1545,10 +1703,10 @@ model MarketplaceOffer {
   listing       MarketplaceListing     @relation(fields: [listingId], references: [id], onDelete: Cascade)
   buyerId       String
   buyer         User                   @relation(fields: [buyerId], references: [id], onDelete: Cascade)
-  amount        Float
+  amount        Decimal @db.Decimal(18, 6)
   message       String?                @db.Text
   status        MarketplaceOfferStatus @default(PENDING)
-  counterAmount Float?
+  counterAmount Decimal? @db.Decimal(18, 6)
   counterMessage String?               @db.Text
   expiresAt     DateTime?
   createdAt     DateTime               @default(now())
@@ -1576,9 +1734,9 @@ model Course {
   difficulty      String        @default("BEGINNER")
   skillLevel      CourseSkillLevel @default(BEGINNER)
   language        String        @default("en")
-  price           Float         @default(0)
-  originalPrice   Float?
-  discountPrice   Float?
+  price           Decimal         @default(0) @db.Decimal(18, 6)
+  originalPrice   Decimal? @db.Decimal(18, 6)
+  discountPrice   Decimal? @db.Decimal(18, 6)
   discountEndsAt  DateTime?
   isFree          Boolean       @default(false)
   totalLessons    Int           @default(0)
@@ -1603,6 +1761,9 @@ model Course {
   tutor           User?         @relation("CourseTutor", fields: [tutorId], references: [id], onDelete: SetNull)
   certificateEnabled Boolean    @default(true)
   commissionRateBps Int?
+  // Tutor-set affiliate reward (from the tutor's cut) — see MarketplaceListing.
+  affiliateCommissionType  String?
+  affiliateCommissionValue Decimal? @db.Decimal(18, 6)
   isFeatured      Boolean       @default(false)
   featuredUntil   DateTime?
   isPromoted      Boolean       @default(false)
@@ -1719,7 +1880,7 @@ model CourseEnrollment {
   progress        Int      @default(0)
   completedLessons String[] @default([])
   completedAt     DateTime?
-  pricePaid       Float    @default(0)
+  pricePaid       Decimal    @default(0) @db.Decimal(18, 6)
   couponCode      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -1928,7 +2089,7 @@ model CourseCoupon {
   scope            CouponScope @default(ALL)
   categoryIds      String[]    @default([])
   courseIds        String[]    @default([])
-  minPurchase      Float?
+  minPurchase      Decimal? @db.Decimal(18, 6)
   maxRedemptions   Int?
   redemptionsCount Int         @default(0)
   perUserLimit     Int         @default(1)
@@ -1953,7 +2114,7 @@ model CourseRefundRequest {
   reason          String              @db.Text
   status          CourseRefundStatus  @default(PENDING)
   adminNote       String?
-  refundedAmount  Float?
+  refundedAmount  Decimal? @db.Decimal(18, 6)
   processedById   String?
   processedBy     User?               @relation("CourseRefundAdmin", fields: [processedById], references: [id], onDelete: SetNull)
   createdAt       DateTime            @default(now())
@@ -2053,8 +2214,10 @@ model LotteryTicket {
   isWinner    Boolean  @default(false)
   prizeAmount Int?
   createdAt   DateTime @default(now())
+  @@unique([lotteryId, ticketNumber])
   @@index([lotteryId])
   @@index([userId])
+  @@index([lotteryId, userId])
 }
 
 model Post {
@@ -2086,12 +2249,18 @@ model Post {
   socialEarnings Int    @default(0)
   pollOptions Json?     // [{ id, label, voteCount }]
   pollEndsAt  DateTime?
+  // OpenGraph preview of the first URL in `content`, fetched best-effort at
+  // create time: { url, title, description, image, siteName }. Null = no card.
+  linkPreview Json?
   donationGoal      Int?
   donationCollected Int       @default(0)
   groupId           String?
   group             Group?    @relation(fields: [groupId], references: [id])
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+  // Freshness signal for the smart feed: bumped when a new comment arrives so
+  // the post resurfaces. Defaults to createdAt for new/legacy rows.
+  lastActivityAt DateTime @default(now())
   comments    Comment[]
   likes       Like[]
   votes       Vote[]
@@ -2106,6 +2275,8 @@ model Post {
   @@index([isAnnouncement])
   @@index([isPromoted, promotedUntil])
   @@index([isPublic, createdAt])
+  @@index([isPublic, isHidden, isPinned, createdAt])
+  @@index([isPublic, isHidden, lastActivityAt])
 }
 
 model Follow {
@@ -2123,6 +2294,8 @@ model Follow {
   @@index([followerId])
   @@index([followingId])
   @@index([boostBatchId])
+  @@index([followingId, createdAt])
+  @@index([followerId, createdAt])
 }
 
 // Records each admin "bulk-add followers" operation. Used for audit and
@@ -2161,6 +2334,7 @@ model PostView {
   @@unique([postId, userId])
   @@index([postId])
   @@index([userId])
+  @@index([viewedAt])
 }
 
 model Mention {
@@ -2177,6 +2351,7 @@ model Mention {
   @@index([mentionedUserId])
   @@index([postId])
   @@index([commentId])
+  @@index([mentionedById])
 }
 
 model Vote {
@@ -2227,6 +2402,9 @@ model SocialActionLog {
   createdAt DateTime @default(now())
   @@index([userId, dateKey, action])
   @@index([postId])
+  // Lifetime distinct-post count per actor+action (social-earning batch reward).
+  @@index([userId, action, postId])
+  @@index([createdAt])
 }
 
 // Per-user daily AI-generation counter (rate limit for /api/ai/generate).
@@ -2319,6 +2497,8 @@ model Comment {
   updatedAt   DateTime @updatedAt
   @@index([postId])
   @@index([userId])
+  @@index([parentId])
+  @@index([postId, createdAt])
 }
 
 model Like {
@@ -2397,6 +2577,7 @@ model PointGift {
   createdAt   DateTime @default(now())
   @@index([senderId])
   @@index([receiverId])
+  @@index([createdAt])
 }
 
 model Notification {
@@ -2413,6 +2594,9 @@ model Notification {
   @@index([userId])
   @@index([isRead])
   @@index([createdAt])
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+  @@index([userId, isRead, createdAt])
 }
 
 model Conversation {
@@ -2445,6 +2629,7 @@ model ChatMessage {
   @@index([conversationId])
   @@index([senderId])
   @@index([createdAt])
+  @@index([conversationId, createdAt])
 }
 
 // Reference data backing the cascading address dropdowns. Seeded once and
@@ -2538,6 +2723,7 @@ model AuditLog {
   @@index([userId])
   @@index([entity])
   @@index([createdAt])
+  @@index([entity, entityId])
 }
 
 enum DisputeStatus {
@@ -2570,7 +2756,7 @@ model MarketplaceDispute {
   evidence        String[]      // Array of evidence image/file URLs
   status          DisputeStatus @default(OPEN)
   resolution      String?       @db.Text
-  resolvedAmount  Float?        // Amount returned to buyer if any
+  resolvedAmount  Decimal?      @db.Decimal(18, 6) // Amount returned to buyer if any
   assignedAdminId String?
   adminNotes      String?       @db.Text
   messages        DisputeMessage[]

@@ -13,6 +13,9 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { newIdempotencyKey } from "@/lib/idempotency-key";
+import { runInterstitial } from "@/lib/reward-interstitial";
+import { ensureAdsAllowed } from "@/lib/adblock";
 
 type Tab = "available" | "pending" | "approved" | "rejected";
 
@@ -27,6 +30,7 @@ interface ManualTask {
   duration?: number | null;
   instructions?: string | null;
   instructionVideoUrl?: string | null;
+  locked?: boolean;
 }
 
 interface Submission {
@@ -95,10 +99,11 @@ export function ManualTasksView() {
     try {
       const res = await fetch(`/api/tasks/${submitting.id}/submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey() },
         body: JSON.stringify({ proofUrl, notes }),
       });
       if (!res.ok) throw new Error(await res.text());
+      await runInterstitial();
       toast.success("Submitted! Awaiting review.");
       setSubmitting(null);
       setProofUrl("");
@@ -115,8 +120,8 @@ export function ManualTasksView() {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold text-white flex items-center gap-2">
-        📋 Manual Tasks
+      <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
+        <ClipboardList className="w-6 h-6 text-indigo-400" /> Manual Tasks
       </h1>
 
       <AdRenderer placement="TASK_LIST" />
@@ -153,8 +158,15 @@ export function ManualTasksView() {
             xpReward={t.xpReward}
             durationMin={t.duration ?? undefined}
             thumbnail={t.thumbnailUrl ?? undefined}
-            actionLabel="Submit Proof"
-            onAction={() => setSubmitting(t)}
+            status={t.locked ? "LOCKED" : undefined}
+            actionLabel={t.locked ? "🔒 Locked" : "Submit Proof"}
+            onAction={
+              t.locked
+                ? undefined
+                : async () => {
+                    if (await ensureAdsAllowed()) setSubmitting(t);
+                  }
+            }
           />
         ))}
 

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { format, isToday, isYesterday, isThisWeek } from "date-fns";
+import { Avatar } from "@/components/user/primitives/avatar";
 
 interface Conversation {
   id: string;
@@ -54,7 +55,9 @@ export function ChatInbox({ userId: _userId }: ChatInboxProps) {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold text-white">💬 Messages</h1>
+      <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
+        <MessageSquare className="w-6 h-6 text-indigo-400" /> Messages
+      </h1>
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
@@ -84,18 +87,11 @@ export function ChatInbox({ userId: _userId }: ChatInboxProps) {
               href={`/chat/${c.id}`}
               className="flex items-center gap-3 p-3 rounded-xl border border-gray-800 bg-gray-900 hover:border-gray-700"
             >
-              {c.otherUser.avatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={c.otherUser.avatar}
-                  alt=""
-                  className="w-11 h-11 rounded-full bg-gray-800 object-cover"
-                />
-              ) : (
-                <div className="w-11 h-11 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold">
-                  {c.otherUser.name?.[0]?.toUpperCase() ?? "?"}
-                </div>
-              )}
+              <Avatar
+                src={c.otherUser.avatar}
+                size={44}
+                fallbackText={c.otherUser.name?.[0]?.toUpperCase() ?? "?"}
+              />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-semibold text-white truncate">

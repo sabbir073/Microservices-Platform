@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isDuplicateLedgerError, withIdempotency } from "@/lib/idempotency";
 import { z } from "zod";
 import {
   NotificationType,
@@ -12,7 +13,15 @@ import {
   resolveCourseCommissionBps,
   splitCoursePrice,
 } from "@/lib/course-commission";
+import {
+  AFFILIATE_COOKIE,
+  getAffiliateConfig,
+  isAffiliateEligible,
+  computeAffiliateCommission,
+  parseAttribution,
+} from "@/lib/affiliate";
 import { userCanFeature } from "@/lib/packages";
+import { lt, sub, toNum, toNumOrNull } from "@/lib/money";
 
 const enrollSchema = z.object({
   couponCode: z.string().max(60).optional().nullable(),
@@ -41,11 +50,12 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return withIdempotency(req, session.user.id, async () => {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (!(await userCanFeature(session.user.id, "courses"))) {
       return NextResponse.json({ error: "Courses are disabled for your plan" }, { status: 403 });
     }
@@ -70,6 +80,8 @@ export async function POST(
         price: true,
         discountPrice: true,
         commissionRateBps: true,
+        affiliateCommissionType: true,
+        affiliateCommissionValue: true,
         tutorId: true,
         category_rel: { select: { slug: true } },
       },
@@ -84,6 +96,18 @@ export async function POST(
       );
     }
 
+    // A tutor can't enrol in their own course. Besides being nonsensical, the
+    // buyer-debit and tutor-credit ledger rows share one reference
+    // (`course_<courseId>_<enrollmentId>`) distinguished only by userId — if the
+    // buyer *were* the tutor, both rows would collide on (userId, reference)
+    // under the idempotency unique constraint.
+    if (session.user.id === course.tutorId) {
+      return NextResponse.json(
+        { error: "You can't enrol in your own course." },
+        { status: 400 }
+      );
+    }
+
     const existing = await prisma.courseEnrollment.findUnique({
       where: { courseId_userId: { courseId: course.id, userId: session.user.id } },
       select: { id: true },
@@ -92,7 +116,7 @@ export async function POST(
       return NextResponse.json({ enrollment: existing, alreadyEnrolled: true });
     }
 
-    const livePrice = course.discountPrice ?? course.price;
+    const livePrice = toNum(course.discountPrice ?? course.price);
 
     // ── Free path ─────────────────────────────────────────────────────────
     if (course.isFree || livePrice === 0) {
@@ -173,11 +197,11 @@ export async function POST(
     if (!buyer) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-    if (buyer.cashBalance < finalPrice) {
+    if (lt(buyer.cashBalance, finalPrice)) {
       return NextResponse.json(
         {
-          error: `Wallet balance is $${buyer.cashBalance.toFixed(2)} — need $${finalPrice.toFixed(2)} to enrol.`,
-          shortBy: finalPrice - buyer.cashBalance,
+          error: `Wallet balance is $${toNum(buyer.cashBalance).toFixed(2)} — need $${finalPrice.toFixed(2)} to enrol.`,
+          shortBy: sub(finalPrice, buyer.cashBalance).toNumber(),
         },
         { status: 402 }
       );
@@ -189,6 +213,43 @@ export async function POST(
       perCourseOverride: course.commissionRateBps,
     });
     const { fee, tutorAmount } = splitCoursePrice(finalPrice, bps);
+
+    // Affiliate attribution (from the tutor's cut; platform fee unchanged).
+    let affiliateId: string | null = null;
+    let affiliateAmount = 0;
+    if (
+      course.tutorId &&
+      isAffiliateEligible(course.affiliateCommissionType, toNumOrNull(course.affiliateCommissionValue))
+    ) {
+      const cfg = await getAffiliateConfig();
+      if (cfg.enabled) {
+        const attr = parseAttribution(
+          req.cookies.get(AFFILIATE_COOKIE)?.value,
+          "COURSE",
+          course.id,
+          cfg.cookieWindowDays,
+          Date.now()
+        );
+        if (attr && attr.aff !== session.user.id && attr.aff !== course.tutorId) {
+          const aff = await prisma.user.findUnique({
+            where: { id: attr.aff },
+            select: { id: true, affiliateJoinedAt: true },
+          });
+          if (aff?.affiliateJoinedAt) {
+            affiliateAmount = computeAffiliateCommission(
+              course.affiliateCommissionType,
+              toNumOrNull(course.affiliateCommissionValue),
+              finalPrice,
+              tutorAmount
+            );
+            if (affiliateAmount > 0) affiliateId = aff.id;
+          }
+        }
+      }
+    }
+    const tutorNet = affiliateId
+      ? Math.round((tutorAmount - affiliateAmount) * 100) / 100
+      : tutorAmount;
 
     // Atomic settle
     const result = await prisma.$transaction(async (tx) => {
@@ -228,13 +289,13 @@ export async function POST(
         },
       });
 
-      // Credit tutor (if any)
-      if (course.tutorId && tutorAmount > 0) {
+      // Credit tutor (if any) — net of any affiliate reward.
+      if (course.tutorId && tutorNet > 0) {
         await tx.user.update({
           where: { id: course.tutorId },
           data: {
-            cashBalance: { increment: tutorAmount },
-            totalEarnings: { increment: tutorAmount },
+            cashBalance: { increment: tutorNet },
+            totalEarnings: { increment: tutorNet },
           },
         });
         await tx.transaction.create({
@@ -242,7 +303,7 @@ export async function POST(
             userId: course.tutorId,
             type: TransactionType.COURSE_TUTOR_EARNING,
             status: TransactionStatus.COMPLETED,
-            amount: tutorAmount,
+            amount: tutorNet,
             points: 0,
             description: `Course earning — "${course.title}"`,
             reference: `course_${course.id}_${enrollment.id}`,
@@ -252,6 +313,8 @@ export async function POST(
               commissionBps: bps,
               platformFee: fee,
               fromUserId: session.user.id,
+              affiliateUserId: affiliateId,
+              affiliateAmount,
             },
           },
         });
@@ -259,7 +322,52 @@ export async function POST(
           where: { userId: course.tutorId },
           data: {
             totalStudents: { increment: 1 },
-            totalEarningsCents: { increment: Math.round(tutorAmount * 100) },
+            totalEarningsCents: { increment: Math.round(tutorNet * 100) },
+          },
+        });
+      } else if (course.tutorId) {
+        // Tutor nets 0 (affiliate took the whole cut) — still count the student.
+        await tx.tutorProfile.updateMany({
+          where: { userId: course.tutorId },
+          data: { totalStudents: { increment: 1 } },
+        });
+      }
+
+      // Affiliate payout (from the tutor's cut).
+      if (affiliateId && affiliateAmount > 0) {
+        await tx.user.update({
+          where: { id: affiliateId },
+          data: {
+            cashBalance: { increment: affiliateAmount },
+            totalEarnings: { increment: affiliateAmount },
+          },
+        });
+        await tx.transaction.create({
+          data: {
+            userId: affiliateId,
+            type: TransactionType.AFFILIATE_COMMISSION,
+            status: TransactionStatus.COMPLETED,
+            amount: affiliateAmount,
+            points: 0,
+            description: `Affiliate commission — "${course.title}"`,
+            reference: `affiliate_course_${enrollment.id}`,
+            metadata: {
+              courseId: course.id,
+              enrollmentId: enrollment.id,
+              saleAmount: finalPrice,
+              fromBuyerId: session.user.id,
+            },
+          },
+        });
+        await tx.affiliateCommission.create({
+          data: {
+            affiliateUserId: affiliateId,
+            sourceType: "COURSE",
+            sourceId: course.id,
+            orderRef: enrollment.id,
+            buyerId: session.user.id,
+            saleAmount: finalPrice,
+            commissionAmount: affiliateAmount,
           },
         });
       }
@@ -291,7 +399,7 @@ export async function POST(
       buyerId: session.user.id,
       enrollmentId: result.enrollment.id,
       amount: finalPrice,
-      tutorAmount,
+      tutorAmount: tutorNet,
     });
 
     return NextResponse.json({
@@ -300,12 +408,18 @@ export async function POST(
       discount: couponInfo?.discount ?? 0,
     });
   } catch (error) {
+    // Retry/double-submit reuses reference `course_<courseId>_<enrollmentId>` →
+    // P2002; the enrolment already settled, so report success not a 500.
+    if (isDuplicateLedgerError(error)) {
+      return NextResponse.json({ alreadyEnrolled: true, duplicate: true });
+    }
     console.error("Enroll failed:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed" },
       { status: 500 }
     );
   }
+  });
 }
 
 async function fireEnrolNotifications(opts: {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { toNum } from "@/lib/money";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { deliverToUser } from "@/lib/notify";
 
@@ -46,7 +47,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Withdrawal not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ withdrawal });
+    return NextResponse.json({
+      withdrawal: {
+        ...withdrawal,
+        amount: toNum(withdrawal.amount),
+        fee: toNum(withdrawal.fee),
+        netAmount: toNum(withdrawal.netAmount),
+      },
+    });
   } catch (error) {
     console.error("Error fetching withdrawal:", error);
     return NextResponse.json(
@@ -205,6 +213,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         );
       }
 
+      // Withdrawal creation debits POINTS (pointsBalance). Refund the exact
+      // points that were held — recovered from the original WITHDRAWAL
+      // transaction — NOT cashBalance (which would mint free USD).
+      const debitTx = await prisma.transaction.findFirst({
+        where: { reference: `withdrawal_${id}`, type: "WITHDRAWAL" },
+        select: { points: true },
+      });
+      const refundPoints = debitTx ? Math.abs(debitTx.points) : 0;
+
       const [withdrawal] = await prisma.$transaction([
         prisma.withdrawal.update({
           where: { id },
@@ -218,7 +235,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         prisma.user.update({
           where: { id: existingWithdrawal.userId },
           data: {
-            cashBalance: { increment: existingWithdrawal.amount },
+            pointsBalance: { increment: refundPoints },
           },
         }),
         prisma.transaction.create({
@@ -226,12 +243,12 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             userId: existingWithdrawal.userId,
             type: "REFUND",
             status: "COMPLETED",
-            points: 0,
-            amount: existingWithdrawal.amount,
+            points: refundPoints,
+            amount: 0,
             description: `Withdrawal rejected: ${
               rejectionReason || "Rejected by admin"
             }`,
-            reference: id,
+            reference: `withdrawal_refund_${id}`,
           },
         }),
         prisma.notification.create({

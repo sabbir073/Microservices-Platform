@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, PlayCircle, Clock, Sparkles, X, CheckCircle2 } from "lucide-react";
 import { notifyCenter } from "@/lib/notify-center";
+import { SmartImage } from "@/components/user/primitives/smart-image";
 
 interface RewardAd {
   id: string;
@@ -23,7 +24,7 @@ export function WatchAdsView() {
 
   const load = () => {
     setLoading(true);
-    fetch("/api/ads/rewarded")
+    fetch("/api/earn/watch")
       .then((r) => r.json())
       .then((d) => setAds(d.ads ?? []))
       .catch(() => setAds([]))
@@ -32,7 +33,7 @@ export function WatchAdsView() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/ads/rewarded")
+    fetch("/api/earn/watch")
       .then((r) => r.json())
       .then((d) => {
         if (active) {
@@ -86,10 +87,15 @@ export function WatchAdsView() {
               key={ad.id}
               className="rounded-xl border border-gray-800 bg-gray-900 p-3 flex flex-col"
             >
-              <div className="aspect-video rounded-lg bg-gray-950 border border-gray-800 overflow-hidden flex items-center justify-center">
+              <div className="relative aspect-video rounded-lg bg-gray-950 border border-gray-800 overflow-hidden flex items-center justify-center">
                 {ad.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={ad.imageUrl} alt={ad.title} className="w-full h-full object-cover" />
+                  <SmartImage
+                    src={ad.imageUrl}
+                    alt={ad.title}
+                    fill
+                    sizes="(max-width: 768px) 50vw, 25vw"
+                    className="object-cover"
+                  />
                 ) : (
                   <PlayCircle className="w-10 h-10 text-gray-700" />
                 )}
@@ -157,7 +163,7 @@ function AdWatchModal({
   const claim = async () => {
     setClaiming(true);
     try {
-      const res = await fetch(`/api/ads/${ad.id}/reward`, { method: "POST" });
+      const res = await fetch(`/api/earn/${ad.id}/claim`, { method: "POST" });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "Couldn't claim");
       notifyCenter.reward({

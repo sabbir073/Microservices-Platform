@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isDuplicateLedgerError } from "@/lib/idempotency";
 import {
   MarketplaceListingStatus,
   TransactionType,
@@ -8,6 +9,7 @@ import {
   NotificationType,
 } from "@/generated/prisma";
 import { getPointsPerUsd } from "@/lib/economy";
+import { toNum } from "@/lib/money";
 
 // Platform fee percentage
 const PLATFORM_FEE_PERCENT = 5;
@@ -78,12 +80,12 @@ export async function GET(request: NextRequest) {
               id: listing.id,
               title: listing.title,
               image: listing.images[0] || null,
-              price: listing.price,
+              price: toNum(listing.price),
             }
           : null,
-        amount: purchase.amount,
-        fee: purchase.fee,
-        sellerAmount: purchase.sellerAmount,
+        amount: toNum(purchase.amount),
+        fee: toNum(purchase.fee),
+        sellerAmount: toNum(purchase.sellerAmount),
         status: purchase.status,
         createdAt: purchase.createdAt,
         buyer: role === "seller" ? userMap.get(purchase.buyerId) : undefined,
@@ -167,9 +169,10 @@ export async function POST(request: NextRequest) {
     });
 
     const pointsPerUsd = await getPointsPerUsd();
-    const totalCost = Math.ceil(listing.price * pointsPerUsd); // Convert to points
-    const fee = listing.price * (PLATFORM_FEE_PERCENT / 100);
-    const sellerAmount = listing.price - fee;
+    const priceNum = toNum(listing.price);
+    const totalCost = Math.ceil(priceNum * pointsPerUsd); // Convert to points
+    const fee = priceNum * (PLATFORM_FEE_PERCENT / 100);
+    const sellerAmount = priceNum - fee;
 
     if (!buyer || buyer.pointsBalance < totalCost) {
       return NextResponse.json(
@@ -257,13 +260,18 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       purchase: {
         id: purchase.id,
-        amount: purchase.amount,
+        amount: toNum(purchase.amount),
         status: purchase.status,
         createdAt: purchase.createdAt,
       },
       message: "Purchase completed successfully",
     });
   } catch (error) {
+    // Retry/double-submit reuses reference `purchase_<listingId>`/`sale_<listingId>`
+    // → P2002; the order already settled, so report success not a 500.
+    if (isDuplicateLedgerError(error)) {
+      return NextResponse.json({ duplicate: true, message: "Purchase already completed" });
+    }
     console.error("Error creating purchase:", error);
     return NextResponse.json(
       { error: "Failed to complete purchase" },

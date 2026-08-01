@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isDuplicateLedgerError, withIdempotency } from "@/lib/idempotency";
 import {
   MarketplaceListingStatus,
   MarketplaceOfferStatus,
@@ -13,7 +14,15 @@ import {
   resolveCommissionBps,
   splitPrice,
 } from "@/lib/marketplace-commission";
+import {
+  AFFILIATE_COOKIE,
+  getAffiliateConfig,
+  isAffiliateEligible,
+  computeAffiliateCommission,
+  parseAttribution,
+} from "@/lib/affiliate";
 import { userCanFeature } from "@/lib/packages";
+import { lt, sub, toNum, toNumOrNull } from "@/lib/money";
 
 // POST /api/marketplace/:id/checkout
 //
@@ -28,11 +37,12 @@ export async function POST(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return withIdempotency(_request, session.user.id, async () => {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     if (!(await userCanFeature(session.user.id, "marketplace"))) {
       return NextResponse.json({ error: "Marketplace is disabled for your plan" }, { status: 403 });
     }
@@ -50,6 +60,8 @@ export async function POST(
         assetType: true,
         auctionMode: true,
         commissionRateBps: true,
+        affiliateCommissionType: true,
+        affiliateCommissionValue: true,
       },
     });
     if (!listing) {
@@ -73,7 +85,8 @@ export async function POST(
         { status: 400 }
       );
     }
-    if (!Number.isFinite(listing.price) || listing.price <= 0) {
+    const priceNum = toNum(listing.price);
+    if (!Number.isFinite(priceNum) || priceNum <= 0) {
       return NextResponse.json(
         { error: "This listing has no valid price." },
         { status: 400 }
@@ -87,12 +100,12 @@ export async function POST(
     if (!buyer) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
-    if (buyer.cashBalance < listing.price) {
+    if (lt(buyer.cashBalance, listing.price)) {
       return NextResponse.json(
         {
           error: "Insufficient wallet balance",
-          shortBy: listing.price - buyer.cashBalance,
-          details: `Need $${listing.price.toFixed(2)}, have $${buyer.cashBalance.toFixed(2)}.`,
+          shortBy: sub(listing.price, buyer.cashBalance).toNumber(),
+          details: `Need $${toNum(listing.price).toFixed(2)}, have $${toNum(buyer.cashBalance).toFixed(2)}.`,
         },
         { status: 402 }
       );
@@ -103,7 +116,46 @@ export async function POST(
       assetType: listing.assetType,
       perListingOverride: listing.commissionRateBps,
     });
-    const { fee, sellerAmount } = splitPrice(listing.price, bps);
+    const { fee, sellerAmount } = splitPrice(priceNum, bps);
+
+    // Affiliate attribution: if the buyer arrived via an affiliate's link and
+    // the seller set a reward, the affiliate earns it OUT OF the seller's cut
+    // (platform fee unchanged). Resolved before the tx; credited inside it.
+    let affiliateId: string | null = null;
+    let affiliateAmount = 0;
+    {
+      const cfg = await getAffiliateConfig();
+      if (
+        cfg.enabled &&
+        isAffiliateEligible(listing.affiliateCommissionType, toNumOrNull(listing.affiliateCommissionValue))
+      ) {
+        const attr = parseAttribution(
+          _request.cookies.get(AFFILIATE_COOKIE)?.value,
+          "MARKETPLACE",
+          id,
+          cfg.cookieWindowDays,
+          Date.now()
+        );
+        if (attr && attr.aff !== userId && attr.aff !== listing.sellerId) {
+          const aff = await prisma.user.findUnique({
+            where: { id: attr.aff },
+            select: { id: true, affiliateJoinedAt: true },
+          });
+          if (aff?.affiliateJoinedAt) {
+            affiliateAmount = computeAffiliateCommission(
+              listing.affiliateCommissionType,
+              toNumOrNull(listing.affiliateCommissionValue),
+              priceNum,
+              sellerAmount
+            );
+            if (affiliateAmount > 0) affiliateId = aff.id;
+          }
+        }
+      }
+    }
+    const sellerNet = affiliateId
+      ? Math.round((sellerAmount - affiliateAmount) * 100) / 100
+      : sellerAmount;
 
     const purchase = await prisma.$transaction(async (tx) => {
       // Atomic status flip — bails out (count: 0) if a concurrent request
@@ -125,7 +177,7 @@ export async function POST(
           buyerId: userId,
           amount: listing.price,
           fee,
-          sellerAmount,
+          sellerAmount: sellerNet,
           status: "COMPLETED",
         },
       });
@@ -165,10 +217,50 @@ export async function POST(
       await tx.user.update({
         where: { id: listing.sellerId },
         data: {
-          cashBalance: { increment: sellerAmount },
-          totalEarnings: { increment: sellerAmount },
+          cashBalance: { increment: sellerNet },
+          totalEarnings: { increment: sellerNet },
         },
       });
+
+      // Affiliate payout (from the seller's cut) — credit + ledger, deduped by
+      // the (sourceType, orderRef) unique on AffiliateCommission.
+      if (affiliateId && affiliateAmount > 0) {
+        await tx.user.update({
+          where: { id: affiliateId },
+          data: {
+            cashBalance: { increment: affiliateAmount },
+            totalEarnings: { increment: affiliateAmount },
+          },
+        });
+        await tx.transaction.create({
+          data: {
+            userId: affiliateId,
+            type: TransactionType.AFFILIATE_COMMISSION,
+            status: TransactionStatus.COMPLETED,
+            amount: affiliateAmount,
+            points: 0,
+            description: `Affiliate commission — "${listing.title}"`,
+            reference: `affiliate_marketplace_${p.id}`,
+            metadata: {
+              listingId: id,
+              purchaseId: p.id,
+              saleAmount: priceNum,
+              fromBuyerId: userId,
+            },
+          },
+        });
+        await tx.affiliateCommission.create({
+          data: {
+            affiliateUserId: affiliateId,
+            sourceType: "MARKETPLACE",
+            sourceId: id,
+            orderRef: p.id,
+            buyerId: userId,
+            saleAmount: listing.price,
+            commissionAmount: affiliateAmount,
+          },
+        });
+      }
 
       // Ledger
       await tx.transaction.create({
@@ -194,7 +286,7 @@ export async function POST(
           userId: listing.sellerId,
           type: TransactionType.EARNING,
           status: TransactionStatus.COMPLETED,
-          amount: sellerAmount,
+          amount: sellerNet,
           points: 0,
           description: `Marketplace sale — "${listing.title}"`,
           reference: `marketplace_${id}_${p.id}`,
@@ -204,6 +296,8 @@ export async function POST(
             commissionBps: bps,
             platformFee: fee,
             fromUserId: userId,
+            affiliateUserId: affiliateId,
+            affiliateAmount,
           },
         },
       });
@@ -228,12 +322,13 @@ export async function POST(
           userId: listing.sellerId,
           type: NotificationType.SYSTEM,
           title: "You made a sale 💸",
-          message: `"${listing.title}" sold for $${listing.price.toLocaleString()}. You earned $${sellerAmount.toLocaleString()}.`,
+          message: `"${listing.title}" sold for $${listing.price.toLocaleString()}. You earned $${sellerNet.toLocaleString()}${affiliateId ? ` (after $${affiliateAmount.toLocaleString()} affiliate reward)` : ""}.`,
           data: {
             listingId: id,
             purchaseId: purchase.id,
             amount: listing.price,
-            sellerAmount,
+            sellerAmount: sellerNet,
+            affiliateAmount,
           },
         },
       }),
@@ -259,12 +354,18 @@ export async function POST(
     return NextResponse.json({
       success: true,
       purchaseId: purchase.id,
-      amount: listing.price,
+      amount: toNum(listing.price),
       fee,
-      sellerAmount,
+      sellerAmount: sellerNet,
+      affiliateAmount,
       checkoutUrl: null,
     });
   } catch (error) {
+    // Retry/double-submit reuses reference `marketplace_<id>_<purchaseId>` →
+    // P2002; the purchase already went through, so report success not a 500.
+    if (isDuplicateLedgerError(error)) {
+      return NextResponse.json({ success: true, duplicate: true });
+    }
     // Race-loss messages should surface to the user, not as a 500.
     if (
       error instanceof Error &&
@@ -278,4 +379,5 @@ export async function POST(
       { status: 500 }
     );
   }
+  });
 }

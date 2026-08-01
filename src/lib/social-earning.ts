@@ -15,6 +15,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { getPointsPerUsd } from "@/lib/economy";
+import { getUserDayContext } from "@/lib/user-day";
 import {
   TransactionStatus,
   TransactionType,
@@ -65,6 +66,9 @@ interface PerSideRule {
   enabled: boolean;
   points: number;
   xp: number;
+  /** Actor side only: award `points` once per this many DISTINCT-post actions
+   *  (lifetime). 1 = flat per action (legacy). e.g. 100 → +points per 100 likes. */
+  perCount?: number;
 }
 
 interface SocialEarningConfig {
@@ -220,6 +224,11 @@ export async function getSocialEarningConfig(): Promise<SocialEarningConfig> {
           map.get(`social_earning.${k}_actor_xp`),
           def.actor.xp
         ),
+        // Every N distinct-post actions → `points`. 1 = flat per action.
+        perCount: Math.max(
+          1,
+          Math.floor(asNumber(map.get(`social_earning.${k}_actor_per_count`), 1))
+        ),
       },
     };
   }
@@ -232,15 +241,6 @@ export function invalidateSocialEarningCache() {
   _cached = null;
 }
 
-function utcDateKey(d = new Date()): string {
-  return d.toISOString().slice(0, 10);
-}
-
-function utcStartOfDay(d = new Date()): Date {
-  const x = new Date(d);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
-}
 
 const ACTION_DESCRIPTION_RECIPIENT: Record<SocialAction, string> = {
   POST_CREATE: "Created a post",
@@ -367,7 +367,9 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
     }
   }
 
-  const todayStart = utcStartOfDay();
+  // Daily caps reset at the credited user's LOCAL midnight (country-based).
+  const day = await getUserDayContext(userId);
+  const todayStart = day.startOfDayUtc;
 
   // Daily points cap
   const dailyPts = await prisma.transaction.aggregate({
@@ -429,7 +431,7 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   const reference =
     ctx.referenceOverride ??
     (action === "POST_CREATE"
-      ? `social_post_${role}_${userId}_${utcDateKey()}`
+      ? `social_post_${role}_${userId}_${day.dayKey}`
       : `social_${action.toLowerCase()}_${role}_${postId ?? "_"}_${sourceUserId ?? "_"}`);
 
   // Pre-flight duplicate check (the reference field is not unique on Transaction
@@ -554,16 +556,26 @@ export async function awardSocialEarning(
   // makes SOCIAL_LIKE/COMMENT/POST/SHARE/VOTE missions actually progress
   // (for POST_CREATE the actor === the poster). One row per action call; the
   // mission progress builder de-dupes by distinct post when configured.
-  if (cfg.countTowardDailyMissions && actorUserId) {
+  //
+  // Also log when this action's actor batch reward is on (perCount > 1) — the
+  // batch milestone counter reads SocialActionLog, so it must stay populated
+  // even if daily-mission counting is off.
+  const actorRule = cfg.perActivity[action].actor;
+  const actorPerCount = Math.max(1, Math.floor(actorRule.perCount ?? 1));
+  const batchRewardOn = actorRule.enabled && actorPerCount > 1;
+  if ((cfg.countTowardDailyMissions || batchRewardOn) && actorUserId) {
     const logAction = ACTOR_LOG_ACTION[action];
     if (logAction) {
+      // Key the log by the actor's LOCAL day so daily-mission progress reads it
+      // with the same boundary (buildDailyProgress uses the same context).
+      const { dayKey: dateKey } = await getUserDayContext(actorUserId);
       try {
         await prisma.socialActionLog.create({
           data: {
             userId: actorUserId,
             action: logAction,
             postId: postId ?? null,
-            dateKey: utcDateKey(),
+            dateKey,
           },
         });
       } catch (err) {
@@ -601,6 +613,43 @@ export async function awardSocialEarning(
   if (actorUserId) {
     if (postOwnerUserId && actorUserId === postOwnerUserId) {
       result.actor = { points: 0, xp: 0, skipped: "self" };
+    } else if (
+      batchRewardOn &&
+      postId &&
+      (action === "LIKE_RECEIVED" || action === "COMMENT_RECEIVED")
+    ) {
+      // Milestone reward: pay `points` once per `perCount` DISTINCT posts the
+      // actor has engaged (lifetime), so like/unlike-spam on one post can't farm
+      // it. The current action was just logged above, so it's included.
+      const logAction = ACTOR_LOG_ACTION[action]!;
+      const rows = await prisma.$queryRaw<{ count: bigint }[]>`
+        SELECT COUNT(DISTINCT "postId") AS count
+        FROM "SocialActionLog"
+        WHERE "userId" = ${actorUserId}
+          AND "action" = ${logAction}
+          AND "postId" IS NOT NULL
+      `;
+      const distinct = Number(rows[0]?.count ?? 0);
+      if (distinct > 0 && distinct % actorPerCount === 0) {
+        const batchIndex = distinct / actorPerCount;
+        result.actor = await creditOne({
+          userId: actorUserId,
+          role: "actor",
+          rule: {
+            enabled: true,
+            points: actorRule.points,
+            xp: actorRule.xp,
+          },
+          cfg,
+          action,
+          postId: null, // milestone reward isn't tied to a single post
+          sourceUserId: postOwnerUserId,
+          referenceOverride: `social_${action.toLowerCase()}_actorbatch_${actorUserId}_${batchIndex}`,
+        });
+      } else {
+        // Not a milestone crossing on this action — no actor payout yet.
+        result.actor = { points: 0, xp: 0, skipped: "duplicate" };
+      }
     } else {
       result.actor = await creditOne({
         userId: actorUserId,

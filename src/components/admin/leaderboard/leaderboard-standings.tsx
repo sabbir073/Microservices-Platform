@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { userDisplayId } from "@/lib/display-id";
+import { SmartImage } from "@/components/user/primitives/smart-image";
+import { Avatar } from "@/components/user/primitives/avatar";
 import { PackageBadge } from "@/components/user/profile/badges";
 
 interface CombinedRow {
@@ -356,14 +358,12 @@ function LeaderboardRow({ row }: { row: CombinedRow }) {
         )}
       </div>
 
-      <div className="w-9 h-9 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden shrink-0">
-        {row.avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={row.avatar} alt="" className="w-full h-full object-cover" />
-        ) : (
-          initial
-        )}
-      </div>
+      <Avatar
+        src={row.avatar}
+        size={36}
+        fallbackText={initial}
+        className="shrink-0"
+      />
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
@@ -523,12 +523,15 @@ function PrizeTile({ row }: { row: PrizeRow }) {
         {isPodium && <Crown className={cn("w-4 h-4", rankColor)} />}
       </div>
       {row.giftImage && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={row.giftImage}
-          alt={row.giftName ?? ""}
-          className="w-full h-20 rounded-lg object-cover bg-slate-950 mb-2"
-        />
+        <div className="relative w-full h-20 overflow-hidden rounded-lg bg-slate-950 mb-2">
+          <SmartImage
+            src={row.giftImage}
+            alt={row.giftName ?? ""}
+            fill
+            sizes="100vw"
+            className="object-cover"
+          />
+        </div>
       )}
       {row.giftName && (
         <p className="text-sm font-bold text-white truncate mb-1">

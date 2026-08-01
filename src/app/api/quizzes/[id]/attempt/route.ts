@@ -7,6 +7,8 @@ import {
   NotificationType,
 } from "@/generated/prisma/client";
 import { getPointsPerUsd } from "@/lib/economy";
+import { toNum } from "@/lib/money";
+import { isDuplicateLedgerError } from "@/lib/idempotency";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -102,46 +104,57 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     select: { id: true },
   });
 
-  // Reward once — only on the first passing attempt.
+  // Reward once — only on the first passing attempt. `everPassed` is a
+  // check-then-act read, so two concurrent passing attempts could both reach
+  // here; a STABLE per-user-per-quiz reference (`quiz_reward_<userId>_<quizId>`)
+  // makes the (userId, reference) unique enforce exactly one reward — the loser
+  // hits P2002 and awards nothing.
   let pointsAwarded = 0;
   let xpAwarded = 0;
   if (passed && !everPassed) {
     pointsAwarded = quiz.pointsReward;
     xpAwarded = quiz.xpReward;
-    const cash = quiz.cashReward || 0;
+    const cash = toNum(quiz.cashReward);
     const pointsPerUsd = await getPointsPerUsd();
-    await prisma.$transaction([
-      prisma.user.update({
-        where: { id: userId },
-        data: {
-          pointsBalance: { increment: pointsAwarded },
-          xp: { increment: xpAwarded },
-          cashBalance: { increment: cash },
-          totalEarnings: { increment: pointsAwarded / pointsPerUsd + cash },
-        },
-      }),
-      prisma.transaction.create({
-        data: {
-          userId,
-          type: TransactionType.EARNING,
-          status: TransactionStatus.COMPLETED,
-          points: pointsAwarded,
-          amount: pointsAwarded / pointsPerUsd + cash,
-          description: `Passed quiz: ${quiz.title}`,
-          reference: `quiz_${id}_${attempt.id}`,
-          metadata: { quizId: id, attemptId: attempt.id, percent, xp: xpAwarded, cash },
-        },
-      }),
-      prisma.notification.create({
-        data: {
-          userId,
-          type: NotificationType.ACHIEVEMENT,
-          title: "🧠 Quiz passed!",
-          message: `You scored ${percent}% on "${quiz.title}" and earned ${pointsAwarded} pts + ${xpAwarded} XP.`,
-          data: { quizId: id, percent, points: pointsAwarded, xp: xpAwarded },
-        },
-      }),
-    ]);
+    try {
+      await prisma.$transaction([
+        prisma.user.update({
+          where: { id: userId },
+          data: {
+            pointsBalance: { increment: pointsAwarded },
+            xp: { increment: xpAwarded },
+            cashBalance: { increment: cash },
+            totalEarnings: { increment: pointsAwarded / pointsPerUsd + cash },
+          },
+        }),
+        prisma.transaction.create({
+          data: {
+            userId,
+            type: TransactionType.EARNING,
+            status: TransactionStatus.COMPLETED,
+            points: pointsAwarded,
+            amount: pointsAwarded / pointsPerUsd + cash,
+            description: `Passed quiz: ${quiz.title}`,
+            reference: `quiz_reward_${userId}_${id}`,
+            metadata: { quizId: id, attemptId: attempt.id, percent, xp: xpAwarded, cash },
+          },
+        }),
+        prisma.notification.create({
+          data: {
+            userId,
+            type: NotificationType.ACHIEVEMENT,
+            title: "🧠 Quiz passed!",
+            message: `You scored ${percent}% on "${quiz.title}" and earned ${pointsAwarded} pts + ${xpAwarded} XP.`,
+            data: { quizId: id, percent, points: pointsAwarded, xp: xpAwarded },
+          },
+        }),
+      ]);
+    } catch (err) {
+      // A concurrent passing attempt already claimed the one-time reward.
+      if (!isDuplicateLedgerError(err)) throw err;
+      pointsAwarded = 0;
+      xpAwarded = 0;
+    }
   }
 
   return NextResponse.json({

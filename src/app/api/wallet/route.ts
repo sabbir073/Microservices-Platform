@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { WithdrawalStatus } from "@/generated/prisma";
 import { getSubscriptionStatus } from "@/lib/packages";
 import { getPointsPerUsd } from "@/lib/economy";
+import { toNum } from "@/lib/money";
 
 // GET /api/wallet - Get user wallet details
 export async function GET() {
@@ -35,14 +36,14 @@ export async function GET() {
     // Resolve the user's effective plan + raw expiry status (for the renew banner).
     const sub = await getSubscriptionStatus(session.user.id);
 
-    const pendingWithdrawalsList = await prisma.withdrawal.findMany({
+    const pendingWithdrawalsAgg = (await prisma.withdrawal.aggregate({
       where: {
         userId: session.user.id,
         status: { in: [WithdrawalStatus.PENDING, WithdrawalStatus.PROCESSING] },
       },
-      select: { amount: true },
-    });
-    const pendingWithdrawalsAmount = pendingWithdrawalsList.reduce((sum, w) => sum + w.amount, 0);
+      _sum: { amount: true },
+    })) as unknown as { _sum: { amount: number | null } };
+    const pendingWithdrawalsAmount = toNum(pendingWithdrawalsAgg._sum.amount);
 
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
@@ -51,21 +52,29 @@ export async function GET() {
     monthStart.setDate(1);
     monthStart.setHours(0, 0, 0, 0);
 
-    const monthTransactions = await prisma.transaction.findMany({
-      where: {
-        userId: session.user.id,
-        type: "EARNING",
-        status: "COMPLETED",
-        createdAt: { gte: monthStart },
-      },
-      select: { points: true, createdAt: true },
-    });
+    const [todayEarningsAgg, monthEarningsAgg] = await Promise.all([
+      prisma.transaction.aggregate({
+        where: {
+          userId: session.user.id,
+          type: "EARNING",
+          status: "COMPLETED",
+          createdAt: { gte: todayStart },
+        },
+        _sum: { points: true },
+      }),
+      prisma.transaction.aggregate({
+        where: {
+          userId: session.user.id,
+          type: "EARNING",
+          status: "COMPLETED",
+          createdAt: { gte: monthStart },
+        },
+        _sum: { points: true },
+      }),
+    ]);
 
-    const todayEarningsPoints = monthTransactions
-      .filter((t) => t.createdAt >= todayStart)
-      .reduce((sum, t) => sum + (t.points || 0), 0);
-
-    const monthEarningsPoints = monthTransactions.reduce((sum, t) => sum + (t.points || 0), 0);
+    const todayEarningsPoints = todayEarningsAgg._sum.points ?? 0;
+    const monthEarningsPoints = monthEarningsAgg._sum.points ?? 0;
 
     const tasksCompletedToday = await prisma.taskSubmission.count({
       where: {
@@ -86,8 +95,8 @@ export async function GET() {
         availablePoints: Math.max(0, availablePoints),
         cashEquivalent: user.pointsBalance / pointsPerUsd,
         pendingWithdrawal: pendingWithdrawalsAmount,
-        totalEarnings: user.totalEarnings,
-        totalWithdrawals: user.totalWithdrawals,
+        totalEarnings: toNum(user.totalEarnings),
+        totalWithdrawals: toNum(user.totalWithdrawals),
       },
       stats: {
         todayEarnings: todayEarningsPoints,

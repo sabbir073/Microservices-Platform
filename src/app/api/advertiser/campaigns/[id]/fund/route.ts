@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { withIdempotency } from "@/lib/idempotency";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { TransactionType, TransactionStatus } from "@/generated/prisma/client";
 import { userCanFeature } from "@/lib/packages";
+import { sub, toNum } from "@/lib/money";
 
 const fundSchema = z.object({ amount: z.number().min(1).max(100000) });
 
@@ -20,6 +22,7 @@ export async function POST(
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  return withIdempotency(request, session.user.id, async () => {
   if (!(await userCanFeature(session.user.id, "advertiser"))) {
     return NextResponse.json({ error: "The advertiser is disabled for your plan" }, { status: 403 });
   }
@@ -86,8 +89,8 @@ export async function POST(
       });
       return NextResponse.json(
         {
-          error: `Wallet balance is $${(me?.cashBalance ?? 0).toFixed(2)} — need $${amount.toFixed(2)}.`,
-          shortBy: amount - (me?.cashBalance ?? 0),
+          error: `Wallet balance is $${toNum(me?.cashBalance).toFixed(2)} — need $${amount.toFixed(2)}.`,
+          shortBy: sub(amount, me?.cashBalance ?? 0).toNumber(),
         },
         { status: 402 }
       );
@@ -96,4 +99,5 @@ export async function POST(
   }
 
   return NextResponse.json({ success: true });
+  });
 }

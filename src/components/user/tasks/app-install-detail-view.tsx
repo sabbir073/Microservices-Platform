@@ -16,7 +16,15 @@ import {
 import { toast } from "sonner";
 import { ProofImageUpload } from "@/components/user/tasks/proof-image-upload";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { SmartImage } from "@/components/user/primitives/smart-image";
 import { type AppInstallConfig } from "@/lib/app-install-tasks";
+import { runInterstitial } from "@/lib/reward-interstitial";
+import {
+  TaskUpgradeNotice,
+  isUpgradeRequired,
+  AdblockNotice,
+} from "@/components/user/primitives/task-upgrade-notice";
+import { ensureAdsAllowed } from "@/lib/adblock";
 
 interface AppInstallTask {
   id: string;
@@ -48,6 +56,8 @@ export function AppInstallDetailView({ taskId }: { taskId: string }) {
   const [submitState, setSubmitState] = useState<SubmitState>({ kind: "loading" });
   const [screenshot, setScreenshot] = useState("");
   const [busy, setBusy] = useState(false);
+  const [upgradeMsg, setUpgradeMsg] = useState<string | null>(null);
+  const [adBlocked, setAdBlocked] = useState(false);
 
   useEffect(() => {
     let cancel = false;
@@ -71,10 +81,18 @@ export function AppInstallDetailView({ taskId }: { taskId: string }) {
           setSubmitState({ kind: "completed_today" });
           return;
         }
+        if (!(await ensureAdsAllowed())) {
+          if (!cancel) setAdBlocked(true);
+          return;
+        }
         const sRes = await fetch(`/api/tasks/${taskId}/start`, { method: "POST" });
         const sData = await sRes.json().catch(() => ({}));
         if (cancel) return;
         if (!sRes.ok) {
+          if (isUpgradeRequired(sData)) {
+            setUpgradeMsg(sData.error || "");
+            return;
+          }
           const reason = sData.error ?? `HTTP ${sRes.status}`;
           if (typeof reason === "string" && /limit/i.test(reason)) {
             setSubmitState({ kind: "completed_today" });
@@ -122,6 +140,7 @@ export function AppInstallDetailView({ taskId }: { taskId: string }) {
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      await runInterstitial();
       if (d.status === "approved") {
         toast.success("Download counted! 🎉", {
           description: `+${d.rewards?.points ?? task.pointsReward} pts credited`,
@@ -150,6 +169,14 @@ export function AppInstallDetailView({ taskId }: { taskId: string }) {
     );
   }
 
+  if (adBlocked) {
+    return <AdblockNotice />;
+  }
+
+  if (upgradeMsg !== null) {
+    return <TaskUpgradeNotice message={upgradeMsg} />;
+  }
+
   if (loadError || !task) {
     return (
       <div className="space-y-4">
@@ -175,8 +202,13 @@ export function AppInstallDetailView({ taskId }: { taskId: string }) {
         <div className="flex items-start gap-4">
           <div className="w-16 h-16 rounded-2xl bg-gray-800 overflow-hidden shrink-0 grid place-items-center">
             {logo ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={logo} alt="" className="w-full h-full object-cover" />
+              <SmartImage
+                src={logo}
+                alt=""
+                width={64}
+                height={64}
+                className="w-full h-full object-cover"
+              />
             ) : (
               <Smartphone className="w-7 h-7 text-gray-600" />
             )}

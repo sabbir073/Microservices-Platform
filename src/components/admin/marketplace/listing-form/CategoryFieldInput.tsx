@@ -11,18 +11,29 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import type { CategoryField } from "@/lib/marketplace-categories";
+import { SmartImage } from "@/components/user/primitives/smart-image";
 
 interface Props {
   field: CategoryField;
   value: unknown;
   onChange: (next: unknown) => void;
   disabled?: boolean;
+  /** Upload implementation. Admin defaults to `/api/media/upload`; the seller
+   *  form passes a user-facing uploader (that endpoint is admin-only). */
+  uploadFn?: (file: File) => Promise<string>;
 }
 
 const inp =
   "w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 disabled:opacity-50";
 
-export function CategoryFieldInput({ field, value, onChange, disabled }: Props) {
+export function CategoryFieldInput({
+  field,
+  value,
+  onChange,
+  disabled,
+  uploadFn,
+}: Props) {
+  const doUpload = uploadFn ?? uploadFile;
   const labelEl = (
     <label className="block">
       <span className="text-sm font-bold text-white inline-flex items-center gap-1.5">
@@ -186,6 +197,7 @@ export function CategoryFieldInput({ field, value, onChange, disabled }: Props) 
           onChange={onChange}
           disabled={disabled}
           labelEl={labelEl}
+          uploadFn={doUpload}
         />
       );
 
@@ -197,6 +209,7 @@ export function CategoryFieldInput({ field, value, onChange, disabled }: Props) 
           onChange={onChange}
           disabled={disabled}
           labelEl={labelEl}
+          uploadFn={doUpload}
         />
       );
 
@@ -222,12 +235,14 @@ function SingleScreenshotField({
   onChange,
   disabled,
   labelEl,
+  uploadFn,
 }: {
   field: CategoryField;
   value: string;
   onChange: (v: unknown) => void;
   disabled?: boolean;
   labelEl: React.ReactNode;
+  uploadFn: (file: File) => Promise<string>;
 }) {
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -244,7 +259,7 @@ function SingleScreenshotField({
     }
     setBusy(true);
     try {
-      const url = await uploadFile(file);
+      const url = await uploadFn(file);
       onChange(url);
       toast.success("Screenshot uploaded");
     } catch (err) {
@@ -331,12 +346,14 @@ function MultiScreenshotField({
   onChange,
   disabled,
   labelEl,
+  uploadFn,
 }: {
   field: CategoryField;
   value: string[];
   onChange: (v: unknown) => void;
   disabled?: boolean;
   labelEl: React.ReactNode;
+  uploadFn: (file: File) => Promise<string>;
 }) {
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -356,7 +373,7 @@ function MultiScreenshotField({
     if (valid.length === 0) return;
     setBusy(true);
     try {
-      const urls = await Promise.all(valid.map(uploadFile));
+      const urls = await Promise.all(valid.map(uploadFn));
       onChange([...value, ...urls]);
       toast.success(`Uploaded ${urls.length}`);
     } catch (err) {
@@ -381,8 +398,7 @@ function MultiScreenshotField({
               key={i}
               className="relative aspect-square rounded-lg overflow-hidden bg-slate-950 border border-slate-800 group"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={url} alt="" className="w-full h-full object-cover" />
+              <SmartImage src={url} alt="" fill sizes="200px" className="object-cover" />
               <button
                 type="button"
                 onClick={() => onChange(value.filter((_, j) => j !== i))}

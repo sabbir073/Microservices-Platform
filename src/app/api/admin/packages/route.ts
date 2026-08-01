@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { toNum, toNumOrNull } from "@/lib/money";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { z } from "zod";
 
@@ -35,6 +36,14 @@ const PLAN_INPUT = z
     advertiserEnabled: z.boolean().optional(),
     gamesEnabled: z.boolean().optional(),
     adFree: z.boolean().optional(),
+
+    // Creator / monetization capabilities
+    createTasksEnabled: z.boolean().optional(),
+    sellCoursesEnabled: z.boolean().optional(),
+    sellMarketplaceEnabled: z.boolean().optional(),
+    agencyModeEnabled: z.boolean().optional(),
+    shareLinksEnabled: z.boolean().optional(),
+    shareYoutubeEnabled: z.boolean().optional(),
 
     // Per-task-type toggles
     socialTasksEnabled: z.boolean(),
@@ -91,7 +100,14 @@ export async function GET() {
   const packages = await prisma.package.findMany({
     orderBy: [{ order: "asc" }, { accessLevel: "asc" }],
   });
-  return NextResponse.json({ packages });
+  return NextResponse.json({
+    packages: packages.map((p) => ({
+      ...p,
+      priceMonthly: toNum(p.priceMonthly),
+      priceYearly: toNumOrNull(p.priceYearly),
+      minWithdrawal: toNum(p.minWithdrawal),
+    })),
+  });
 }
 
 /**
@@ -164,6 +180,13 @@ export async function POST(req: NextRequest) {
         advertiserEnabled: data.advertiserEnabled ?? true,
         gamesEnabled: data.gamesEnabled ?? true,
         adFree: data.adFree ?? false,
+
+        createTasksEnabled: data.createTasksEnabled ?? false,
+        sellCoursesEnabled: data.sellCoursesEnabled ?? false,
+        sellMarketplaceEnabled: data.sellMarketplaceEnabled ?? false,
+        agencyModeEnabled: data.agencyModeEnabled ?? false,
+        shareLinksEnabled: data.shareLinksEnabled ?? false,
+        shareYoutubeEnabled: data.shareYoutubeEnabled ?? false,
 
         socialTasksEnabled: data.socialTasksEnabled,
         proxyTasksEnabled: data.proxyTasksEnabled,

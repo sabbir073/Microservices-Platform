@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { TaskStatus, TaskType } from "@/generated/prisma";
 import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
+import { getUserDayContext } from "@/lib/user-day";
+import { getTaskChainState } from "@/lib/task-sequence";
 
 import type { PackageFeatureKey } from "@/lib/packages";
 
@@ -33,7 +35,7 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get("type") as TaskType | null;
     const category = searchParams.get("category");
     const page = parseInt(searchParams.get("page") || "1");
-    const limit = parseInt(searchParams.get("limit") || "20");
+    const limit = Math.min(Math.max(parseInt(searchParams.get("limit") || "20", 10) || 20, 1), 100);
     const skip = (page - 1) * limit;
 
     // Get user with their level + country
@@ -73,9 +75,9 @@ export async function GET(request: NextRequest) {
 
     const accessLevel = userPackage?.accessLevel ?? 0;
 
-    // Get user's completed tasks today for daily limit check
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // Get user's completed tasks today for daily limit check — boundary is the
+    // user's LOCAL midnight.
+    const { startOfDayUtc: todayStart } = await getUserDayContext(session.user.id);
 
     // Daily-limit counting — only states that consume a daily slot, today.
     const countingSubs = await prisma.taskSubmission.findMany({
@@ -190,7 +192,9 @@ export async function GET(request: NextRequest) {
     const [tasks, total] = await Promise.all([
       prisma.task.findMany({
         where,
-        orderBy: [{ createdAt: "desc" }],
+        // Sequential-unlock ordering (feature #7): admin-set `order` first, then
+        // newest — so the displayed order matches the unlock chain.
+        orderBy: [{ order: "asc" }, { createdAt: "desc" }],
         skip,
         take: limit,
       }),
@@ -220,12 +224,19 @@ export async function GET(request: NextRequest) {
       });
     });
 
-    const submissionCounts = await Promise.all(
-      taskIds.map((id) =>
-        prisma.taskSubmission.count({ where: { taskId: id } })
-      )
+    // One grouped query for per-task submission totals (was N counts).
+    const submissionCountRows = (await prisma.taskSubmission.groupBy({
+      by: ["taskId"],
+      where: { taskId: { in: taskIds } },
+      _count: { _all: true },
+    })) as unknown as { taskId: string; _count: { _all: number } }[];
+    const submissionCountMap = new Map(
+      submissionCountRows.map((r) => [r.taskId, r._count._all])
     );
-    const submissionCountMap = new Map(taskIds.map((id, idx) => [id, submissionCounts[idx]]));
+
+    // Sequential-unlock chain state (no-op unless the admin toggle is on and the
+    // user isn't an admin). Same helper the start/quiz gates enforce with.
+    const { lockedTaskIds } = await getTaskChainState(session.user.id);
 
     const processedTasks = tasks.map((task) => {
       const todayCount = userTodayCounts.get(task.id) ?? 0;
@@ -245,6 +256,8 @@ export async function GET(request: NextRequest) {
       const remainingSlots = task.totalLimit
         ? task.totalLimit - task.completedCount
         : null;
+
+      const locked = lockedTaskIds.has(task.id);
 
       return {
         id: task.id,
@@ -276,6 +289,8 @@ export async function GET(request: NextRequest) {
         totalLimitReached: !!reachedTotalLimit,
         canStart,
         completedToday,
+        locked,
+        lockReason: locked ? "Complete the previous task first" : null,
         reason: !canStart
           ? dailyLimitReached
             ? "Daily limit reached"
@@ -290,8 +305,9 @@ export async function GET(request: NextRequest) {
     // (completed today, pending review, in-progress, revision, rejected) so the
     // badge shows instead of the task silently vanishing. Only globally
     // unavailable tasks with no user history stay hidden.
+    // Locked tasks stay visible (shown with a lock) instead of vanishing.
     const visibleTasks = processedTasks.filter(
-      (t) => t.canStart || t.userStatus !== "AVAILABLE"
+      (t) => t.canStart || t.locked || t.userStatus !== "AVAILABLE"
     );
 
     return NextResponse.json({

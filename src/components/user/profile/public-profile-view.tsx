@@ -14,6 +14,9 @@ import {
   Lock,
 } from "lucide-react";
 import { VerifiedBadge } from "@/components/user/profile/verified-badge";
+import { RenderedContent } from "@/components/user/feed/feed-content";
+import { SmartImage } from "@/components/user/primitives/smart-image";
+import { Avatar } from "@/components/user/primitives/avatar";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -158,20 +161,24 @@ export function PublicProfileView({ userId, viewerId }: Props) {
       <div className="rounded-2xl overflow-hidden glass">
         <div className="relative h-32 sm:h-44 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
           {user.coverPhoto && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={user.coverPhoto} alt="" className="w-full h-full object-cover" />
+            <SmartImage
+              src={user.coverPhoto}
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover"
+            />
           )}
         </div>
         <div className="bg-gray-900 px-4 sm:px-6 pt-12 pb-5 relative">
           <div className="absolute -top-12 left-4 sm:left-6">
-            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-linear-to-br from-indigo-500 to-purple-600 border-4 border-gray-900 flex items-center justify-center text-white text-3xl font-extrabold overflow-hidden">
-              {user.avatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.avatar} alt="" className="w-full h-full object-cover" />
-              ) : (
-                initial
-              )}
-            </div>
+            <Avatar
+              src={user.avatar}
+              size="w-24 h-24 sm:w-28 sm:h-28"
+              shape="rounded"
+              fallbackText={initial}
+              className="border-4 border-gray-900"
+            />
           </div>
 
           <div className="flex justify-end mb-2">
@@ -367,7 +374,9 @@ function PostsTab({ userId }: { userId: string }) {
       {items.map((p) => (
         <div key={p.id} className="glass p-4">
           {p.content && (
-            <p className="text-sm text-gray-200 whitespace-pre-wrap">{p.content}</p>
+            <p className="text-sm text-gray-200 whitespace-pre-wrap">
+              <RenderedContent content={p.content} />
+            </p>
           )}
           {p.images.length > 0 && (
             // eslint-disable-next-line @next/next/no-img-element
@@ -474,14 +483,7 @@ function UserListTab({
             className="flex items-center gap-3 p-3 glass glass-hover"
           >
             <Link href={profileHref(u)}>
-              <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden">
-                {u.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={u.avatar} alt="" className="w-full h-full object-cover" />
-                ) : (
-                  initial
-                )}
-              </div>
+              <Avatar src={u.avatar} size={40} fallbackText={initial} />
             </Link>
             <div className="flex-1 min-w-0">
               <Link href={profileHref(u)} className="block">

@@ -17,10 +17,13 @@ import {
   Eye,
   TrendingUp,
   X,
+  SlidersHorizontal,
 } from "lucide-react";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
 import { ASSET_TYPE_LABEL } from "@/lib/marketplace-categories";
+import { SmartImage } from "@/components/user/primitives/smart-image";
 import { cn } from "@/lib/utils";
 
 interface Listing {
@@ -75,11 +78,14 @@ export function MarketplaceView() {
   const [auctionOnly, setAuctionOnly] = useState(false);
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
+  // Asset-age bucket → maps to minAgeMonths/maxAgeMonths query params.
+  const [ageBucket, setAgeBucket] = useState("");
   const [sort, setSort] = useState("createdAt-desc");
   const [listings, setListings] = useState<Listing[]>([]);
   const [facets, setFacets] = useState<Facet[]>([]);
   const [loading, setLoading] = useState(true);
   const [cartCount, setCartCount] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false); // mobile filter sheet
 
   useEffect(() => {
     fetch("/api/cart")
@@ -100,6 +106,11 @@ export function MarketplaceView() {
     if (auctionOnly) params.set("auction", "true");
     if (minPrice) params.set("minPrice", minPrice);
     if (maxPrice) params.set("maxPrice", maxPrice);
+    if (ageBucket) {
+      const [lo, hi] = ageBucket.split("-");
+      if (lo) params.set("minAgeMonths", lo);
+      if (hi) params.set("maxAgeMonths", hi);
+    }
     const [sortBy, sortOrder] = sort.split("-");
     params.set("sortBy", sortBy);
     params.set("sortOrder", sortOrder);
@@ -123,6 +134,7 @@ export function MarketplaceView() {
     auctionOnly,
     minPrice,
     maxPrice,
+    ageBucket,
     sort,
   ]);
 
@@ -133,7 +145,8 @@ export function MarketplaceView() {
     monetizedOnly ||
     auctionOnly ||
     minPrice ||
-    maxPrice;
+    maxPrice ||
+    ageBucket;
 
   const clearAll = () => {
     setAssetType("");
@@ -143,7 +156,87 @@ export function MarketplaceView() {
     setAuctionOnly(false);
     setMinPrice("");
     setMaxPrice("");
+    setAgeBucket("");
   };
+
+  // Count of the toggle/price refinements (excludes assetType chips + search,
+  // which have their own always-visible controls) — drives the mobile badge.
+  const refineCount =
+    (verifiedOnly ? 1 : 0) +
+    (monetizedOnly ? 1 : 0) +
+    (auctionOnly ? 1 : 0) +
+    (minPrice ? 1 : 0) +
+    (maxPrice ? 1 : 0) +
+    (ageBucket ? 1 : 0);
+
+  // Shared toggle + price controls — rendered inline on desktop and inside the
+  // mobile BottomSheet. Identical state/handlers → behaviour is unchanged.
+  const filterControls = (
+    <>
+      <ToggleChip
+        icon={<ShieldCheck className="w-3 h-3" />}
+        active={verifiedOnly}
+        label="Verified metrics"
+        onClick={() => setVerifiedOnly((v) => !v)}
+        tone="emerald"
+      />
+      <ToggleChip
+        icon={<TrendingUp className="w-3 h-3" />}
+        active={monetizedOnly}
+        label="Monetized only"
+        onClick={() => setMonetizedOnly((v) => !v)}
+        tone="amber"
+      />
+      <ToggleChip
+        icon={<Gavel className="w-3 h-3" />}
+        active={auctionOnly}
+        label="Auctions only"
+        onClick={() => setAuctionOnly((v) => !v)}
+        tone="purple"
+      />
+      <div className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-gray-800 bg-gray-900">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+          $
+        </span>
+        <input
+          type="number"
+          value={minPrice}
+          onChange={(e) => setMinPrice(e.target.value)}
+          placeholder="min"
+          className="w-16 bg-transparent text-white text-xs focus:outline-none tabular-nums"
+        />
+        <span className="text-gray-600">–</span>
+        <input
+          type="number"
+          value={maxPrice}
+          onChange={(e) => setMaxPrice(e.target.value)}
+          placeholder="max"
+          className="w-16 bg-transparent text-white text-xs focus:outline-none tabular-nums"
+        />
+      </div>
+      <select
+        value={ageBucket}
+        onChange={(e) => setAgeBucket(e.target.value)}
+        className="px-2.5 py-1 rounded-full border border-gray-800 bg-gray-900 text-white text-xs focus:outline-none focus:border-indigo-500"
+        aria-label="Asset age"
+      >
+        <option value="">Any age</option>
+        <option value="0-12">Under 1 year</option>
+        <option value="12-36">1–3 years</option>
+        <option value="36-60">3–5 years</option>
+        <option value="60-">5+ years</option>
+      </select>
+      {anyFilterActive && (
+        <button
+          onClick={clearAll}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-500/10 text-red-300 border border-red-500/30 font-bold hover:bg-red-500/20"
+        >
+          <X className="w-3 h-3" />
+          Clear
+        </button>
+      )}
+    </>
+  );
 
   return (
     <div className="space-y-4">
@@ -151,7 +244,7 @@ export function MarketplaceView() {
       {/* Header */}
       <div className="flex items-center gap-2 flex-wrap">
         <h1 className="text-xl sm:text-2xl font-bold text-white flex-1 inline-flex items-center gap-2">
-          🛒 Marketplace
+          <ShoppingBag className="w-6 h-6 text-indigo-400" /> Marketplace
           <span className="text-xs font-mono uppercase tracking-wider text-slate-500">
             digital assets
           </span>
@@ -185,8 +278,8 @@ export function MarketplaceView() {
       </div>
 
       {/* Search + Sell */}
-      <div className="flex gap-2">
-        <div className="relative flex-1">
+      <div className="flex flex-wrap gap-2">
+        <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
           <input
             value={search}
@@ -240,59 +333,42 @@ export function MarketplaceView() {
         ))}
       </div>
 
-      {/* Toggle filters + price range */}
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <ToggleChip
-          icon={<ShieldCheck className="w-3 h-3" />}
-          active={verifiedOnly}
-          label="Verified metrics"
-          onClick={() => setVerifiedOnly((v) => !v)}
-          tone="emerald"
-        />
-        <ToggleChip
-          icon={<TrendingUp className="w-3 h-3" />}
-          active={monetizedOnly}
-          label="Monetized only"
-          onClick={() => setMonetizedOnly((v) => !v)}
-          tone="amber"
-        />
-        <ToggleChip
-          icon={<Gavel className="w-3 h-3" />}
-          active={auctionOnly}
-          label="Auctions only"
-          onClick={() => setAuctionOnly((v) => !v)}
-          tone="purple"
-        />
-        <div className="inline-flex items-center gap-1 px-2 py-1 rounded-full border border-gray-800 bg-gray-900">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-            $
-          </span>
-          <input
-            type="number"
-            value={minPrice}
-            onChange={(e) => setMinPrice(e.target.value)}
-            placeholder="min"
-            className="w-16 bg-transparent text-white text-xs focus:outline-none tabular-nums"
-          />
-          <span className="text-gray-600">–</span>
-          <input
-            type="number"
-            value={maxPrice}
-            onChange={(e) => setMaxPrice(e.target.value)}
-            placeholder="max"
-            className="w-16 bg-transparent text-white text-xs focus:outline-none tabular-nums"
-          />
-        </div>
-        {anyFilterActive && (
-          <button
-            onClick={clearAll}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-500/10 text-red-300 border border-red-500/30 font-bold hover:bg-red-500/20"
-          >
-            <X className="w-3 h-3" />
-            Clear
-          </button>
-        )}
+      {/* Toggle filters + price range — inline on desktop, tucked into a
+          BottomSheet on mobile to keep the top of the list clean. */}
+      <div className="hidden lg:flex flex-wrap items-center gap-2 text-xs">
+        {filterControls}
       </div>
+      <button
+        onClick={() => setFiltersOpen(true)}
+        className="lg:hidden inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-900 border border-gray-800 text-gray-200 text-xs font-semibold"
+      >
+        <SlidersHorizontal className="w-3.5 h-3.5" />
+        Filters
+        {refineCount > 0 && (
+          <span className="min-w-4 h-4 px-1 rounded-full bg-indigo-500 text-white text-[10px] font-bold inline-flex items-center justify-center tabular-nums">
+            {refineCount}
+          </span>
+        )}
+      </button>
+
+      <BottomSheet
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        title="Filters"
+        description="Refine by metrics, format, and price."
+        footer={
+          <button
+            onClick={() => setFiltersOpen(false)}
+            className="w-full py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold"
+          >
+            Show results
+          </button>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {filterControls}
+        </div>
+      </BottomSheet>
 
       {/* Results */}
       {loading && (
@@ -397,11 +473,12 @@ function ListingCardV2({ listing }: { listing: Listing }) {
     >
       <div className="relative aspect-video bg-gray-950 overflow-hidden">
         {cover ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
+          <SmartImage
             src={cover}
             alt=""
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+            fill
+            sizes="(max-width: 768px) 50vw, 25vw"
+            className="object-cover group-hover:scale-105 transition-transform"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -486,9 +563,9 @@ function ListingCardV2({ listing }: { listing: Listing }) {
           {listing.assetAgeMonths ? (
             <span className="inline-flex items-center gap-1 text-purple-300">
               <span className="font-bold tabular-nums">
-                {listing.assetAgeMonths}
+                {formatAge(listing.assetAgeMonths)}
               </span>
-              <span className="text-gray-500">mo old</span>
+              <span className="text-gray-500">old</span>
             </span>
           ) : null}
         </div>
@@ -522,6 +599,15 @@ function compactNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+/** Human age from a month count: "2y 3m", "8mo", "<1mo". */
+function formatAge(months: number): string {
+  if (months < 1) return "<1mo";
+  if (months < 12) return `${months}mo`;
+  const y = Math.floor(months / 12);
+  const m = months % 12;
+  return m ? `${y}y ${m}m` : `${y}y`;
 }
 
 function compactMoney(n: number): string {

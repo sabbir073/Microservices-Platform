@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { withIdempotency } from "@/lib/idempotency";
 import { prisma } from "@/lib/prisma";
 import {
   TransactionType,
@@ -12,10 +13,7 @@ import {
   parseFeatureOverrides,
 } from "@/lib/packages";
 import { getPointsPerUsd } from "@/lib/economy";
-
-function utcDateKey(d = new Date()): string {
-  return d.toISOString().slice(0, 10);
-}
+import { getUserDayContext } from "@/lib/user-day";
 
 const DEFAULT_DAILY_PER_REFERRAL = 5; // points per L1 referral, used if Package.referralBonus is 0
 
@@ -40,7 +38,7 @@ export async function GET() {
   const commissionLevels = userPackage?.referralCommissionLevels ?? 0;
   const canEarnReferralCommission = commissionLevels >= 1;
 
-  const today = utcDateKey();
+  const { dayKey: today } = await getUserDayContext(userId);
   const existing = await prisma.dailyReferralClaim.findUnique({
     where: { userId_date: { userId, date: today } },
   });
@@ -101,11 +99,12 @@ export async function GET() {
   });
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  return withIdempotency(request, session.user.id, async () => {
   const userId = session.user.id;
 
   const me = await prisma.user.findUnique({
@@ -140,7 +139,7 @@ export async function POST() {
     );
   }
 
-  const today = utcDateKey();
+  const { dayKey: today } = await getUserDayContext(userId);
 
   const existing = await prisma.dailyReferralClaim.findUnique({
     where: { userId_date: { userId, date: today } },
@@ -240,5 +239,6 @@ export async function POST() {
     referralCount,
     perReferral,
     date: today,
+  });
   });
 }

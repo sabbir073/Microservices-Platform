@@ -13,6 +13,8 @@ import {
   getEligiblePackages,
 } from "@/lib/leaderboard";
 import { getPointsPerUsd } from "@/lib/economy";
+import { toNum } from "@/lib/money";
+import { invalidateSettingsCache } from "@/lib/system-settings";
 
 const schema = z.object({
   period: z.enum(["daily", "weekly", "monthly"]),
@@ -107,7 +109,7 @@ async function topUsers(metric: Metric, take: number, eligibleSet: Set<string>) 
     return filterByEligibility(users).map((u) => ({
       userId: u.id,
       name: u.name,
-      value: Math.round(u.totalEarnings * pointsPerUsd),
+      value: Math.round(toNum(u.totalEarnings) * pointsPerUsd),
     }));
   }
   if (metric === "XP_EARNED") {
@@ -345,6 +347,8 @@ export async function POST(request: NextRequest) {
       newData: { period, metric, totalPrize, winners: winners.length },
     },
   });
+
+  invalidateSettingsCache();
 
   return NextResponse.json({
     success: true,

@@ -19,6 +19,14 @@ import {
 } from "@/lib/custom-tasks";
 import { CustomFieldInput } from "./custom-field-input";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { SmartImage } from "@/components/user/primitives/smart-image";
+import { runInterstitial } from "@/lib/reward-interstitial";
+import {
+  TaskUpgradeNotice,
+  isUpgradeRequired,
+  AdblockNotice,
+} from "@/components/user/primitives/task-upgrade-notice";
+import { ensureAdsAllowed } from "@/lib/adblock";
 
 interface CustomTask {
   id: string;
@@ -51,6 +59,8 @@ export function CustomTaskDetailView({ taskId }: { taskId: string }) {
   const [submitState, setSubmitState] = useState<SubmitState>({ kind: "loading" });
   const [answers, setAnswers] = useState<CustomAnswers>({});
   const [busy, setBusy] = useState(false);
+  const [upgradeMsg, setUpgradeMsg] = useState<string | null>(null);
+  const [adBlocked, setAdBlocked] = useState(false);
 
   useEffect(() => {
     let cancel = false;
@@ -79,12 +89,21 @@ export function CustomTaskDetailView({ taskId }: { taskId: string }) {
           return;
         }
 
+        if (!(await ensureAdsAllowed())) {
+          if (!cancel) setAdBlocked(true);
+          return;
+        }
+
         const sRes = await fetch(`/api/tasks/${taskId}/start`, {
           method: "POST",
         });
         const sData = await sRes.json().catch(() => ({}));
         if (cancel) return;
         if (!sRes.ok) {
+          if (isUpgradeRequired(sData)) {
+            setUpgradeMsg(sData.error || "");
+            return;
+          }
           const reason = sData.error ?? `HTTP ${sRes.status}`;
           if (
             typeof reason === "string" &&
@@ -144,6 +163,7 @@ export function CustomTaskDetailView({ taskId }: { taskId: string }) {
         const e = await res.json().catch(() => ({}));
         throw new Error(e.error ?? `HTTP ${res.status}`);
       }
+      await runInterstitial();
       toast.success(cfg.thankYouMessage || "Submitted for review", {
         description: cfg.autoApprove
           ? `+${task.pointsReward} pts credited`
@@ -166,6 +186,14 @@ export function CustomTaskDetailView({ taskId }: { taskId: string }) {
         <p className="text-sm text-gray-500">Loading task…</p>
       </div>
     );
+  }
+
+  if (upgradeMsg !== null) {
+    return <TaskUpgradeNotice message={upgradeMsg} />;
+  }
+
+  if (adBlocked) {
+    return <AdblockNotice />;
   }
 
   if (loadError || !task) {
@@ -203,12 +231,15 @@ export function CustomTaskDetailView({ taskId }: { taskId: string }) {
       {/* Hero */}
       <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
         {task.thumbnailUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={task.thumbnailUrl}
-            alt=""
-            className="w-full h-40 sm:h-52 object-cover"
-          />
+          <div className="relative w-full h-40 sm:h-52">
+            <SmartImage
+              src={task.thumbnailUrl}
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover"
+            />
+          </div>
         )}
         <div className="p-4 sm:p-5 space-y-3">
           <div className="flex items-center gap-2">

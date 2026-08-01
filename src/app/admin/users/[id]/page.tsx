@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { toNum } from "@/lib/money";
 import {
   ArrowLeft,
   Mail,
@@ -40,6 +41,9 @@ import { VerifiedBadge } from "@/components/user/profile/verified-badge";
 import { userDisplayId } from "@/lib/display-id";
 import { AdminUserAnalyticsTab } from "@/components/admin/users/admin-user-analytics";
 import { getXpRank, levelProgress } from "@/lib/user-rank";
+import { SmartImage } from "@/components/user/primitives/smart-image";
+import { Avatar } from "@/components/user/primitives/avatar";
+import { AdminTable } from "@/components/admin/ui/admin-table";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -209,7 +213,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
 
   const roleConfig = ROLE_CONFIG[user.role as UserRole] || ROLE_CONFIG.USER;
   const marketplaceSalesCount = marketplaceSalesAgg._count._all;
-  const marketplaceSalesAmount = marketplaceSalesAgg._sum.sellerAmount ?? 0;
+  const marketplaceSalesAmount = toNum(marketplaceSalesAgg._sum.sellerAmount);
 
   // Displayed counts = max(0, real + admin display-boost). Match the formula
   // used by /api/profile and /api/users/[id]/profile so the admin sees the
@@ -385,28 +389,24 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
       <div className="relative rounded-2xl overflow-hidden border border-gray-800">
         <div className="relative h-32 sm:h-44 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600">
           {user.coverPhoto && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <SmartImage
               src={user.coverPhoto}
               alt=""
-              className="w-full h-full object-cover"
+              fill
+              sizes="100vw"
+              className="object-cover"
             />
           )}
         </div>
         <div className="bg-gray-900 px-4 sm:px-6 pt-12 pb-5 relative">
           <div className="absolute -top-12 left-4 sm:left-6">
-            <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-2xl bg-linear-to-br from-indigo-500 to-purple-600 border-4 border-gray-900 flex items-center justify-center text-white text-3xl font-extrabold overflow-hidden shadow-xl">
-              {user.avatar ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={user.avatar}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                user.name?.charAt(0) || user.email?.charAt(0) || "U"
-              )}
-            </div>
+            <Avatar
+              src={user.avatar}
+              size="w-24 h-24 sm:w-28 sm:h-28"
+              shape="rounded"
+              fallbackText={user.name?.charAt(0) || user.email?.charAt(0) || "U"}
+              className="border-4 border-gray-900 shadow-xl"
+            />
           </div>
 
           <div className="flex justify-end mb-2 gap-2">
@@ -936,20 +936,14 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
                     href={`/admin/users/${f.follower.id}`}
                     className="flex items-center gap-3 p-3 rounded-xl border border-gray-800 bg-gray-950 hover:border-gray-700 transition-colors"
                   >
-                    <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden shrink-0">
-                      {f.follower.avatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={f.follower.avatar}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        (f.follower.name ?? f.follower.username ?? "U")
-                          .charAt(0)
-                          .toUpperCase()
-                      )}
-                    </div>
+                    <Avatar
+                      src={f.follower.avatar}
+                      size={40}
+                      fallbackText={(f.follower.name ?? f.follower.username ?? "U")
+                        .charAt(0)
+                        .toUpperCase()}
+                      className="shrink-0"
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-white truncate inline-flex items-center gap-1">
                         {f.follower.name ?? f.follower.username ?? "User"}
@@ -997,20 +991,14 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
                     href={`/admin/users/${f.following.id}`}
                     className="flex items-center gap-3 p-3 rounded-xl border border-gray-800 bg-gray-950 hover:border-gray-700 transition-colors"
                   >
-                    <div className="w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold overflow-hidden shrink-0">
-                      {f.following.avatar ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={f.following.avatar}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        (f.following.name ?? f.following.username ?? "U")
-                          .charAt(0)
-                          .toUpperCase()
-                      )}
-                    </div>
+                    <Avatar
+                      src={f.following.avatar}
+                      size={40}
+                      fallbackText={(f.following.name ?? f.following.username ?? "U")
+                        .charAt(0)
+                        .toUpperCase()}
+                      className="shrink-0"
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-white truncate inline-flex items-center gap-1">
                         {f.following.name ?? f.following.username ?? "User"}
@@ -1051,178 +1039,202 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
         )}
 
         {tab === "transactions" && (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-800 bg-gray-800/50">
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Type</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Description</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Points</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Amount</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Status</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {user.transactions.map((tx) => (
-                  <tr key={tx.id} className="border-b border-gray-800 last:border-0">
-                    <td className="py-4 px-6 text-sm text-white">{tx.type.replace(/_/g, " ")}</td>
-                    <td className="py-4 px-6 text-sm text-gray-400">{tx.description || "-"}</td>
-                    <td className={`py-4 px-6 text-sm font-medium ${tx.points > 0 ? "text-emerald-400" : tx.points < 0 ? "text-red-400" : "text-gray-400"}`}>
-                      {tx.points !== 0 ? `${tx.points > 0 ? "+" : ""}${tx.points.toLocaleString()}` : "-"}
-                    </td>
-                    <td className={`py-4 px-6 text-sm font-medium ${tx.amount > 0 ? "text-emerald-400" : tx.amount < 0 ? "text-red-400" : "text-gray-400"}`}>
-                      {tx.amount !== 0 ? `${tx.amount > 0 ? "+" : ""}$${tx.amount.toFixed(2)}` : "-"}
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        tx.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-400" :
-                        tx.status === "PENDING" ? "bg-amber-500/10 text-amber-400" :
-                        "bg-red-500/10 text-red-400"
-                      }`}>
-                        {tx.status}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-sm text-gray-400">{format(tx.createdAt, "MMM d, yyyy HH:mm")}</td>
-                  </tr>
-                ))}
-                {user.transactions.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-gray-500">No transactions found</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <AdminTable<(typeof user.transactions)[number]>
+            bare
+            rows={user.transactions}
+            getRowKey={(tx) => tx.id}
+            empty={<div className="py-8 text-center text-gray-500">No transactions found</div>}
+            columns={[
+              {
+                key: "type",
+                header: "Type",
+                primary: true,
+                cell: (tx) => <span className="text-white">{tx.type.replace(/_/g, " ")}</span>,
+              },
+              {
+                key: "description",
+                header: "Description",
+                cell: (tx) => <span className="text-gray-400">{tx.description || "-"}</span>,
+              },
+              {
+                key: "points",
+                header: "Points",
+                cell: (tx) => (
+                  <span className={`font-medium ${tx.points > 0 ? "text-emerald-400" : tx.points < 0 ? "text-red-400" : "text-gray-400"}`}>
+                    {tx.points !== 0 ? `${tx.points > 0 ? "+" : ""}${tx.points.toLocaleString()}` : "-"}
+                  </span>
+                ),
+              },
+              {
+                key: "amount",
+                header: "Amount",
+                cell: (tx) => (
+                  <span className={`font-medium ${tx.amount > 0 ? "text-emerald-400" : tx.amount < 0 ? "text-red-400" : "text-gray-400"}`}>
+                    {tx.amount !== 0 ? `${tx.amount > 0 ? "+" : ""}$${tx.amount.toFixed(2)}` : "-"}
+                  </span>
+                ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                cell: (tx) => (
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    tx.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-400" :
+                    tx.status === "PENDING" ? "bg-amber-500/10 text-amber-400" :
+                    "bg-red-500/10 text-red-400"
+                  }`}>
+                    {tx.status}
+                  </span>
+                ),
+              },
+              {
+                key: "date",
+                header: "Date",
+                cell: (tx) => <span className="text-gray-400">{format(tx.createdAt, "MMM d, yyyy HH:mm")}</span>,
+              },
+            ]}
+          />
         )}
 
         {tab === "tasks" && (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-800 bg-gray-800/50">
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Task</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Type</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Status</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Reward</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Submitted</th>
-                </tr>
-              </thead>
-              <tbody>
-                {user.taskSubmissions.map((submission) => (
-                  <tr key={submission.id} className="border-b border-gray-800 last:border-0">
-                    <td className="py-4 px-6 text-sm text-white">{submission.task.title}</td>
-                    <td className="py-4 px-6 text-sm text-gray-400">{submission.task.type.replace(/_/g, " ")}</td>
-                    <td className="py-4 px-6">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        submission.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-400" :
-                        submission.status === "PENDING" ? "bg-amber-500/10 text-amber-400" :
-                        "bg-red-500/10 text-red-400"
-                      }`}>
-                        {submission.status}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-sm text-indigo-400">{submission.task.pointsReward.toLocaleString()} pts</td>
-                    <td className="py-4 px-6 text-sm text-gray-400">{formatDistanceToNow(submission.createdAt, { addSuffix: true })}</td>
-                  </tr>
-                ))}
-                {user.taskSubmissions.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="py-8 text-center text-gray-500">No task submissions found</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <AdminTable<(typeof user.taskSubmissions)[number]>
+            bare
+            rows={user.taskSubmissions}
+            getRowKey={(s) => s.id}
+            empty={<div className="py-8 text-center text-gray-500">No task submissions found</div>}
+            columns={[
+              {
+                key: "task",
+                header: "Task",
+                primary: true,
+                cell: (s) => <span className="text-white">{s.task.title}</span>,
+              },
+              {
+                key: "type",
+                header: "Type",
+                cell: (s) => <span className="text-gray-400">{s.task.type.replace(/_/g, " ")}</span>,
+              },
+              {
+                key: "status",
+                header: "Status",
+                cell: (s) => (
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    s.status === "APPROVED" ? "bg-emerald-500/10 text-emerald-400" :
+                    s.status === "PENDING" ? "bg-amber-500/10 text-amber-400" :
+                    "bg-red-500/10 text-red-400"
+                  }`}>
+                    {s.status}
+                  </span>
+                ),
+              },
+              {
+                key: "reward",
+                header: "Reward",
+                cell: (s) => <span className="text-indigo-400">{s.task.pointsReward.toLocaleString()} pts</span>,
+              },
+              {
+                key: "submitted",
+                header: "Submitted",
+                cell: (s) => <span className="text-gray-400">{formatDistanceToNow(s.createdAt, { addSuffix: true })}</span>,
+              },
+            ]}
+          />
         )}
 
         {tab === "referrals" && (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-800 bg-gray-800/50">
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">User</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Status</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Joined</th>
-                </tr>
-              </thead>
-              <tbody>
-                {user.referrals.map((referral) => (
-                  <tr key={referral.id} className="border-b border-gray-800 last:border-0">
-                    <td className="py-4 px-6">
-                      <Link href={`/admin/users/${referral.id}`} className="flex items-center gap-3 hover:text-indigo-400 transition-colors">
-                        <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
-                          {referral.name?.charAt(0) || referral.email?.charAt(0) || "U"}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-white">{referral.name || "Unnamed"}</p>
-                          <p className="text-xs text-gray-500">{referral.email}</p>
-                        </div>
-                      </Link>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        referral.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-400" :
-                        referral.status === "PENDING_VERIFICATION" ? "bg-amber-500/10 text-amber-400" :
-                        "bg-red-500/10 text-red-400"
-                      }`}>
-                        {referral.status.replace(/_/g, " ")}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-sm text-gray-400">{formatDistanceToNow(referral.createdAt, { addSuffix: true })}</td>
-                  </tr>
-                ))}
-                {user.referrals.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="py-8 text-center text-gray-500">No referrals found</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <AdminTable<(typeof user.referrals)[number]>
+            bare
+            rows={user.referrals}
+            getRowKey={(r) => r.id}
+            empty={<div className="py-8 text-center text-gray-500">No referrals found</div>}
+            columns={[
+              {
+                key: "user",
+                header: "User",
+                primary: true,
+                cell: (referral) => (
+                  <Link href={`/admin/users/${referral.id}`} className="flex items-center gap-3 hover:text-indigo-400 transition-colors">
+                    <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-sm font-medium">
+                      {referral.name?.charAt(0) || referral.email?.charAt(0) || "U"}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-white">{referral.name || "Unnamed"}</p>
+                      <p className="text-xs text-gray-500">{referral.email}</p>
+                    </div>
+                  </Link>
+                ),
+              },
+              {
+                key: "status",
+                header: "Status",
+                cell: (referral) => (
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    referral.status === "ACTIVE" ? "bg-emerald-500/10 text-emerald-400" :
+                    referral.status === "PENDING_VERIFICATION" ? "bg-amber-500/10 text-amber-400" :
+                    "bg-red-500/10 text-red-400"
+                  }`}>
+                    {referral.status.replace(/_/g, " ")}
+                  </span>
+                ),
+              },
+              {
+                key: "joined",
+                header: "Joined",
+                cell: (referral) => <span className="text-gray-400">{formatDistanceToNow(referral.createdAt, { addSuffix: true })}</span>,
+              },
+            ]}
+          />
         )}
 
         {tab === "withdrawals" && (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-800 bg-gray-800/50">
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Amount</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Method</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Status</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Fee</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Net</th>
-                  <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">Requested</th>
-                </tr>
-              </thead>
-              <tbody>
-                {user.withdrawals.map((withdrawal) => (
-                  <tr key={withdrawal.id} className="border-b border-gray-800 last:border-0">
-                    <td className="py-4 px-6 text-sm font-medium text-white">${withdrawal.amount.toFixed(2)}</td>
-                    <td className="py-4 px-6 text-sm text-gray-400">{withdrawal.method}</td>
-                    <td className="py-4 px-6">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        withdrawal.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-400" :
-                        withdrawal.status === "PENDING" ? "bg-amber-500/10 text-amber-400" :
-                        withdrawal.status === "PROCESSING" ? "bg-blue-500/10 text-blue-400" :
-                        "bg-red-500/10 text-red-400"
-                      }`}>
-                        {withdrawal.status}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-sm text-gray-400">${withdrawal.fee.toFixed(2)}</td>
-                    <td className="py-4 px-6 text-sm text-emerald-400">${withdrawal.netAmount.toFixed(2)}</td>
-                    <td className="py-4 px-6 text-sm text-gray-400">{formatDistanceToNow(withdrawal.createdAt, { addSuffix: true })}</td>
-                  </tr>
-                ))}
-                {user.withdrawals.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-gray-500">No withdrawals found</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <AdminTable<(typeof user.withdrawals)[number]>
+            bare
+            rows={user.withdrawals}
+            getRowKey={(w) => w.id}
+            empty={<div className="py-8 text-center text-gray-500">No withdrawals found</div>}
+            columns={[
+              {
+                key: "amount",
+                header: "Amount",
+                primary: true,
+                cell: (w) => <span className="font-medium text-white">${w.amount.toFixed(2)}</span>,
+              },
+              {
+                key: "method",
+                header: "Method",
+                cell: (w) => <span className="text-gray-400">{w.method}</span>,
+              },
+              {
+                key: "status",
+                header: "Status",
+                cell: (w) => (
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    w.status === "COMPLETED" ? "bg-emerald-500/10 text-emerald-400" :
+                    w.status === "PENDING" ? "bg-amber-500/10 text-amber-400" :
+                    w.status === "PROCESSING" ? "bg-blue-500/10 text-blue-400" :
+                    "bg-red-500/10 text-red-400"
+                  }`}>
+                    {w.status}
+                  </span>
+                ),
+              },
+              {
+                key: "fee",
+                header: "Fee",
+                cell: (w) => <span className="text-gray-400">${w.fee.toFixed(2)}</span>,
+              },
+              {
+                key: "net",
+                header: "Net",
+                cell: (w) => <span className="text-emerald-400">${w.netAmount.toFixed(2)}</span>,
+              },
+              {
+                key: "requested",
+                header: "Requested",
+                cell: (w) => <span className="text-gray-400">{formatDistanceToNow(w.createdAt, { addSuffix: true })}</span>,
+              },
+            ]}
+          />
         )}
       </div>
     </div>

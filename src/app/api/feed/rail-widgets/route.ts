@@ -5,6 +5,11 @@ import {
   buildDailyProgress,
   resolveTaskTypeBucket,
 } from "@/lib/daily-mission-progress";
+import {
+  getUserDayContext,
+  localDayKey,
+  localDayKeyDaysAgo,
+} from "@/lib/user-day";
 
 /**
  * One-shot summary for the social feed right rail's earn widgets — merges the
@@ -35,8 +40,8 @@ export async function GET() {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
+  // All daily boundaries use the user's LOCAL midnight (country-based).
+  const { startOfDayUtc, dayKey: todayKey, tz } = await getUserDayContext(userId);
 
   const todayAgg = await prisma.transaction.aggregate({
     // Today's earnings (points) — completed EARNING/BONUS transactions today.
@@ -44,7 +49,7 @@ export async function GET() {
       userId,
       status: "COMPLETED",
       type: { in: ["EARNING", "BONUS"] },
-      createdAt: { gte: todayStart },
+      createdAt: { gte: startOfDayUtc },
     },
     _sum: { points: true },
   });
@@ -64,53 +69,79 @@ export async function GET() {
       { createdAt: "desc" },
     ],
     include: { items: { orderBy: { order: "asc" } } },
+    // Mission templates change rarely and are shared across users — cache.
+    cacheStrategy: { ttl: 120, swr: 300 },
   });
 
-  // Login-streak status (mirror of /api/daily-reward GET day-diff logic).
+  // Login-streak status (mirror of /api/daily-reward GET, on the user's local day).
   let currentStreak = user.streak || 0;
   let canClaim = true;
   if (user.lastCheckIn) {
-    const lastDay = new Date(user.lastCheckIn);
-    lastDay.setHours(0, 0, 0, 0);
-    const days = Math.floor(
-      (todayStart.getTime() - lastDay.getTime()) / (1000 * 60 * 60 * 24)
-    );
-    if (days === 0) canClaim = false;
-    else if (days > 1) currentStreak = 0;
+    const lastKey = localDayKey(tz, new Date(user.lastCheckIn));
+    if (lastKey === todayKey) canClaim = false;
+    else if (lastKey !== localDayKeyDaysAgo(tz, 1)) currentStreak = 0;
   }
 
   // Daily-mission progress (reuses the same builder as the mission page).
   // The Accelerate client doesn't surface the `include: { items }` payload in
   // the inferred type, so narrow it explicitly (mirrors the today route).
-  type MissionItem = { taskType: string; targetCount: number };
+  type MissionItem = {
+    taskType: string;
+    targetCount: number;
+    description: string | null;
+    pointsPerComplete: number;
+    xpPerComplete: number;
+  };
   const missionItems =
     (missionRaw as unknown as { items: MissionItem[] } | null)?.items ?? [];
   let mission: {
+    name: string;
     done: number;
     total: number;
     claimedToday: boolean;
+    rewardPoints: number;
+    rewardXp: number;
+    items: {
+      taskType: string;
+      description: string | null;
+      points: number;
+      target: number;
+      completedToday: number;
+      done: boolean;
+    }[];
   } | null = null;
   if (missionRaw && missionItems.length) {
     const countByType = await buildDailyProgress(userId, missionItems);
-    const done = missionItems.filter(
-      (it) =>
-        (countByType[resolveTaskTypeBucket(it.taskType)] ?? 0) >=
-        it.targetCount
-    ).length;
+    const items = missionItems.map((it) => {
+      const count = countByType[resolveTaskTypeBucket(it.taskType)] ?? 0;
+      return {
+        taskType: it.taskType,
+        description: it.description,
+        points: it.pointsPerComplete,
+        target: it.targetCount,
+        completedToday: Math.min(count, it.targetCount),
+        done: count >= it.targetCount,
+      };
+    });
+    const done = items.filter((it) => it.done).length;
     const claim = await prisma.dailyMissionClaim.findUnique({
       where: {
         userId_missionId_date: {
           userId,
           missionId: missionRaw.id,
-          date: new Date().toISOString().slice(0, 10),
+          date: todayKey,
         },
       },
       select: { id: true },
     });
     mission = {
+      name: missionRaw.name,
       done,
-      total: missionItems.length,
+      total: items.length,
       claimedToday: !!claim,
+      rewardPoints: missionRaw.completionPointsReward,
+      rewardXp: missionRaw.completionXpReward,
+      items,
     };
   }
 

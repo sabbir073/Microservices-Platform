@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { withIdempotency } from "@/lib/idempotency";
 import { prisma } from "@/lib/prisma";
 import {
   MarketplaceListingStatus,
@@ -7,6 +8,7 @@ import {
   NotificationType,
 } from "@/generated/prisma";
 import { z } from "zod";
+import { toNum, toNumOrNull } from "@/lib/money";
 
 // GET /api/marketplace/listings/:id/offers
 // - Seller (listing owner): sees all PENDING + COUNTERED offers
@@ -62,10 +64,10 @@ export async function GET(
     return NextResponse.json({
       offers: offers.map((o) => ({
         id: o.id,
-        amount: o.amount,
+        amount: toNum(o.amount),
         message: o.message,
         status: o.status,
-        counterAmount: o.counterAmount,
+        counterAmount: toNumOrNull(o.counterAmount),
         counterMessage: o.counterMessage,
         createdAt: o.createdAt,
         isOwnOffer: o.buyerId === session.user.id,
@@ -96,11 +98,12 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const session = await auth();
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return withIdempotency(req, session.user.id, async () => {
   try {
-    const session = await auth();
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
     const { id } = await params;
     const body = await req.json();
     const v = makeOfferSchema.safeParse(body);
@@ -179,4 +182,5 @@ export async function POST(
       { status: 500 }
     );
   }
+  });
 }

@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { Avatar } from "@/components/user/primitives/avatar";
 
 interface TreeNode {
   id: string;
@@ -159,14 +160,12 @@ export function ReferralTreeView({ userId, user }: Props) {
       </Link>
 
       <div className="flex items-start gap-3">
-        <div className="w-12 h-12 rounded-xl bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold shrink-0 overflow-hidden">
-          {user.avatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={user.avatar} alt="" className="w-full h-full object-cover" />
-          ) : (
-            (user.name ?? user.email).charAt(0).toUpperCase()
-          )}
-        </div>
+        <Avatar
+          src={user.avatar}
+          size={48}
+          fallbackText={(user.name ?? user.email).charAt(0).toUpperCase()}
+          className="rounded-xl shrink-0"
+        />
         <div className="flex-1 min-w-0">
           <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
             <Network className="w-6 h-6 text-purple-400" />
@@ -217,7 +216,7 @@ export function ReferralTreeView({ userId, user }: Props) {
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
             Members per Level
           </p>
-          <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-10 gap-2">
             {Array.from({ length: stats.maxDepth }, (_, i) => i + 1).map((lvl) => (
               <div
                 key={lvl}

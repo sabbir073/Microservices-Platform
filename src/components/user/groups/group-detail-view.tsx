@@ -15,6 +15,9 @@ import {
   LogOut,
 } from "lucide-react";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
+import { SmartImage } from "@/components/user/primitives/smart-image";
+import { Avatar } from "@/components/user/primitives/avatar";
+import { RenderedContent } from "@/components/user/feed/feed-content";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -186,30 +189,27 @@ export function GroupDetailView({ groupId }: Props) {
 
       {/* Banner / header */}
       <div className="relative rounded-2xl overflow-hidden border border-gray-800">
-        <div className="h-28 bg-linear-to-br from-indigo-500 to-purple-600">
+        <div className="relative h-28 bg-linear-to-br from-indigo-500 to-purple-600">
           {group.bannerUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <SmartImage
               src={group.bannerUrl}
               alt=""
-              className="w-full h-full object-cover"
+              fill
+              sizes="100vw"
+              className="object-cover"
             />
           )}
         </div>
         <div className="bg-gray-900 p-4 -mt-8 relative">
           <div className="flex items-end gap-3">
-            <div className="w-16 h-16 rounded-2xl bg-gray-800 border-4 border-gray-900 overflow-hidden flex items-center justify-center text-white shrink-0">
-              {group.avatarUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={group.avatarUrl}
-                  alt=""
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <Users className="w-7 h-7" />
-              )}
-            </div>
+            <Avatar
+              src={group.avatarUrl}
+              size={64}
+              shape="rounded"
+              fallbackStyle="solid-gray"
+              fallbackIcon={<Users className="w-7 h-7" />}
+              className="border-4 border-gray-900 shrink-0"
+            />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="text-lg font-bold text-white truncate">
@@ -281,18 +281,13 @@ export function GroupDetailView({ groupId }: Props) {
                 key={r.id}
                 className="flex items-center gap-3 p-2.5 rounded-lg bg-gray-950 border border-gray-800"
               >
-                <div className="w-9 h-9 rounded-full bg-gray-800 overflow-hidden flex items-center justify-center text-white font-bold shrink-0">
-                  {r.userAvatar ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={r.userAvatar}
-                      alt=""
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    (r.userName ?? "U")[0]?.toUpperCase()
-                  )}
-                </div>
+                <Avatar
+                  src={r.userAvatar}
+                  size={36}
+                  fallbackStyle="solid-gray"
+                  fallbackText={(r.userName ?? "U")[0]?.toUpperCase()}
+                  className="shrink-0"
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white truncate">
                     {r.userName ?? "Unknown"}
@@ -346,14 +341,12 @@ export function GroupDetailView({ groupId }: Props) {
               className="rounded-xl border border-gray-800 bg-gray-900 p-3"
             >
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shrink-0 overflow-hidden">
-                  {p.user?.avatar ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.user.avatar} alt="" className="w-full h-full object-cover" />
-                  ) : (
-                    (p.user?.name || p.user?.username || "U").charAt(0)
-                  )}
-                </div>
+                <Avatar
+                  src={p.user?.avatar}
+                  size={32}
+                  fallbackText={(p.user?.name || p.user?.username || "U").charAt(0)}
+                  className="shrink-0"
+                />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-white truncate">
                     {p.user?.name || p.user?.username || "User"}
@@ -365,7 +358,7 @@ export function GroupDetailView({ groupId }: Props) {
               </div>
               {p.content && (
                 <p className="mt-2 text-sm text-gray-200 whitespace-pre-wrap wrap-break-word">
-                  {p.content}
+                  <RenderedContent content={p.content} />
                 </p>
               )}
               {p.images?.[0] && (

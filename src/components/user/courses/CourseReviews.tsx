@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Star, Loader2, Send } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { Avatar } from "@/components/user/primitives/avatar";
 
 interface Review {
   id: string;
@@ -35,7 +36,7 @@ export function CourseReviews({
   myReview,
 }: Props) {
   return (
-    <section className="bg-gray-900 rounded-2xl border border-gray-800 p-5 space-y-4">
+    <section className="card p-5 space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-bold text-white">Student reviews</h2>
         <p className="text-xs text-gray-500">
@@ -103,18 +104,12 @@ export function CourseReviews({
               className="rounded-xl border border-gray-800 bg-gray-950 p-3"
             >
               <div className="flex items-center gap-2">
-                {r.user.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={r.user.avatar}
-                    alt=""
-                    className="w-7 h-7 rounded-full object-cover bg-gray-800"
-                  />
-                ) : (
-                  <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-[10px] font-bold text-white">
-                    {(r.user.name ?? "?").slice(0, 1).toUpperCase()}
-                  </div>
-                )}
+                <Avatar
+                  src={r.user.avatar}
+                  size={28}
+                  fallbackStyle="solid-gray"
+                  fallbackText={(r.user.name ?? "?").slice(0, 1).toUpperCase()}
+                />
                 <p className="text-sm text-white font-bold">{r.user.name ?? "—"}</p>
                 <div className="flex gap-0.5">
                   {[1, 2, 3, 4, 5].map((n) => (

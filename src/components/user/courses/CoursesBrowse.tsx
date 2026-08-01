@@ -14,6 +14,8 @@ import {
   GraduationCap,
   X,
 } from "lucide-react";
+import { EmptyState } from "@/components/user/primitives/empty-state";
+import { CardSkeleton } from "@/components/user/primitives/skeleton";
 
 interface FeaturedCard {
   id: string;
@@ -50,6 +52,7 @@ interface Facets {
     color: string | null;
     count: number;
   }>;
+  subcategories?: Array<{ id: string; name: string; count: number }>;
   skillLevels: Array<{ value: string; count: number }>;
   languages: Array<{ value: string; count: number }>;
   freeCount: number;
@@ -78,6 +81,7 @@ const LEVEL_LABELS: Record<string, string> = {
 export function CoursesBrowse({ initialFeatured }: Props) {
   const [q, setQ] = useState("");
   const [categoryId, setCategoryId] = useState<string | null>(null);
+  const [subcategoryId, setSubcategoryId] = useState<string | null>(null);
   const [skillLevel, setSkillLevel] = useState<string | null>(null);
   const [language, setLanguage] = useState<string | null>(null);
   const [priceMode, setPriceMode] = useState<"all" | "free" | "paid">("all");
@@ -97,6 +101,7 @@ export function CoursesBrowse({ initialFeatured }: Props) {
       const params = new URLSearchParams();
       if (q.trim()) params.set("q", q.trim());
       if (categoryId) params.set("categoryId", categoryId);
+      if (subcategoryId) params.set("subcategoryId", subcategoryId);
       if (skillLevel) params.set("skillLevel", skillLevel);
       if (language) params.set("language", language);
       if (priceMode !== "all") params.set("price", priceMode);
@@ -116,7 +121,7 @@ export function CoursesBrowse({ initialFeatured }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [q, categoryId, skillLevel, language, priceMode, minRating, sort]);
+  }, [q, categoryId, subcategoryId, skillLevel, language, priceMode, minRating, sort]);
 
   // Debounce search; refetch on filter changes
   useEffect(() => {
@@ -129,6 +134,7 @@ export function CoursesBrowse({ initialFeatured }: Props) {
   const clearAll = () => {
     setQ("");
     setCategoryId(null);
+    setSubcategoryId(null);
     setSkillLevel(null);
     setLanguage(null);
     setPriceMode("all");
@@ -138,6 +144,7 @@ export function CoursesBrowse({ initialFeatured }: Props) {
 
   const activeFilterCount =
     (categoryId ? 1 : 0) +
+    (subcategoryId ? 1 : 0) +
     (skillLevel ? 1 : 0) +
     (language ? 1 : 0) +
     (priceMode !== "all" ? 1 : 0) +
@@ -234,7 +241,10 @@ export function CoursesBrowse({ initialFeatured }: Props) {
             <ul className="space-y-1">
               <FilterRow
                 active={categoryId === null}
-                onClick={() => setCategoryId(null)}
+                onClick={() => {
+                  setCategoryId(null);
+                  setSubcategoryId(null);
+                }}
                 label="All categories"
                 count={facets?.total ?? 0}
               />
@@ -242,7 +252,10 @@ export function CoursesBrowse({ initialFeatured }: Props) {
                 <FilterRow
                   key={c.id}
                   active={categoryId === c.id}
-                  onClick={() => setCategoryId(c.id)}
+                  onClick={() => {
+                    setCategoryId(c.id);
+                    setSubcategoryId(null);
+                  }}
                   label={c.name}
                   count={c.count}
                   color={c.color}
@@ -250,6 +263,28 @@ export function CoursesBrowse({ initialFeatured }: Props) {
               ))}
             </ul>
           </FilterCard>
+
+          {categoryId && (facets?.subcategories?.length ?? 0) > 0 && (
+            <FilterCard title="Subcategory">
+              <ul className="space-y-1">
+                <FilterRow
+                  active={subcategoryId === null}
+                  onClick={() => setSubcategoryId(null)}
+                  label="All"
+                  count={facets?.total ?? 0}
+                />
+                {(facets?.subcategories ?? []).map((s) => (
+                  <FilterRow
+                    key={s.id}
+                    active={subcategoryId === s.id}
+                    onClick={() => setSubcategoryId(s.id)}
+                    label={s.name}
+                    count={s.count}
+                  />
+                ))}
+              </ul>
+            </FilterCard>
+          )}
 
           <FilterCard title="Skill level">
             <ul className="space-y-1">
@@ -331,10 +366,7 @@ export function CoursesBrowse({ initialFeatured }: Props) {
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="bg-gray-900 rounded-xl border border-gray-800 animate-pulse h-80"
-                />
+                <CardSkeleton key={i} />
               ))}
             </div>
           ) : error ? (
@@ -342,13 +374,11 @@ export function CoursesBrowse({ initialFeatured }: Props) {
               {error}
             </div>
           ) : rows.length === 0 ? (
-            <div className="bg-gray-900 rounded-2xl border border-gray-800 p-12 text-center">
-              <GraduationCap className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-              <p className="text-white font-bold">No courses match</p>
-              <p className="text-sm text-gray-400 mt-1">
-                Try removing a filter or searching for something else.
-              </p>
-            </div>
+            <EmptyState
+              icon={GraduationCap}
+              title="No courses match"
+              description="Try removing a filter or searching for something else."
+            />
           ) : (
             <>
               <p className="text-xs text-gray-500">
@@ -369,7 +399,7 @@ export function CoursesBrowse({ initialFeatured }: Props) {
 
 function FilterCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
+    <div className="card p-3">
       <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">
         {title}
       </p>
@@ -457,10 +487,10 @@ function CourseCard({ c, highlight }: { c: BrowseCard; highlight?: boolean }) {
     <Link
       href={c.href}
       className={
-        "group bg-gray-900 rounded-xl border overflow-hidden flex flex-col transition-colors " +
+        "group card overflow-hidden flex flex-col " +
         (highlight
-          ? "border-amber-500/40 hover:border-amber-400"
-          : "border-gray-800 hover:border-indigo-500/40")
+          ? "border-amber-500/40! hover:border-amber-400!"
+          : "card-interactive")
       }
     >
       <div className="aspect-video bg-gray-950 relative">

@@ -22,6 +22,13 @@ import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { newIdempotencyKey } from "@/lib/idempotency-key";
+import { runInterstitial } from "@/lib/reward-interstitial";
+import { ensureAdsAllowed } from "@/lib/adblock";
+import {
+  isUpgradeRequired,
+  isTaskLocked,
+} from "@/components/user/primitives/task-upgrade-notice";
 
 interface ProxyTask {
   id: string;
@@ -34,6 +41,7 @@ interface ProxyTask {
   serverPort?: number;
   instructions?: string | null;
   instructionVideoUrl?: string | null;
+  locked?: boolean;
 }
 
 interface SessionCredentials {
@@ -173,10 +181,35 @@ export function ProxyTasksView() {
   };
 
   const startTask = async (t: ProxyTask) => {
+    // Ad-blocker gate: refuse to start while a blocker is active.
+    if (!(await ensureAdsAllowed())) return;
     setStarting(true);
     try {
       const res = await fetch(`/api/tasks/${t.id}/start`, { method: "POST" });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        // Daily-mission allowance exhausted → point the user to upgrade.
+        if (isUpgradeRequired(err)) {
+          toast.error(err.error || "Daily limit reached", {
+            description: "Upgrade your plan to do more tasks.",
+            action: {
+              label: "Upgrade",
+              onClick: () => {
+                window.location.href = "/packages";
+              },
+            },
+          });
+          return;
+        }
+        // Blocked behind an earlier task in the chain (feature #7).
+        if (isTaskLocked(err)) {
+          toast.error(err.error || "Task locked", {
+            description: "Complete the previous task first to unlock this one.",
+          });
+          return;
+        }
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
       const d = await res.json();
       setSubmissionId(d.submission?.id ?? null);
       setActive(t);
@@ -226,7 +259,7 @@ export function ProxyTasksView() {
       const proofImages = screenshotUrl.trim() ? [screenshotUrl.trim()] : [];
       const res = await fetch(`/api/tasks/${active.id}/submit`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey() },
         body: JSON.stringify({
           submissionId,
           proof: proofUrl.trim(),
@@ -237,6 +270,7 @@ export function ProxyTasksView() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
+      await runInterstitial();
       toast.success(`Task complete! +${active.pointsReward} pts`);
       reset();
     } catch (err) {
@@ -250,8 +284,8 @@ export function ProxyTasksView() {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold text-white flex items-center gap-2">
-        🔗 Proxy Tasks
+      <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
+        <Globe className="w-6 h-6 text-violet-400" /> Proxy Tasks
       </h1>
 
       <AdRenderer placement="TASK_LIST" />
@@ -299,11 +333,13 @@ export function ProxyTasksView() {
               </span>
             </div>
             <button
-              onClick={() => startTask(t)}
-              disabled={starting}
-              className="mt-3 w-full py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+              onClick={() => !t.locked && startTask(t)}
+              disabled={starting || t.locked}
+              className="mt-3 w-full py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
             >
-              {starting ? (
+              {t.locked ? (
+                <>🔒 Locked</>
+              ) : starting ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <>Connect →</>

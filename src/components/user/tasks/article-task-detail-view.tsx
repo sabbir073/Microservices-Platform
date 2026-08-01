@@ -24,6 +24,16 @@ import { toast } from "sonner";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import type { ArticleConfig } from "@/lib/article-tasks";
 import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
+import { SmartImage } from "@/components/user/primitives/smart-image";
+import { runInterstitial } from "@/lib/reward-interstitial";
+import {
+  TaskUpgradeNotice,
+  isUpgradeRequired,
+  TaskLockedNotice,
+  isTaskLocked,
+  AdblockNotice,
+} from "@/components/user/primitives/task-upgrade-notice";
+import { ensureAdsAllowed } from "@/lib/adblock";
 
 interface ArticleTask {
   id: string;
@@ -77,6 +87,9 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
   const [screenshotUrl, setScreenshotUrl] = useState("");
   const [uniqueKey, setUniqueKey] = useState("");
   const [busy, setBusy] = useState(false);
+  const [upgradeMsg, setUpgradeMsg] = useState<string | null>(null);
+  const [lockedMsg, setLockedMsg] = useState<string | null>(null);
+  const [adBlocked, setAdBlocked] = useState(false);
 
   // Load task + decide whether to start, resume, or show completed/blocked state
   useEffect(() => {
@@ -122,6 +135,12 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
           return;
         }
 
+        // Ad-blocker gate: refuse to start a task while a blocker is active.
+        if (!(await ensureAdsAllowed())) {
+          if (!cancel) setAdBlocked(true);
+          return;
+        }
+
         // 4. Otherwise, try to start a fresh submission
         const sRes = await fetch(`/api/tasks/${taskId}/start`, {
           method: "POST",
@@ -129,6 +148,16 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
         const sData = await sRes.json().catch(() => ({}));
         if (cancel) return;
         if (!sRes.ok) {
+          // Daily-mission allowance exhausted → show the upgrade prompt.
+          if (isUpgradeRequired(sData)) {
+            setUpgradeMsg(sData.error || "");
+            return;
+          }
+          // Blocked behind an earlier task in the chain (feature #7).
+          if (isTaskLocked(sData)) {
+            setLockedMsg(sData.error || "");
+            return;
+          }
           // Common case: race or stale userStatus → daily limit hit. Treat as completed.
           const reason = sData.error ?? `HTTP ${sRes.status}`;
           if (
@@ -212,6 +241,7 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? `HTTP ${res.status}`);
       }
+      await runInterstitial();
       toast.success("Submitted! Pending admin review.", {
         description: `You'll get ${task.pointsReward} pts when approved.`,
       });
@@ -232,6 +262,18 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
         <p className="text-sm text-gray-500">Loading article task…</p>
       </div>
     );
+  }
+
+  if (upgradeMsg !== null) {
+    return <TaskUpgradeNotice message={upgradeMsg} />;
+  }
+
+  if (lockedMsg !== null) {
+    return <TaskLockedNotice message={lockedMsg} />;
+  }
+
+  if (adBlocked) {
+    return <AdblockNotice />;
   }
 
   if (loadError || !task) {
@@ -273,12 +315,15 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
       {/* Hero */}
       <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
         {task.thumbnailUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={task.thumbnailUrl}
-            alt=""
-            className="w-full h-36 sm:h-52 object-cover"
-          />
+          <div className="relative w-full h-36 sm:h-52">
+            <SmartImage
+              src={task.thumbnailUrl}
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover"
+            />
+          </div>
         )}
         <div className="p-3 sm:p-5 space-y-3">
           <div className="flex items-center gap-2">
@@ -790,6 +835,7 @@ function ManualKeySubmitCard({
         );
         return;
       }
+      await runInterstitial();
       setMatchState("match");
       const pts = data.rewards?.points ?? 0;
       const xp = data.rewards?.xp ?? 0;

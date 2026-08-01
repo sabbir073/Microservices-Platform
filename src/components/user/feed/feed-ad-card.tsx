@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getPostBackground } from "@/lib/post-backgrounds";
+import { SmartImage } from "@/components/user/primitives/smart-image";
+import { Avatar } from "@/components/user/primitives/avatar";
 
 /** Stable pseudo-count per ad (so the native engagement numbers don't jump). */
 function seededCount(adId: string, salt: number, min: number, max: number) {
@@ -64,9 +66,11 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
         for (const e of entries) {
           if (e.isIntersecting && !firedRef.current) {
             firedRef.current = true;
-            fetch(`/api/ads/${ad.adId}/impression`, { method: "POST" }).catch(
-              () => {}
-            );
+            fetch(`/api/spaces/${ad.adId}/event`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ kind: "view" }),
+            }).catch(() => {});
             io.disconnect();
           }
         }
@@ -78,7 +82,11 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
   }, [ad.adId]);
 
   const trackClick = () => {
-    fetch(`/api/ads/${ad.adId}/click`, { method: "POST" }).catch(() => {});
+    fetch(`/api/spaces/${ad.adId}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "open" }),
+    }).catch(() => {});
   };
 
   const initial = (ad.author.name || "A").charAt(0).toUpperCase();
@@ -93,18 +101,13 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
       <div className="p-4">
         {/* Header — avatar + name + "Sponsored" (mimics a real post) */}
         <div className="flex items-start gap-3">
-          <div className="shrink-0 w-10 h-10 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-medium overflow-hidden">
-            {ad.author.avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={ad.author.avatar}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              initial
-            )}
-          </div>
+          <Avatar
+            src={ad.author.avatar}
+            size={40}
+            name={ad.author.name}
+            fallbackText={initial}
+            className="shrink-0"
+          />
           <div className="flex-1 min-w-0">
             <div className="inline-flex items-center gap-1.5">
               <span className="text-sm font-semibold text-white">
@@ -178,23 +181,33 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
             ad.images.length >= 3 && "grid-cols-3"
           )}
         >
-          {ad.images.slice(0, 6).map((url, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={i}
-              src={url}
-              alt=""
-              onError={(e) => {
-                e.currentTarget.style.display = "none";
-              }}
-              className={cn(
-                "w-full bg-gray-950",
-                ad.images.length === 1
-                  ? "max-h-[70vh] object-contain"
-                  : "aspect-square object-cover"
-              )}
-            />
-          ))}
+          {ad.images.slice(0, 6).map((url, i) =>
+            ad.images.length === 1 ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src={url}
+                alt=""
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+                className="w-full bg-gray-950 max-h-[70vh] object-contain"
+              />
+            ) : (
+              <div key={i} className="relative aspect-square overflow-hidden">
+                <SmartImage
+                  src={url}
+                  alt=""
+                  fill
+                  sizes="(max-width: 768px) 50vw, 25vw"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none";
+                  }}
+                  className="object-cover bg-gray-950"
+                />
+              </div>
+            )
+          )}
         </a>
         )
       )}

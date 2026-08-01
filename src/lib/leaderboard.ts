@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import { getSetting } from "@/lib/system-settings";
+import { toNum } from "@/lib/money";
 
 export type LeaderboardMetric =
   | "POINTS_EARNED"
@@ -40,12 +42,10 @@ export const DEFAULT_ELIGIBLE_PACKAGES = [
 /** Read the admin-configured eligibility allowlist from SystemSetting.
  *  Returns the default if no override exists. */
 export async function getEligiblePackages(): Promise<string[]> {
-  const row = await prisma.systemSetting.findUnique({
-    where: { key: "lb_eligible_packages" },
-  });
-  if (!row?.value) return DEFAULT_ELIGIBLE_PACKAGES;
-  if (Array.isArray(row.value)) {
-    return (row.value as unknown[]).map((s) => String(s).toUpperCase());
+  // Read through the cached getSetting (was a raw findUnique per leaderboard req).
+  const val = await getSetting<unknown>("lb_eligible_packages", null);
+  if (Array.isArray(val)) {
+    return (val as unknown[]).map((s) => String(s).toUpperCase());
   }
   return DEFAULT_ELIGIBLE_PACKAGES;
 }
@@ -133,7 +133,9 @@ export async function computeCombinedTopUsers(options: {
   // Build per-user component row
   const rows = users.map((u) => ({
     user: u,
-    points: u.totalEarnings,
+    // `totalEarnings` is a Decimal column masked as `number` by the cast above —
+    // normalize to a real number for the percentile/score math below.
+    points: toNum(u.totalEarnings),
     xp: u.xp,
     tasks: tasksByUser.get(u.id) ?? 0,
     team: teamByUser.get(u.id) ?? 0,

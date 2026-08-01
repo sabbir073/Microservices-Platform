@@ -1,4 +1,6 @@
+import { cache } from "react";
 import { prisma } from "@/lib/prisma";
+import { toNum, toNumOrNull, type MoneyInput } from "@/lib/money";
 import {
   FEATURE_TO_COLUMN,
   FEATURE_KEYS,
@@ -51,6 +53,8 @@ export interface PackageRow {
   sellCoursesEnabled: boolean;
   sellMarketplaceEnabled: boolean;
   agencyModeEnabled: boolean;
+  shareLinksEnabled: boolean;
+  shareYoutubeEnabled: boolean;
   socialTasksEnabled: boolean;
   proxyTasksEnabled: boolean;
   articleTasksEnabled: boolean;
@@ -89,7 +93,25 @@ export interface PackageRow {
  * misconfiguration and callers should error or fall back to FREE-equivalent
  * behavior.
  */
-export async function getEffectivePackage(
+/**
+ * Normalize a raw Prisma `Package` row into a `PackageRow`: the money columns
+ * are `Decimal` in the DB but `PackageRow` (and every consumer) uses `number`,
+ * so convert them at this single boundary instead of leaking Decimals behind an
+ * `as unknown as PackageRow` cast.
+ */
+function toPackageRow(pkg: unknown): PackageRow {
+  const p = pkg as Record<string, unknown>;
+  return {
+    ...(p as unknown as PackageRow),
+    priceMonthly: toNum(p.priceMonthly as MoneyInput),
+    priceYearly: toNumOrNull(p.priceYearly as MoneyInput | null),
+    minWithdrawal: toNum(p.minWithdrawal as MoneyInput),
+  };
+}
+
+// React.cache: dedupe the per-request user lookup — called on the ad-serve hot
+// path and several times per render (mirrors getEffectiveFeatures below).
+export const getEffectivePackage = cache(async function getEffectivePackage(
   userId: string
 ): Promise<PackageRow | null> {
   const user = await prisma.user.findUnique({
@@ -110,20 +132,29 @@ export async function getEffectivePackage(
     (user.packageExpiresAt == null ||
       user.packageExpiresAt.getTime() > Date.now());
 
-  if (subActive) return user.package as unknown as PackageRow;
+  if (subActive) return toPackageRow(user.package);
 
   return defaultPackage();
-}
+});
 
 /**
  * The platform's default plan. Every new user is implicitly on this when
  * their `packageId` is null or their subscription has expired.
  */
+// The default package changes rarely — a short module TTL avoids a `findFirst`
+// on every free/expired user (the majority) on every navigation.
+let _defaultPkg: { row: PackageRow | null; at: number } | null = null;
+const DEFAULT_PKG_TTL_MS = 60_000;
 export async function defaultPackage(): Promise<PackageRow | null> {
+  if (_defaultPkg && Date.now() - _defaultPkg.at < DEFAULT_PKG_TTL_MS) {
+    return _defaultPkg.row;
+  }
   const row = await prisma.package.findFirst({
     where: { isDefault: true, isActive: true },
   });
-  return (row as unknown as PackageRow | null) ?? null;
+  const value = row ? toPackageRow(row) : null;
+  _defaultPkg = { row: value, at: Date.now() };
+  return value;
 }
 
 /**
@@ -161,7 +192,12 @@ export async function userAccessLevel(userId: string): Promise<number> {
  * The user's effective feature set = package flags with per-user overrides
  * applied. One query. Use `enabled.has(key)` for nav hiding + page gating.
  */
-export async function getEffectiveFeatures(userId: string): Promise<{
+// `React.cache` dedupes this per request — the (main) layout + several child
+// pages all resolve features in the same render, so this collapses ~7 identical
+// user queries into one.
+export const getEffectiveFeatures = cache(async function getEffectiveFeatures(
+  userId: string
+): Promise<{
   pkg: PackageRow | null;
   overrides: FeatureOverrides;
   enabled: Set<PackageFeatureKey>;
@@ -190,7 +226,7 @@ export async function getEffectiveFeatures(userId: string): Promise<{
     if (resolveUserFeature(pkg, overrides, key)) enabled.add(key);
   }
   return { pkg, overrides, enabled };
-}
+});
 
 /** True if the user can use a feature (override-aware). */
 export async function userCanFeature(

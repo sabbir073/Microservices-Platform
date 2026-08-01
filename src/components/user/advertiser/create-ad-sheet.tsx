@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
+import { SmartImage } from "@/components/user/primitives/smart-image";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 import { AudienceBuilder } from "@/components/admin/ads/audience-builder";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { newIdempotencyKey } from "@/lib/idempotency-key";
 import { AD_PLACEMENTS } from "@/lib/ad-placements";
 import { type AdTargeting } from "@/lib/ad-targeting";
 
@@ -123,7 +125,7 @@ export function CreateAdSheet({
     try {
       const res = await fetch(`/api/advertiser/campaigns/${campaignId}/ads`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey() },
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
@@ -224,10 +226,9 @@ export function CreateAdSheet({
                         : "border-gray-800 bg-gray-800/50"
                     )}
                   >
-                    <div className="w-9 h-9 rounded bg-gray-800 overflow-hidden shrink-0 flex items-center justify-center">
+                    <div className="relative w-9 h-9 rounded bg-gray-800 overflow-hidden shrink-0 flex items-center justify-center">
                       {p.image ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={p.image} alt="" className="w-full h-full object-cover" />
+                        <SmartImage src={p.image} alt="" fill sizes="36px" className="object-cover" />
                       ) : null}
                     </div>
                     <span className="text-xs text-gray-200 line-clamp-2 flex-1">

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Save, X, Plus, Trash2, AlertCircle, Loader2, Image as ImageIcon, Smartphone } from "lucide-react";
 import { MediaSelector } from "@/components/media/MediaSelector";
+import { SmartImage } from "@/components/user/primitives/smart-image";
 import { notifyCenter } from "@/lib/notify-center";
 import type { MediaItem } from "@/types/media";
 import { SocialTaskBuilder } from "./SocialTaskBuilder";
@@ -85,6 +86,7 @@ interface TaskFormProps {
     totalLimit: number | null;
     minLevel: number;
     requiredAccessLevel: number;
+    order: number;
     countries: string[];
     contentUrl: string | null;
     thumbnailUrl: string | null;
@@ -140,6 +142,7 @@ export function TaskForm({ task }: TaskFormProps) {
     totalLimit: task?.totalLimit || "",
     minLevel: task?.minLevel || 1,
     requiredAccessLevel: task?.requiredAccessLevel ?? 0,
+    order: task?.order ?? 0,
     countries: task?.countries || [],
     contentUrl: task?.contentUrl || "",
     thumbnailUrl: task?.thumbnailUrl || "",
@@ -373,6 +376,7 @@ export function TaskForm({ task }: TaskFormProps) {
         instructions: instructionSteps.filter(Boolean).join("\n"),
         dailyLimit: formData.dailyLimit ? parseInt(formData.dailyLimit.toString()) : null,
         totalLimit: formData.totalLimit ? parseInt(formData.totalLimit.toString()) : null,
+        order: parseInt((formData.order ?? 0).toString()) || 0,
         startsAt: formData.startsAt ? new Date(formData.startsAt).toISOString() : null,
         expiresAt: formData.expiresAt ? new Date(formData.expiresAt).toISOString() : null,
         status: isDraft ? "PAUSED" : "ACTIVE",
@@ -652,10 +656,11 @@ export function TaskForm({ task }: TaskFormProps) {
               <div className="space-y-3">
                 {formData.thumbnailUrl ? (
                   <div className="relative inline-block">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
+                    <SmartImage
                       src={formData.thumbnailUrl}
                       alt="Thumbnail"
+                      width={128}
+                      height={80}
                       className="w-32 h-20 object-cover rounded-lg border border-gray-700"
                     />
                     <button
@@ -917,10 +922,11 @@ export function TaskForm({ task }: TaskFormProps) {
                   <div className="flex items-center gap-3">
                     {q.imageUrl ? (
                       <div className="relative">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <SmartImage
                           src={q.imageUrl}
                           alt={`Question ${qIndex + 1} image`}
+                          width={96}
+                          height={64}
                           className="w-24 h-16 object-cover rounded-lg border border-gray-700"
                         />
                         <button
@@ -1092,6 +1098,24 @@ export function TaskForm({ task }: TaskFormProps) {
             />
             <p className="text-[11px] text-gray-500 mt-1">
               Only users on a plan with <code>accessLevel ≥ {formData.requiredAccessLevel}</code> can see / start this task. Default plan is usually 0.
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-400 mb-2">
+              Sequence Order
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={formData.order}
+              onChange={(e) =>
+                setFormData({ ...formData, order: parseInt(e.target.value) || 0 })
+              }
+              className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:border-red-500"
+            />
+            <p className="text-[11px] text-gray-500 mt-1">
+              Lower = earlier in the queue. Used when <strong>Sequential task unlock</strong> is on (Settings → Limits): tasks unlock one-by-one in this order.
             </p>
           </div>
 

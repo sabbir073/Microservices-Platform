@@ -17,6 +17,7 @@
 import { prisma } from "@/lib/prisma";
 import { SubmissionStatus, TaskType } from "@/generated/prisma/client";
 import { getSocialEarningConfig } from "@/lib/social-earning";
+import { getUserDayContext } from "@/lib/user-day";
 
 const TASK_TYPE_VALUES = new Set(Object.values(TaskType));
 
@@ -24,14 +25,44 @@ interface MissionItemForCount {
   taskType: string;
 }
 
-function utcDateKey(d = new Date()): string {
-  return d.toISOString().slice(0, 10);
+export interface ActiveMissionItem {
+  id: string;
+  taskType: string;
+  targetCount: number;
+  description: string | null;
+  xpPerComplete: number;
+  pointsPerComplete: number;
+}
+export interface ActiveMission {
+  id: string;
+  name: string;
+  items: ActiveMissionItem[];
 }
 
-function utcStartOfDay(d = new Date()): Date {
-  const x = new Date(d);
-  x.setUTCHours(0, 0, 0, 0);
-  return x;
+/**
+ * The highest tier-qualifying active daily mission template (with items) for a
+ * user, or null. Shared by /daily-mission/{today,claim}, rail-widgets, and the
+ * task-start gate so they all resolve the same mission.
+ */
+export async function getActiveMissionForUser(
+  accessLevel: number,
+  level: number
+): Promise<ActiveMission | null> {
+  const mission = await prisma.dailyMissionTemplate.findFirst({
+    where: {
+      requiredAccessLevel: { lte: accessLevel },
+      isActive: true,
+      requiredLevel: { lte: level },
+    },
+    orderBy: [
+      { requiredAccessLevel: "desc" },
+      { order: "asc" },
+      { createdAt: "desc" },
+    ],
+    include: { items: { orderBy: { order: "asc" } } },
+  });
+  if (!mission) return null;
+  return mission as unknown as ActiveMission;
 }
 
 /** Map a mission item taskType to the bucket used by countByType. */
@@ -62,8 +93,9 @@ export async function buildDailyProgress(
   userId: string,
   items: MissionItemForCount[]
 ): Promise<Record<string, number>> {
-  const todayStart = utcStartOfDay();
-  const today = utcDateKey();
+  // Reset boundary is the user's LOCAL midnight (country-based), not UTC.
+  const { dayKey: today, startOfDayUtc: todayStart } =
+    await getUserDayContext(userId);
 
   // Source 1: TaskSubmission counts (existing behaviour)
   const submissions = await prisma.taskSubmission.findMany({

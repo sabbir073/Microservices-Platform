@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Loader2, MessageCircleQuestion, Pin, Send } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { SmartImage } from "@/components/user/primitives/smart-image";
+import { Avatar } from "@/components/user/primitives/avatar";
 
 interface Question {
   id: string;
@@ -58,7 +60,7 @@ export function CourseQA({ courseId, initial, isEnrolled, viewerId, tutorId }: P
   };
 
   return (
-    <section className="bg-gray-900 rounded-2xl border border-gray-800 p-5 space-y-4">
+    <section className="card p-5 space-y-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-base font-bold text-white inline-flex items-center gap-2">
           <MessageCircleQuestion className="w-5 h-5 text-fuchsia-300" />
@@ -167,18 +169,12 @@ function QuestionCard({
   return (
     <li className="rounded-xl border border-gray-800 bg-gray-950 p-3">
       <div className="flex items-center gap-2">
-        {q.asker.avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={q.asker.avatar}
-            alt=""
-            className="w-7 h-7 rounded-full object-cover bg-gray-800"
-          />
-        ) : (
-          <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-[10px] font-bold text-white">
-            {(q.asker.name ?? "?").slice(0, 1).toUpperCase()}
-          </div>
-        )}
+        <Avatar
+          src={q.asker.avatar}
+          size={28}
+          fallbackStyle="solid-gray"
+          fallbackText={(q.asker.name ?? "?").slice(0, 1).toUpperCase()}
+        />
         <p className="text-sm text-white font-bold">{q.asker.name ?? "—"}</p>
         {q.isPinned && (
           <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-300 font-bold uppercase tracking-wider">
@@ -195,12 +191,15 @@ function QuestionCard({
         <div className="mt-3 pt-3 border-t border-gray-800">
           <p className="text-xs font-bold text-emerald-300 inline-flex items-center gap-1.5">
             {q.answeredBy?.avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={q.answeredBy.avatar}
-                alt=""
-                className="w-5 h-5 rounded-full object-cover bg-gray-800"
-              />
+              <span className="relative inline-block w-5 h-5 rounded-full overflow-hidden bg-gray-800">
+                <SmartImage
+                  src={q.answeredBy.avatar}
+                  alt=""
+                  fill
+                  sizes="20px"
+                  className="object-cover"
+                />
+              </span>
             ) : null}
             {q.answeredBy?.name ?? "Tutor"} answered
           </p>

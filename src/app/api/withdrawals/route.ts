@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { withIdempotency } from "@/lib/idempotency";
 import { prisma } from "@/lib/prisma";
+import { toNum } from "@/lib/money";
 import { getPointsPerUsd } from "@/lib/economy";
 import {
   WithdrawalStatus,
@@ -88,16 +90,16 @@ export async function GET(request: NextRequest) {
       switch (w.status) {
         case "PENDING":
         case "PROCESSING":
-          summary.pending += w.amount;
+          summary.pending += toNum(w.amount);
           summary.pendingCount++;
           break;
         case "COMPLETED":
-          summary.completed += w.amount;
+          summary.completed += toNum(w.amount);
           summary.completedCount++;
           break;
         case "REJECTED":
         case "CANCELLED":
-          summary.rejected += w.amount;
+          summary.rejected += toNum(w.amount);
           summary.rejectedCount++;
           break;
       }
@@ -124,13 +126,14 @@ export async function GET(request: NextRequest) {
 
 // POST /api/withdrawals - Request a new withdrawal
 export async function POST(request: NextRequest) {
+  const session = await auth();
+
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  return withIdempotency(request, session.user.id, async () => {
   try {
-    const session = await auth();
-
-    if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
     const body = await request.json();
     const { amount, method, accountDetails } = body;
 
@@ -244,7 +247,7 @@ export async function POST(request: NextRequest) {
       },
       select: { amount: true },
     });
-    const pendingWithdrawalsTotal = pendingWithdrawalsList.reduce((sum, w) => sum + w.amount, 0);
+    const pendingWithdrawalsTotal = pendingWithdrawalsList.reduce((sum, w) => sum + toNum(w.amount), 0);
 
     // Check cooldown (24 hours between withdrawals)
     const lastWithdrawal = await prisma.withdrawal.findFirst({
@@ -286,45 +289,50 @@ export async function POST(request: NextRequest) {
     const fee = (amount * feePercentage / 100) + feeConfig.fixed;
     const netAmount = amount - fee;
 
-    // Create withdrawal request
-    const withdrawal = await prisma.withdrawal.create({
-      data: {
-        userId: session.user.id,
-        amount,
-        fee,
-        netAmount,
-        method: method as PaymentMethod,
-        accountDetails,
-        status: WithdrawalStatus.PENDING,
-      },
-    });
+    // Atomic + no-overspend: hold the points with a CAS guard, then create the
+    // withdrawal + transaction in ONE transaction. Concurrent requests can't
+    // both pass (the second matches 0 rows and aborts) → no overdraft race.
+    let withdrawal;
+    try {
+      withdrawal = await prisma.$transaction(async (tx) => {
+        const held = await tx.user.updateMany({
+          where: { id: session.user.id, pointsBalance: { gte: pointsNeeded } },
+          data: { pointsBalance: { decrement: pointsNeeded } },
+        });
+        if (held.count === 0) throw new Error("INSUFFICIENT_BALANCE");
 
-    // Deduct points from user balance (hold them)
-    await prisma.user.update({
-      where: { id: session.user.id },
-      data: {
-        pointsBalance: { decrement: pointsNeeded },
-      },
-    });
+        const w = await tx.withdrawal.create({
+          data: {
+            userId: session.user.id,
+            amount,
+            fee,
+            netAmount,
+            method: method as PaymentMethod,
+            accountDetails,
+            status: WithdrawalStatus.PENDING,
+          },
+        });
 
-    // Create pending transaction
-    await prisma.transaction.create({
-      data: {
-        userId: session.user.id,
-        type: TransactionType.WITHDRAWAL,
-        status: TransactionStatus.PENDING,
-        points: -pointsNeeded,
-        amount: -amount,
-        description: `Withdrawal request via ${method}`,
-        reference: `withdrawal_${withdrawal.id}`,
-        metadata: {
-          withdrawalId: withdrawal.id,
-          method,
-          fee,
-          netAmount,
-        },
-      },
-    });
+        await tx.transaction.create({
+          data: {
+            userId: session.user.id,
+            type: TransactionType.WITHDRAWAL,
+            status: TransactionStatus.PENDING,
+            points: -pointsNeeded,
+            amount: -amount,
+            description: `Withdrawal request via ${method}`,
+            reference: `withdrawal_${w.id}`,
+            metadata: { withdrawalId: w.id, method, fee, netAmount },
+          },
+        });
+        return w;
+      });
+    } catch (e) {
+      if (e instanceof Error && e.message === "INSUFFICIENT_BALANCE") {
+        return NextResponse.json({ error: "Insufficient balance" }, { status: 400 });
+      }
+      throw e;
+    }
 
     // Create notification
     await prisma.notification.create({
@@ -361,4 +369,5 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+  });
 }

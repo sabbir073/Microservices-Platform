@@ -4,6 +4,14 @@ import { prisma } from "@/lib/prisma";
 import { generateTaskQuiz, isGeminiConfigured } from "@/lib/gemini";
 import { TaskType, TaskStatus } from "@/generated/prisma";
 import { getPointsPerUsd } from "@/lib/economy";
+import { getUserDayContext } from "@/lib/user-day";
+import { getEffectivePackage } from "@/lib/packages";
+import { getTaskChainState } from "@/lib/task-sequence";
+import {
+  getActiveMissionForUser,
+  buildDailyProgress,
+  resolveTaskTypeBucket,
+} from "@/lib/daily-mission-progress";
 
 // GET /api/tasks/quiz - Get quiz for a specific task or generate new one
 export async function GET(request: NextRequest) {
@@ -17,11 +25,43 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const taskId = searchParams.get("taskId");
 
+    // No taskId → list available QUIZ tasks (with sequential-unlock lock state)
+    // for the quiz tab. mirrors the video/social list gating.
     if (!taskId) {
-      return NextResponse.json(
-        { error: "Task ID is required" },
-        { status: 400 }
-      );
+      const [lister, pkg] = await Promise.all([
+        prisma.user.findUnique({
+          where: { id: session.user.id },
+          select: { level: true },
+        }),
+        getEffectivePackage(session.user.id),
+      ]);
+      const accessLevel = pkg?.accessLevel ?? 0;
+      const quizTasks = await prisma.task.findMany({
+        where: {
+          type: TaskType.QUIZ,
+          status: TaskStatus.ACTIVE,
+          minLevel: { lte: lister?.level ?? 0 },
+          requiredAccessLevel: { lte: accessLevel },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      });
+      const { lockedTaskIds } = await getTaskChainState(session.user.id);
+      return NextResponse.json({
+        quizzes: quizTasks.map((t) => ({
+          id: t.id,
+          title: t.title,
+          description: t.description ?? undefined,
+          difficulty: (t.difficulty as string) || "BEGINNER",
+          questionCount: Array.isArray(t.questions)
+            ? (t.questions as unknown[]).length
+            : 0,
+          timeLimit: 0,
+          pointsReward: t.pointsReward,
+          minScore: 70,
+          locked: lockedTaskIds.has(t.id),
+        })),
+      });
     }
 
     // Get the task
@@ -137,9 +177,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user already submitted today
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    // Check if user already submitted today — boundary is the user's LOCAL midnight.
+    const { startOfDayUtc: todayStart } = await getUserDayContext(session.user.id);
 
     const existingSubmission = await prisma.taskSubmission.findFirst({
       where: {
@@ -154,6 +193,60 @@ export async function POST(request: NextRequest) {
         { error: "You have already completed this quiz today" },
         { status: 400 }
       );
+    }
+
+    // Sequential-unlock gate (feature #7) — same guard as /api/tasks/[id]/start
+    // so the quiz submit path can't bypass a locked task. No-ops for admins /
+    // when the toggle is off.
+    const { lockedTaskIds } = await getTaskChainState(session.user.id);
+    if (lockedTaskIds.has(taskId)) {
+      return NextResponse.json(
+        {
+          error: "Complete the previous task first to unlock this one.",
+          code: "TASK_LOCKED",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Daily-mission cap — quizzes count against the mission's QUIZ target
+    // (mirrors /api/tasks/[id]/start so this alt path can't bypass it).
+    const [me, pkg] = await Promise.all([
+      prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { level: true },
+      }),
+      getEffectivePackage(session.user.id),
+    ]);
+    const mission = await getActiveMissionForUser(
+      pkg?.accessLevel ?? 0,
+      me?.level ?? 0
+    );
+    if (mission && mission.items.length > 0) {
+      const item = mission.items.find(
+        (it) => resolveTaskTypeBucket(it.taskType) === "QUIZ"
+      );
+      if (!item) {
+        return NextResponse.json(
+          {
+            error:
+              "This task isn't part of your daily mission. Upgrade your plan to unlock more tasks.",
+            code: "UPGRADE_REQUIRED",
+          },
+          { status: 403 }
+        );
+      }
+      const countByType = await buildDailyProgress(session.user.id, mission.items);
+      if ((countByType["QUIZ"] ?? 0) >= item.targetCount) {
+        return NextResponse.json(
+          {
+            error:
+              "You've finished today's quiz tasks in your daily mission. Upgrade your plan for more.",
+            code: "UPGRADE_REQUIRED",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     // Calculate score

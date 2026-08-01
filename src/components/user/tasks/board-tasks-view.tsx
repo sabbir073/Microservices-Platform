@@ -22,9 +22,12 @@ import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { SmartImage } from "@/components/user/primitives/smart-image";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { runInterstitial } from "@/lib/reward-interstitial";
+import { ensureAdsAllowed } from "@/lib/adblock";
 
 interface Board {
   id: string;
@@ -178,6 +181,7 @@ export function BoardTasksView() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      await runInterstitial();
       toast.success(`Board reward claimed! +${data.points} pts, +${data.xp} XP`);
       setShowConfirm(false);
       await loadDetail(detail.board.id);
@@ -221,12 +225,15 @@ export function BoardTasksView() {
             {/* Header */}
             <div className="rounded-2xl border border-gray-800 bg-linear-to-br from-orange-500/10 via-pink-500/5 to-gray-900 overflow-hidden">
               {detail.board.imageUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={detail.board.imageUrl}
-                  alt=""
-                  className="w-full h-32 object-cover bg-gray-800"
-                />
+                <div className="relative w-full h-32 bg-gray-800">
+                  <SmartImage
+                    src={detail.board.imageUrl}
+                    alt=""
+                    fill
+                    sizes="100vw"
+                    className="object-cover"
+                  />
+                </div>
               )}
               <div className="p-4">
                 <div className="flex items-start gap-3">
@@ -581,8 +588,8 @@ export function BoardTasksView() {
 
   return (
     <div className="space-y-3">
-      <h1 className="text-xl font-bold text-white flex items-center gap-2">
-        📌 Board Tasks
+      <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
+        <Pin className="w-6 h-6 text-amber-400" /> Board Tasks
       </h1>
 
       {!loading && availableCategories.length > 0 && (
@@ -646,13 +653,15 @@ export function BoardTasksView() {
             return (
               <button
                 key={b.id}
-                onClick={() => {
+                onClick={async () => {
                   if (isLocked) {
                     toast.info(
                       `Locked — claim "${b.lockedBy?.title}" first.`
                     );
                     return;
                   }
+                  // Ad-blocker gate: refuse to open while a blocker is active.
+                  if (!(await ensureAdsAllowed())) return;
                   setSelectedBoardId(b.id);
                 }}
                 className={cn(
@@ -665,12 +674,15 @@ export function BoardTasksView() {
                 )}
               >
                 {b.thumbnailUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={b.thumbnailUrl}
-                    alt=""
-                    className="w-full h-24 object-cover bg-gray-800"
-                  />
+                  <div className="relative w-full h-24 bg-gray-800">
+                    <SmartImage
+                      src={b.thumbnailUrl}
+                      alt=""
+                      fill
+                      sizes="(max-width: 768px) 50vw, 25vw"
+                      className="object-cover"
+                    />
+                  </div>
                 ) : (
                   <div className="h-24 bg-linear-to-br from-orange-500 to-pink-500 flex items-center justify-center text-3xl">
                     {b.iconEmoji || "📌"}
@@ -712,7 +724,7 @@ export function BoardTasksView() {
                       {b.description}
                     </p>
                   )}
-                  <div className="grid grid-cols-3 gap-1.5 mt-3 text-[10px]">
+                  <div className="grid grid-cols-3 gap-1.5 mt-3 text-[11px]">
                     <div className="flex flex-col items-center p-1.5 rounded bg-gray-800">
                       <Pin className="w-3 h-3 text-orange-400 mb-0.5" />
                       <span className="font-bold text-white tabular-nums">

@@ -10,6 +10,13 @@ import {
 } from "@/lib/packages";
 import { getUiToggles } from "@/lib/ui-toggles-server";
 import { isProfileComplete } from "@/lib/profile-completion";
+import { getUserDayContext } from "@/lib/user-day";
+import { getTaskChainState } from "@/lib/task-sequence";
+import {
+  getActiveMissionForUser,
+  buildDailyProgress,
+  resolveTaskTypeBucket,
+} from "@/lib/daily-mission-progress";
 
 const TASK_TYPE_FEATURE: Record<TaskType, PackageFeatureKey> = {
   SOCIAL: "socialTasks",
@@ -146,10 +153,63 @@ export async function POST(
       }
     }
 
+    // Sequential-unlock gate (feature #7): if this task is locked behind an
+    // earlier, not-yet-completed task in the user's chain, block it. No-ops when
+    // the toggle is off or the user is an admin.
+    const { lockedTaskIds } = await getTaskChainState(session.user.id);
+    if (lockedTaskIds.has(id)) {
+      return NextResponse.json(
+        {
+          error: "Complete the previous task first to unlock this one.",
+          code: "TASK_LOCKED",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Day boundary for all daily counters below — the user's LOCAL midnight,
+    // computed once and reused (both the plan-wide and per-task daily limits).
+    const { startOfDayUtc: dayStart } = await getUserDayContext(session.user.id);
+
+    // Daily-mission cap: the user's daily mission defines their per-type task
+    // allowance. A type not in the mission, or one whose target is already met,
+    // is upgrade-gated. Only applies when an active qualifying mission exists.
+    const mission = await getActiveMissionForUser(
+      userPackage?.accessLevel ?? 0,
+      user.level
+    );
+    if (mission && mission.items.length > 0) {
+      const bucket = task.boardId ? "BOARD" : resolveTaskTypeBucket(task.type);
+      const item = mission.items.find(
+        (it) => resolveTaskTypeBucket(it.taskType) === bucket
+      );
+      if (!item) {
+        return NextResponse.json(
+          {
+            error:
+              "This task isn't part of your daily mission. Upgrade your plan to unlock more tasks.",
+            code: "UPGRADE_REQUIRED",
+          },
+          { status: 403 }
+        );
+      }
+      const countByType = await buildDailyProgress(
+        session.user.id,
+        mission.items
+      );
+      if ((countByType[bucket] ?? 0) >= item.targetCount) {
+        return NextResponse.json(
+          {
+            error: `You've finished today's ${task.type.toLowerCase()} tasks in your daily mission. Upgrade your plan for more.`,
+            code: "UPGRADE_REQUIRED",
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // Plan-level dailyTaskLimit (across all tasks today).
     if (userPackage && userPackage.dailyTaskLimit !== -1) {
-      const dayStart = new Date();
-      dayStart.setHours(0, 0, 0, 0);
       const totalToday = await prisma.taskSubmission.count({
         where: {
           userId: session.user.id,
@@ -176,14 +236,11 @@ export async function POST(
     }
 
     // Per-task daily limit (admin-set on the task itself)
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
     const todaySubmissions = await prisma.taskSubmission.count({
       where: {
         taskId: id,
         userId: session.user.id,
-        createdAt: { gte: todayStart },
+        createdAt: { gte: dayStart },
         status: { in: ["APPROVED", "AUTO_APPROVED", "PENDING"] },
       },
     });

@@ -10,11 +10,15 @@ import {
   CheckCircle2,
 } from "lucide-react";
 import { CourseLandingHero } from "./CourseLandingHero";
+import { Avatar } from "@/components/user/primitives/avatar";
 import { CourseCurriculum } from "./CourseCurriculum";
 import { CourseReviews } from "./CourseReviews";
 import { CourseQA } from "./CourseQA";
 import { RelatedCourses } from "./RelatedCourses";
 import { CourseEnrollCta } from "./CourseEnrollCta";
+import { StatCard } from "@/components/user/primitives/stat-card";
+import { AffiliateAttribution } from "@/components/user/affiliate/affiliate-attribution";
+import { AffiliateShareButton } from "@/components/user/affiliate/affiliate-share-button";
 
 interface Props {
   // From loadCourseLanding — shape is encapsulated here on purpose
@@ -64,6 +68,12 @@ export function CourseLanding({ data, viewerId }: Props) {
 
   return (
     <div className="space-y-10">
+      <AffiliateAttribution targetType="COURSE" targetId={course.id} />
+      {data.affiliateEligible && (
+        <div className="flex justify-end">
+          <AffiliateShareButton eligible />
+        </div>
+      )}
       <CourseLandingHero
         course={course}
         tutor={course.tutor}
@@ -75,7 +85,7 @@ export function CourseLanding({ data, viewerId }: Props) {
         <main className="space-y-8 min-w-0">
           {/* Learning outcomes */}
           {course.learningOutcomes.length > 0 && (
-            <section className="bg-gray-900 rounded-2xl border border-gray-800 p-5">
+            <section className="card p-5">
               <h2 className="text-base font-bold text-white mb-3">What you&apos;ll learn</h2>
               <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {course.learningOutcomes.map((o, i) => (
@@ -90,14 +100,14 @@ export function CourseLanding({ data, viewerId }: Props) {
 
           {/* At-a-glance facts */}
           <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Fact icon={<Star className="w-4 h-4" />} tone="text-amber-300" label="Rating" value={course.avgRating > 0 ? course.avgRating.toFixed(2) : "—"} />
-            <Fact icon={<Users className="w-4 h-4" />} tone="text-emerald-300" label="Students" value={course.enrollmentCount} />
-            <Fact icon={<Clock className="w-4 h-4" />} tone="text-indigo-300" label="Duration" value={`${Math.round(course.totalDuration / 60)}h ${course.totalDuration % 60}m`} />
-            <Fact icon={<Globe className="w-4 h-4" />} tone="text-fuchsia-300" label="Language" value={course.language.toUpperCase()} />
+            <StatCard icon={<Star className="w-5 h-5" />} tone="amber" label="Rating" value={course.avgRating > 0 ? course.avgRating.toFixed(2) : "—"} />
+            <StatCard icon={<Users className="w-5 h-5" />} tone="green" label="Students" value={course.enrollmentCount} />
+            <StatCard icon={<Clock className="w-5 h-5" />} tone="blue" label="Duration" value={`${Math.round(course.totalDuration / 60)}h ${course.totalDuration % 60}m`} />
+            <StatCard icon={<Globe className="w-5 h-5" />} tone="purple" label="Language" value={course.language.toUpperCase()} />
           </section>
 
           {/* Description */}
-          <section className="bg-gray-900 rounded-2xl border border-gray-800 p-5">
+          <section className="card p-5">
             <h2 className="text-base font-bold text-white mb-3">About this course</h2>
             <div className="prose prose-invert prose-sm max-w-none whitespace-pre-wrap text-gray-300">
               {course.description}
@@ -120,7 +130,7 @@ export function CourseLanding({ data, viewerId }: Props) {
 
           {/* Requirements */}
           {course.requirements.length > 0 && (
-            <section className="bg-gray-900 rounded-2xl border border-gray-800 p-5">
+            <section className="card p-5">
               <h2 className="text-base font-bold text-white mb-3">Requirements</h2>
               <ul className="space-y-1.5">
                 {course.requirements.map((r, i) => (
@@ -135,7 +145,7 @@ export function CourseLanding({ data, viewerId }: Props) {
 
           {/* What's included */}
           {course.whatsIncluded.length > 0 && (
-            <section className="bg-gray-900 rounded-2xl border border-gray-800 p-5">
+            <section className="card p-5">
               <h2 className="text-base font-bold text-white mb-3">What&apos;s included</h2>
               <ul className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {course.whatsIncluded.map((w, i) => (
@@ -150,21 +160,15 @@ export function CourseLanding({ data, viewerId }: Props) {
 
           {/* Tutor profile */}
           {course.tutor && (
-            <section className="bg-gray-900 rounded-2xl border border-gray-800 p-5">
+            <section className="card p-5">
               <h2 className="text-base font-bold text-white mb-3">Your tutor</h2>
               <div className="flex items-start gap-3">
-                {course.tutor.avatar ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={course.tutor.avatar}
-                    alt=""
-                    className="w-14 h-14 rounded-full object-cover bg-gray-800"
-                  />
-                ) : (
-                  <div className="w-14 h-14 rounded-full bg-gray-700 flex items-center justify-center text-white font-bold">
-                    {(course.tutor.name ?? "?").slice(0, 1).toUpperCase()}
-                  </div>
-                )}
+                <Avatar
+                  src={course.tutor.avatar}
+                  size={56}
+                  fallbackStyle="solid-gray"
+                  fallbackText={(course.tutor.name ?? "?").slice(0, 1).toUpperCase()}
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-bold">{course.tutor.name}</p>
                   {course.tutor.tutorProfile?.headline && (
@@ -214,7 +218,7 @@ export function CourseLanding({ data, viewerId }: Props) {
 
           {/* FAQ */}
           {faqs.length > 0 && (
-            <section className="bg-gray-900 rounded-2xl border border-gray-800 p-5">
+            <section className="card p-5">
               <h2 className="text-base font-bold text-white mb-3">FAQ</h2>
               <ul className="space-y-3">
                 {faqs.map((f, i) => (
@@ -287,26 +291,3 @@ export function CourseLanding({ data, viewerId }: Props) {
   );
 }
 
-function Fact({
-  icon,
-  tone,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  tone: string;
-  label: string;
-  value: number | string;
-}) {
-  return (
-    <div className="bg-gray-900 rounded-xl border border-gray-800 p-3">
-      <p className={`inline-flex items-center gap-1.5 text-[10px] uppercase tracking-wider font-bold ${tone}`}>
-        {icon}
-        {label}
-      </p>
-      <p className="mt-1 text-lg font-extrabold text-white tabular-nums">
-        {value}
-      </p>
-    </div>
-  );
-}

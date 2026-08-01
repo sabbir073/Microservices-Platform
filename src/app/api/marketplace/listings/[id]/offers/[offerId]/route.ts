@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { toNum } from "@/lib/money";
+import { isDuplicateLedgerError } from "@/lib/idempotency";
 import {
   MarketplaceListingStatus,
   MarketplaceOfferStatus,
@@ -153,7 +155,7 @@ export async function PATCH(
       );
     }
 
-    const acceptedAmount = offer.amount;
+    const acceptedAmount = toNum(offer.amount);
     const bps = await resolveCommissionBps({
       assetType: offer.listing.assetType,
       perListingOverride: offer.listing.commissionRateBps,
@@ -246,6 +248,12 @@ export async function PATCH(
 
     return NextResponse.json({ offer: updatedOffer, purchase });
   } catch (error) {
+    // Concurrent double-accept / retry reuses reference `marketplace_offer_<id>`
+    // → P2002 on (userId, reference). The offer was already settled once; report
+    // success instead of double-settling.
+    if (isDuplicateLedgerError(error)) {
+      return NextResponse.json({ duplicate: true });
+    }
     console.error("Patch offer failed:", error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed" },

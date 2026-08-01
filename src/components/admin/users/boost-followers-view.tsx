@@ -26,6 +26,8 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { cn } from "@/lib/utils";
+import { Avatar as AvatarPrimitive } from "@/components/user/primitives/avatar";
+import { AdminTableShell } from "@/components/admin/ui/admin-table-shell";
 
 interface Props {
   userId: string;
@@ -402,14 +404,13 @@ export function BoostFollowersView({
           <ArrowLeft className="w-5 h-5 text-gray-400" />
         </Link>
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="w-12 h-12 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-lg font-bold overflow-hidden shrink-0">
-            {avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={avatar} alt="" className="w-full h-full object-cover" />
-            ) : (
-              initial
-            )}
-          </div>
+          <AvatarPrimitive
+            src={avatar}
+            size={48}
+            fallbackText={initial}
+            fallbackClassName="bg-linear-to-br from-purple-500 to-pink-500"
+            className="shrink-0"
+          />
           <div className="min-w-0">
             <h1 className="text-xl font-bold text-white inline-flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-purple-400" />
@@ -1001,7 +1002,7 @@ function SampleTable({
           </>
         )}
       </p>
-      <div className="rounded-lg border border-gray-800 bg-gray-950 overflow-x-auto">
+      <AdminTableShell className="rounded-lg">
         <table className="w-full text-xs">
           <thead className="bg-gray-900 text-gray-500">
             <tr>
@@ -1039,7 +1040,7 @@ function SampleTable({
             ))}
           </tbody>
         </table>
-      </div>
+      </AdminTableShell>
     </div>
   );
 }
@@ -1053,14 +1054,12 @@ function Avatar({
 }) {
   const initial = (fallback ?? "U").charAt(0).toUpperCase();
   return (
-    <div className="w-5 h-5 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white text-[9px] font-bold overflow-hidden shrink-0">
-      {src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={src} alt="" className="w-full h-full object-cover" />
-      ) : (
-        initial
-      )}
-    </div>
+    <AvatarPrimitive
+      src={src}
+      size={20}
+      fallbackText={initial}
+      className="shrink-0"
+    />
   );
 }
 

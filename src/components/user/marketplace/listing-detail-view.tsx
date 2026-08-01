@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { confirmDialog } from "@/lib/confirm";
 import { profileHref } from "@/lib/user-href";
+import { AffiliateAttribution } from "@/components/user/affiliate/affiliate-attribution";
+import { AffiliateShareButton } from "@/components/user/affiliate/affiliate-share-button";
 import {
   ShoppingCart,
   Eye,
@@ -31,9 +33,12 @@ import { ShareModal } from "@/components/user/primitives/share-modal";
 import { ReportContent } from "@/components/user/primitives/report-content";
 import { BidPanel } from "./bid-panel";
 import { OfferPanel } from "./offer-panel";
+import { SmartImage } from "@/components/user/primitives/smart-image";
+import { Avatar } from "@/components/user/primitives/avatar";
 import { format, formatDistanceToNow } from "date-fns";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { newIdempotencyKey } from "@/lib/idempotency-key";
 import {
   ASSET_TYPE_LABEL,
   getFieldsFor,
@@ -154,7 +159,7 @@ export function ListingDetailView({
     try {
       const res = await fetch("/api/cart", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey() },
         body: JSON.stringify({ listingId: listing.id, quantity: 1 }),
       });
       const data = await res.json().catch(() => ({}));
@@ -188,6 +193,7 @@ export function ListingDetailView({
     try {
       const res = await fetch(`/api/marketplace/${listing.id}/checkout`, {
         method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey() },
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -245,6 +251,12 @@ export function ListingDetailView({
 
   return (
     <div className="space-y-5">
+      <AffiliateAttribution targetType="MARKETPLACE" targetId={listing.id} />
+      {(listing as { affiliateEligible?: boolean }).affiliateEligible && (
+        <div className="flex justify-end">
+          <AffiliateShareButton eligible />
+        </div>
+      )}
       <Link
         href="/marketplace"
         className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white"
@@ -265,11 +277,12 @@ export function ListingDetailView({
             }
           >
             {listing.images[0] ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              <SmartImage
                 src={listing.images[0]}
                 alt=""
-                className="w-full h-full object-cover"
+                fill
+                sizes="100vw"
+                className="object-cover"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
@@ -306,10 +319,15 @@ export function ListingDetailView({
                   key={i}
                   type="button"
                   onClick={() => setZoom({ list: listing.images, idx: i })}
-                  className="aspect-square bg-gray-950 rounded-lg overflow-hidden border border-gray-800 hover:border-indigo-500/50"
+                  className="relative aspect-square bg-gray-950 rounded-lg overflow-hidden border border-gray-800 hover:border-indigo-500/50"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={url} alt="" className="w-full h-full object-cover" />
+                  <SmartImage
+                    src={url}
+                    alt=""
+                    fill
+                    sizes="(max-width: 768px) 50vw, 25vw"
+                    className="object-cover"
+                  />
                 </button>
               ))}
             </div>
@@ -619,10 +637,15 @@ export function ListingDetailView({
                 key={i}
                 type="button"
                 onClick={() => setZoom({ list: listing.screenshots, idx: i })}
-                className="aspect-video rounded-lg overflow-hidden bg-gray-950 border border-gray-800 hover:border-emerald-500/40"
+                className="relative aspect-video rounded-lg overflow-hidden bg-gray-950 border border-gray-800 hover:border-emerald-500/40"
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={url} alt="" className="w-full h-full object-cover" />
+                <SmartImage
+                  src={url}
+                  alt=""
+                  fill
+                  sizes="(max-width: 768px) 50vw, 25vw"
+                  className="object-cover"
+                />
               </button>
             ))}
           </div>
@@ -657,20 +680,13 @@ export function ListingDetailView({
       {/* Seller card */}
       <section className="glass rounded-xl p-4 sm:p-5">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-full bg-linear-to-br from-indigo-500 to-purple-600 overflow-hidden flex items-center justify-center text-white font-bold">
-            {listing.seller.avatar ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={listing.seller.avatar}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              (listing.seller.name ?? listing.seller.username ?? "S")
-                .charAt(0)
-                .toUpperCase()
-            )}
-          </div>
+          <Avatar
+            src={listing.seller.avatar}
+            size={48}
+            fallbackText={(listing.seller.name ?? listing.seller.username ?? "S")
+              .charAt(0)
+              .toUpperCase()}
+          />
           <div className="flex-1 min-w-0">
             <Link
               href={profileHref(listing.seller)}

@@ -12,7 +12,9 @@ import {
 } from "lucide-react";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { SmartImage } from "@/components/user/primitives/smart-image";
 import { toast } from "sonner";
+import { newIdempotencyKey } from "@/lib/idempotency-key";
 
 interface CartItem {
   id: string;
@@ -72,7 +74,10 @@ export function CartView() {
   const checkout = async () => {
     setCheckingOut(true);
     try {
-      const res = await fetch("/api/cart/checkout", { method: "POST" });
+      const res = await fetch("/api/cart/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey() },
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         if (res.status === 402) {
@@ -153,10 +158,11 @@ export function CartView() {
               >
                 <div className="w-14 h-14 rounded-lg bg-gray-800 overflow-hidden shrink-0">
                   {i.thumbnail && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
+                    <SmartImage
                       src={i.thumbnail}
                       alt=""
+                      width={56}
+                      height={56}
                       className="w-full h-full object-cover"
                     />
                   )}
