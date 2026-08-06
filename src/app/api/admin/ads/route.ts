@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import { normalizeTargeting, type AdTargeting } from "@/lib/ad-targeting";
 
-const AD_TYPES = ["LOCAL", "HTML", "SDK", "META"];
+const AD_TYPES = ["LOCAL", "HTML", "ADSENSE", "GAM"];
 const AD_STATUSES = ["ACTIVE", "INACTIVE", "PAUSED"];
 
 export async function GET() {
   const session = await auth();
-  const role = session?.user?.role as UserRole | undefined;
-  if (!session?.user || !hasPermission(role, "ads.view")) {
+  if (!session?.user || !(await can(session.user.id, "ads.view"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const ads = await prisma.ad.findMany({
@@ -37,8 +36,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const session = await auth();
-  const role = session?.user?.role as UserRole | undefined;
-  if (!session?.user || !hasPermission(role, "ads.manage")) {
+  if (!session?.user || !(await can(session.user.id, "ads.manage"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const body = await request.json().catch(() => ({}));
@@ -65,6 +63,12 @@ export async function POST(request: NextRequest) {
     videoUrl: body.videoUrl ? String(body.videoUrl) : null,
     targetUrl: body.targetUrl ? String(body.targetUrl) : null,
     htmlContent: body.htmlContent ? String(body.htmlContent) : null,
+    // Network (ADSENSE/GAM) config + optional tracking pixels.
+    adSlot: body.adSlot ? String(body.adSlot) : null,
+    adUnitPath: body.adUnitPath ? String(body.adUnitPath) : null,
+    adClient: body.adClient ? String(body.adClient) : null,
+    impressionPixel: body.impressionPixel ? String(body.impressionPixel) : null,
+    clickTracker: body.clickTracker ? String(body.clickTracker) : null,
     size: body.size ? String(body.size) : "responsive",
     width: Number.isFinite(Number(body.width)) && Number(body.width) > 0 ? Math.round(Number(body.width)) : null,
     height: Number.isFinite(Number(body.height)) && Number(body.height) > 0 ? Math.round(Number(body.height)) : null,

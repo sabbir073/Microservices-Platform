@@ -5,6 +5,7 @@ import { matchesTargeting, type TargetableUser } from "@/lib/ad-targeting";
 import { getSetting } from "@/lib/system-settings";
 import { bumpAdDailyStat } from "@/lib/ad-stats";
 import { firstPartyMediaUrl, isFirstPartyAdType } from "@/lib/ad-proxy";
+import { composeNetworkAdHtml, getNetworkGlobals } from "@/lib/ad-network";
 import type { FeedAd } from "@/components/user/feed/feed-ad-card";
 
 /** Shaped banner/interstitial ad — identical to the `/api/ads/serve` payload. */
@@ -22,6 +23,8 @@ export interface ServedAd {
   size?: string;
   width?: number;
   height?: number;
+  impressionPixel?: string;
+  clickTracker?: string;
 }
 
 export interface ServeResult {
@@ -50,12 +53,22 @@ export async function serveAd(opts: {
   userId?: string | null;
   exclude?: Iterable<string>;
   countImpression?: boolean;
+  /** Admin preview: serve any ACTIVE ad on the placement (skip ad-free /
+   *  targeting / budget / flight gates) and never count an impression. */
+  preview?: boolean;
 }): Promise<ServeResult> {
-  const { placement, userId } = opts;
+  const { placement, userId, preview } = opts;
   const exclude = new Set(opts.exclude ?? []);
 
+  // Interstitial placements (REWARD/VIDEO/GAME_INTERSTITIAL) are the platform's
+  // OWN house ads shown before a reward — they always serve (even to ad-free
+  // plans) and don't require a funded advertiser campaign. Paid feed/banner
+  // placements keep the ad-free + budget/flight gating below. Preview mode is
+  // treated like a house placement so admins always see inventory.
+  const interstitial = placement.endsWith("_INTERSTITIAL") || !!preview;
+
   let viewer: TargetableUser | null = null;
-  if (userId) {
+  if (userId && !preview) {
     const [pkg, u] = await Promise.all([
       getEffectivePackage(userId),
       prisma.user.findUnique({
@@ -75,7 +88,7 @@ export async function serveAd(opts: {
         },
       }),
     ]);
-    if (pkg?.adFree) return EMPTY; // Watch & Earn is unaffected
+    if (pkg?.adFree && !interstitial) return EMPTY; // Watch & Earn is unaffected
     viewer = { ...(u ?? {}), packageSlug: pkg?.slug ?? null };
   }
 
@@ -91,14 +104,20 @@ export async function serveAd(opts: {
     where: {
       placementId: placementRow.id,
       status: "ACTIVE",
-      campaign: {
-        status: "ACTIVE",
-        budget: { gte: cost },
-        AND: [
-          { OR: [{ startAt: null }, { startAt: { lte: now } }] },
-          { OR: [{ endAt: null }, { endAt: { gte: now } }] },
-        ],
-      },
+      // House interstitials: any ACTIVE ad on the placement serves (no funded
+      // campaign / flight-window needed). Paid placements keep the full gate.
+      ...(interstitial
+        ? {}
+        : {
+            campaign: {
+              status: "ACTIVE",
+              budget: { gte: cost },
+              AND: [
+                { OR: [{ startAt: null }, { startAt: { lte: now } }] },
+                { OR: [{ endAt: null }, { endAt: { gte: now } }] },
+              ],
+            },
+          }),
     },
     include: { campaign: { select: { title: true } } },
   });
@@ -123,7 +142,7 @@ export async function serveAd(opts: {
     }
   }
 
-  if (opts.countImpression !== false) {
+  if (opts.countImpression !== false && !preview) {
     prisma.ad
       .update({
         where: { id: chosen.id },
@@ -143,6 +162,13 @@ export async function serveAd(opts: {
   );
 
   const proxy = isFirstPartyAdType(chosen.type);
+  // Network types (ADSENSE/GAM): compose a self-contained document server-side;
+  // fall back to any raw htmlContent when config is incomplete.
+  let html = chosen.htmlContent ?? undefined;
+  if (chosen.type === "ADSENSE" || chosen.type === "GAM") {
+    const composed = composeNetworkAdHtml(chosen, await getNetworkGlobals());
+    if (composed) html = composed;
+  }
   return {
     poolSize: targeted.length,
     rotateMs: rotateSeconds * 1000,
@@ -164,11 +190,13 @@ export async function serveAd(opts: {
       body: undefined,
       ctaLabel: "Learn More",
       ctaUrl: chosen.targetUrl ?? undefined,
-      html: chosen.htmlContent ?? undefined,
+      html,
       sponsor: undefined,
       size: chosen.size ?? undefined,
       width: chosen.width ?? undefined,
       height: chosen.height ?? undefined,
+      impressionPixel: chosen.impressionPixel ?? undefined,
+      clickTracker: chosen.clickTracker ?? undefined,
     },
   };
 }

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ExternalLink, X } from "lucide-react";
 import type { AdPlacementName } from "@/lib/ad-placements";
+import { SandboxedAdFrame } from "@/components/user/primitives/sandboxed-ad-frame";
 
 interface Ad {
   id: string;
@@ -15,6 +16,7 @@ interface Ad {
   ctaUrl?: string;
   html?: string;
   sponsor?: string;
+  impressionPixel?: string;
 }
 
 /**
@@ -37,6 +39,7 @@ export function AdInterstitialOverlay({
 }) {
   const [ad, setAd] = useState<Ad | null>(null);
   const [left, setLeft] = useState(skipSeconds);
+  const [total, setTotal] = useState(skipSeconds);
   const doneRef = useRef(onDone);
   useEffect(() => {
     doneRef.current = onDone;
@@ -55,7 +58,9 @@ export function AdInterstitialOverlay({
         if (d?.ad) {
           setAd(d.ad);
           // Duration is admin-set per space (server), falling back to the prop.
-          setLeft(Number(d.interstitialSeconds) || skipSeconds);
+          const secs = Number(d.interstitialSeconds) || skipSeconds;
+          setLeft(secs);
+          setTotal(secs);
           fetch(`/api/spaces/${d.ad.id}/event`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -89,20 +94,18 @@ export function AdInterstitialOverlay({
     }).catch(() => {});
   };
 
+  const done = left <= 0;
+  const progress = total > 0 ? Math.min(100, ((total - left) / total) * 100) : 100;
+
   return (
     <div className="fixed inset-0 z-10001 bg-black/95 flex flex-col items-center justify-center p-4">
       <span className="absolute top-3 left-3 text-[10px] font-bold uppercase tracking-wider text-white/60">
         Sponsored
       </span>
-      <button
-        onClick={() => left <= 0 && onDone()}
-        disabled={left > 0}
-        className="absolute top-3 right-3 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold disabled:opacity-60"
-      >
-        {left > 0 ? `Skip in ${left}s` : (<><X className="w-3.5 h-3.5" /> Close</>)}
-      </button>
 
-      {ad.type === "VIDEO" && ad.videoUrl ? (
+      {/* Creative — pick by what the ad actually carries (a house video is
+          stored as type LOCAL with a videoUrl), so key off presence not type. */}
+      {ad.videoUrl ? (
         <div className="max-w-md w-full rounded-2xl overflow-hidden border border-white/10 bg-black">
           {/* Autoplay must be muted to satisfy browser policies. */}
           <video
@@ -126,11 +129,15 @@ export function AdInterstitialOverlay({
             </a>
           )}
         </div>
-      ) : ad.type === "HTML" && ad.html ? (
-        <div
-          className="max-w-md w-full rounded-2xl overflow-hidden border border-white/10"
-          dangerouslySetInnerHTML={{ __html: ad.html }}
-        />
+      ) : ad.html ? (
+        <div className="max-w-md w-full">
+          <SandboxedAdFrame
+            html={ad.html}
+            height={280}
+            impressionPixel={ad.impressionPixel}
+            badge={false}
+          />
+        </div>
       ) : (
         <a
           href={ad.ctaUrl ?? "#"}
@@ -153,6 +160,32 @@ export function AdInterstitialOverlay({
           </div>
         </a>
       )}
+
+      {/* Bottom bar — the countdown runs here; a Close button appears at 0, then
+          the caller reveals the reward. */}
+      <div className="absolute inset-x-0 bottom-0 p-4 flex flex-col items-center gap-2 bg-linear-to-t from-black/90 to-transparent">
+        {!done ? (
+          <>
+            <div className="w-full max-w-md h-1.5 rounded-full bg-white/15 overflow-hidden">
+              <div
+                className="h-full bg-indigo-500 transition-[width] duration-1000 ease-linear"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="text-xs font-semibold text-white/80 tabular-nums">
+              Reward unlocks in {left}s
+            </p>
+          </>
+        ) : (
+          <button
+            onClick={onDone}
+            className="inline-flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold"
+          >
+            <X className="w-4 h-4" />
+            Close &amp; claim reward
+          </button>
+        )}
+      </div>
     </div>
   );
 }

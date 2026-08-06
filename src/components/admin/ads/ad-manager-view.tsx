@@ -14,6 +14,7 @@ import {
   Eye,
   MousePointer,
   Loader2,
+  Save,
   X,
   ListChecks,
   PlayCircle,
@@ -36,8 +37,9 @@ import { AdWizard } from "@/components/admin/ads/ad-wizard";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import { AudienceBuilder } from "@/components/admin/ads/audience-builder";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
-import { AD_PLACEMENTS } from "@/lib/ad-placements";
-import { AD_SIZES } from "@/lib/ad-sizes";
+import { AD_PLACEMENTS, placementSizeKey } from "@/lib/ad-placements";
+import { AD_SIZES, resolveAdSize } from "@/lib/ad-sizes";
+import { SandboxedAdFrame } from "@/components/user/primitives/sandboxed-ad-frame";
 import { type AdTargeting } from "@/lib/ad-targeting";
 
 interface Campaign {
@@ -73,6 +75,11 @@ interface Ad {
   videoUrl: string | null;
   targetUrl: string | null;
   htmlContent: string | null;
+  adSlot?: string | null;
+  adUnitPath?: string | null;
+  adClient?: string | null;
+  impressionPixel?: string | null;
+  clickTracker?: string | null;
   size: string | null;
   width: number | null;
   height: number | null;
@@ -148,6 +155,89 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   const [rotationBusy, setRotationBusy] = useState(false);
   const [cpcUsd, setCpcUsd] = useState(0.01);
   const [cpcBusy, setCpcBusy] = useState(false);
+  const [adsenseClient, setAdsenseClient] = useState("");
+  const [gamNetworkCode, setGamNetworkCode] = useState("");
+  const [networkBusy, setNetworkBusy] = useState(false);
+  const [feedAdInterval, setFeedAdInterval] = useState(2);
+  const [feedPromoInterval, setFeedPromoInterval] = useState(4);
+  const [underPostBanner, setUnderPostBanner] = useState(false);
+  const [underPostInterval, setUnderPostInterval] = useState(3);
+  const [densityBusy, setDensityBusy] = useState(false);
+  const [grantEmail, setGrantEmail] = useState("");
+  const [grantAmount, setGrantAmount] = useState(10);
+  const [grantBusy, setGrantBusy] = useState(false);
+
+  const grantAdCredit = async () => {
+    if (!grantEmail.trim() || !Number.isFinite(grantAmount) || grantAmount === 0) {
+      toast.error("Email + non-zero amount required");
+      return;
+    }
+    setGrantBusy(true);
+    try {
+      const res = await fetch("/api/admin/ads/credits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: grantEmail.trim(), amountUsd: grantAmount }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      toast.success(`Ad credit updated — balance $${(d.adCreditBalance ?? 0).toFixed(2)}`);
+      setGrantEmail("");
+      setGrantAmount(10);
+    } catch (err) {
+      toast.error("Grant failed", { description: err instanceof Error ? err.message : "Try again" });
+    } finally {
+      setGrantBusy(false);
+    }
+  };
+
+  const saveDensity = async () => {
+    setDensityBusy(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: "ads",
+          settings: {
+            "ads.feed_ad_interval": Math.max(1, feedAdInterval),
+            "ads.feed_promo_interval": Math.max(1, feedPromoInterval),
+            "ads.under_post_banner": underPostBanner,
+            "ads.under_post_interval": Math.max(1, underPostInterval),
+          },
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Feed ad density saved");
+    } catch {
+      toast.error("Couldn't save density");
+    } finally {
+      setDensityBusy(false);
+    }
+  };
+
+  const saveNetworkGlobals = async () => {
+    setNetworkBusy(true);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          category: "ads",
+          settings: {
+            "ads.adsense_client": adsenseClient.trim(),
+            "ads.gam_network_code": gamNetworkCode.trim(),
+          },
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success("Ad-network settings saved");
+    } catch {
+      toast.error("Couldn't save ad-network settings");
+    } finally {
+      setNetworkBusy(false);
+    }
+  };
 
   const loadAll = async () => {
     setLoading(true);
@@ -162,6 +252,14 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
       setPlacements(p.placements ?? []);
       if (typeof p.rotationSeconds === "number") setRotationSeconds(p.rotationSeconds);
       if (typeof p.cpcUsd === "number") setCpcUsd(p.cpcUsd);
+      if (typeof p.adsenseClient === "string") setAdsenseClient(p.adsenseClient);
+      if (typeof p.gamNetworkCode === "string") setGamNetworkCode(p.gamNetworkCode);
+      if (p.density) {
+        setFeedAdInterval(p.density.feedAdInterval ?? 2);
+        setFeedPromoInterval(p.density.feedPromoInterval ?? 4);
+        setUnderPostBanner(!!p.density.underPostBanner);
+        setUnderPostInterval(p.density.underPostInterval ?? 3);
+      }
     } catch {
       toast.error("Failed to load ad data");
     } finally {
@@ -183,6 +281,14 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
         setPlacements(p.placements ?? []);
         if (typeof p.rotationSeconds === "number") setRotationSeconds(p.rotationSeconds);
         if (typeof p.cpcUsd === "number") setCpcUsd(p.cpcUsd);
+        if (typeof p.adsenseClient === "string") setAdsenseClient(p.adsenseClient);
+        if (typeof p.gamNetworkCode === "string") setGamNetworkCode(p.gamNetworkCode);
+        if (p.density) {
+          setFeedAdInterval(p.density.feedAdInterval ?? 2);
+          setFeedPromoInterval(p.density.feedPromoInterval ?? 4);
+          setUnderPostBanner(!!p.density.underPostBanner);
+          setUnderPostInterval(p.density.underPostInterval ?? 3);
+        }
       })
       .catch(() => active && toast.error("Failed to load ad data"))
       .finally(() => active && setLoading(false));
@@ -635,6 +741,99 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                   </div>
                 </div>
               </div>
+
+              {/* Global ad-network (publisher) config */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
+                <p className="text-xs uppercase tracking-wider text-slate-500 font-bold">Ad networks (publisher)</p>
+                <p className="text-[11px] text-slate-500 -mt-1">Set once — per-ad you only enter the slot / ad-unit. Network ads are third-party (ad-blockable) and report in the network&apos;s own console.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">AdSense client (ca-pub-…)</label>
+                    <input
+                      value={adsenseClient}
+                      onChange={(e) => setAdsenseClient(e.target.value)}
+                      disabled={!canManage}
+                      placeholder="ca-pub-1234567890123456"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder:text-slate-600 disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Ad Manager network code</label>
+                    <input
+                      value={gamNetworkCode}
+                      onChange={(e) => setGamNetworkCode(e.target.value)}
+                      disabled={!canManage}
+                      placeholder="22106938064"
+                      className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder:text-slate-600 disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+                {canManage && (
+                  <button
+                    onClick={saveNetworkGlobals}
+                    disabled={networkBusy}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50"
+                  >
+                    {networkBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save networks
+                  </button>
+                )}
+              </div>
+
+              {/* Feed ad density */}
+              <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
+                <p className="text-xs uppercase tracking-wider text-slate-500 font-bold">Feed ad density</p>
+                <p className="text-[11px] text-slate-500 -mt-1">Each space with 2+ active ads auto-rotates every N seconds and on reload.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Native ad — every N posts</label>
+                    <input type="number" min={1} max={20} value={feedAdInterval} disabled={!canManage} onChange={(e) => setFeedAdInterval(Math.max(1, Number(e.target.value) || 2))} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm disabled:opacity-50" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Promoted post — every N entries</label>
+                    <input type="number" min={1} max={20} value={feedPromoInterval} disabled={!canManage} onChange={(e) => setFeedPromoInterval(Math.max(1, Number(e.target.value) || 4))} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm disabled:opacity-50" />
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-slate-200">
+                  <input type="checkbox" checked={underPostBanner} disabled={!canManage} onChange={(e) => setUnderPostBanner(e.target.checked)} />
+                  Show a banner under posts (placement <span className="font-mono text-xs text-slate-400">FEED_POST_BELOW</span>)
+                </label>
+                {underPostBanner && (
+                  <div className="max-w-xs">
+                    <label className="block text-xs text-slate-400 mb-1">…under every N posts</label>
+                    <input type="number" min={1} max={20} value={underPostInterval} disabled={!canManage} onChange={(e) => setUnderPostInterval(Math.max(1, Number(e.target.value) || 3))} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm disabled:opacity-50" />
+                  </div>
+                )}
+                {canManage && (
+                  <button onClick={saveDensity} disabled={densityBusy} className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                    {densityBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Save density
+                  </button>
+                )}
+              </div>
+
+              {/* Grant ad credit */}
+              {canManage && (
+                <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 space-y-3">
+                  <p className="text-xs uppercase tracking-wider text-slate-500 font-bold">Grant ad credit</p>
+                  <p className="text-[11px] text-slate-500 -mt-1">Give an advertiser Ad Credit (USD, non-withdrawable). Negative amount deducts.</p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div className="flex-1 min-w-48">
+                      <label className="block text-xs text-slate-400 mb-1">Advertiser email</label>
+                      <input value={grantEmail} onChange={(e) => setGrantEmail(e.target.value)} placeholder="advertiser@email.com" className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder:text-slate-600" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Amount ($)</label>
+                      <input type="number" step={5} value={grantAmount} onChange={(e) => setGrantAmount(Number(e.target.value))} className="w-28 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm" />
+                    </div>
+                    <button onClick={grantAdCredit} disabled={grantBusy} className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50">
+                      {grantBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                      Grant
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {canManage && (
                 <div className="flex gap-2 max-w-md">
                   <input
@@ -903,29 +1102,11 @@ function AdSpaceCard({
         </div>
       </div>
 
-      {/* Preview mock */}
-      <div className="rounded-lg bg-slate-950 border border-slate-800 p-2.5">
-        {isFeed ? (
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1.5">
-              <div className="w-4 h-4 rounded-full bg-slate-700" />
-              <div className="h-1.5 w-16 rounded bg-slate-700" />
-              <span className="ml-auto text-[7px] font-bold uppercase tracking-wider text-slate-600">Sponsored</span>
-            </div>
-            <div className="h-1.5 w-full rounded bg-slate-800" />
-            <div className="h-8 w-full rounded bg-slate-800" />
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-12 rounded bg-slate-800 shrink-0" />
-            <div className="flex-1 space-y-1">
-              <div className="h-1.5 w-3/4 rounded bg-slate-700" />
-              <div className="h-1.5 w-1/2 rounded bg-slate-800" />
-            </div>
-            <span className="text-[7px] font-bold uppercase tracking-wider text-slate-600">Ad</span>
-          </div>
-        )}
-      </div>
+      {/* Live preview + size */}
+      <SpacePreview placement={p.name} isFeed={isFeed} />
+      <p className="text-[10px] text-slate-500 -mt-1">
+        Recommended size: <span className="text-slate-300 font-mono">{spaceSizeLabel(p.name)}</span>
+      </p>
 
       {/* Live stats */}
       <div className="grid grid-cols-3 gap-2 text-center">
@@ -1025,35 +1206,75 @@ function AdSpaceCard({
 }
 
 interface DayStat { date: string; impressions: number; clicks: number; spendUsd: number }
+interface ReportRow { impressions: number; clicks: number; spend: number; ctr: number }
+interface AdRow extends ReportRow { type: string; campaign: string; placement: string }
+interface PlacementRow extends ReportRow { name: string }
+interface CampaignRow extends ReportRow { title: string }
+const RANGES = [7, 14, 30, 90];
+const isNetworkType = (t: string) => t === "ADSENSE" || t === "GAM";
+
 function AnalyticsTab() {
+  const [days, setDays] = useState(14);
   const [series, setSeries] = useState<DayStat[]>([]);
   const [totals, setTotals] = useState({ impressions: 0, clicks: 0, ctr: 0 });
+  const [perAd, setPerAd] = useState<AdRow[]>([]);
+  const [perPlacement, setPerPlacement] = useState<PlacementRow[]>([]);
+  const [perCampaign, setPerCampaign] = useState<CampaignRow[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/admin/ads/analytics?days=14")
-      .then((r) => r.json())
-      .then((d) => {
-        setSeries(d.series ?? []);
-        setTotals(d.totals ?? { impressions: 0, clicks: 0, ctr: 0 });
+    let active = true;
+    Promise.all([
+      fetch(`/api/admin/ads/analytics?days=${days}`).then((r) => r.json()),
+      fetch(`/api/admin/ads/report?days=${days}`).then((r) => r.json()),
+    ])
+      .then(([a, rep]) => {
+        if (!active) return;
+        setSeries(a.series ?? []);
+        setTotals(a.totals ?? { impressions: 0, clicks: 0, ctr: 0 });
+        setPerAd(rep.perAd ?? []);
+        setPerPlacement(rep.perPlacement ?? []);
+        setPerCampaign(rep.perCampaign ?? []);
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [days]);
 
   const maxImp = Math.max(1, ...series.map((s) => s.impressions));
   const spend = series.reduce((s, d) => s + d.spendUsd, 0);
 
   return (
     <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-sm font-semibold text-white">Performance</p>
+        <div className="inline-flex rounded-lg border border-slate-700 overflow-hidden">
+          {RANGES.map((d) => (
+            <button
+              key={d}
+              onClick={() => {
+                setLoading(true);
+                setDays(d);
+              }}
+              className={`px-3 py-1.5 text-xs font-semibold ${days === d ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <StatCard icon={<Eye className="w-5 h-5" />} value={totals.impressions.toLocaleString()} label="Impressions (all time)" tone="purple" />
         <StatCard icon={<MousePointer className="w-5 h-5" />} value={totals.clicks.toLocaleString()} label="Clicks (all time)" tone="amber" />
         <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${totals.ctr.toFixed(2)}%`} label="CTR" tone="emerald" />
-        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`$${spend.toFixed(2)}`} label="Spend (14d)" tone="indigo" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`$${spend.toFixed(2)}`} label={`Spend (${days}d)`} tone="indigo" />
       </div>
+
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-3">Impressions · last 14 days</p>
+        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-3">Impressions · last {days} days</p>
         {loading ? (
           <p className="text-xs text-slate-500 py-6 text-center">Loading…</p>
         ) : series.every((s) => s.impressions === 0) ? (
@@ -1068,9 +1289,129 @@ function AnalyticsTab() {
           </div>
         )}
       </div>
+
+      <ReportTable title="Top ads" cols={["Ad", "Impr", "Clicks", "CTR", "Spend"]}>
+        {perAd.map((r, i) => {
+          const net = isNetworkType(r.type);
+          return (
+            <tr key={i} className="border-t border-slate-800">
+              <td className="py-1.5 pr-2 text-white truncate max-w-52">
+                {r.campaign} <span className="text-[10px] text-slate-500">· {r.placement}{net ? ` · ${r.type}` : ""}</span>
+              </td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{r.impressions.toLocaleString()}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{net ? "—" : r.clicks.toLocaleString()}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{net ? "—" : `${r.ctr.toFixed(1)}%`}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{net ? "network" : `$${r.spend.toFixed(2)}`}</td>
+            </tr>
+          );
+        })}
+      </ReportTable>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <ReportTable title="By placement" cols={["Placement", "Impr", "Clicks", "CTR"]}>
+          {perPlacement.map((r, i) => (
+            <tr key={i} className="border-t border-slate-800">
+              <td className="py-1.5 pr-2 text-white truncate max-w-40">{PLACEMENT_LABEL[r.name] ?? r.name}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{r.impressions.toLocaleString()}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{r.clicks.toLocaleString()}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{r.ctr.toFixed(1)}%</td>
+            </tr>
+          ))}
+        </ReportTable>
+        <ReportTable title="By campaign" cols={["Campaign", "Impr", "Clicks", "Spend"]}>
+          {perCampaign.map((r, i) => (
+            <tr key={i} className="border-t border-slate-800">
+              <td className="py-1.5 pr-2 text-white truncate max-w-40">{r.title}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{r.impressions.toLocaleString()}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{r.clicks.toLocaleString()}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">${r.spend.toFixed(2)}</td>
+            </tr>
+          ))}
+        </ReportTable>
+      </div>
+      <p className="text-[10px] text-slate-500">
+        Network (AdSense / Ad Manager) ads show served impressions only — their clicks &amp; revenue are in the network&apos;s own console.
+      </p>
     </div>
   );
 }
+
+function ReportTable({ title, cols, children }: { title: string; cols: string[]; children: React.ReactNode }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">{title}</p>
+      <div className="overflow-x-auto scrollbar-thin">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-[10px] uppercase tracking-wider text-slate-500">
+              <th className="text-left pb-1.5">{cols[0]}</th>
+              {cols.slice(1).map((c) => (
+                <th key={c} className="text-right pb-1.5">{c}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>{children}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+function spaceSizeLabel(name: string): string {
+  const s = AD_SIZES.find((x) => x.key === placementSizeKey(name));
+  if (!s || s.w == null || s.h == null) return "Responsive (full width)";
+  return `${s.w}×${s.h}`;
+}
+
+interface PreviewAd { html?: string; videoUrl?: string; imageUrl?: string; title?: string }
+
+/** Live, side-effect-free preview of a real served creative for a placement. */
+function SpacePreview({ placement, isFeed }: { placement: string; isFeed: boolean }) {
+  const [ad, setAd] = useState<PreviewAd | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let active = true;
+    fetch(`/api/admin/ads/preview?placement=${encodeURIComponent(placement)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => active && setAd(d?.ad ?? null))
+      .catch(() => {})
+      .finally(() => active && setLoaded(true));
+    return () => {
+      active = false;
+    };
+  }, [placement]);
+
+  const dim = resolveAdSize(placementSizeKey(placement));
+  const ratio = dim ? `${dim.w} / ${dim.h}` : undefined;
+
+  if (!loaded) {
+    return <div className="rounded-lg bg-slate-950 border border-slate-800 animate-pulse" style={{ aspectRatio: ratio, minHeight: 56 }} />;
+  }
+  if (!ad) {
+    return (
+      <div
+        className="rounded-lg bg-slate-950 border border-dashed border-slate-800 grid place-items-center text-[10px] text-slate-600 p-3 text-center"
+        style={{ aspectRatio: ratio, minHeight: 56 }}
+      >
+        No active ad — {isFeed ? "native" : "banner"} space
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-lg overflow-hidden border border-slate-800 bg-slate-950 mx-auto w-full" style={{ aspectRatio: ratio, maxWidth: dim?.w }}>
+      {ad.html ? (
+        <SandboxedAdFrame html={ad.html} height={dim?.h ?? 120} badge={false} />
+      ) : ad.videoUrl ? (
+        <video src={ad.videoUrl} muted autoPlay loop playsInline className="w-full h-full object-cover" />
+      ) : ad.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={ad.imageUrl} alt="" className="w-full h-full object-cover" />
+      ) : (
+        <div className="p-3 text-xs text-slate-300 truncate">{ad.title ?? "Ad"}</div>
+      )}
+    </div>
+  );
+}
+
 function IconBtn({ children, onClick, title, danger }: { children: React.ReactNode; onClick: () => void; title: string; danger?: boolean }) {
   return (
     <button onClick={onClick} title={title} className={`p-2 rounded-lg bg-slate-800 hover:bg-slate-700 ${danger ? "text-red-400" : "text-slate-300"}`}>
@@ -1117,11 +1458,32 @@ function AdModal({
   const [videoUrl, setVideoUrl] = useState(ad?.videoUrl ?? "");
   const [targetUrl, setTargetUrl] = useState(ad?.targetUrl ?? "");
   const [htmlContent, setHtmlContent] = useState(ad?.htmlContent ?? "");
-  // Creative kind: IMAGE (incl. GIF) | VIDEO | HTML. Drives the DB `type`.
-  const [creative, setCreative] = useState<"IMAGE" | "VIDEO" | "HTML">(
-    ad?.type === "HTML" ? "HTML" : ad?.videoUrl ? "VIDEO" : "IMAGE"
+  // Creative kind: IMAGE (incl. GIF) | VIDEO | HTML | NETWORK. Drives the DB `type`.
+  const [creative, setCreative] = useState<"IMAGE" | "VIDEO" | "HTML" | "NETWORK">(
+    ad?.type === "ADSENSE" || ad?.type === "GAM"
+      ? "NETWORK"
+      : ad?.type === "HTML"
+      ? "HTML"
+      : ad?.videoUrl
+      ? "VIDEO"
+      : "IMAGE"
   );
-  const [size, setSize] = useState(ad?.size ?? "responsive");
+  // Ad-network config (creative NETWORK): provider + AdSense slot / GAM ad-unit.
+  const [provider, setProvider] = useState<"adsense" | "gam" | "custom">(
+    ad?.type === "ADSENSE" ? "adsense" : ad?.type === "GAM" ? "gam" : "custom"
+  );
+  const [adSlot, setAdSlot] = useState(ad?.adSlot ?? "");
+  const [adUnitPath, setAdUnitPath] = useState(ad?.adUnitPath ?? "");
+  const [adClient, setAdClient] = useState(ad?.adClient ?? "");
+  // Optional third-party tracking pixels (any type).
+  const [impressionPixel, setImpressionPixel] = useState(ad?.impressionPixel ?? "");
+  const [clickTracker, setClickTracker] = useState(ad?.clickTracker ?? "");
+  const [size, setSize] = useState(
+    ad?.size ??
+      placementSizeKey(
+        placements.find((pl) => pl.id === (ad?.placement.id ?? placements[0]?.id))?.name ?? ""
+      )
+  );
   const [width, setWidth] = useState(String(ad?.width ?? ""));
   const [height, setHeight] = useState(String(ad?.height ?? ""));
   const [weight, setWeight] = useState(String(ad?.weight ?? 10));
@@ -1145,15 +1507,33 @@ function AdModal({
     }
     setBusy(true);
     try {
+      const type =
+        creative === "NETWORK"
+          ? provider === "adsense"
+            ? "ADSENSE"
+            : provider === "gam"
+            ? "GAM"
+            : "HTML"
+          : creative === "HTML"
+          ? "HTML"
+          : "LOCAL";
       const payload = {
         campaignId,
         placementId,
-        type: creative === "HTML" ? "HTML" : "LOCAL",
+        type,
         format,
         contentUrl: creative === "IMAGE" ? contentUrl : "",
         videoUrl: creative === "VIDEO" ? videoUrl : "",
         targetUrl,
-        htmlContent: creative === "HTML" ? htmlContent : "",
+        htmlContent:
+          creative === "HTML" || (creative === "NETWORK" && provider === "custom")
+            ? htmlContent
+            : "",
+        adSlot: type === "ADSENSE" ? adSlot : "",
+        adUnitPath: type === "GAM" ? adUnitPath : "",
+        adClient: type === "ADSENSE" ? adClient : "",
+        impressionPixel,
+        clickTracker,
         size,
         width: size === "custom" ? Number(width) || null : null,
         height: size === "custom" ? Number(height) || null : null,
@@ -1203,19 +1583,53 @@ function AdModal({
         <div>
           <label className="block text-xs text-slate-400 mb-1">Creative</label>
           <div className="flex gap-2">
-            {(["IMAGE", "VIDEO", "HTML"] as const).map((c) => (
+            {(["IMAGE", "VIDEO", "HTML", "NETWORK"] as const).map((c) => (
               <button
                 key={c}
                 onClick={() => setCreative(c)}
                 className={`flex-1 py-2 rounded-lg text-sm font-semibold ${creative === c ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}
               >
-                {c === "IMAGE" ? "Image / GIF" : c === "VIDEO" ? "Video" : "HTML / Script"}
+                {c === "IMAGE" ? "Image / GIF" : c === "VIDEO" ? "Video" : c === "HTML" ? "HTML / Script" : "Ad Network"}
               </button>
             ))}
           </div>
         </div>
 
-        {creative === "HTML" ? (
+        {creative === "NETWORK" ? (
+          <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-900/40 p-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Ad network</label>
+              <select value={provider} onChange={(e) => setProvider(e.target.value as typeof provider)} className={inputCls}>
+                <option value="adsense">Google AdSense</option>
+                <option value="gam">Google Ad Manager (GPT)</option>
+                <option value="custom">Other network (paste script)</option>
+              </select>
+            </div>
+            {provider === "adsense" ? (
+              <>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Ad slot id (data-ad-slot)</label>
+                  <input value={adSlot} onChange={(e) => setAdSlot(e.target.value)} className={inputCls} placeholder="1234567890" />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">Client override (optional)</label>
+                  <input value={adClient} onChange={(e) => setAdClient(e.target.value)} className={inputCls} placeholder="ca-pub-… (defaults to global)" />
+                </div>
+              </>
+            ) : provider === "gam" ? (
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Ad-unit path</label>
+                <input value={adUnitPath} onChange={(e) => setAdUnitPath(e.target.value)} className={inputCls} placeholder="/22106938064/my_banner or my_banner" />
+                <p className="text-[10px] text-slate-500 mt-1">Bare name uses the global network code. Set size below (default 300×250).</p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Network snippet (HTML / script)</label>
+                <textarea value={htmlContent} onChange={(e) => setHtmlContent(e.target.value)} rows={4} className={inputCls} placeholder="<script>…</script> from any ad network" />
+              </div>
+            )}
+          </div>
+        ) : creative === "HTML" ? (
           <div>
             <label className="block text-xs text-slate-400 mb-1">
               HTML content (scripts / ad-network tags run in a sandboxed frame)
@@ -1233,6 +1647,17 @@ function AdModal({
             <ImageUploadField value={contentUrl} onChange={setContentUrl} previewSize="md" />
           </div>
         )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Impression pixel URL (optional)</label>
+            <input value={impressionPixel} onChange={(e) => setImpressionPixel(e.target.value)} className={inputCls} placeholder="https://…/imp.gif" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Click-tracker URL (optional)</label>
+            <input value={clickTracker} onChange={(e) => setClickTracker(e.target.value)} className={inputCls} placeholder="https://…/click" />
+          </div>
+        </div>
 
         <div>
           <label className="block text-xs text-slate-400 mb-1">Size</label>

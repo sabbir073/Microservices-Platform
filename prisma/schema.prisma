@@ -17,6 +17,10 @@ enum UserRole {
   SUPPORT_ADMIN
   MARKETING_ADMIN
   MODERATOR
+  // Advertiser/agency console (user-side, not an admin-panel role).
+  AGENCY
+  // Ad Manager admin — scoped to the Ads Manager surface.
+  AD_MANAGER
 }
 
 enum UserStatus {
@@ -80,6 +84,7 @@ enum TransactionType {
   DEPOSIT
   AFFILIATE_COMMISSION
   ADMIN_FEE
+  AD_CREDIT_PURCHASE
 }
 
 // What earning generated a referral commission. Currently only tasks pay
@@ -365,12 +370,20 @@ model Ad {
   campaign    AdCampaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   placementId String
   placement   AdPlacement @relation(fields: [placementId], references: [id])
-  type        String      @default("LOCAL")
+  type        String      @default("LOCAL") // LOCAL | HTML | ADSENSE | GAM
   format      String      @default("BANNER") // BANNER | NATIVE (feed post-like)
   contentUrl  String?     // image / GIF creative URL
   videoUrl    String?     // MP4/WebM video creative URL
   targetUrl   String?
   htmlContent String?     @db.Text
+  // Third-party ad-network config (type ADSENSE | GAM). The self-contained
+  // creative HTML is composed server-side in src/lib/ad-network.ts.
+  adSlot      String?     // AdSense ad-slot id (data-ad-slot)
+  adUnitPath  String?     // Google Ad Manager ad-unit path (/network/unit)
+  adClient    String?     // optional per-ad AdSense client override (ca-pub-…)
+  // Optional third-party tracking pixels (any type).
+  impressionPixel String? // 1×1 beacon fired on view
+  clickTracker    String? // pinged on click (local creatives)
   // Creative size — preset key (see src/lib/ad-sizes.ts); width/height used for "custom"
   size        String?     @default("responsive")
   width       Int?
@@ -438,6 +451,22 @@ model AdView {
   @@index([adId])
   @@index([userId, adId, createdAt])
   @@index([createdAt])
+}
+
+// Advertiser ad-credit history. `delta` is the signed USD change to
+// User.adCreditBalance; `kind` classifies it. Bare userId (no back-relation
+// needed on both sides — mirrors other ledger patterns).
+model AdCreditLedger {
+  id           String   @id @default(cuid())
+  userId       String
+  delta        Decimal  @db.Decimal(18, 6)
+  kind         String   // PURCHASE | GRANT | CAMPAIGN_FUND | REFUND
+  balanceAfter Decimal? @db.Decimal(18, 6)
+  reference    String?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model PushSubscription {
@@ -532,6 +561,8 @@ model OfferwallCallback {
   userPayout    Int     // points
   currency      String   @default("USD")
   status        String   @default("PENDING") // PENDING | APPROVED | REJECTED | FRAUD | CHARGEBACK
+  internalOfferId String? // resolved OfferwallOffer.id from the subid (catalog credit)
+  isReversal    Boolean  @default(false) // chargeback / reconciliation negative postback
   fraudScore    Int     @default(0)
   fraudReasons  String[]
   ipAddress     String?
@@ -833,6 +864,9 @@ model User {
   status            UserStatus  @default(PENDING_VERIFICATION)
   pointsBalance     Int         @default(0)
   cashBalance       Decimal     @default(0) @db.Decimal(18, 6)
+  // Non-withdrawable ad-spend wallet (USD, 1 credit = $1). Bought with cash/
+  // points or admin-granted; campaign budgets are funded from this.
+  adCreditBalance   Decimal     @default(0) @db.Decimal(18, 6)
   totalEarnings     Decimal     @default(0) @db.Decimal(18, 6)
   totalWithdrawals  Decimal     @default(0) @db.Decimal(18, 6)
   xp                Int         @default(0)
@@ -852,6 +886,7 @@ model User {
   kycApprovedAt     DateTime?
   kycPromptedAt     DateTime?   // set once when we nudge a completed-profile user to do KYC
   featureOverrides  Json?       // per-user feature grants/denials { [featureKey]: boolean } overriding the package
+  permissionOverrides Json?     // per-user RBAC permission grants/denials { [permission]: boolean } on top of the role
   isBlueVerified    Boolean     @default(false)
   // Visual style for the verified badge. Null/"BLUE" = classic blue tick.
   // Other presets (GOLD, RAINBOW, EMERALD, PURPLE, ROSE, OCEAN) render
@@ -2811,6 +2846,100 @@ model OfferwallConfig {
   config      Json?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+// ── Internal offerwall catalog (curated + provider-synced offers) ──
+// Loose coupling (plain userId/providerId strings, no User FK) matches the
+// existing OfferwallCallback style. Offers are grouped into categories and
+// completed one-by-one (sequential unlock via `order`), country-targeted,
+// with per-offer points + completion mode (proof / postback / manual).
+model OfferwallCategory {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  slug        String           @unique
+  description String?
+  icon        String?
+  color       String?
+  order       Int              @default(0)
+  isActive    Boolean          @default(true)
+  offers      OfferwallOffer[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([isActive, order])
+}
+
+model OfferwallOffer {
+  id                  String                @id @default(cuid())
+  categoryId          String
+  category            OfferwallCategory     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  title               String
+  description         String?               @db.Text
+  instructions        String[]              // ordered steps shown to the user
+  imageUrl            String?
+  points              Int                   @default(0)
+  payoutUsd           Decimal?              @db.Decimal(18, 6)
+  countries           String[]              @default([]) // empty = all countries
+  order               Int                   @default(0)  // sequential-unlock order within the category
+  trackingUrlTemplate String?               @db.Text     // Start Work destination; supports {userId}/{clickId}
+  source              String                @default("MANUAL") // MANUAL | PROVIDER
+  providerId          String?               // OfferwallConfig.id when source = PROVIDER
+  externalOfferId     String?               // provider's offer id (postback match + sync upsert)
+  completionMode      String                @default("PROOF") // PROOF | POSTBACK | MANUAL
+  proofScreenshot     Boolean               @default(true)
+  dailyLimit          Int?
+  oneTimePerUser      Boolean               @default(true)
+  holdHours           Int                   @default(0)
+  featured            Boolean               @default(false)
+  isActive            Boolean               @default(true)
+  completions         OfferwallCompletion[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([isActive, categoryId, order])
+  @@index([providerId, externalOfferId])
+}
+
+// One "Start Work" click — the subid glue matched by the provider postback.
+model OfferwallClick {
+  id        String   @id @default(cuid()) // = clickId / subid passed into the tracking URL
+  userId    String
+  offerId   String
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, offerId])
+  @@index([createdAt])
+}
+
+model OfferwallCompletion {
+  id              String         @id @default(cuid())
+  userId          String
+  offerId         String
+  offer           OfferwallOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  categoryId      String?
+  status          String         @default("STARTED") // STARTED | PENDING | APPROVED | REJECTED | REVERSED
+  proofImages     String[]
+  points          Int            @default(0)
+  payoutUsd       Decimal?       @db.Decimal(18, 6)
+  providerId      String?
+  txid            String? // provider transaction id (postback dedup)
+  clickId         String?
+  reviewedById    String?
+  reviewNote      String?        @db.Text
+  rejectionReason String?        @db.Text
+  heldUntil       DateTime?
+  creditedAt      DateTime?
+  reversedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  // Postback idempotency. (providerId,txid) both-null rows are allowed for
+  // proof/manual completions since Postgres treats NULLs as distinct.
+  @@unique([providerId, txid])
+  @@index([userId, status])
+  @@index([offerId, status])
+  @@index([status, heldUntil])
 }
 
 model VideoAdConfig {

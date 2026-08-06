@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import {
   normalizeSocialConfig,
   validateSocialBundle,
   bundleTotalPoints,
 } from "@/lib/social-tasks";
+import {
+  validateAppInstallConfig,
+  normalizeAppInstallConfig,
+  type AppInstallConfig,
+} from "@/lib/app-install-tasks";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -20,8 +25,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const adminRole = session.user.role as UserRole | undefined;
-    if (!hasPermission(adminRole, "tasks.view")) {
+    if (!(await can(session.user.id, "tasks.view"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -72,8 +76,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const adminRole = session.user.role as UserRole | undefined;
-    if (!hasPermission(adminRole, "tasks.edit")) {
+    if (!(await can(session.user.id, "tasks.edit"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -175,6 +178,19 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         null;
     }
 
+    // APPINSTALL: validate + normalize server-side (mirror the create route, so
+    // proof requirements / app-kind persist cleanly instead of raw client JSON).
+    let appInstallConfigOut = appInstallConfig
+      ? JSON.parse(JSON.stringify(appInstallConfig))
+      : null;
+    if (type === "APPINSTALL" && appInstallConfig) {
+      const err = validateAppInstallConfig(appInstallConfig);
+      if (err) return NextResponse.json({ error: err }, { status: 400 });
+      appInstallConfigOut = JSON.parse(
+        JSON.stringify(normalizeAppInstallConfig(appInstallConfig as AppInstallConfig))
+      );
+    }
+
     // Update the task
     const task = await prisma.task.update({
       where: { id },
@@ -216,9 +232,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         customConfig: customConfig
           ? JSON.parse(JSON.stringify(customConfig))
           : null,
-        appInstallConfig: appInstallConfig
-          ? JSON.parse(JSON.stringify(appInstallConfig))
-          : null,
+        appInstallConfig: appInstallConfigOut,
         proxyInstructions: proxyInstructions || null,
         startsAt: startsAt ? new Date(startsAt) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
@@ -260,8 +274,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const adminRole = session.user.role as UserRole | undefined;
-    if (!hasPermission(adminRole, "tasks.delete")) {
+    if (!(await can(session.user.id, "tasks.delete"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -300,8 +313,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const adminRole = session.user.role as UserRole | undefined;
-    if (!hasPermission(adminRole, "tasks.edit")) {
+    if (!(await can(session.user.id, "tasks.edit"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

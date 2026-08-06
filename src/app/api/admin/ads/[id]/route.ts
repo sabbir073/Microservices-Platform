@@ -1,21 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@/generated/prisma/client";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import { normalizeTargeting, type AdTargeting } from "@/lib/ad-targeting";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-const AD_TYPES = ["LOCAL", "HTML", "SDK", "META"];
+const AD_TYPES = ["LOCAL", "HTML", "ADSENSE", "GAM"];
 const AD_STATUSES = ["ACTIVE", "INACTIVE", "PAUSED"];
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const session = await auth();
-  const role = session?.user?.role as UserRole | undefined;
-  if (!session?.user || !hasPermission(role, "ads.manage")) {
+  if (!session?.user || !(await can(session.user.id, "ads.manage"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;
@@ -29,6 +28,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (body.videoUrl !== undefined) data.videoUrl = body.videoUrl ? String(body.videoUrl) : null;
   if (body.targetUrl !== undefined) data.targetUrl = body.targetUrl ? String(body.targetUrl) : null;
   if (body.htmlContent !== undefined) data.htmlContent = body.htmlContent ? String(body.htmlContent) : null;
+  if (body.adSlot !== undefined) data.adSlot = body.adSlot ? String(body.adSlot) : null;
+  if (body.adUnitPath !== undefined) data.adUnitPath = body.adUnitPath ? String(body.adUnitPath) : null;
+  if (body.adClient !== undefined) data.adClient = body.adClient ? String(body.adClient) : null;
+  if (body.impressionPixel !== undefined) data.impressionPixel = body.impressionPixel ? String(body.impressionPixel) : null;
+  if (body.clickTracker !== undefined) data.clickTracker = body.clickTracker ? String(body.clickTracker) : null;
   if (body.size !== undefined) data.size = body.size ? String(body.size) : "responsive";
   if (body.width !== undefined)
     data.width = Number.isFinite(Number(body.width)) && Number(body.width) > 0 ? Math.round(Number(body.width)) : null;
@@ -59,8 +63,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const session = await auth();
-  const role = session?.user?.role as UserRole | undefined;
-  if (!session?.user || !hasPermission(role, "ads.manage")) {
+  if (!session?.user || !(await can(session.user.id, "ads.manage"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;

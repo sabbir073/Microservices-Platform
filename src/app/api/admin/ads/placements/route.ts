@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import { ensureDefaultPlacements } from "@/lib/ad-placements-server";
 import { getSetting } from "@/lib/system-settings";
+import { getAdDensity } from "@/lib/ad-density";
 
 export async function GET() {
   const session = await auth();
-  const role = session?.user?.role as UserRole | undefined;
-  if (!session?.user || !hasPermission(role, "ads.view")) {
+  if (!session?.user || !(await can(session.user.id, "ads.view"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   // Make sure the canonical slots always exist.
@@ -62,14 +62,23 @@ export async function GET() {
     100,
     Math.max(0.001, Number(await getSetting<number>("ads.cpcUsd", 0.05)) || 0.05)
   );
+  const adsenseClient = String((await getSetting<string>("ads.adsense_client", "")) || "");
+  const gamNetworkCode = String((await getSetting<string>("ads.gam_network_code", "")) || "");
+  const density = await getAdDensity();
 
-  return NextResponse.json({ placements: withStats, rotationSeconds, cpcUsd });
+  return NextResponse.json({
+    placements: withStats,
+    rotationSeconds,
+    cpcUsd,
+    adsenseClient,
+    gamNetworkCode,
+    density,
+  });
 }
 
 export async function POST(request: NextRequest) {
   const session = await auth();
-  const role = session?.user?.role as UserRole | undefined;
-  if (!session?.user || !hasPermission(role, "ads.manage")) {
+  if (!session?.user || !(await can(session.user.id, "ads.manage"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const body = await request.json().catch(() => ({}));

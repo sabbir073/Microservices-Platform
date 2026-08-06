@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
-import { hasPermission, type UserRole } from "@/lib/rbac";
+import { refundCampaignBudgetToCredit } from "@/lib/ad-credits";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -9,8 +10,7 @@ interface RouteParams {
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   const session = await auth();
-  const role = session?.user?.role as UserRole | undefined;
-  if (!session?.user || !hasPermission(role, "ads.manage")) {
+  if (!session?.user || !(await can(session.user.id, "ads.manage"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;
@@ -29,16 +29,21 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (body.startAt !== undefined) data.startAt = parseDate(body.startAt);
   if (body.endAt !== undefined) data.endAt = parseDate(body.endAt);
   const campaign = await prisma.adCampaign.update({ where: { id }, data });
+  // Ending a campaign returns its unspent budget to the owner's ad credit.
+  if (data.status === "ENDED") {
+    await refundCampaignBudgetToCredit(id).catch(() => {});
+  }
   return NextResponse.json({ campaign });
 }
 
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
   const session = await auth();
-  const role = session?.user?.role as UserRole | undefined;
-  if (!session?.user || !hasPermission(role, "ads.manage")) {
+  if (!session?.user || !(await can(session.user.id, "ads.manage"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;
+  // Return unspent budget to the owner's ad credit before deleting.
+  await refundCampaignBudgetToCredit(id).catch(() => {});
   await prisma.adCampaign.delete({ where: { id } }); // cascades to its ads
   return NextResponse.json({ success: true });
 }

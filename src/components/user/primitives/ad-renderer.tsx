@@ -4,9 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveAdSize } from "@/lib/ad-sizes";
+import { placementSizeKey } from "@/lib/ad-placements";
+import { SandboxedAdFrame } from "@/components/user/primitives/sandboxed-ad-frame";
 
 export type AdPlacement =
   | "IN_FEED"
+  | "FEED_POST_BELOW"
   | "FEED_SIDEBAR"
   | "TASK_LIST"
   | "TASK_START"
@@ -17,12 +20,11 @@ export type AdPlacement =
   | "VIDEO_INTERSTITIAL"
   | "DASHBOARD"
   | "EARN_HUB"
-  | "EARN_PROMOTE"
   | "WALLET_TOP"
   | "MARKETPLACE_TOP"
   | "PROFILE_BOTTOM";
 
-export type AdType = "LOCAL" | "HTML" | "SDK" | "META";
+export type AdType = "LOCAL" | "HTML" | "ADSENSE" | "GAM";
 
 export interface AdResponse {
   id: string;
@@ -38,6 +40,8 @@ export interface AdResponse {
   size?: string;
   width?: number;
   height?: number;
+  impressionPixel?: string;
+  clickTracker?: string;
 }
 
 interface AdRendererProps {
@@ -64,6 +68,8 @@ export function AdRenderer({
   const [ad, setAd] = useState<AdResponse | null>(initialAd);
   const [error, setError] = useState(false);
   const [fading, setFading] = useState(false);
+  // Reserve space during the first fetch (no SSR ad) so the slot doesn't jump.
+  const [loading, setLoading] = useState(!initialAd);
   // Rotation interval (ms) reported by the server; 0 = don't auto-rotate
   // (single-ad space or ad-free viewer). Seeded from the SSR value when present.
   const rotateMsRef = useRef(initialRotateMs);
@@ -168,7 +174,9 @@ export function AdRenderer({
       // positive.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       void loadAd({ initial: true }).then((ok) => {
-        if (cancelled || !ok) return;
+        if (cancelled) return;
+        setLoading(false);
+        if (!ok) return;
         startTimer();
         document.addEventListener("visibilitychange", onVisibility);
       });
@@ -181,7 +189,26 @@ export function AdRenderer({
     };
   }, [loadAd, initialAd, placement]);
 
-  if (error || !ad) return null;
+  if (error) return null;
+  if (!ad) {
+    // Truly no ad → collapse (no permanent blank box).
+    if (!loading) return null;
+    // First load in flight → reserve a size-shaped skeleton so nothing jumps.
+    const reserved = resolveAdSize(placementSizeKey(placement));
+    return (
+      <div
+        className={cn(
+          "rounded-2xl border border-gray-800 bg-gray-900/40 animate-pulse mx-auto",
+          className
+        )}
+        style={{
+          aspectRatio: reserved ? `${reserved.w} / ${reserved.h}` : undefined,
+          maxWidth: reserved?.w,
+          minHeight: reserved ? undefined : 90,
+        }}
+      />
+    );
+  }
 
   const trackClick = () => {
     fetch(`/api/spaces/${ad.id}/event`, {
@@ -189,6 +216,14 @@ export function AdRenderer({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ kind: "open" }),
     }).catch(() => {});
+    // Optional third-party click tracker.
+    if (ad.clickTracker) {
+      try {
+        void fetch(ad.clickTracker, { mode: "no-cors", keepalive: true });
+      } catch {
+        /* best-effort */
+      }
+    }
   };
 
   const dim = resolveAdSize(ad.size, ad.width, ad.height);
@@ -204,29 +239,18 @@ export function AdRenderer({
     transition: "opacity 180ms ease",
   } as const;
 
-  // HTML / ad-network tag creative — run inside a sandboxed iframe so injected
-  // <script> actually executes (dangerouslySetInnerHTML never runs scripts).
-  if (ad.type === "HTML" && ad.html) {
+  // HTML / AdSense / GAM creative — runs inside the shared sandboxed iframe so
+  // injected <script> actually executes (dangerouslySetInnerHTML never does).
+  if (
+    (ad.type === "HTML" || ad.type === "ADSENSE" || ad.type === "GAM") &&
+    ad.html
+  ) {
     return (
-      <div
-        className={cn(
-          "relative rounded-xl overflow-hidden border border-gray-800 bg-gray-900 mx-auto",
-          className
-        )}
-        style={outerStyle}
-      >
-        {/* Compliant disclosure badge — kept for FTC/EU. The iframe title is
-            neutral (no "Sponsored") so cosmetic filters can't select it. */}
-        <span className="absolute top-2 right-2 z-10 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur text-[9px] font-bold uppercase tracking-wider text-white/90">
-          <Megaphone className="w-2.5 h-2.5" />
-          Sponsored
-        </span>
-        <iframe
-          title="Embedded content"
-          srcDoc={ad.html}
-          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
-          className="block w-full border-0"
-          style={{ height: dim?.h ?? 250 }}
+      <div className={cn("mx-auto", className)} style={outerStyle}>
+        <SandboxedAdFrame
+          html={ad.html}
+          height={dim?.h ?? 250}
+          impressionPixel={ad.impressionPixel}
         />
       </div>
     );
@@ -248,6 +272,10 @@ export function AdRenderer({
         <Megaphone className="w-2.5 h-2.5" />
         Sponsored
       </span>
+      {ad.impressionPixel ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={ad.impressionPixel} alt="" width={1} height={1} className="absolute bottom-0 right-0 opacity-0 pointer-events-none" />
+      ) : null}
       {ad.videoUrl ? (
         <video
           src={ad.videoUrl}
