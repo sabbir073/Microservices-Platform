@@ -1,3 +1,4 @@
+import { parsePage } from "@/lib/paginate";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -22,11 +23,14 @@ import {
   ADMIN_ROLES,
   ROLE_CONFIG,
   ROLE_PERMISSIONS,
-  TASK_CREATE_PERMISSIONS,
+  PERMISSION_CATALOG,
+  FINANCE_PERMISSIONS,
+  SUPERADMIN_ONLY_PERMISSIONS,
 } from "@/lib/rbac";
 import { getRolePermissionConfig } from "@/lib/permissions";
 import { AdminTable } from "@/components/admin/ui/admin-table";
 import { RolePermissionEditor } from "@/components/admin/access/role-permission-editor";
+import { CustomRolesManager } from "@/components/admin/access/custom-roles-manager";
 
 interface PageProps {
   searchParams: Promise<{
@@ -45,111 +49,6 @@ const VIEW_TABS: Array<{ id: ViewId; label: string; icon: typeof Shield }> = [
   { id: "roles", label: "Roles & Permissions", icon: Key },
 ];
 
-const PERMISSION_CATEGORIES: Array<{ label: string; permissions: string[] }> = [
-  {
-    label: "Users & KYC",
-    permissions: [
-      "users.view",
-      "users.edit",
-      "users.ban",
-      "users.delete",
-      "users.adjust_balance",
-      "users.impersonate",
-      "kyc.view",
-      "kyc.approve",
-      "kyc.reject",
-    ],
-  },
-  {
-    label: "Content & Earning",
-    permissions: [
-      "tasks.view",
-      "tasks.create",
-      "tasks.edit",
-      "tasks.delete",
-      "submissions.view",
-      "submissions.approve",
-      "submissions.reject",
-      "boards.view",
-      "courses.view",
-      "courses.manage",
-      "quizzes.view",
-      "quizzes.manage",
-      "missions.view",
-      "missions.manage",
-      "lottery.view",
-      "lottery.manage",
-    ],
-  },
-  {
-    label: "Finance",
-    permissions: [
-      "withdrawals.view",
-      "withdrawals.process",
-      "withdrawals.approve",
-      "withdrawals.reject",
-      "payment_methods.view",
-      "payment_methods.manage",
-      "packages.view",
-      "packages.edit",
-      "referrals.view",
-      "referrals.configure",
-    ],
-  },
-  {
-    label: "Marketplace & Social",
-    permissions: [
-      "marketplace.view",
-      "marketplace.manage",
-      "marketplace.disputes",
-      "social.moderate",
-      "moderation.view",
-      "moderation.manage",
-    ],
-  },
-  {
-    label: "Marketing",
-    permissions: [
-      "campaigns.view",
-      "campaigns.manage",
-      "notifications.view",
-      "notifications.send",
-      "banners.view",
-      "banners.manage",
-      "ads.view",
-      "ads.manage",
-      "landing.view",
-      "landing.edit",
-      "ticker.view",
-      "ticker.edit",
-    ],
-  },
-  {
-    label: "System",
-    permissions: [
-      "analytics.view",
-      "analytics.export",
-      "ai.view",
-      "ai.manage",
-      "settings.view",
-      "settings.edit",
-      "admins.view",
-      "admins.manage",
-      "logs.view",
-      "fraud.view",
-      "fraud.manage",
-      "proxy.view",
-      "proxy.manage",
-      "media.view",
-      "media.manage",
-      "leaderboards.view",
-      "leaderboards.manage",
-      "offerwalls.view",
-      "offerwalls.manage",
-    ],
-  },
-];
-
 export default async function AdminAccessPage({ searchParams }: PageProps) {
   const session = await auth();
 
@@ -165,7 +64,7 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
   const params = await searchParams;
   const view: ViewId = (VIEW_TABS.find((t) => t.id === params.view)?.id ??
     "admins") as ViewId;
-  const page = Math.max(1, parseInt(params.page || "1"));
+  const page = parsePage(params.page);
   const pageSize = 20;
   const skip = (page - 1) * pageSize;
   const roleFilter = params.role || "";
@@ -173,6 +72,30 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
 
   // Saved role→permission overrides (for the editable Roles & Permissions tab).
   const savedRolePerms = view === "roles" ? await getRolePermissionConfig() : {};
+  const customRolesRaw =
+    view === "roles"
+      ? await prisma.customRole.findMany({
+          orderBy: { name: "asc" },
+          include: { _count: { select: { users: true } } },
+        })
+      : [];
+  const customRoles = (
+    customRolesRaw as unknown as Array<{
+      id: string;
+      name: string;
+      color: string | null;
+      permissions: string[];
+      isActive: boolean;
+      _count: { users: number };
+    }>
+  ).map((r) => ({
+    id: r.id,
+    name: r.name,
+    color: r.color,
+    permissions: r.permissions,
+    isActive: r.isActive,
+    userCount: r._count.users,
+  }));
 
   // Activity log fetch (only for activity tab)
   const activityLogs =
@@ -456,20 +379,39 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
           const defaults = Object.fromEntries(
             editableRoles.map((r) => [r.role, ROLE_PERMISSIONS[r.role as UserRole]])
           );
-          // Fold the per-task-type create permissions into "Content & Earning".
-          const editorCategories = PERMISSION_CATEGORIES.map((c) =>
-            c.label === "Content & Earning"
-              ? { ...c, permissions: [...c.permissions, ...TASK_CREATE_PERMISSIONS] }
-              : c
+          // Use the canonical permission catalog (rbac.ts) — the single source of
+          // truth, already grouped and inclusive of every key (finance.view,
+          // task-create subtypes, marketplace.mediate, etc.).
+          const editorCategories = PERMISSION_CATALOG.map((c) => ({
+            label: c.label,
+            permissions: [...c.permissions],
+          }));
+          // Finance is hidden for every editable role except FINANCE_ADMIN;
+          // admins.manage is hidden for all (super-admin-only). Never offered.
+          const hiddenPermsByRole = Object.fromEntries(
+            editableRoles.map((r) => [
+              r.role,
+              [
+                ...SUPERADMIN_ONLY_PERMISSIONS,
+                ...(r.role === "FINANCE_ADMIN" ? [] : FINANCE_PERMISSIONS),
+              ],
+            ])
           );
           return (
-            <RolePermissionEditor
-              editableRoles={editableRoles}
-              categories={editorCategories}
-              defaults={defaults as Record<string, string[]>}
-              config={savedRolePerms as Record<string, string[]>}
-              canManage={isSuperAdmin(adminRole)}
-            />
+            <div className="space-y-6">
+              <RolePermissionEditor
+                editableRoles={editableRoles}
+                categories={editorCategories}
+                defaults={defaults as Record<string, string[]>}
+                config={savedRolePerms as Record<string, string[]>}
+                canManage={isSuperAdmin(adminRole)}
+                hiddenPermsByRole={hiddenPermsByRole as Record<string, string[]>}
+              />
+              <CustomRolesManager
+                initial={customRoles}
+                canManage={isSuperAdmin(adminRole)}
+              />
+            </div>
           );
         })()}
 

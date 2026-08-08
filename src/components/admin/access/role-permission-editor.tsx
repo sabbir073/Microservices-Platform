@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { permissionLabel, permissionDescription } from "@/lib/rbac";
 import {
   Loader2,
   ChevronDown,
@@ -21,6 +22,8 @@ interface Props {
   defaults: Record<string, string[]>;
   config: Record<string, string[]>;
   canManage: boolean;
+  /** Per-role permissions to hide from the picker (e.g. finance/super-only). */
+  hiddenPermsByRole?: Record<string, string[]>;
 }
 
 export function RolePermissionEditor({
@@ -29,6 +32,7 @@ export function RolePermissionEditor({
   defaults,
   config,
   canManage,
+  hiddenPermsByRole,
 }: Props) {
   // Seed each role's permission set from saved config, else code defaults.
   const seed = useMemo(() => {
@@ -46,6 +50,13 @@ export function RolePermissionEditor({
   const [saving, setSaving] = useState(false);
 
   const cur = sets[selected] ?? new Set<string>();
+
+  // Hide permissions this role may never hold (finance for non-finance roles,
+  // admins.manage for all editable roles) — never-offered, not just stripped.
+  const hidden = new Set(hiddenPermsByRole?.[selected] ?? []);
+  const visibleCategories = categories
+    .map((c) => ({ ...c, permissions: c.permissions.filter((p) => !hidden.has(p)) }))
+    .filter((c) => c.permissions.length > 0);
 
   const mutate = (fn: (s: Set<string>) => void) => {
     if (!canManage) return;
@@ -169,7 +180,7 @@ export function RolePermissionEditor({
 
       {/* Category toggles + advanced */}
       <div className="mt-5 space-y-3">
-        {categories.map((cat) => {
+        {visibleCategories.map((cat) => {
           const state = catState(cat);
           const open = expanded[cat.label] ?? false;
           return (
@@ -225,10 +236,11 @@ export function RolePermissionEditor({
                         key={perm}
                         onClick={() => togglePerm(perm)}
                         disabled={!canManage}
-                        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-800/60 disabled:opacity-60"
+                        title={perm}
+                        className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-slate-800/60 disabled:opacity-60"
                       >
                         <span
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                          className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
                             on
                               ? "border-emerald-500 bg-emerald-500/20 text-emerald-400"
                               : "border-slate-600 text-transparent"
@@ -240,8 +252,15 @@ export function RolePermissionEditor({
                             <Minus className="h-3 w-3" />
                           )}
                         </span>
-                        <span className="font-mono text-xs text-slate-300">
-                          {perm}
+                        <span className="min-w-0">
+                          <span className="block text-xs font-medium text-slate-200">
+                            {permissionLabel(perm)}
+                          </span>
+                          {permissionDescription(perm) && (
+                            <span className="block text-[10px] text-slate-500 leading-tight">
+                              {permissionDescription(perm)}
+                            </span>
+                          )}
                         </span>
                       </button>
                     );
