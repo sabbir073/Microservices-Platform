@@ -133,6 +133,8 @@ export type Permission =
   | "tutor.dashboard"
   | "tutor.courses.manage"
   | "tutor.applications.review"
+  // Creator/seller applications review (marketplace/advertiser/agency/affiliate)
+  | "creators.review"
   // Missions
   | "missions.view"
   | "missions.manage"
@@ -284,6 +286,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "lottery.view", "lottery.manage",
     "courses.view", "courses.manage", "courses.approve",
     "tutor.applications.review",
+    "creators.review",
     "missions.view", "missions.manage",
     "quizzes.view", "quizzes.manage",
     "offerwalls.view", "offerwalls.manage",
@@ -335,6 +338,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "submissions.view", "submissions.approve", "submissions.reject",
     "courses.view", "courses.manage", "courses.approve",
     "tutor.applications.review",
+    "creators.review",
     "missions.view", "missions.manage",
     "quizzes.view", "quizzes.manage",
     "lottery.view", "lottery.manage",
@@ -445,6 +449,15 @@ export function isPermission(v: unknown): v is Permission {
   return typeof v === "string" && ALL_PERMISSION_SET.has(v as Permission);
 }
 
+/** Keep only real permissions and drop protected caps (finance + admins.manage).
+ *  Used when creating/updating custom roles — custom roles never hold them. */
+export function sanitizeCustomRolePermissions(raw: unknown): string[] {
+  const list = Array.isArray(raw) ? raw : [];
+  const set = new Set<Permission>(list.filter(isPermission) as Permission[]);
+  // "ADMIN" role → strips finance + admins.manage.
+  return Array.from(stripProtectedForRole(set, "ADMIN"));
+}
+
 /** Sparse per-user permission grants/denials (true = grant, false = deny). */
 export type PermissionOverrides = Partial<Record<Permission, boolean>>;
 
@@ -531,6 +544,7 @@ export const PERMISSION_CATALOG: Array<{ label: string; permissions: Permission[
       "offerwalls.view", "offerwalls.manage",
       "media.view", "media.manage",
       "tutor.applications.review",
+    "creators.review",
     ],
   },
 ];
@@ -578,6 +592,7 @@ export const PERMISSION_META: Partial<Record<Permission, { label: string; descri
   // Admin control
   "admins.view": { label: "View admins", description: "See admin accounts, roles and activity." },
   "admins.manage": { label: "Manage admins & roles", description: "Edit the role matrix, custom roles and per-user permissions (super-admin only)." },
+  "creators.review": { label: "Review creator applications", description: "Approve/reject marketplace-seller, advertiser, agency and affiliate applications." },
   "dashboard.view": { label: "Admin dashboard", description: "Open the main admin overview." },
 };
 
@@ -796,6 +811,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     href: "/admin/tutors",
     icon: "UserCog",
     permissions: ["tutor.applications.review"],
+    category: "PLATFORM",
+  },
+  {
+    name: "Creator Applications",
+    href: "/admin/creators",
+    icon: "BadgeCheck",
+    permissions: ["creators.review"],
     category: "PLATFORM",
   },
   {
