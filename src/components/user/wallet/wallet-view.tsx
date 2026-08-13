@@ -1,7 +1,7 @@
 "use client";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "@/lib/toast";
@@ -26,8 +26,11 @@ import {
   Loader2,
 } from "lucide-react";
 import { BalanceCard } from "@/components/user/primitives/balance-card";
-import { TransactionRow, type TxType } from "@/components/user/primitives/transaction-row";
+import { TransactionRow } from "@/components/user/primitives/transaction-row";
+import { TransactionHistory } from "@/components/user/wallet/transaction-history";
 import { EmptyState } from "@/components/user/primitives/empty-state";
+import { deriveSource } from "@/lib/tx-sources";
+import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export interface WalletTransaction {
@@ -76,25 +79,22 @@ export interface WalletViewProps {
   pointsPerUsd?: number;
   /** Min points before the convert-to-cash option unlocks. */
   convertThreshold?: number;
+  /** Effective withdrawal fee % (admin setting minus package discount). */
+  withdrawalFeePct?: number;
 }
 
-type Tab = "balance" | "deposits" | "referral" | "withdraw";
-
-const TX_TYPE_MAP: Record<string, TxType> = {
-  EARNING: "EARN_TASK",
-  BONUS: "EARN_BONUS",
-  REFERRAL: "EARN_REFERRAL",
-  LOTTERY_WIN: "EARN_LOTTERY",
-  CHECKIN: "EARN_BONUS",
-  GIFT: "EARN_BONUS",
-  WITHDRAWAL: "WITHDRAWAL",
-  PURCHASE: "PURCHASE",
-  REFUND: "REFUND",
-  PENALTY: "EARN_OTHER",
-};
+type Tab = "balance" | "history" | "deposits" | "referral" | "withdraw";
 
 export function WalletView(props: WalletViewProps) {
   const [tab, setTab] = useState<Tab>("balance");
+
+  // Honor ?tab= deep-links (the withdrawal page links to ?tab=transactions).
+  // Done in an effect (not the initializer) to avoid an SSR hydration mismatch.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "transactions" || t === "history") setTab("history");
+    else if (t === "deposits" || t === "referral" || t === "withdraw") setTab(t);
+  }, []);
 
   const isFreeTier = props.packageTier === "FREE";
   const pointsPerUsd = props.pointsPerUsd ?? 1000;
@@ -149,6 +149,7 @@ export function WalletView(props: WalletViewProps) {
         {(
           [
             { key: "balance", label: "Balance", icon: Coins },
+            { key: "history", label: "History", icon: History },
             { key: "deposits", label: "Deposits", icon: Banknote },
             { key: "referral", label: "Referral", icon: Users },
             { key: "withdraw", label: "Withdraw", icon: ArrowUpRight },
@@ -181,6 +182,8 @@ export function WalletView(props: WalletViewProps) {
         />
       )}
 
+      {tab === "history" && <TransactionHistory />}
+
       {tab === "deposits" && (
         <DepositsTab deposits={props.deposits ?? []} />
       )}
@@ -197,6 +200,7 @@ export function WalletView(props: WalletViewProps) {
           convertThreshold={props.convertThreshold ?? 10000}
           pendingWithdrawals={props.pendingWithdrawals}
           packageTier={props.packageTier}
+          feePct={props.withdrawalFeePct ?? 0}
         />
       )}
     </div>
@@ -218,20 +222,32 @@ function ConvertCard({
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  // Amount of points the user chooses to convert (defaults to the whole balance).
+  const [amountStr, setAmountStr] = useState<string>(String(points));
   const canConvert = points >= threshold;
-  const asUsd = points / pointsPerUsd;
   const pct = Math.min(100, threshold > 0 ? (points / threshold) * 100 : 0);
   const remaining = Math.max(0, threshold - points);
+  const minConvert = Math.max(1, Math.ceil(pointsPerUsd)); // ≥ $1 worth
+
+  const amount = Math.min(points, Math.max(0, Math.floor(Number(amountStr) || 0)));
+  const previewUsd = amount / pointsPerUsd;
+  const amountValid = canConvert && amount >= minConvert && amount <= points;
 
   if (points <= 0) return null;
 
+  const onAmountChange = (raw: string) => {
+    const digits = raw.replace(/[^\d]/g, "").replace(/^0+(?=\d)/, "");
+    setAmountStr(digits);
+  };
+
   const convert = async () => {
-    if (!canConvert || busy) return;
+    if (!amountValid || busy) return;
     setBusy(true);
     try {
       const res = await fetch("/api/wallet/convert", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey() },
+        body: JSON.stringify({ points: amount }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "Failed");
@@ -248,37 +264,65 @@ function ConvertCard({
 
   return (
     <div className="rounded-2xl border border-sky-500/25 bg-linear-to-br from-sky-500/10 to-indigo-500/5 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-bold text-white flex items-center gap-1.5">
-            <ArrowRightLeft className="w-4 h-4 text-sky-400" />
-            Convert points to cash
-          </p>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {canConvert
-              ? `Move your ${points.toLocaleString()} points into withdrawable cash (~$${asUsd.toFixed(2)}).`
-              : `Earn ${remaining.toLocaleString()} more points to unlock — points become withdrawable cash at ${threshold.toLocaleString()}.`}
-          </p>
-        </div>
-        <button
-          onClick={convert}
-          disabled={!canConvert || busy}
-          className="shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
-          {canConvert ? `Convert ~$${asUsd.toFixed(2)}` : "Locked"}
-        </button>
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-white flex items-center gap-1.5">
+          <ArrowRightLeft className="w-4 h-4 text-sky-400 shrink-0" />
+          Convert points to cash
+        </p>
+        <p className="text-xs text-gray-400 mt-0.5">
+          {canConvert
+            ? "Choose how many points to move into withdrawable cash."
+            : `Earn ${remaining.toLocaleString()} more points to unlock — converting opens at ${threshold.toLocaleString()} pts.`}
+        </p>
       </div>
-      {/* Threshold progress */}
-      <div className="mt-3">
-        <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
-          <div className="h-full bg-linear-to-r from-sky-400 to-indigo-400" style={{ width: `${pct}%` }} />
+
+      {canConvert ? (
+        <>
+          <div className="mt-3 flex items-stretch gap-2">
+            <div className="relative flex-1 min-w-0">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={amountStr}
+                onChange={(e) => onAmountChange(e.target.value)}
+                placeholder={String(minConvert)}
+                className="w-full pl-3 pr-14 py-2 bg-gray-950 border border-gray-800 rounded-lg text-white text-sm font-bold tabular-nums focus:outline-none focus:border-sky-500"
+              />
+              <button
+                type="button"
+                onClick={() => setAmountStr(String(points))}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md bg-gray-800 text-[10px] font-bold text-sky-300 hover:bg-gray-700"
+              >
+                MAX
+              </button>
+            </div>
+            <button
+              onClick={convert}
+              disabled={!amountValid || busy}
+              className="shrink-0 inline-flex items-center gap-1.5 px-4 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
+              Convert
+            </button>
+          </div>
+          <div className="flex items-center justify-between text-[11px] mt-1.5">
+            <span className="text-gray-500">
+              Balance {points.toLocaleString()} pts · min {minConvert.toLocaleString()}
+            </span>
+            <span className="text-sky-300 font-semibold tabular-nums">≈ ${previewUsd.toFixed(2)}</span>
+          </div>
+        </>
+      ) : (
+        <div className="mt-3">
+          <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
+            <div className="h-full bg-linear-to-r from-sky-400 to-indigo-400" style={{ width: `${pct}%` }} />
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-500 mt-1 tabular-nums">
+            <span>{points.toLocaleString()} pts</span>
+            <span>{threshold.toLocaleString()} pts</span>
+          </div>
         </div>
-        <div className="flex justify-between text-[10px] text-gray-500 mt-1 tabular-nums">
-          <span>{points.toLocaleString()} pts</span>
-          <span>{threshold.toLocaleString()} pts</span>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -347,25 +391,25 @@ function BalanceTab({
     <div className="space-y-4">
       {/* Lifetime stats */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+        <div className="min-w-0 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
           <div className="flex items-center gap-1.5">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-400">
+            <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="text-[10px] uppercase tracking-wider font-bold text-emerald-400 truncate">
               Total Earned
             </span>
           </div>
-          <p className="text-2xl font-extrabold text-white tabular-nums mt-1">
+          <p className="text-2xl font-extrabold text-white tabular-nums mt-1 truncate">
             ${totalEarnings.toFixed(2)}
           </p>
         </div>
-        <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-3">
+        <div className="min-w-0 rounded-xl border border-purple-500/30 bg-purple-500/10 p-3">
           <div className="flex items-center gap-1.5">
-            <ArrowUpRight className="w-3.5 h-3.5 text-purple-400" />
-            <span className="text-[10px] uppercase tracking-wider font-bold text-purple-400">
+            <ArrowUpRight className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+            <span className="text-[10px] uppercase tracking-wider font-bold text-purple-400 truncate">
               Total Withdrawn
             </span>
           </div>
-          <p className="text-2xl font-extrabold text-white tabular-nums mt-1">
+          <p className="text-2xl font-extrabold text-white tabular-nums mt-1 truncate">
             ${totalWithdrawn.toFixed(2)}
           </p>
         </div>
@@ -406,12 +450,12 @@ function BalanceTab({
           {/* Legend */}
           <div className="grid grid-cols-2 gap-1.5">
             {breakdown.map((b) => (
-              <div key={b.key} className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5 text-gray-300">
-                  <span className={cn("w-2 h-2 rounded-full", b.color)} />
-                  {b.label}
+              <div key={b.key} className="flex items-center justify-between gap-1.5 text-xs min-w-0">
+                <div className="flex items-center gap-1.5 text-gray-300 min-w-0">
+                  <span className={cn("w-2 h-2 rounded-full shrink-0", b.color)} />
+                  <span className="truncate">{b.label}</span>
                 </div>
-                <span className="text-gray-500 tabular-nums">
+                <span className="text-gray-500 tabular-nums shrink-0">
                   {b.pct.toFixed(0)}% · {b.value.toLocaleString()}
                 </span>
               </div>
@@ -440,23 +484,22 @@ function BalanceTab({
         ) : (
           <div className="space-y-1.5">
             {transactions.slice(0, 10).map((tx) => {
-              const txType = TX_TYPE_MAP[tx.type] ?? "EARN_OTHER";
-              const isEarning =
-                tx.type !== "WITHDRAWAL" &&
-                tx.type !== "PURCHASE" &&
-                tx.type !== "PENALTY";
-              const showPoints = tx.points > 0;
+              const isOutflow =
+                tx.type === "WITHDRAWAL" ||
+                tx.type === "PURCHASE" ||
+                tx.type === "PENALTY" ||
+                tx.type === "AD_CREDIT_PURCHASE";
+              const usePoints = tx.points !== 0;
+              const magnitude = usePoints
+                ? Math.abs(tx.points)
+                : Math.abs(tx.amount);
               return (
                 <TransactionRow
                   key={tx.id}
-                  type={txType}
-                  description={tx.description ?? tx.type.replace("_", " ")}
-                  amount={
-                    showPoints
-                      ? (isEarning ? tx.points : -tx.points)
-                      : (isEarning ? tx.amount : -tx.amount)
-                  }
-                  unit={showPoints ? "pts" : "USD"}
+                  source={deriveSource(tx.type, tx.reference)}
+                  description={tx.description ?? tx.type.replace(/_/g, " ")}
+                  amount={isOutflow ? -magnitude : magnitude}
+                  unit={usePoints ? "pts" : "USD"}
                   status={
                     tx.status as
                       | "PENDING"
@@ -671,6 +714,7 @@ function WithdrawTab({
   convertThreshold,
   pendingWithdrawals,
   packageTier,
+  feePct,
 }: {
   isFreeTier: boolean;
   cashBalance: number;
@@ -678,6 +722,7 @@ function WithdrawTab({
   convertThreshold: number;
   pendingWithdrawals: number;
   packageTier: string;
+  feePct: number;
 }) {
   // Only CASH is withdrawable. Points must be converted to cash first (see the
   // Convert card on the Balance tab). Show a nudge when the user has convertible
@@ -739,10 +784,22 @@ function WithdrawTab({
             </span>
           </div>
           <div className="flex items-center justify-between text-xs">
+            <span className="text-gray-400">Withdrawal fee</span>
+            <span className="text-white tabular-nums font-semibold">
+              {feePct > 0 ? `${feePct.toFixed(1)}%` : "No fee"}
+            </span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
             <span className="text-gray-400">Your tier</span>
             <span className="text-white font-semibold">{packageTier}</span>
           </div>
         </div>
+        {feePct > 0 && cashBalance > 0 && (
+          <p className="mt-2 text-[11px] text-gray-500">
+            On ${cashBalance.toFixed(2)} you&apos;d receive ~$
+            {(cashBalance * (1 - feePct / 100)).toFixed(2)} after the {feePct.toFixed(1)}% fee.
+          </p>
+        )}
 
         {!hasCash && canConvertPoints && (
           <p className="mt-3 text-[11px] text-sky-300">

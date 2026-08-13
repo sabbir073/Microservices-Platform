@@ -8,6 +8,7 @@ import { toast } from "@/lib/toast";
 import { useRouter } from "next/navigation";
 import { newIdempotencyKey } from "@/lib/idempotency-key";
 import { TIER_GRADIENT } from "@/lib/tiers";
+import { BrandIcon } from "@/components/ui/brand-icon";
 
 type Tier = "FREE" | "STARTER" | "PRO" | "ELITE" | "VIP";
 type Duration = "MONTHLY" | "QUARTERLY" | "YEARLY" | "LIFETIME";
@@ -39,8 +40,15 @@ interface PackageRow {
 interface PackagesViewProps {
   packages: PackageRow[];
   currentTier: string;
+  /** The id of the plan the user is effectively on right now (robust "Current"). */
+  currentPackageId?: string | null;
   cashBalance: number;
   pointsBalance: number;
+}
+
+/** A free/default plan — no monthly price and no yearly price. */
+function isFreePkg(p: PackageRow): boolean {
+  return p.priceMonthly === 0 && !p.priceYearly;
 }
 
 const TIER_ICON: Record<Tier, React.ReactNode> = {
@@ -73,6 +81,7 @@ const DURATION_DISCOUNT: Record<Duration, number> = {
 export function PackagesView({
   packages,
   currentTier,
+  currentPackageId,
   cashBalance,
   pointsBalance,
 }: PackagesViewProps) {
@@ -84,6 +93,7 @@ export function PackagesView({
   const [busy, setBusy] = useState(false);
 
   const selectedPkg = packages.find((p) => p.tier === selectedTier);
+  const selectedIsFree = selectedPkg ? isFreePkg(selectedPkg) : false;
 
   const calcPrice = () => {
     if (!selectedPkg) return 0;
@@ -165,7 +175,9 @@ export function PackagesView({
       {step === 1 && (
         <div className="space-y-3">
           {packages.map((p) => {
-            const isCurrent = p.tier === currentTier;
+            const isCurrent = currentPackageId
+              ? p.id === currentPackageId
+              : p.tier === currentTier;
             const selected = p.tier === selectedTier;
             return (
               <button
@@ -226,12 +238,18 @@ export function PackagesView({
             );
           })}
           <button
-            disabled={!selectedTier}
-            onClick={() => setStep(2)}
+            disabled={!selectedTier || busy}
+            onClick={() => (selectedIsFree ? purchase() : setStep(2))}
             className="w-full py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50"
           >
-            Continue
-            <ArrowRight className="w-4 h-4" />
+            {busy && selectedIsFree ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <>
+                {selectedIsFree ? "Activate Free Plan" : "Continue"}
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
         </div>
       )}
@@ -315,7 +333,10 @@ export function PackagesView({
                 onChange={() => setMethod(m.value)}
                 className="accent-indigo-500"
               />
-              <div className="flex-1">
+              {m.value !== "CASH" && m.value !== "POINTS" && (
+                <BrandIcon brand={m.value} colored className="w-5 h-5 shrink-0" />
+              )}
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-white">{m.label}</p>
                 <p className="text-[11px] text-gray-500">{m.info}</p>
               </div>

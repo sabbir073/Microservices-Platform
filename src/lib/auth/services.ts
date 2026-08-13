@@ -5,6 +5,8 @@ import { generateReferralCode } from "@/lib/utils";
 import { sendVerificationEmail, sendPasswordResetEmail } from "@/lib/email";
 import { isValidUsername, slugifyUsername } from "@/lib/username";
 import { getUiToggles } from "@/lib/ui-toggles-server";
+import { defaultPackage } from "@/lib/packages";
+import { getPointsPerUsd } from "@/lib/economy";
 import { v4 as uuidv4 } from "uuid";
 
 /**
@@ -180,6 +182,11 @@ export async function registerUser({
     });
   }
 
+  // Explicitly put every new user on the free/default plan so they're visibly
+  // "on Free" (not "no plan"). Best-effort: if no default resolves, packageId
+  // stays null and the runtime fallback (getEffectivePackage) still covers it.
+  const defaultPkgId = (await defaultPackage())?.id ?? null;
+
   // Create user. Guard the username unique constraint against the rare race
   // where the chosen handle is claimed between our check and this insert.
   let user;
@@ -193,6 +200,8 @@ export async function registerUser({
         referralCode: newReferralCode,
         referredById,
         status: "PENDING_VERIFICATION",
+        packageId: defaultPkgId,
+        packageExpiresAt: null,
       },
     });
   } catch (err) {
@@ -214,6 +223,8 @@ export async function registerUser({
           referralCode: newReferralCode,
           referredById,
           status: "PENDING_VERIFICATION",
+          packageId: defaultPkgId,
+          packageExpiresAt: null,
         },
       });
     } else {
@@ -287,12 +298,15 @@ export async function verifyEmail(token: string) {
   // Award welcome bonus if configured
   const welcomeBonus = parseInt(process.env.WELCOME_BONUS_POINTS || "0", 10);
   if (welcomeBonus > 0) {
+    const pointsPerUsd = await getPointsPerUsd();
+    const bonusUsd = pointsPerUsd > 0 ? welcomeBonus / pointsPerUsd : 0;
     await prisma.transaction.create({
       data: {
         userId: user.id,
         type: "BONUS",
         status: "COMPLETED",
         points: welcomeBonus,
+        amount: bonusUsd,
         description: "Welcome bonus",
         // Once per user — (userId, reference) unique prevents a double award if
         // verification is ever replayed (token deletion above already guards it).
@@ -304,6 +318,7 @@ export async function verifyEmail(token: string) {
       where: { id: user.id },
       data: {
         pointsBalance: { increment: welcomeBonus },
+        totalEarnings: { increment: bonusUsd },
       },
     });
   }
