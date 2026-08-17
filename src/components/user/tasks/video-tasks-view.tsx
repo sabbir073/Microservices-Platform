@@ -9,6 +9,7 @@ import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { TaskSubmissionRow } from "@/components/user/primitives/task-submission-row";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import type { VideoConfig } from "@/lib/video-tasks";
 import { formatDuration } from "@/lib/video-tasks";
 
@@ -38,6 +39,8 @@ interface Submission {
   createdAt: string;
   rejectionReason?: string | null;
   adminNote?: string | null;
+  score?: number | null;
+  penaltyPoints?: number | null;
 }
 
 const TAB_TO_STATUS: Record<Tab, string[]> = {
@@ -115,6 +118,8 @@ export function VideoTasksView() {
         ]}
       />
 
+      <AdRenderer placement="TASK_LIST" />
+
       {loading && <ListSkeleton rows={4} />}
 
       {!loading && tab === "available" && tasks.length === 0 && (
@@ -125,35 +130,37 @@ export function VideoTasksView() {
         />
       )}
 
-      {!loading &&
-        tab === "available" &&
-        tasks.map((t) => {
-          const watchSecs = t.videoConfig?.watchSeconds ?? t.duration ?? 0;
-          return (
-            <TaskCard
-              key={t.id}
-              title={t.title}
-              description={
-                t.description ??
-                (watchSecs > 0
-                  ? `Watch for ${formatDuration(watchSecs)} to earn`
-                  : undefined)
-              }
-              type="video"
-              reward={t.pointsReward}
-              xpReward={t.xpReward}
-              durationMin={
-                watchSecs > 0 ? Math.max(1, Math.round(watchSecs / 60)) : undefined
-              }
-              thumbnail={t.thumbnailUrl ?? undefined}
-              status={t.locked ? "LOCKED" : undefined}
-              actionLabel={t.locked ? "🔒 Locked" : "Watch & Earn"}
-              onAction={
-                t.locked ? undefined : () => router.push(`/video-tasks/${t.id}`)
-              }
-            />
-          );
-        })}
+      {!loading && tab === "available" && tasks.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {tasks.map((t) => {
+            const watchSecs = t.videoConfig?.watchSeconds ?? t.duration ?? 0;
+            return (
+              <TaskCard
+                key={t.id}
+                title={t.title}
+                description={
+                  t.description ??
+                  (watchSecs > 0
+                    ? `Watch for ${formatDuration(watchSecs)} to earn`
+                    : undefined)
+                }
+                type="video"
+                reward={t.pointsReward}
+                xpReward={t.xpReward}
+                durationMin={
+                  watchSecs > 0 ? Math.max(1, Math.round(watchSecs / 60)) : undefined
+                }
+                thumbnail={t.thumbnailUrl ?? undefined}
+                status={t.locked ? "LOCKED" : undefined}
+                actionLabel={t.locked ? "🔒 Locked" : "Watch & Earn"}
+                onAction={
+                  t.locked ? undefined : () => router.push(`/video-tasks/${t.id}`)
+                }
+              />
+            );
+          })}
+        </div>
+      )}
 
       {!loading && tab !== "available" && submissions.length === 0 && (
         <EmptyState
@@ -178,6 +185,9 @@ export function VideoTasksView() {
               date={s.createdAt}
               rejectionReason={s.rejectionReason}
               adminNote={s.adminNote}
+              score={s.score}
+              penaltyPoints={s.penaltyPoints}
+              redoHref={`/video-tasks/${s.task.id}`}
             />
           ))}
         </div>

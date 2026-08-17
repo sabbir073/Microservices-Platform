@@ -8,6 +8,7 @@ import { FilterChips } from "@/components/user/primitives/filter-chips";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { TaskSubmissionRow } from "@/components/user/primitives/task-submission-row";
+import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 
 type Tab = "available" | "pending" | "approved" | "rejected";
@@ -32,6 +33,8 @@ interface Submission {
   createdAt: string;
   rejectionReason?: string | null;
   adminNote?: string | null;
+  score?: number | null;
+  penaltyPoints?: number | null;
 }
 
 const TAB_TO_STATUS: Record<Tab, string[]> = {
@@ -101,6 +104,8 @@ export function ArticleTasksView() {
         ]}
       />
 
+      <AdRenderer placement="TASK_LIST" />
+
       {loading && <ListSkeleton rows={4} />}
 
       {!loading && tab === "available" && tasks.length === 0 && (
@@ -111,25 +116,27 @@ export function ArticleTasksView() {
         />
       )}
 
-      {!loading &&
-        tab === "available" &&
-        tasks.map((t) => (
-          <TaskCard
-            key={t.id}
-            title={t.title}
-            description={t.description}
-            type="article"
-            reward={t.pointsReward}
-            xpReward={t.xpReward}
-            durationMin={t.duration ?? undefined}
-            thumbnail={t.thumbnailUrl ?? undefined}
-            status={t.locked ? "LOCKED" : undefined}
-            actionLabel={t.locked ? "🔒 Locked" : "Read & Submit"}
-            onAction={
-              t.locked ? undefined : () => router.push(`/article-tasks/${t.id}`)
-            }
-          />
-        ))}
+      {!loading && tab === "available" && tasks.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {tasks.map((t) => (
+            <TaskCard
+              key={t.id}
+              title={t.title}
+              description={t.description}
+              type="article"
+              reward={t.pointsReward}
+              xpReward={t.xpReward}
+              durationMin={t.duration ?? undefined}
+              thumbnail={t.thumbnailUrl ?? undefined}
+              status={t.locked ? "LOCKED" : undefined}
+              actionLabel={t.locked ? "🔒 Locked" : "Read & Submit"}
+              onAction={
+                t.locked ? undefined : () => router.push(`/article-tasks/${t.id}`)
+              }
+            />
+          ))}
+        </div>
+      )}
 
       {!loading && tab !== "available" && submissions.length === 0 && (
         <EmptyState
@@ -154,6 +161,9 @@ export function ArticleTasksView() {
               date={s.createdAt}
               rejectionReason={s.rejectionReason}
               adminNote={s.adminNote}
+              score={s.score}
+              penaltyPoints={s.penaltyPoints}
+              redoHref={`/article-tasks/${s.task.id}`}
             />
           ))}
         </div>

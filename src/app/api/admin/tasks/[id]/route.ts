@@ -12,6 +12,7 @@ import {
   normalizeAppInstallConfig,
   type AppInstallConfig,
 } from "@/lib/app-install-tasks";
+import { resolveTaskThumbnail } from "@/lib/task-thumbnail";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -105,6 +106,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       totalLimit,
       minLevel,
       requiredAccessLevel,
+      hidden,
       order,
       countries,
       contentUrl,
@@ -191,6 +193,14 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
       );
     }
 
+    // Auto-derive a thumbnail from the task's link when none was set.
+    const resolvedThumbnailUrl = await resolveTaskThumbnail({
+      thumbnailUrl,
+      contentUrl,
+      socialConfig,
+      socialUrl: socialUrlOut,
+    });
+
     // Update the task
     const task = await prisma.task.update({
       where: { id },
@@ -210,10 +220,11 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
           typeof requiredAccessLevel === "number"
             ? requiredAccessLevel
             : parseInt(String(requiredAccessLevel ?? 0)) || 0,
+        ...(hidden !== undefined ? { hidden: hidden === true } : {}),
         order: order != null ? parseInt(String(order)) || 0 : existingTask.order,
         countries: countries || [],
         contentUrl: contentUrl || null,
-        thumbnailUrl: thumbnailUrl || null,
+        thumbnailUrl: resolvedThumbnailUrl,
         duration: duration ? parseInt(duration.toString()) : null,
         questions: questions || null,
         socialPlatform: socialPlatformOut,

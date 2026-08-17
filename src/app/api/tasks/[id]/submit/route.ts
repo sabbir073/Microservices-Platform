@@ -15,7 +15,13 @@ import {
   compareUniqueKey,
   type ArticleConfig,
 } from "@/lib/article-tasks";
-import { hasEngagement, type VideoConfig } from "@/lib/video-tasks";
+import {
+  hasEngagement,
+  stepIsRequired,
+  effectiveSteps,
+  type VideoConfig,
+  type VideoStepProof,
+} from "@/lib/video-tasks";
 import {
   validateAnswers as validateSurveyAnswers,
   type SurveyConfig,
@@ -83,6 +89,8 @@ export async function POST(
       customAnswers,
       // VIDEO YouTube-style engagement confirmations { subscribe?, like?, comment? }
       engagement: videoEngagement,
+      // VIDEO sequential-step proof [{id,type,screenshotUrl?,link?,status}]
+      videoSteps,
       // APPINSTALL structured per-requirement proof [{id,kind,label,target,value?}]
       appInstallProof,
     } = body;
@@ -122,23 +130,45 @@ export async function POST(
       );
     }
 
-    // Step-based VIDEO: every step that requires a screenshot must have one.
+    // Step-based VIDEO: every REQUIRED step must carry its required proof
+    // (screenshot and/or link). Optional/skipped steps are ignored.
+    const videoStepProofs: VideoStepProof[] = Array.isArray(videoSteps)
+      ? (videoSteps as VideoStepProof[])
+      : [];
     {
       const vcfg = task.videoConfig as VideoConfig | null;
-      if (task.type === "VIDEO" && vcfg?.steps?.length) {
-        const requiredShots = vcfg.steps.filter(
-          (s) => s.requireScreenshot
-        ).length;
-        const provided = Array.isArray(proofImages)
-          ? proofImages.filter(
-              (u: unknown) => typeof u === "string" && u.trim()
-            ).length
-          : 0;
-        if (provided < requiredShots) {
-          return NextResponse.json(
-            { error: "Please upload a screenshot for every step." },
-            { status: 400 }
-          );
+      const vSteps = effectiveSteps(vcfg);
+      if (task.type === "VIDEO" && vSteps.length) {
+        if (videoStepProofs.length > 0) {
+          const byId = new Map(videoStepProofs.map((p) => [p.id, p]));
+          for (const s of vSteps) {
+            if (!stepIsRequired(s)) continue;
+            const p = byId.get(s.id);
+            const missingShot = s.requireScreenshot && !p?.screenshotUrl?.trim();
+            const missingLink = s.requireLink && !p?.link?.trim();
+            if (missingShot || missingLink) {
+              return NextResponse.json(
+                { error: "Please complete all required steps first." },
+                { status: 400 }
+              );
+            }
+          }
+        } else {
+          // Back-compat (older clients that only send positional proofImages).
+          const requiredShots = vSteps.filter(
+            (s) => stepIsRequired(s) && s.requireScreenshot
+          ).length;
+          const provided = Array.isArray(proofImages)
+            ? proofImages.filter(
+                (u: unknown) => typeof u === "string" && u.trim()
+              ).length
+            : 0;
+          if (provided < requiredShots) {
+            return NextResponse.json(
+              { error: "Please upload a screenshot for every step." },
+              { status: 400 }
+            );
+          }
         }
       }
     }
@@ -763,6 +793,11 @@ export async function POST(
           ? videoEngagement
           : {};
     }
+    // For step-based VIDEO: persist the per-step proof (type + screenshot + link
+    // + done/skipped) so the admin review panel can show each step.
+    if (task.type === "VIDEO" && videoStepProofs.length > 0) {
+      submissionMetadata.videoSteps = videoStepProofs;
+    }
     // Hard-block duplicate proof (admin opt-in): if this SOCIAL submission
     // matched another user's proof (URL / username / re-uploaded screenshot) and
     // the admin turned blocking on, reject instead of just flagging.
@@ -809,12 +844,13 @@ export async function POST(
       shouldAutoApprove = false;
     }
 
-    // Step-based VIDEO tasks respect the per-task auto-approve toggle: OFF →
-    // Pending (admin approval pays out), ON → auto-approve after the ad.
+    // Step-based VIDEO tasks (incl. legacy engagement synthesized into steps)
+    // respect the per-task auto-approve toggle: OFF → Pending (admin approval
+    // pays out), ON → auto-approve after the ad.
     {
       const vcfg = task.videoConfig as VideoConfig | null;
-      if (task.type === "VIDEO" && vcfg?.steps && vcfg.steps.length > 0) {
-        shouldAutoApprove = !uniqueKeyMismatch && vcfg.autoApprove === true;
+      if (task.type === "VIDEO" && effectiveSteps(vcfg).length > 0) {
+        shouldAutoApprove = !uniqueKeyMismatch && vcfg?.autoApprove === true;
       }
     }
 
@@ -952,42 +988,45 @@ export async function POST(
         }
       }
 
-      // Update user points and XP
-      const user = await prisma.user.update({
-        where: { id: session.user.id },
-        data: {
-          pointsBalance: { increment: effectivePoints },
-          xp: { increment: effectiveXp },
-          totalEarnings: { increment: effectivePoints / pointsPerUsd },
-        },
-      });
-
-      // Create transaction record
-      await prisma.transaction.create({
-        data: {
-          userId: session.user.id,
-          type: TransactionType.EARNING,
-          status: TransactionStatus.COMPLETED,
-          points: effectivePoints,
-          amount: effectivePoints / pointsPerUsd,
-          description: `Completed task: ${task.title}`,
-          reference: `task_${task.id}_${submission.id}`,
-          metadata: {
-            taskId: task.id,
-            taskType: task.type,
-            submissionId: submission.id,
-            multiplier,
+      // Credit points/XP/earnings + write the ledger row + bump the task's
+      // completed counter ATOMICALLY. These were previously three independent
+      // top-level writes: a throw after the user.update credited points with
+      // NO ledger row (and 500'd the user). The CAS `submittedAt` claim above
+      // already prevents double-pay, so this transaction only needs to
+      // guarantee all-or-nothing integrity.
+      const [user] = await prisma.$transaction([
+        prisma.user.update({
+          where: { id: session.user.id },
+          data: {
+            pointsBalance: { increment: effectivePoints },
+            xp: { increment: effectiveXp },
+            totalEarnings: { increment: effectivePoints / pointsPerUsd },
           },
-        },
-      });
-
-      // Update task completed count
-      await prisma.task.update({
-        where: { id: task.id },
-        data: {
-          completedCount: { increment: 1 },
-        },
-      });
+        }),
+        prisma.transaction.create({
+          data: {
+            userId: session.user.id,
+            type: TransactionType.EARNING,
+            status: TransactionStatus.COMPLETED,
+            points: effectivePoints,
+            amount: effectivePoints / pointsPerUsd,
+            description: `Completed task: ${task.title}`,
+            reference: `task_${task.id}_${submission.id}`,
+            metadata: {
+              taskId: task.id,
+              taskType: task.type,
+              submissionId: submission.id,
+              multiplier,
+            },
+          },
+        }),
+        prisma.task.update({
+          where: { id: task.id },
+          data: {
+            completedCount: { increment: 1 },
+          },
+        }),
+      ]);
 
       // Check for level up
       const newLevel = calculateLevel(user.xp + effectiveXp);

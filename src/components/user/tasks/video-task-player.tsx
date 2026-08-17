@@ -12,11 +12,22 @@ import {
   PlayCircle,
   ExternalLink,
   CheckCircle2,
+  ChevronDown,
+  Link2,
+  SkipForward,
+  Copy,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { notifyCenter } from "@/lib/notify-center";
-import type { VideoConfig, EngagementKey } from "@/lib/video-tasks";
-import { formatDuration, engagementSteps, effectiveSteps } from "@/lib/video-tasks";
+import type { VideoConfig, EngagementKey, VideoStepProof } from "@/lib/video-tasks";
+import {
+  formatDuration,
+  engagementSteps,
+  effectiveSteps,
+  stepIsRequired,
+  stepType,
+  STEP_TYPE_META,
+} from "@/lib/video-tasks";
 import { playerSource } from "@/lib/video-url";
 import { confirmDialog } from "@/lib/confirm";
 import { cn } from "@/lib/utils";
@@ -81,6 +92,9 @@ export function VideoTaskPlayer({
   const [warmupLeft, setWarmupLeft] = useState(warmupTarget);
   const [watched, setWatched] = useState(resumeFrom);
   const [isPlaying, setIsPlaying] = useState(false);
+  // No autoplay: the video only starts after a real user tap (iOS Safari blocks
+  // autoplay-with-sound and doesn't fire play() on cross-origin YouTube iframes).
+  const [userStarted, setUserStarted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [autoFailed, setAutoFailed] = useState(false);
   // Player couldn't load the media (bad/unsupported URL) — show a clear error
@@ -109,9 +123,23 @@ export function VideoTaskPlayer({
   const steps = useMemo(() => effectiveSteps(cfg), [cfg]);
   const [stepIndex, setStepIndex] = useState(0);
   const [stepShots, setStepShots] = useState<Record<string, string>>({});
+  // Per-step pasted proof link + whether each step was done or skipped.
+  const [stepLinks, setStepLinks] = useState<Record<string, string>>({});
+  const [stepStatus, setStepStatus] = useState<
+    Record<string, "done" | "skipped">
+  >({});
+  // After the video is watched, the player collapses to a compact bar so the
+  // steps take the screen (re-openable via the bar's toggle).
+  const [videoCollapsed, setVideoCollapsed] = useState(false);
   // True once the user presses Complete — opens the outro ad, then submits.
   const [completePressed, setCompletePressed] = useState(false);
-  const allStepsDone = steps.length > 0 && stepIndex >= steps.length;
+  // The flow is "done" once every step has been addressed (saved or skipped)
+  // AND every REQUIRED step was actually completed (optional steps may skip).
+  const reachedEnd = steps.length > 0 && stepIndex >= steps.length;
+  const requiredStepsDone = steps
+    .filter(stepIsRequired)
+    .every((s) => stepStatus[s.id] === "done");
+  const allStepsDone = reachedEnd && requiredStepsDone;
   // Interstitial ad gates — playback waits for the intro ad; the reward flow
   // waits for the outro ad. Both resolve immediately when no ad is available.
   const [introAdDone, setIntroAdDone] = useState(false);
@@ -280,7 +308,14 @@ export function VideoTaskPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [completePressed, outroAdDone]);
 
-  // Advance to the next step (current step's screenshot must be uploaded).
+  // Collapse the player once the video is watched so the steps get the room.
+  useEffect(() => {
+    if (phase === "complete" && needsInteraction) setVideoCollapsed(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase]);
+
+  // Advance to the next step (its required proof — screenshot and/or link —
+  // must be provided).
   const saveStep = () => {
     const s = steps[stepIndex];
     if (!s) return;
@@ -288,32 +323,63 @@ export function VideoTaskPlayer({
       toast.error("Upload a screenshot for this step first");
       return;
     }
+    if (s.requireLink && !stepLinks[s.id]?.trim()) {
+      toast.error("Paste the proof link for this step first");
+      return;
+    }
+    setStepStatus((m) => ({ ...m, [s.id]: "done" }));
+    setStepIndex((i) => Math.min(i + 1, steps.length));
+  };
+
+  // Skip an OPTIONAL step (required steps can't be skipped).
+  const skipStep = () => {
+    const s = steps[stepIndex];
+    if (!s || stepIsRequired(s)) return;
+    setStepStatus((m) => ({ ...m, [s.id]: "skipped" }));
     setStepIndex((i) => Math.min(i + 1, steps.length));
   };
 
   const doSubmit = async () => {
     if (submittedRef.current) return;
-    if (proofReq.screenshot && !screenshotUrl.trim()) {
-      toast.error("Screenshot URL is required");
-      return;
+    // Legacy engagement/proof-form checks only apply to the old flow (no steps).
+    // When typed steps are present (incl. steps synthesized from engagement),
+    // proof is per-step and validated below.
+    if (steps.length === 0) {
+      if (proofReq.screenshot && !screenshotUrl.trim()) {
+        toast.error("Screenshot URL is required");
+        return;
+      }
+      if (!allEngDone) {
+        toast.error("Please complete all the steps first");
+        return;
+      }
     }
     if (proofReq.uniqueKey && !uniqueKey.trim()) {
       toast.error("Unique key is required");
       return;
     }
-    if (!allEngDone) {
-      toast.error("Please complete all the steps first");
-      return;
-    }
-    // Sequential steps: every required-screenshot step must have an upload.
+    // Sequential steps: every REQUIRED step must carry its required proof
+    // (screenshot and/or link). Optional/skipped steps are ignored.
     const stepImages = steps.map((s) => stepShots[s.id] ?? "");
-    if (
-      steps.length > 0 &&
-      steps.some((s, i) => s.requireScreenshot && !stepImages[i]?.trim())
-    ) {
-      toast.error("Upload a screenshot for every step");
-      return;
+    if (steps.length > 0) {
+      const missing = steps.find(
+        (s) =>
+          stepIsRequired(s) &&
+          ((s.requireScreenshot && !stepShots[s.id]?.trim()) ||
+            (s.requireLink && !stepLinks[s.id]?.trim()))
+      );
+      if (missing) {
+        toast.error("Complete all required steps first");
+        return;
+      }
     }
+    const videoSteps: VideoStepProof[] = steps.map((s) => ({
+      id: s.id,
+      type: stepType(s),
+      screenshotUrl: stepShots[s.id]?.trim() || undefined,
+      link: stepLinks[s.id]?.trim() || undefined,
+      status: stepStatus[s.id] ?? "done",
+    }));
     submittedRef.current = true;
     setAutoFailed(false);
     setBusy(true);
@@ -334,13 +400,16 @@ export function VideoTaskPlayer({
               : screenshotUrl
                 ? [screenshotUrl]
                 : [],
+          videoSteps: steps.length > 0 ? videoSteps : undefined,
           uniqueKey,
-          engagement: engSteps.length
-            ? engSteps.reduce(
-                (acc, s) => ({ ...acc, [s.key]: engDone[s.key] }),
-                {} as Record<EngagementKey, boolean>
-              )
-            : undefined,
+          // Legacy honor confirmations only when NOT using typed steps.
+          engagement:
+            steps.length === 0 && engSteps.length
+              ? engSteps.reduce(
+                  (acc, s) => ({ ...acc, [s.key]: engDone[s.key] }),
+                  {} as Record<EngagementKey, boolean>
+                )
+              : undefined,
         }),
       });
       if (!res.ok) {
@@ -473,13 +542,32 @@ export function VideoTaskPlayer({
         </button>
       </div>
 
-      {/* Player */}
+      {/* Player — once the video is watched it collapses to a compact bar so the
+          proof steps get the screen (tap the bar to replay). */}
+      {videoCollapsed ? (
+        <button
+          type="button"
+          onClick={() => setVideoCollapsed(false)}
+          className="shrink-0 mt-14 mx-3 flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-2.5 text-left"
+        >
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold text-white truncate">
+              Video watched
+            </span>
+            <span className="block text-[11px] text-emerald-200/80">
+              Tap to replay the video
+            </span>
+          </span>
+          <ChevronDown className="w-4 h-4 text-emerald-300 shrink-0" />
+        </button>
+      ) : (
       <div className="relative flex-1">
         {playerSrc ? (
           <ReactPlayer
             ref={playerRef}
             src={playerSrc}
-            playing={phase === "watch" && introAdDone}
+            playing={phase === "watch" && introAdDone && userStarted}
             controls={false}
             playsInline
             muted={false}
@@ -593,6 +681,11 @@ export function VideoTaskPlayer({
           <button
             type="button"
             onClick={() => {
+              // Flip react-player's `playing` state — this starts BOTH HTML5
+              // <video> and cross-origin YouTube iframes (a direct DOM .play()
+              // is a no-op on the YT iframe). Also nudge the element for an
+              // instant start on native video.
+              setUserStarted(true);
               const p = playerRef.current;
               if (p && typeof p.play === "function") {
                 const r = p.play();
@@ -636,8 +729,8 @@ export function VideoTaskPlayer({
 
         {/* Phase 4: submitted overlay */}
         {phase === "submitted" && (
-          <div className="absolute inset-0 z-20 grid place-items-center bg-emerald-950/90 pointer-events-none">
-            <div className="text-center">
+          <div className="absolute inset-0 z-20 grid place-items-center bg-emerald-950/90">
+            <div className="text-center px-4">
               <Sparkles className="w-12 h-12 text-amber-400 mx-auto mb-3" />
               <p className="text-xs uppercase tracking-widest text-emerald-300 font-bold mb-1">
                 Earned
@@ -646,6 +739,10 @@ export function VideoTaskPlayer({
                 +{task.pointsReward}
               </p>
               <p className="text-sm text-emerald-200 mt-2">points credited</p>
+              {/* Completion-screen sponsor slot. */}
+              <div className="mt-5 w-full max-w-md mx-auto">
+                <AdRenderer placement="TASK_COMPLETE" />
+              </div>
             </div>
           </div>
         )}
@@ -671,10 +768,19 @@ export function VideoTaskPlayer({
           </div>
         )}
       </div>
+      )}
 
       {/* Bottom HUD — scrollable + safe-area padding so the proof inputs and
-          Submit button stay reachable when the mobile keyboard is open. */}
-      <div className="absolute bottom-0 inset-x-0 z-20 max-h-[70vh] overflow-y-auto bg-linear-to-t from-black via-black/90 to-transparent px-4 pt-6 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-3">
+          Submit button stay reachable when the mobile keyboard is open. When the
+          video is collapsed the HUD fills the remaining space (normal flow). */}
+      <div
+        className={cn(
+          "z-20 overflow-y-auto px-4 pt-6 pb-[calc(1rem+env(safe-area-inset-bottom))] space-y-3",
+          videoCollapsed
+            ? "relative flex-1 bg-black"
+            : "absolute bottom-0 inset-x-0 max-h-[70vh] bg-linear-to-t from-black via-black/90 to-transparent"
+        )}
+      >
         {phase === "submitted" && (
           <button
             onClick={() => onClose(true, finalStatus)}
@@ -715,6 +821,13 @@ export function VideoTaskPlayer({
                   const done = i < stepIndex;
                   const active = i === stepIndex;
                   const shot = stepShots[s.id] ?? "";
+                  const link = stepLinks[s.id] ?? "";
+                  const meta = STEP_TYPE_META[stepType(s)];
+                  const optional = !stepIsRequired(s);
+                  const skipped = stepStatus[s.id] === "skipped";
+                  const canSave =
+                    (!s.requireScreenshot || !!shot.trim()) &&
+                    (!s.requireLink || !!link.trim());
                   return (
                     <div
                       key={s.id}
@@ -728,15 +841,20 @@ export function VideoTaskPlayer({
                       )}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm text-white inline-flex items-center gap-1.5">
+                        <span className="text-sm text-white inline-flex items-center gap-1.5 min-w-0">
                           {done ? (
                             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
                           ) : (
-                            <span className="text-xs font-bold text-gray-500">
-                              {i + 1}.
+                            <span className="shrink-0">{meta.emoji}</span>
+                          )}
+                          <span className="truncate">
+                            {s.label || meta.verb}
+                          </span>
+                          {optional && (
+                            <span className="shrink-0 text-[9px] font-bold uppercase text-gray-400 bg-gray-800 rounded px-1.5 py-0.5">
+                              {skipped ? "Skipped" : "Optional"}
                             </span>
                           )}
-                          {s.label || `Step ${i + 1}`}
                         </span>
                         {active && s.actionUrl && (
                           <a
@@ -746,12 +864,29 @@ export function VideoTaskPlayer({
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 text-xs font-semibold shrink-0"
                           >
                             <ExternalLink className="w-3 h-3" />
-                            Open
+                            {meta.openText}
                           </a>
                         )}
                       </div>
                       {active && (
                         <>
+                          {stepType(s) === "comment" && s.commentTemplate && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void navigator.clipboard
+                                  ?.writeText(s.commentTemplate ?? "")
+                                  .then(() => toast.success("Comment copied"))
+                                  .catch(() => {});
+                              }}
+                              className="w-full flex items-start gap-2 rounded-lg border border-gray-700 bg-gray-950 px-2.5 py-2 text-left"
+                            >
+                              <Copy className="w-3.5 h-3.5 text-indigo-400 shrink-0 mt-0.5" />
+                              <span className="flex-1 text-xs text-gray-300">
+                                {s.commentTemplate}
+                              </span>
+                            </button>
+                          )}
                           {s.requireScreenshot && (
                             <ProofImageUpload
                               value={shot}
@@ -761,25 +896,73 @@ export function VideoTaskPlayer({
                               placeholder="Upload a screenshot of this step"
                             />
                           )}
-                          <button
-                            type="button"
-                            onClick={saveStep}
-                            disabled={s.requireScreenshot && !shot.trim()}
-                            className="w-full py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            <CheckCircle2 className="w-4 h-4" />
-                            Save &amp; continue
-                          </button>
+                          {s.requireLink && (
+                            <div className="relative">
+                              <Link2 className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-500" />
+                              <input
+                                type="url"
+                                value={link}
+                                onChange={(e) =>
+                                  setStepLinks((p) => ({
+                                    ...p,
+                                    [s.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="Paste the proof link (e.g. your comment URL)"
+                                className="w-full pl-8 pr-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                          )}
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={saveStep}
+                              disabled={!canSave}
+                              className="flex-1 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                              Save &amp; continue
+                            </button>
+                            {optional && (
+                              <button
+                                type="button"
+                                onClick={skipStep}
+                                className="px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-semibold inline-flex items-center justify-center gap-1.5"
+                              >
+                                <SkipForward className="w-4 h-4" />
+                                Skip
+                              </button>
+                            )}
+                          </div>
                         </>
                       )}
                     </div>
                   );
                 })}
+                {allStepsDone && proofReq.uniqueKey && (
+                  <div>
+                    <label className="flex text-xs font-medium text-gray-400 mb-1 items-center gap-1">
+                      <KeyRound className="w-3 h-3" />
+                      Unique Key <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      value={uniqueKey}
+                      onChange={(e) => setUniqueKey(e.target.value)}
+                      placeholder="Enter the key shown in the video"
+                      className="w-full px-3 py-2 bg-gray-900 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-amber-500 font-mono"
+                    />
+                    {cfg?.uniqueKeyHint && (
+                      <p className="text-[11px] text-amber-400/80 mt-1">
+                        💡 {cfg.uniqueKeyHint}
+                      </p>
+                    )}
+                  </div>
+                )}
                 {allStepsDone && (
                   <button
                     type="button"
                     onClick={() => setCompletePressed(true)}
-                    disabled={busy}
+                    disabled={busy || (proofReq.uniqueKey && !uniqueKey.trim())}
                     className="w-full py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
                   >
                     {busy ? (
