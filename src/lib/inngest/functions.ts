@@ -2,13 +2,20 @@ import { inngest, EVENTS } from "./client";
 import { prisma } from "@/lib/prisma";
 import { expireDueTasks } from "@/lib/task-expiry";
 import { runSubscriptionExpiry } from "@/lib/subscription-expiry";
-import { runCourseReminders, runLiveClassTransitions } from "@/lib/course-cron";
+import {
+  runCourseReminders,
+  runFeaturedExpiry,
+  runLiveClassTransitions,
+} from "@/lib/course-cron";
 import { closeAuctionById, closeDueAuctions } from "@/lib/marketplace-auctions";
 import { drawLottery } from "@/lib/lottery";
 import { pruneOldLogs } from "@/lib/log-retention";
 import { releaseDeal, releaseDueDeals } from "@/lib/marketplace-deal";
 import { runPreviousMonthReferralBonuses } from "@/lib/referral-bonus";
 import { runAdCampaignSweep, runAdReviewSla } from "@/lib/ad-campaign-cron";
+import { flushAdCounters } from "@/lib/ad-counters";
+import { flushPageStats } from "@/lib/page-analytics";
+import { sweepStaleGameSessions } from "@/lib/game-cron";
 
 // ── Periodic sweeps (Inngest cron — replaces Vercel Cron) ────────────────────
 
@@ -29,7 +36,15 @@ export const courseReminders = inngest.createFunction(
 
 export const courseLiveClasses = inngest.createFunction(
   { id: "course-live-classes", triggers: [{ cron: "*/15 * * * *" }] }, // 15 min
-  async () => runLiveClassTransitions()
+  async () => {
+    // Both are cheap 15-minute housekeeping sweeps; keep them in one function
+    // rather than paying for a second scheduled invocation.
+    const [live, featured] = await Promise.all([
+      runLiveClassTransitions(),
+      runFeaturedExpiry(),
+    ]);
+    return { ...live, featuredCleared: featured.cleared };
+  }
 );
 
 export const logRetention = inngest.createFunction(
@@ -45,6 +60,20 @@ export const logRetention = inngest.createFunction(
 export const adCampaignSweep = inngest.createFunction(
   { id: "ad-campaign-sweep", triggers: [{ cron: "*/15 * * * *" }] },
   async () => runAdCampaignSweep()
+);
+
+/**
+ * Backstop for the buffered analytics counters (ad impressions + page stats).
+ * Traffic normally flushes them itself, but a serverless instance that goes
+ * quiet with a partial buffer would otherwise hold those counts until it is
+ * recycled. Cheap: a no-op when both buffers are empty.
+ */
+export const counterFlush = inngest.createFunction(
+  { id: "counter-flush", triggers: [{ cron: "* * * * *" }] }, // every minute
+  async () => {
+    await Promise.all([flushAdCounters(), flushPageStats()]);
+    return { flushed: true };
+  }
 );
 
 export const adReviewSla = inngest.createFunction(
@@ -117,7 +146,7 @@ export const lotterySweep = inngest.createFunction(
     });
     let drawn = 0;
     for (const { id } of due) {
-      const r = await step.run(`draw-${id}`, () => drawLottery(id));
+      const r = await step.run(`draw-${id}`, () => drawLottery(id, { requireDue: true }));
       if (r.ok) drawn++;
     }
     return { candidates: due.length, drawn };
@@ -131,14 +160,27 @@ export const referralMonthlyBonus = inngest.createFunction(
   async () => runPreviousMonthReferralBonuses()
 );
 
+/**
+ * Close game sessions that stopped beating. Every 15 minutes rather than hourly
+ * because one open session per user is a global rule — an abandoned session
+ * holds that user's only slot, so a long interval would leave them unable to
+ * earn from any game until it expired.
+ */
+export const gameSessionSweep = inngest.createFunction(
+  { id: "game-session-sweep", triggers: [{ cron: "*/15 * * * *" }] },
+  async () => sweepStaleGameSessions()
+);
+
 export const functions = [
   taskExpiry,
+  gameSessionSweep,
   referralMonthlyBonus,
   subscriptionExpiry,
   courseReminders,
   courseLiveClasses,
   logRetention,
   adCampaignSweep,
+  counterFlush,
   adReviewSla,
   auctionCloseScheduled,
   auctionSweep,

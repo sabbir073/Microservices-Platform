@@ -1,4 +1,5 @@
 "use client";
+import { usd } from "@/lib/utils";
 
 import { confirmDialog } from "@/lib/confirm";
 
@@ -16,6 +17,7 @@ import {
   ToggleRight,
 } from "lucide-react";
 import { AdminTable } from "@/components/admin/ui/admin-table";
+import { DateField } from "@/components/ui/date-field";
 
 interface Coupon {
   id: string;
@@ -148,7 +150,7 @@ export function CouponsAdmin({ initial, categories, courses, canManage }: Props)
             header: "Discount",
             cell: (c) => (
               <span className="text-white font-bold tabular-nums">
-                {c.type === "PERCENT" ? `${c.value}%` : `$${c.value.toFixed(2)}`}
+                {c.type === "PERCENT" ? `${c.value}%` : `${usd(c.value)}`}
               </span>
             ),
           },
@@ -448,18 +450,18 @@ function CouponForm({
           />
         </Field>
         <Field label="Valid from">
-          <input
+          <DateField
             type="date"
             value={validFrom}
-            onChange={(e) => setValidFrom(e.target.value)}
+            onChange={(v) => setValidFrom(v)}
             className={inputCls}
           />
         </Field>
         <Field label="Valid until">
-          <input
+          <DateField
             type="date"
             value={validUntil}
-            onChange={(e) => setValidUntil(e.target.value)}
+            onChange={(v) => setValidUntil(v)}
             className={inputCls}
           />
         </Field>

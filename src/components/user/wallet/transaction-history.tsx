@@ -5,8 +5,9 @@ import { Loader2, Clock, ChevronLeft, ChevronRight } from "lucide-react";
 import { TransactionRow } from "@/components/user/primitives/transaction-row";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { History } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, usd } from "@/lib/utils";
 import { SOURCE_META, SOURCE_ORDER, type SourceKey } from "@/lib/tx-sources";
+import { DateField } from "@/components/ui/date-field";
 
 interface HistoryTx {
   id: string;
@@ -81,10 +82,26 @@ export function TransactionHistory() {
     load();
   }, [load]);
 
-  // Reset to page 1 whenever a filter changes.
-  useEffect(() => {
+  // Changing a filter goes back to page 1 — done in the setters below, not in
+  // an effect.
+  //
+  // As an effect it fired AFTER the render that changed the filter, so the
+  // component rendered once with the new filter and the old page number,
+  // triggered a fetch for that combination, then re-rendered and fetched again.
+  // Two renders and two requests for one click, and a visible flicker between
+  // them. Setting both together makes it one of each.
+  const changeRange = (v: RangePreset) => {
+    setRange(v);
     setPage(1);
-  }, [range, day, source]);
+  };
+  const changeDay = (v: string) => {
+    setDay(v);
+    setPage(1);
+  };
+  const changeSource = (v: SourceKey | "all") => {
+    setSource(v);
+    setPage(1);
+  };
 
   return (
     <div className="space-y-3">
@@ -103,7 +120,7 @@ export function TransactionHistory() {
       <div className="flex flex-wrap items-center gap-2">
         <select
           value={range}
-          onChange={(e) => setRange(e.target.value as RangePreset)}
+          onChange={(e) => changeRange(e.target.value as RangePreset)}
           className="px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 text-sm text-white focus:outline-none focus:border-indigo-500"
         >
           {(Object.keys(RANGE_LABELS) as RangePreset[]).map((r) => (
@@ -113,10 +130,10 @@ export function TransactionHistory() {
           ))}
         </select>
         {range === "date" && (
-          <input
+          <DateField
             type="date"
             value={day}
-            onChange={(e) => setDay(e.target.value)}
+            onChange={(v) => changeDay(v)}
             className="px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 text-sm text-white focus:outline-none focus:border-indigo-500"
           />
         )}
@@ -125,7 +142,7 @@ export function TransactionHistory() {
       {/* Source filter chips */}
       <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
         <button
-          onClick={() => setSource("all")}
+          onClick={() => changeSource("all")}
           className={cn(
             "px-3 py-1 rounded-full text-xs font-semibold shrink-0 border transition-colors",
             source === "all"
@@ -138,7 +155,7 @@ export function TransactionHistory() {
         {SOURCE_ORDER.map((s) => (
           <button
             key={s}
-            onClick={() => setSource(s)}
+            onClick={() => changeSource(s)}
             className={cn(
               "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold shrink-0 border transition-colors",
               source === s
@@ -173,7 +190,7 @@ export function TransactionHistory() {
                     <span className="tabular-nums text-gray-400 shrink-0">
                       {v.points > 0 && `${v.points.toLocaleString()} pts`}
                       {v.points > 0 && v.amount > 0.005 && " · "}
-                      {v.amount > 0.005 && `$${v.amount.toFixed(2)}`}
+                      {v.amount > 0.005 && `${usd(v.amount)}`}
                     </span>
                   </div>
                 );

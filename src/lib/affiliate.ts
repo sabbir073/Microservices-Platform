@@ -1,3 +1,4 @@
+import { usd } from "@/lib/utils";
 import { prisma } from "@/lib/prisma";
 import { TransactionType, TransactionStatus } from "@/generated/prisma";
 
@@ -67,7 +68,7 @@ export function formatAffiliateReward(
   if (!isAffiliateEligible(type, value)) return null;
   const v = Number(value);
   if (type === "PERCENT") return `${v % 1 === 0 ? v : v.toFixed(1)}%`;
-  return `$${v.toFixed(2)}`;
+  return `${usd(v)}`;
 }
 
 /**
@@ -160,10 +161,22 @@ export async function reverseAffiliateCommission(
           type: TransactionType.REFUND,
           status: TransactionStatus.COMPLETED,
           points: 0,
-          amount: -amount,
+          // The amount actually clawed back, not the full commission. The
+          // debit above is clamped to the balance so it can't go negative;
+          // writing `-amount` here regardless meant the ledger and the balance
+          // disagreed permanently by whatever couldn't be recovered, and a
+          // reconciliation would never find where it went. `shortfall` records
+          // the gap explicitly instead of hiding it.
+          amount: -debit,
           description: "Affiliate commission reversed (sale refunded)",
           reference: ref,
-          metadata: { sourceType, orderRef, clawedBack: debit },
+          metadata: {
+            sourceType,
+            orderRef,
+            commissionAmount: amount,
+            clawedBack: debit,
+            shortfall: amount - debit,
+          },
         },
       });
     });

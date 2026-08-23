@@ -1,4 +1,6 @@
+import { usd } from "@/lib/utils";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
@@ -31,7 +33,7 @@ import {
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import { profileHref } from "@/lib/user-href";
-import { hasPermission, ROLE_CONFIG, type UserRole } from "@/lib/rbac";
+import { ROLE_CONFIG, type UserRole } from "@/lib/rbac";
 import { UserDetailActions, AdjustBalanceButton } from "@/components/admin/user-detail-actions";
 import { DisplayBoostPanel } from "@/components/admin/users/display-boost-panel";
 import {
@@ -65,7 +67,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
   }
 
   const adminRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(adminRole, "users.view")) {
+  if (!(await can(session.user.id, "users.view"))) {
     redirect("/admin");
   }
 
@@ -375,10 +377,10 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
           userName={user.name}
           userEmail={user.email}
           userStatus={user.status}
-          canEdit={hasPermission(adminRole, "users.edit") && (user.role !== "SUPER_ADMIN" || adminRole === "SUPER_ADMIN")}
-          canBan={hasPermission(adminRole, "users.ban") && user.role !== "SUPER_ADMIN"}
-          canDelete={hasPermission(adminRole, "users.delete") && user.role !== "SUPER_ADMIN"}
-          canApprove={hasPermission(adminRole, "users.edit") && (user.role !== "SUPER_ADMIN" || adminRole === "SUPER_ADMIN")}
+          canEdit={await can(session.user.id, "users.edit") && (user.role !== "SUPER_ADMIN" || adminRole === "SUPER_ADMIN")}
+          canBan={await can(session.user.id, "users.ban") && user.role !== "SUPER_ADMIN"}
+          canDelete={await can(session.user.id, "users.delete") && user.role !== "SUPER_ADMIN"}
+          canApprove={await can(session.user.id, "users.edit") && (user.role !== "SUPER_ADMIN" || adminRole === "SUPER_ADMIN")}
           initialAction={ban ? "ban" : del ? "delete" : undefined}
           canImpersonate={adminRole === "SUPER_ADMIN" && user.role !== "SUPER_ADMIN" && user.id !== session.user.id}
         />
@@ -579,8 +581,8 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
           </div>
           <p className="text-xl font-bold text-white">{user.level}</p>
           <div className="flex gap-1 mt-1">
-            <AdjustBalanceButton userId={id} type="level" action="add" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
-            <AdjustBalanceButton userId={id} type="level" action="deduct" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="level" action="add" canAdjust={await can(session.user.id, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="level" action="deduct" canAdjust={await can(session.user.id, "users.adjust_balance")} />
           </div>
         </div>
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
@@ -590,8 +592,8 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
           </div>
           <p className="text-xl font-bold text-white">{user.xp.toLocaleString()}</p>
           <div className="flex gap-1 mt-1">
-            <AdjustBalanceButton userId={id} type="xp" action="add" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
-            <AdjustBalanceButton userId={id} type="xp" action="deduct" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="xp" action="add" canAdjust={await can(session.user.id, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="xp" action="deduct" canAdjust={await can(session.user.id, "users.adjust_balance")} />
           </div>
         </div>
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
@@ -601,8 +603,8 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
           </div>
           <p className="text-xl font-bold text-white">{user.pointsBalance.toLocaleString()}</p>
           <div className="flex gap-1 mt-1">
-            <AdjustBalanceButton userId={id} type="points" action="add" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
-            <AdjustBalanceButton userId={id} type="points" action="deduct" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="points" action="add" canAdjust={await can(session.user.id, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="points" action="deduct" canAdjust={await can(session.user.id, "users.adjust_balance")} />
           </div>
         </div>
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
@@ -610,10 +612,10 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
             <Wallet className="w-4 h-4 text-emerald-400" />
             <span className="text-xs text-gray-500">Cash Balance</span>
           </div>
-          <p className="text-xl font-bold text-white">${user.cashBalance.toFixed(2)}</p>
+          <p className="text-xl font-bold text-white">{usd(user.cashBalance)}</p>
           <div className="flex gap-1 mt-1">
-            <AdjustBalanceButton userId={id} type="cash" action="add" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
-            <AdjustBalanceButton userId={id} type="cash" action="deduct" canAdjust={hasPermission(adminRole, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="cash" action="add" canAdjust={await can(session.user.id, "users.adjust_balance")} />
+            <AdjustBalanceButton userId={id} type="cash" action="deduct" canAdjust={await can(session.user.id, "users.adjust_balance")} />
           </div>
         </div>
         <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
@@ -716,7 +718,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
       </div>
 
       {/* Display Boost panel + Bulk follow link */}
-      {hasPermission(adminRole, "users.edit") && (
+      {await can(session.user.id, "users.edit") && (
         <div className="space-y-4">
           <DisplayBoostPanel
             userId={id}
@@ -728,7 +730,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
               following: user.displayFollowingBoost,
               posts: user.displayPostsBoost,
             }}
-            canEdit={hasPermission(adminRole, "users.edit")}
+            canEdit={await can(session.user.id, "users.edit")}
           />
           <Link
             href={`/admin/users/${id}/boost-followers`}
@@ -796,14 +798,18 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="bg-gray-800/50 rounded-lg p-4">
                   <p className="text-sm text-gray-400">Total Earned</p>
-                  <p className="text-xl font-bold text-emerald-400">${user.totalEarnings.toFixed(2)}</p>
+                  <p className="text-xl font-bold text-emerald-400">{usd(user.totalEarnings)}</p>
                 </div>
                 <div className="bg-gray-800/50 rounded-lg p-4">
                   <p className="text-sm text-gray-400">Total Withdrawn</p>
-                  <p className="text-xl font-bold text-amber-400">${user.totalWithdrawals.toFixed(2)}</p>
+                  <p className="text-xl font-bold text-amber-400">{usd(user.totalWithdrawals)}</p>
                 </div>
                 <div className="bg-gray-800/50 rounded-lg p-4">
-                  <p className="text-sm text-gray-400">Tasks Completed</p>
+                  {/* This is EVERY submission (pending + rejected included) —
+                      not the same thing as the user's "Tasks Completed", which
+                      counts only approved/auto-approved work. Labelled honestly
+                      so the two screens stop looking contradictory. */}
+                  <p className="text-sm text-gray-400">Task Submissions</p>
                   <p className="text-xl font-bold text-indigo-400">{counts._count.taskSubmissions}</p>
                 </div>
                 <div className="bg-gray-800/50 rounded-lg p-4">
@@ -848,7 +854,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
                       )}
                       {tx.amount !== 0 && (
                         <p className={`text-sm font-medium ${tx.amount > 0 ? "text-emerald-400" : "text-red-400"}`}>
-                          {tx.amount > 0 ? "+" : ""}${tx.amount.toFixed(2)}
+                          {tx.amount > 0 ? "+" : ""}{usd(tx.amount)}
                         </p>
                       )}
                       <p className="text-xs text-gray-500">{formatDistanceToNow(tx.createdAt, { addSuffix: true })}</p>
@@ -1084,7 +1090,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
                 header: "Amount",
                 cell: (tx) => (
                   <span className={`font-medium ${tx.amount > 0 ? "text-emerald-400" : tx.amount < 0 ? "text-red-400" : "text-gray-400"}`}>
-                    {tx.amount !== 0 ? `${tx.amount > 0 ? "+" : ""}$${tx.amount.toFixed(2)}` : "-"}
+                    {tx.amount !== 0 ? `${tx.amount > 0 ? "+" : ""}${usd(tx.amount)}` : "-"}
                   </span>
                 ),
               },
@@ -1213,7 +1219,7 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
                 key: "amount",
                 header: "Amount",
                 primary: true,
-                cell: (w) => <span className="font-medium text-white">${w.amount.toFixed(2)}</span>,
+                cell: (w) => <span className="font-medium text-white">{usd(w.amount)}</span>,
               },
               {
                 key: "method",
@@ -1237,12 +1243,12 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
               {
                 key: "fee",
                 header: "Fee",
-                cell: (w) => <span className="text-gray-400">${w.fee.toFixed(2)}</span>,
+                cell: (w) => <span className="text-gray-400">{usd(w.fee)}</span>,
               },
               {
                 key: "net",
                 header: "Net",
-                cell: (w) => <span className="text-emerald-400">${w.netAmount.toFixed(2)}</span>,
+                cell: (w) => <span className="text-emerald-400">{usd(w.netAmount)}</span>,
               },
               {
                 key: "requested",

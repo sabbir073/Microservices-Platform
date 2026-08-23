@@ -2,43 +2,45 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateTaskQuiz, isGeminiConfigured } from "@/lib/gemini";
-import { TaskType, TaskStatus } from "@/generated/prisma";
+// `TaskStatus` is no longer needed here: `visibleTaskWhere()` pins the status
+// (and `hidden`, the date windows, level, access level and audience) itself.
+import { TaskType } from "@/generated/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { getPointsPerUsd } from "@/lib/economy";
 import { getUserDayContext } from "@/lib/user-day";
-import { getEffectivePackage } from "@/lib/packages";
 import { getTaskChainState } from "@/lib/task-sequence";
-import { taskAudienceWhere } from "@/lib/task-targeting";
+import {
+  getTaskViewerContext,
+  visibleTaskWhere,
+} from "@/lib/task-visibility";
 import {
   getActiveMissionForUser,
   buildDailyProgress,
   resolveTaskTypeBucket,
 } from "@/lib/daily-mission-progress";
+import {
+  coerceQuizQuestions,
+  coerceQuizAnswers,
+  quizPayout,
+  QUIZ_PASS_PERCENT,
+  type QuizQuestionShape,
+} from "@/lib/quiz-shape";
+import { requireActiveUser } from "@/lib/require-active";
 
 /**
- * Coerce a stored `Task.questions` value into a usable question array. Some rows
- * store it as a JSON STRING (double-encoded) rather than a JSON array, which
- * previously left the quiz player with zero questions (blank screen). Returns a
- * non-empty array of question objects, or null when there's nothing usable
- * (caller then falls back to AI generation).
+ * Strip the answer key before sending a quiz to the browser.
+ *
+ * The player only needs the prompt and the options. It used to receive
+ * `correctAnswer` on every question, which meant the answers were sitting in
+ * the network tab of anyone who opened dev tools.
  */
-function coerceQuestions(raw: unknown): { question: string; options: string[] }[] | null {
-  let val: unknown = raw;
-  if (typeof val === "string") {
-    try {
-      val = JSON.parse(val);
-    } catch {
-      return null;
-    }
-  }
-  if (!Array.isArray(val) || val.length === 0) return null;
-  const ok = val.every(
-    (q) =>
-      q &&
-      typeof q === "object" &&
-      typeof (q as { question?: unknown }).question === "string" &&
-      Array.isArray((q as { options?: unknown }).options)
-  );
-  return ok ? (val as { question: string; options: string[] }[]) : null;
+function toPlayerQuestions(questions: QuizQuestionShape[]) {
+  return questions.map((q, i) => ({
+    id: i,
+    question: q.question,
+    options: q.options,
+    ...(q.imageUrl ? { imageUrl: q.imageUrl } : {}),
+  }));
 }
 
 // GET /api/tasks/quiz - Get quiz for a specific task or generate new one
@@ -56,34 +58,21 @@ export async function GET(request: NextRequest) {
     // No taskId → list available QUIZ tasks (with sequential-unlock lock state)
     // for the quiz tab. mirrors the video/social list gating.
     if (!taskId) {
-      const [lister, pkg] = await Promise.all([
-        prisma.user.findUnique({
-          where: { id: session.user.id },
-          select: {
-            level: true,
-            country: true,
-            region: true,
-            division: true,
-            district: true,
-            subDistrict: true,
-            postalCode: true,
-            gender: true,
-            dateOfBirth: true,
-          },
-        }),
-        getEffectivePackage(session.user.id),
-      ]);
-      const accessLevel = pkg?.accessLevel ?? 0;
+      // Same visibility rules as /api/tasks. This list previously skipped
+      // `hidden`, the start/expiry windows and the plan gates entirely, so
+      // hidden, expired and plan-disabled quiz tasks showed up here — which is
+      // how the user's quiz count ran ahead of what admin considered live.
+      const ctx = await getTaskViewerContext(session.user.id);
+      if (!ctx || !ctx.hasTasksFeature) {
+        return NextResponse.json({ quizzes: [] });
+      }
       const quizTasks = await prisma.task.findMany({
-        where: {
+        where: visibleTaskWhere(ctx.viewer, {
+          accessLevel: ctx.accessLevel,
+          allowedTypes: ctx.allowedTypes,
           type: TaskType.QUIZ,
-          status: TaskStatus.ACTIVE,
-          minLevel: { lte: lister?.level ?? 0 },
-          requiredAccessLevel: { lte: accessLevel },
-          // STRICT audience targeting (country/area/gender/age).
-          AND: taskAudienceWhere(lister ?? {}),
-        },
-        orderBy: { createdAt: "desc" },
+        }),
+        orderBy: [{ order: "asc" }, { createdAt: "desc" }],
         take: 50,
       });
       const { lockedTaskIds } = await getTaskChainState(session.user.id);
@@ -93,7 +82,7 @@ export async function GET(request: NextRequest) {
           title: t.title,
           description: t.description ?? undefined,
           difficulty: (t.difficulty as string) || "BEGINNER",
-          questionCount: coerceQuestions(t.questions)?.length ?? 0,
+          questionCount: coerceQuizQuestions(t.questions)?.length ?? 0,
           timeLimit: 0,
           pointsReward: t.pointsReward,
           minScore: 70,
@@ -102,40 +91,47 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get the task
-    const task = await prisma.task.findUnique({
-      where: { id: taskId },
+    // Same visibility clause as the list and the POST. Fetching a single quiz
+    // by id used to check only `type` and `status`, which meant a hidden,
+    // expired, wrong-audience or plan-gated quiz was fully readable — and,
+    // worse, that a task with no questions triggered a Gemini generation (and a
+    // write back to the task row) for any task id an authenticated user chose
+    // to name. That is unmetered AI spend plus a user-triggerable admin-data
+    // write, both reachable without ever being eligible for the task.
+    const ctx = await getTaskViewerContext(session.user.id);
+    if (!ctx || !ctx.hasTasksFeature) {
+      return NextResponse.json(
+        { error: "Your plan doesn't include tasks." },
+        { status: 403 }
+      );
+    }
+    const task = await prisma.task.findFirst({
+      where: {
+        id: taskId,
+        ...visibleTaskWhere(ctx.viewer, {
+          accessLevel: ctx.accessLevel,
+          allowedTypes: ctx.allowedTypes,
+          type: TaskType.QUIZ,
+        }),
+      },
     });
 
     if (!task) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
-    }
-
-    // Check if task is a quiz type
-    if (task.type !== TaskType.QUIZ) {
       return NextResponse.json(
-        { error: "This task is not a quiz" },
-        { status: 400 }
-      );
-    }
-
-    // Check if task is active
-    if (task.status !== TaskStatus.ACTIVE) {
-      return NextResponse.json(
-        { error: "This task is not available" },
-        { status: 400 }
+        { error: "This quiz isn't available for you." },
+        { status: 404 }
       );
     }
 
     // Use pre-defined questions when present and valid (parses string-encoded
     // rows). Invalid/empty → fall through to AI generation.
-    const predefined = coerceQuestions(task.questions);
+    const predefined = coerceQuizQuestions(task.questions);
     if (predefined) {
       return NextResponse.json({
         taskId: task.id,
         title: task.title,
         description: task.description,
-        questions: predefined,
+        questions: toPlayerQuestions(predefined),
         pointsReward: task.pointsReward,
         xpReward: task.xpReward,
         isAIGenerated: false,
@@ -163,11 +159,29 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Persist what was generated. Grading reads the answer key from the task
+    // row (see POST), so an AI quiz that lived only in the response would have
+    // nothing to grade against. It also means one Gemini call per task instead
+    // of one per user, and every user sees the same quiz.
+    const generated = coerceQuizQuestions(result.questions);
+    if (!generated) {
+      return NextResponse.json(
+        { error: "Failed to parse generated quiz" },
+        { status: 500 }
+      );
+    }
+    await prisma.task
+      .update({
+        where: { id: task.id },
+        data: { questions: generated as unknown as Prisma.InputJsonValue },
+      })
+      .catch(() => {}); // best-effort: a failed write just regenerates next time
+
     return NextResponse.json({
       taskId: task.id,
       title: task.title,
       description: task.description,
-      questions: result.questions,
+      questions: toPlayerQuestions(generated),
       pointsReward: task.pointsReward,
       xpReward: task.xpReward,
       isAIGenerated: true,
@@ -191,28 +205,68 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { taskId, answers, questions } = body;
+    // `questions` is still accepted from older clients but is NEVER read — see
+    // the grading block below.
+    const { taskId, answers } = body;
 
-    if (!taskId || !answers || !questions) {
+    if (!taskId || !answers) {
       return NextResponse.json(
-        { error: "Task ID, answers, and questions are required" },
+        { error: "Task ID and answers are required" },
         { status: 400 }
       );
     }
 
-    // Get the task
-    const task = await prisma.task.findUnique({
-      where: { id: taskId },
+    // A banned or suspended account must not be able to earn. `User.status` is
+    // otherwise only ever read at login, and the JWT lives 30 days.
+    const active = await requireActiveUser(session.user.id);
+    if (!active.ok) {
+      return NextResponse.json(
+        { error: active.message },
+        { status: active.httpStatus }
+      );
+    }
+
+    // Load the task through the SAME visibility clause the list uses.
+    //
+    // This handler pays money, and it used to load the task with a bare
+    // `findUnique` and check nothing but `type === QUIZ`. Every gate that
+    // `/api/tasks/[id]/start` enforces was missing: status, hidden, expiresAt,
+    // startsAt, minLevel, requiredAccessLevel, the per-plan feature flag and
+    // audience targeting. All of them were bypassable by POSTing a task id
+    // directly — a hidden quiz, an expired one, one meant for another country,
+    // or one gated behind a plan the user doesn't hold.
+    const ctx = await getTaskViewerContext(session.user.id);
+    if (!ctx || !ctx.hasTasksFeature) {
+      return NextResponse.json(
+        { error: "Your plan doesn't include tasks." },
+        { status: 403 }
+      );
+    }
+    const task = await prisma.task.findFirst({
+      where: {
+        id: taskId,
+        ...visibleTaskWhere(ctx.viewer, {
+          accessLevel: ctx.accessLevel,
+          allowedTypes: ctx.allowedTypes,
+          type: TaskType.QUIZ,
+        }),
+      },
     });
 
     if (!task) {
-      return NextResponse.json({ error: "Task not found" }, { status: 404 });
+      // Deliberately indistinguishable from "no such task": confirming that a
+      // quiz exists but isn't for you is itself information.
+      return NextResponse.json(
+        { error: "This quiz isn't available for you." },
+        { status: 404 }
+      );
     }
 
-    // Check if task is a quiz type
-    if (task.type !== TaskType.QUIZ) {
+    // Global completion cap. `completedCount` is incremented once per credited
+    // approval across all users, so an exhausted task must stop paying.
+    if (task.totalLimit && task.completedCount >= task.totalLimit) {
       return NextResponse.json(
-        { error: "This task is not a quiz" },
+        { error: "This quiz has reached its completion limit." },
         { status: 400 }
       );
     }
@@ -251,17 +305,7 @@ export async function POST(request: NextRequest) {
 
     // Daily-mission cap — quizzes count against the mission's QUIZ target
     // (mirrors /api/tasks/[id]/start so this alt path can't bypass it).
-    const [me, pkg] = await Promise.all([
-      prisma.user.findUnique({
-        where: { id: session.user.id },
-        select: { level: true },
-      }),
-      getEffectivePackage(session.user.id),
-    ]);
-    const mission = await getActiveMissionForUser(
-      pkg?.accessLevel ?? 0,
-      me?.level ?? 0
-    );
+    const mission = await getActiveMissionForUser(session.user.id);
     if (mission && mission.items.length > 0) {
       const item = mission.items.find(
         (it) => resolveTaskTypeBucket(it.taskType) === "QUIZ"
@@ -289,43 +333,53 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Calculate score
+    // Grade against the ANSWER KEY IN THE DATABASE, never the one the browser
+    // sent. This route used to score `answers[i] === questions[i].correctAnswer`
+    // where BOTH sides came from the request body, so posting a one-question
+    // quiz with your own correct answer scored 100% and paid the full reward.
+    // The task row is now the only source of truth; `body.questions` is ignored.
+    const key = coerceQuizQuestions(task.questions);
+    if (!key) {
+      return NextResponse.json(
+        { error: "This quiz has no questions configured. Reopen it and try again." },
+        { status: 409 }
+      );
+    }
+
+    const picks = coerceQuizAnswers(answers);
     let correctAnswers = 0;
-    const totalQuestions = questions.length;
+    const totalQuestions = key.length;
     const results: Array<{
       questionId: number;
       isCorrect: boolean;
-      userAnswer: number;
+      userAnswer: number | null;
       correctAnswer: number;
     }> = [];
 
-    for (let i = 0; i < questions.length; i++) {
-      const question = questions[i];
-      const userAnswer = answers[i];
-      const isCorrect = userAnswer === question.correctAnswer;
-
-      if (isCorrect) {
-        correctAnswers++;
-      }
-
+    for (let i = 0; i < key.length; i++) {
+      const userAnswer = picks[i] ?? null;
+      const isCorrect =
+        userAnswer !== null && userAnswer === key[i].correctAnswer;
+      if (isCorrect) correctAnswers++;
       results.push({
-        questionId: question.id,
+        questionId: i,
         isCorrect,
         userAnswer,
-        correctAnswer: question.correctAnswer,
+        correctAnswer: key[i].correctAnswer,
       });
     }
 
     const score = Math.round((correctAnswers / totalQuestions) * 100);
-    const passed = score >= 70; // 70% passing threshold
-
-    // Calculate rewards based on score
-    const pointsEarned = passed ? Math.round(task.pointsReward * (score / 100)) : 0;
-    const xpEarned = passed ? Math.round(task.xpReward * (score / 100)) : 0;
+    // The pass mark and the pro-rata rule live in quiz-shape.ts so this route
+    // and /api/tasks/[id]/submit cannot drift apart again — they used to pay
+    // completely differently for the same answers.
+    const passed = score >= QUIZ_PASS_PERCENT;
+    const pointsEarned = quizPayout(score, task.pointsReward);
+    const xpEarned = quizPayout(score, task.xpReward);
 
     const answersJson = {
-      questions: questions.map((q: { id: number; question: string }) => q.question),
-      userAnswers: answers,
+      questions: key.map((q) => q.question),
+      userAnswers: picks,
       results,
     };
 
@@ -396,8 +450,8 @@ export async function POST(request: NextRequest) {
       xpEarned,
       results: results.map((r, i) => ({
         ...r,
-        question: questions[i].question,
-        explanation: questions[i].explanation,
+        question: key[i].question,
+        explanation: key[i].explanation,
       })),
       message: passed
         ? `Congratulations! You scored ${score}% and earned ${pointsEarned} points!`

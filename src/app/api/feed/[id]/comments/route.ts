@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { awardSocialEarning } from "@/lib/social-earning";
 import { extractMentionUsernames, resolveMentionedUsers } from "@/lib/mentions";
+import { recordUserAction } from "@/lib/goal-progress";
+import { deleteCommentCascade } from "@/lib/content-delete";
 
 // GET /api/feed/:id/comments - Get post comments
 export async function GET(
@@ -156,13 +158,24 @@ export async function POST(
       data: { commentsCount: { increment: 1 }, lastActivityAt: new Date() },
     });
 
-    // Social earning — recipient (owner) and optionally actor (commenter)
-    await awardSocialEarning({
-      postOwnerUserId: post.userId,
-      actorUserId: session.user.id,
-      action: "COMMENT_RECEIVED",
-      postId: id,
-    });
+    await Promise.all([
+      // Social earning — recipient (owner) and optionally actor (commenter)
+      awardSocialEarning({
+        postOwnerUserId: post.userId,
+        actorUserId: session.user.id,
+        action: "COMMENT_RECEIVED",
+        postId: id,
+      }),
+      // Event progress — deduped per POST, not per comment, so 100 comments on
+      // one post count once. Commenting on your own post never counts.
+      post.userId === session.user.id
+        ? Promise.resolve()
+        : recordUserAction({
+            userId: session.user.id,
+            action: "feed_comment",
+            targetId: id,
+          }),
+    ]);
 
     // Mentions in this comment
     const usernames = extractMentionUsernames(content);
@@ -173,26 +186,30 @@ export async function POST(
         (m) => m.id !== session.user!.id
       );
       if (filtered.length > 0) {
+        // One insert for every mention, not one per mention.
+        await prisma.mention.createMany({
+          data: filtered.map((m) => ({
+            commentId: comment.id,
+            postId: id,
+            mentionedUserId: m.id,
+            mentionedById: session.user!.id,
+          })),
+          skipDuplicates: true,
+        });
+        // Credit concurrently instead of sequentially: awardSocialEarning is
+        // ~13 queries, so a comment mentioning 5 people used to serialize 65+
+        // round-trips while the commenter waited. Each is independent and
+        // idempotent (unique `reference`), so failures are per-mention.
         await Promise.all(
           filtered.map((m) =>
-            prisma.mention.create({
-              data: {
-                commentId: comment.id,
-                postId: id,
-                mentionedUserId: m.id,
-                mentionedById: session.user!.id,
-              },
-            })
+            awardSocialEarning({
+              postOwnerUserId: m.id,
+              actorUserId: session.user!.id,
+              action: "MENTION_RECEIVED",
+              postId: id,
+            }).catch(() => {})
           )
         );
-        for (const m of filtered) {
-          await awardSocialEarning({
-            postOwnerUserId: m.id,
-            actorUserId: session.user!.id,
-            action: "MENTION_RECEIVED",
-            postId: id,
-          });
-        }
       }
     }
 
@@ -259,19 +276,22 @@ export async function DELETE(
       );
     }
 
-    // Delete comment
-    await prisma.comment.delete({
-      where: { id: commentId },
-    });
-
-    // Update comment count
-    await prisma.post.update({
-      where: { id },
-      data: { commentsCount: { decrement: 1 } },
-    });
+    // Delete the comment AND its replies, and correct the count by how many
+    // actually went. `Comment.parentId` has no `onDelete`, so a plain delete
+    // nulled the children instead of removing them — replies were silently
+    // promoted to top-level comments on the same post, while `commentsCount`
+    // dropped by 1 no matter how many comments vanished from the thread.
+    const outcome = await deleteCommentCascade(commentId);
+    if (!outcome.ok) {
+      return NextResponse.json(
+        { error: "Failed to delete comment" },
+        { status: outcome.reason === "not_found" ? 404 : 500 }
+      );
+    }
 
     return NextResponse.json({
       message: "Comment deleted successfully",
+      repliesRemoved: outcome.extra,
     });
   } catch (error) {
     console.error("Error deleting comment:", error);

@@ -23,6 +23,10 @@ export async function GET(
 ) {
   try {
     const { id } = await params;
+    // The list is capped at 25; return the true total alongside it so the UI
+    // can't render "bid history (25)" on a listing with 60 bids while admin
+    // shows the real number.
+    const totalBids = await prisma.marketplaceBid.count({ where: { listingId: id } });
     const bidsRaw = await prisma.marketplaceBid.findMany({
       where: { listingId: id },
       orderBy: [{ amount: "desc" }, { createdAt: "desc" }],
@@ -48,6 +52,7 @@ export async function GET(
       };
     }>;
     return NextResponse.json({
+      totalBids,
       bids: bids.map((b) => ({
         id: b.id,
         amount: toNum(b.amount),
@@ -70,8 +75,16 @@ export async function GET(
   }
 }
 
+/**
+ * Ceiling on a single bid. Money columns are `Decimal(18, 6)`, so anything at
+ * or above 10^12 overflows the column; this sits far below that and far above
+ * any real digital-goods listing. Without it `z.number().positive()` accepted
+ * `1e308`.
+ */
+const MAX_BID = 1_000_000;
+
 const placeBidSchema = z.object({
-  amount: z.number().positive(),
+  amount: z.number().positive().max(MAX_BID),
   message: z.string().max(500).optional(),
 });
 
@@ -158,6 +171,29 @@ export async function POST(
             currentHigh
               ? `Bid must be at least $${floor.toLocaleString()} (current high $${toNum(currentHigh.amount).toLocaleString()} + minimum increment).`
               : `Bid must be at least the starting bid of $${(listing.startingBid ?? 0).toLocaleString()}.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Can the bidder actually cover this? Bids are not escrowed — funds only
+    // move at settlement — so without this check a $0 account could bid any
+    // amount. That was half of a working money-creation exploit (the other half
+    // was the missing debit CAS in the manual close route): a collusive pair
+    // bid an arbitrary figure and the seller was credited real cash for it.
+    //
+    // The settlement CAS in `settleAuction()` is still the authority, because
+    // the balance can be spent between bidding and closing. This check exists
+    // so a fantasy bid can't sit at the top of an auction and lock out the
+    // genuine bidders who *can* pay.
+    const bidder = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { cashBalance: true },
+    });
+    if (!bidder || toNum(bidder.cashBalance) < amount) {
+      return NextResponse.json(
+        {
+          error: `You need $${amount.toLocaleString()} in your balance to bid this much. Available: $${toNum(bidder?.cashBalance ?? 0).toLocaleString()}.`,
         },
         { status: 400 }
       );

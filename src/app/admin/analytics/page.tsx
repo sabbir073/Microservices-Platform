@@ -1,11 +1,12 @@
+import { usd } from "@/lib/utils";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
 import { Users, DollarSign, TrendingUp, Activity, ArrowUpRight, ArrowDownRight, Eye, Clock, MousePointer2, FileText, ListChecks } from "lucide-react";
 import Link from "next/link";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import { ExportDropdown } from "./_components/ExportDropdown";
 import { AnalyticsCharts } from "@/components/admin/analytics/analytics-charts";
 
@@ -34,8 +35,7 @@ export default async function AdminAnalyticsPage({ searchParams }: PageProps) {
     redirect("/login");
   }
 
-  const adminRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(adminRole, "analytics.view")) {
+  if (!(await can(session.user.id, "analytics.view"))) {
     redirect("/admin");
   }
 
@@ -303,7 +303,7 @@ export default async function AdminAnalyticsPage({ searchParams }: PageProps) {
     .map((t) => ({ name: TASK_TYPE_NAME[t.type] ?? t.type, value: t._count._all }))
     .sort((a, b) => b.value - a.value);
 
-  const canExport = hasPermission(adminRole, "analytics.export");
+  const canExport = await can(session.user.id, "analytics.export");
 
   return (
     <div className="space-y-8">
@@ -407,7 +407,7 @@ export default async function AdminAnalyticsPage({ searchParams }: PageProps) {
             </span>
           </div>
           <p className="text-3xl font-bold text-white">
-            ${(totalWithdrawals._sum.amount || 0).toFixed(2)}
+            {usd(totalWithdrawals._sum.amount ?? 0)}
           </p>
           <p className="text-sm text-gray-500 mt-1">Withdrawals</p>
           <p className="text-xs text-gray-600 mt-2">
@@ -589,7 +589,7 @@ export default async function AdminAnalyticsPage({ searchParams }: PageProps) {
                 </div>
               </div>
               <p className="font-semibold text-emerald-400">
-                ${user.totalEarnings.toFixed(2)}
+                {usd(user.totalEarnings)}
               </p>
             </div>
           ))}

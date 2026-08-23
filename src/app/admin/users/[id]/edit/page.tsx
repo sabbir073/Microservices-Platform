@@ -3,8 +3,10 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { hasPermission, type UserRole } from "@/lib/rbac";
+import { type UserRole } from "@/lib/rbac";
+import { can } from "@/lib/permissions";
 import { toNum } from "@/lib/money";
+import { usd } from "@/lib/utils";
 import { UserEditForm } from "@/components/admin/users/edit-user-modal";
 import {
   UserDetailActions,
@@ -17,9 +19,9 @@ export default async function EditUserPage({
   params: Promise<{ id: string }>;
 }) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
   const adminRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(adminRole, "users.edit")) {
+  if (!(await can(session.user.id, "users.edit"))) {
     redirect(`/admin/users`);
   }
 
@@ -117,7 +119,17 @@ export default async function EditUserPage({
   };
 
   const isSuperAdmin = adminRole === "SUPER_ADMIN";
-  const canBalance = hasPermission(adminRole, "users.adjust_balance");
+  // `can()` (effective: role table + custom role + per-user overrides) — the
+  // API gates on this, and gating the page on the static role table instead
+  // rendered buttons that then 403'd for custom-role admins.
+  const canBalance = await can(session.user.id, "users.adjust_balance");
+
+  const BALANCE_FIELDS = [
+    { key: "points" as const, value: user.pointsBalance },
+    { key: "cash" as const, value: user.cashBalance },
+    { key: "level" as const, value: user.level },
+    { key: "xp" as const, value: user.xp },
+  ];
 
   return (
     <div className="max-w-4xl mx-auto space-y-4">
@@ -138,10 +150,10 @@ export default async function EditUserPage({
           userEmail={user.email}
           userStatus={user.status}
           canEdit={false}
-          canBan={hasPermission(adminRole, "users.ban") && user.role !== "SUPER_ADMIN"}
-          canDelete={hasPermission(adminRole, "users.delete") && user.role !== "SUPER_ADMIN"}
+          canBan={await can(session.user.id, "users.ban") && user.role !== "SUPER_ADMIN"}
+          canDelete={await can(session.user.id, "users.delete") && user.role !== "SUPER_ADMIN"}
           canApprove={
-            hasPermission(adminRole, "users.edit") &&
+            await can(session.user.id, "users.edit") &&
             (user.role !== "SUPER_ADMIN" || isSuperAdmin)
           }
           canImpersonate={
@@ -151,20 +163,40 @@ export default async function EditUserPage({
           }
         />
         {canBalance && (
-          <div className="flex items-center gap-3 border-l border-slate-800 pl-3">
-            {(["points", "cash", "level", "xp"] as const).map((t) => (
+          <div className="flex flex-wrap items-center gap-2 border-l border-slate-800 pl-3">
+            {BALANCE_FIELDS.map(({ key, value }) => (
               <span
-                key={t}
-                className="inline-flex items-center gap-1 text-xs text-slate-400"
+                key={key}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-2 py-1"
               >
-                <span className="uppercase tracking-wide">{t}</span>
-                <AdjustBalanceButton userId={id} type={t} action="add" canAdjust />
-                <AdjustBalanceButton userId={id} type={t} action="deduct" canAdjust />
+                <span className="text-[10px] uppercase tracking-wide text-slate-500">
+                  {key}
+                </span>
+                {/* The current value. Without it there was nothing on this row
+                    that changed after an adjustment, which is why the buttons
+                    read as broken — they always worked. */}
+                <span className="text-sm font-bold text-white tabular-nums">
+                  {key === "cash" ? usd(value) : value.toLocaleString()}
+                </span>
+                <AdjustBalanceButton
+                  userId={id}
+                  type={key}
+                  action="add"
+                  canAdjust
+                  currentValue={value}
+                />
+                <AdjustBalanceButton
+                  userId={id}
+                  type={key}
+                  action="deduct"
+                  canAdjust
+                  currentValue={value}
+                />
               </span>
             ))}
           </div>
         )}
-        {hasPermission(adminRole, "users.edit") && (
+        {await can(session.user.id, "users.edit") && (
           <Link
             href={`/admin/users/${id}/boost-followers`}
             className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:text-white"

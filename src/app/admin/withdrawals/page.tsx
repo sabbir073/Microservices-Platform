@@ -1,8 +1,10 @@
 import { parsePage } from "@/lib/paginate";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
+import { usd } from "@/lib/utils";
 import {
   DollarSign,
   Search,
@@ -16,7 +18,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow, differenceInDays } from "date-fns";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Prisma } from "@/generated/prisma/client";
 import { WithdrawalRowActions } from "@/components/admin/withdrawals/withdrawal-row-actions";
 import { assessWithdrawalRisk, type RiskLevel } from "@/lib/withdrawal-risk";
@@ -60,8 +61,7 @@ export default async function AdminWithdrawalsPage({ searchParams }: PageProps) 
     redirect("/login");
   }
 
-  const adminRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(adminRole, "withdrawals.view")) {
+  if (!(await can(session.user.id, "withdrawals.view"))) {
     redirect("/admin");
   }
 
@@ -184,10 +184,13 @@ export default async function AdminWithdrawalsPage({ searchParams }: PageProps) 
     return queryParams.toString();
   };
 
-  const canProcess = hasPermission(adminRole, "withdrawals.process");
+  const canProcess = await can(session.user.id, "withdrawals.process");
 
-  const pendingAmount = pendingSum._sum.amount ?? 0;
-  const totalPaid = completedSum._sum.amount ?? 0;
+  // These are Prisma Decimals. `Decimal.toLocaleString(opts)` silently IGNORES
+  // its options and emits the raw 6-dp value — which is how this page came to
+  // render "$1234.567891" while /admin and /admin/finance showed $1,234.57.
+  const pendingAmount = toNum(pendingSum._sum.amount ?? 0);
+  const totalPaid = toNum(completedSum._sum.amount ?? 0);
 
   return (
     <div className="space-y-6">
@@ -210,10 +213,7 @@ export default async function AdminWithdrawalsPage({ searchParams }: PageProps) 
               Total Pending
             </p>
             <p className="text-2xl font-bold text-yellow-400 tabular-nums">
-              ${pendingAmount.toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              {usd(pendingAmount)}
             </p>
           </div>
         </div>
@@ -265,7 +265,7 @@ export default async function AdminWithdrawalsPage({ searchParams }: PageProps) 
             </div>
             <div>
               <p className="text-2xl font-bold text-white tabular-nums">{completedCount}</p>
-              <p className="text-sm text-slate-500">Completed · ${totalPaid.toFixed(0)}</p>
+              <p className="text-sm text-slate-500">Completed · {usd(totalPaid)}</p>
             </div>
           </div>
         </Link>
@@ -385,9 +385,9 @@ export default async function AdminWithdrawalsPage({ searchParams }: PageProps) 
                   header: "Amount",
                   cell: (r) => (
                     <div>
-                      <p className="text-white font-medium tabular-nums">${r.withdrawal.amount.toFixed(2)}</p>
+                      <p className="text-white font-medium tabular-nums">{usd(r.withdrawal.amount)}</p>
                       <p className="text-xs text-slate-500 tabular-nums">
-                        Fee ${r.withdrawal.fee.toFixed(2)} · Net ${r.withdrawal.netAmount.toFixed(2)}
+                        Fee {usd(r.withdrawal.fee)} · Net {usd(r.withdrawal.netAmount)}
                       </p>
                     </div>
                   ),

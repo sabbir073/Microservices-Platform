@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { calculateLevel } from "@/lib/level";
+import { requireActiveUser } from "@/lib/require-active";
 import {
   TransactionType,
   TransactionStatus,
@@ -112,6 +114,17 @@ export async function POST() {
 
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // A banned or suspended account must not be able to claim a reward. `User.status`
+    // is otherwise only ever read at login, and the JWT lives 30 days with no
+    // status claim, so a ban had no effect until the session expired.
+    const active = await requireActiveUser(session.user.id);
+    if (!active.ok) {
+      return NextResponse.json(
+        { error: active.message },
+        { status: active.httpStatus }
+      );
     }
 
     const user = await prisma.user.findUnique({
@@ -258,20 +271,6 @@ export async function POST() {
   }
 }
 
-// Helper function to calculate level from XP
-function calculateLevel(xp: number): number {
-  if (xp < 100) return 1;
-  if (xp < 250) return 2;
-  if (xp < 500) return 3;
-  if (xp < 1000) return 4;
-  if (xp < 2000) return 5;
-  if (xp < 4000) return 6;
-  if (xp < 7000) return 7;
-  if (xp < 11000) return 8;
-  if (xp < 16000) return 9;
-  if (xp < 22000) return 10;
-  return Math.floor(10 + (xp - 22000) / 10000);
-}
 
 // Helper function for mystery box bonus
 async function claimMysteryBox(

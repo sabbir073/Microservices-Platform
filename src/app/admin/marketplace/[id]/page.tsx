@@ -1,11 +1,12 @@
+import { usd } from "@/lib/utils";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ArrowLeft, Calendar, Eye, ShoppingCart, DollarSign, Tag, FileText, Image as ImageIcon, Download, ShieldCheck, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow, format } from "date-fns";
 import { Avatar } from "@/components/user/primitives/avatar";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import { ListingActions } from "./_components/ListingActions";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import type { MediaMeta } from "@/lib/media-metadata";
@@ -30,8 +31,7 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
     redirect("/login");
   }
 
-  const adminRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(adminRole, "marketplace.view")) {
+  if (!(await can(session.user.id, "marketplace.view"))) {
     redirect("/admin");
   }
 
@@ -98,7 +98,7 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
   const typedListing = listing as ListingWithRelations;
 
   const statusConfig = STATUS_CONFIG[typedListing.status] || STATUS_CONFIG.ACTIVE;
-  const canManage = hasPermission(adminRole, "marketplace.manage");
+  const canManage = await can(session.user.id, "marketplace.manage");
 
   // Calculate earnings
   const totalEarnings = typedListing.purchases.reduce((sum, p) => sum + p.amount, 0);
@@ -219,8 +219,8 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="font-semibold text-white">${purchase.amount.toFixed(2)}</p>
-                      <p className="text-xs text-gray-500">Fee: ${purchase.fee.toFixed(2)}</p>
+                      <p className="font-semibold text-white">{usd(purchase.amount)}</p>
+                      <p className="text-xs text-gray-500">Fee: {usd(purchase.fee)}</p>
                     </div>
                   </div>
                 ))}
@@ -243,7 +243,7 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Price</p>
-                  <p className="font-semibold text-white">${typedListing.price.toFixed(2)}</p>
+                  <p className="font-semibold text-white">{usd(typedListing.price)}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -293,15 +293,15 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Total Sales</span>
-                    <span className="text-white">${totalEarnings.toFixed(2)}</span>
+                    <span className="text-white">{usd(totalEarnings)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Platform Fees</span>
-                    <span className="text-white">${totalFees.toFixed(2)}</span>
+                    <span className="text-white">{usd(totalFees)}</span>
                   </div>
                   <div className="flex justify-between text-sm font-semibold pt-2 border-t border-gray-800">
                     <span className="text-gray-400">Seller Earnings</span>
-                    <span className="text-emerald-400">${(totalEarnings - totalFees).toFixed(2)}</span>
+                    <span className="text-emerald-400">{usd((totalEarnings - totalFees))}</span>
                   </div>
                 </div>
               </div>

@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireActiveUser } from "@/lib/require-active";
 import {
-  TaskStatus,
   SubmissionStatus,
   TransactionType,
   TransactionStatus,
   NotificationType,
 } from "@/generated/prisma/client";
 import { getPointsPerUsd } from "@/lib/economy";
-import { taskAudienceWhere } from "@/lib/task-targeting";
+import {
+  getTaskViewerContext,
+  visibleTaskWhere,
+  visibleBoardWhere,
+} from "@/lib/task-visibility";
 
 export async function POST(
   _req: Request,
@@ -19,11 +23,32 @@ export async function POST(
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // A banned or suspended account must not be able to claim a board. `User.status`
+  // is otherwise only ever read at login, and the JWT lives 30 days with no
+  // status claim, so a ban had no effect until the session expired.
+  const active = await requireActiveUser(session.user.id);
+  if (!active.ok) {
+    return NextResponse.json(
+      { error: active.message },
+      { status: active.httpStatus }
+    );
+  }
   const userId = session.user.id;
   const { id } = await params;
 
-  const board = await prisma.taskBoard.findUnique({ where: { id } });
-  if (!board || !board.isActive) {
+  // This route pays out, so eligibility is re-checked here rather than trusted
+  // from the list — a list filter is not a security boundary.
+  const ctx = await getTaskViewerContext(userId);
+  const board = ctx
+    ? await prisma.taskBoard.findFirst({
+        where: {
+          id,
+          ...visibleBoardWhere(ctx.viewer, { accessLevel: ctx.accessLevel }),
+        },
+      })
+    : null;
+  if (!board) {
     return NextResponse.json({ error: "Board not found" }, { status: 404 });
   }
 
@@ -87,41 +112,42 @@ export async function POST(
     );
   }
 
-  // Only the tasks this user is eligible for count toward the board's
-  // completion gate (STRICT audience targeting — mirrors the board detail view).
-  const claimant = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      country: true,
-      region: true,
-      division: true,
-      district: true,
-      subDistrict: true,
-      postalCode: true,
-      gender: true,
-      dateOfBirth: true,
-    },
-  });
-
-  const tasks = await prisma.task.findMany({
-    where: {
-      boardId: board.id,
-      status: TaskStatus.ACTIVE,
-      AND: taskAudienceWhere(claimant ?? {}),
-    },
-    select: { id: true },
-  });
+  // The claim requirement must be counted over EXACTLY the tasks the board page
+  // showed this user — same visibility rules, or the board is unclaimable.
+  const tasks = ctx
+    ? await prisma.task.findMany({
+        where: {
+          ...visibleTaskWhere(ctx.viewer, {
+            accessLevel: ctx.accessLevel,
+            allowedTypes: ctx.allowedTypes,
+            // the claim counts the board's tasks
+            includeBoardTasks: true,
+          }),
+          boardId: board.id,
+        },
+        select: { id: true },
+      })
+    : [];
   if (tasks.length === 0) {
     return NextResponse.json({ error: "Board has no active tasks" }, { status: 400 });
   }
 
-  const completedCount = await prisma.taskSubmission.count({
+  // DISTINCT tasks, not submission rows.
+  //
+  // `count` counted rows, and board tasks are ordinary tasks with a per-day
+  // `dailyLimit` — so completing task A on Monday, Tuesday and Wednesday
+  // produced three approved rows and satisfied a three-task board without the
+  // user ever opening B or C. With `dailyLimit > 1` it worked within one day.
+  const completedTasks = await prisma.taskSubmission.findMany({
     where: {
       userId,
       taskId: { in: tasks.map((t) => t.id) },
       status: { in: [SubmissionStatus.APPROVED, SubmissionStatus.AUTO_APPROVED] },
     },
+    select: { taskId: true },
+    distinct: ["taskId"],
   });
+  const completedCount = completedTasks.length;
 
   if (completedCount < tasks.length) {
     return NextResponse.json(

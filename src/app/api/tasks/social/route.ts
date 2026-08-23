@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { TaskStatus, TaskType } from "@/generated/prisma/client";
-import { mapSocialTaskRow } from "@/lib/social-tasks";
+import { TaskType } from "@/generated/prisma/client";
+import { mapSocialTaskRow, isPostCreationAction } from "@/lib/social-tasks";
+import type { SocialTaskView } from "@/lib/social-tasks";
 import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
 import { getTaskChainState } from "@/lib/task-sequence";
-import { taskAudienceWhere } from "@/lib/task-targeting";
+import { visibleTaskWhere } from "@/lib/task-visibility";
 
 export async function GET(request: NextRequest) {
   const session = await auth();
@@ -14,6 +15,16 @@ export async function GET(request: NextRequest) {
   }
   const { searchParams } = new URL(request.url);
   const status = searchParams.get("status") ?? "available";
+  // "create" = only tasks that ask the user to publish something new (a pin, a
+  // post, a tweet); "engage" = everything else (follow, like, comment). The
+  // action list lives inside the socialConfig JSON, so this is filtered after
+  // mapping rather than in SQL.
+  const kind = searchParams.get("kind");
+  const matchesKind = (v: SocialTaskView): boolean => {
+    if (kind === "create") return v.items.some((i) => isPostCreationAction(i.action));
+    if (kind === "engage") return !v.items.every((i) => isPostCreationAction(i.action));
+    return true;
+  };
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
@@ -66,7 +77,7 @@ export async function GET(request: NextRequest) {
       where: { id: { in: taskIds } },
     });
     return NextResponse.json({
-      tasks: tasks.map((t) => mapSocialTaskRow(t)),
+      tasks: tasks.map((t) => mapSocialTaskRow(t)).filter(matchesKind),
     });
   }
 
@@ -95,25 +106,30 @@ export async function GET(request: NextRequest) {
 
   const tasks = await prisma.task.findMany({
     where: {
-      type: TaskType.SOCIAL,
-      status: TaskStatus.ACTIVE,
-      minLevel: { lte: user.level },
-      requiredAccessLevel: { lte: accessLevel },
-      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-      // STRICT audience targeting (country/area/gender/age).
-      AND: taskAudienceWhere(user),
+      // Shared visibility rules (adds the `hidden` flag and the startsAt window
+      // this route used to skip).
+      ...visibleTaskWhere(user, {
+        accessLevel,
+        allowedTypes: [TaskType.SOCIAL],
+        type: TaskType.SOCIAL,
+      }),
       ...(excludeTaskIds.length ? { id: { notIn: excludeTaskIds } } : {}),
     },
-    orderBy: { createdAt: "desc" },
-    take: 100,
+    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
+    // Over-fetch when filtering by kind so the post-map filter can still fill a
+    // page; sliced back to 100 below.
+    take: kind ? 250 : 100,
   });
 
   // Sequential-unlock: mark tasks locked behind an earlier one (feature #7).
   const { lockedTaskIds } = await getTaskChainState(session.user.id);
   return NextResponse.json({
-    tasks: tasks.map((t) => ({
-      ...mapSocialTaskRow(t),
-      locked: lockedTaskIds.has(t.id),
-    })),
+    tasks: tasks
+      .map((t) => ({
+        ...mapSocialTaskRow(t),
+        locked: lockedTaskIds.has(t.id),
+      }))
+      .filter(matchesKind)
+      .slice(0, 100),
   });
 }

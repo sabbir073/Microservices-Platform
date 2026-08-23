@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import {
   buildDailyProgress,
   resolveTaskTypeBucket,
+  getActiveMissionForUser,
 } from "@/lib/daily-mission-progress";
 import {
   getUserDayContext,
@@ -43,35 +44,30 @@ export async function GET() {
   // All daily boundaries use the user's LOCAL midnight (country-based).
   const { startOfDayUtc, dayKey: todayKey, tz } = await getUserDayContext(userId);
 
-  const todayAgg = await prisma.transaction.aggregate({
-    // Today's earnings (points) — completed EARNING/BONUS transactions today.
-    where: {
-      userId,
-      status: "COMPLETED",
-      type: { in: ["EARNING", "BONUS"] },
-      createdAt: { gte: startOfDayUtc },
-    },
-    _sum: { points: true },
-  });
-  const referralCount = await prisma.user.count({
-    where: { referredById: userId },
-  });
-  // Highest-accessLevel active mission template the user qualifies for.
-  const missionRaw = await prisma.dailyMissionTemplate.findFirst({
-    where: {
-      requiredAccessLevel: { lte: user.package?.accessLevel ?? 0 },
-      isActive: true,
-      requiredLevel: { lte: user.level },
-    },
-    orderBy: [
-      { requiredAccessLevel: "desc" },
-      { order: "asc" },
-      { createdAt: "desc" },
-    ],
-    include: { items: { orderBy: { order: "asc" } } },
-    // Mission templates change rarely and are shared across users — cache.
-    cacheStrategy: { ttl: 120, swr: 300 },
-  });
+  // These two are independent of each other and of the mission lookup below, so
+  // they run together. Awaiting them in sequence added a full Accelerate
+  // round-trip each — on an endpoint the feed calls on every mount.
+  const [todayAgg, referralCount] = await Promise.all([
+    prisma.transaction.aggregate({
+      // Today's earnings (points) — completed EARNING/BONUS transactions today.
+      where: {
+        userId,
+        status: "COMPLETED",
+        type: { in: ["EARNING", "BONUS"] },
+        createdAt: { gte: startOfDayUtc },
+      },
+      _sum: { points: true },
+    }),
+    prisma.user.count({ where: { referredById: userId } }),
+  ]);
+  // The shared resolver (tier + level + schedule + audience targeting). This
+  // was a fourth hand-written copy of the same query; the widget would have
+  // shown a mission the user is no longer eligible for.
+  //
+  // The old copy carried `cacheStrategy: { ttl: 120 }`, which is dropped on
+  // purpose: the result is now per-user (targeting), so a shared cache entry
+  // would leak one user's mission to another.
+  const missionRaw = await getActiveMissionForUser(userId);
 
   // Login-streak status (mirror of /api/daily-reward GET, on the user's local day).
   let currentStreak = user.streak || 0;

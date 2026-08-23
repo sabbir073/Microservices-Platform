@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { withIdempotency } from "@/lib/idempotency";
 import { prisma } from "@/lib/prisma";
+import { requireActiveUser } from "@/lib/require-active";
 import {
   TransactionType,
   TransactionStatus,
@@ -13,6 +14,7 @@ import {
   parseFeatureOverrides,
 } from "@/lib/packages";
 import { getPointsPerUsd } from "@/lib/economy";
+import { getReferralBonusMission } from "@/lib/daily-mission-progress";
 import { getUserDayContext } from "@/lib/user-day";
 
 const DEFAULT_DAILY_PER_REFERRAL = 5; // points per L1 referral, used if Package.referralBonus is 0
@@ -33,7 +35,6 @@ export async function GET() {
   }
 
   const userPackage = await getEffectivePackage(userId);
-  const accessLevel = userPackage?.accessLevel ?? 0;
   // Daily claim is L1 commission, so plan must unlock at least L1.
   const commissionLevels = userPackage?.referralCommissionLevels ?? 0;
   const canEarnReferralCommission = commissionLevels >= 1;
@@ -43,9 +44,17 @@ export async function GET() {
     where: { userId_date: { userId, date: today } },
   });
 
-  // L1 referral count
+  // L1 referral count — ACTIVE accounts only.
+  //
+  // This is a RECURRING daily payout of `perReferral × count`, and it used to
+  // count every row with `referredById = you`: accounts that never verified
+  // their email, accounts banned for fraud, and self-deleted accounts (which
+  // are soft-deleted to BANNED but keep their `referredById`). Registering
+  // throwaway addresses that are never opened therefore bought a permanent
+  // daily income. `audienceWhere()` already treats `status: "ACTIVE"` as the
+  // house rule for who counts as a real user.
   const referralCount = await prisma.user.count({
-    where: { referredById: userId },
+    where: { referredById: userId, status: "ACTIVE" },
   });
 
   // Per-referral bonus from the user's plan; default 5 if 0/null. Plan that
@@ -61,15 +70,8 @@ export async function GET() {
   const points = Math.round(perReferral * referralCount);
 
   // Mission gating — use the highest-level mission template the user qualifies for.
-  const mission = await prisma.dailyMissionTemplate.findFirst({
-    where: {
-      requiredAccessLevel: { lte: accessLevel },
-      isActive: true,
-      linkReferralBonus: true,
-    },
-    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
-    select: { id: true },
-  });
+  // Shared resolver — same tier/schedule/targeting rules as everywhere else.
+  const mission = await getReferralBonusMission(userId);
   let missionRequired = false;
   let missionComplete = false;
   if (mission) {
@@ -104,6 +106,17 @@ export async function POST(request: NextRequest) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // A banned or suspended account must not be able to claim a reward. `User.status`
+  // is otherwise only ever read at login, and the JWT lives 30 days with no
+  // status claim, so a ban had no effect until the session expired.
+  const active = await requireActiveUser(session.user.id);
+  if (!active.ok) {
+    return NextResponse.json(
+      { error: active.message },
+      { status: active.httpStatus }
+    );
+  }
   return withIdempotency(request, session.user.id, async () => {
   const userId = session.user.id;
 
@@ -116,7 +129,6 @@ export async function POST(request: NextRequest) {
   }
 
   const userPackage = await getEffectivePackage(userId);
-  const accessLevel = userPackage?.accessLevel ?? 0;
 
   if (
     !resolveUserFeature(
@@ -162,15 +174,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Mission gate
-  const mission = await prisma.dailyMissionTemplate.findFirst({
-    where: {
-      requiredAccessLevel: { lte: accessLevel },
-      isActive: true,
-      linkReferralBonus: true,
-    },
-    orderBy: [{ order: "asc" }, { createdAt: "desc" }],
-    select: { id: true, name: true },
-  });
+  const mission = await getReferralBonusMission(userId);
   if (mission) {
     const missionClaim = await prisma.dailyMissionClaim.findUnique({
       where: {

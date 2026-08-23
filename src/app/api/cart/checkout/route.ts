@@ -1,3 +1,4 @@
+import { usd } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { withIdempotency } from "@/lib/idempotency";
@@ -113,7 +114,7 @@ export async function POST(request: NextRequest) {
         {
           error: "Insufficient wallet balance",
           shortBy: sub(total, buyer.cashBalance).toNumber(),
-          details: `Need $${total.toFixed(2)}, have $${toNum(buyer.cashBalance).toFixed(2)}.`,
+          details: `Need ${usd(total)}, have ${usd(toNum(buyer.cashBalance))}.`,
         },
         { status: 402 }
       );
@@ -129,6 +130,17 @@ export async function POST(request: NextRequest) {
         const { fee, sellerAmount } = splitPrice(toNum(item.listing.price), bps);
         return { item, bps, fee, sellerAmount };
       })
+    );
+
+    // Lock ORDER matters. The loop below locks each listing and then its
+    // seller's user row; taking them in cart order meant two buyers whose carts
+    // contain the same two sellers in opposite order could deadlock (Postgres
+    // resolves that by killing one — a failed checkout, seemingly at random).
+    // Sorting gives every transaction the same global acquisition order.
+    itemPlans.sort(
+      (a, b) =>
+        a.item.listing.sellerId.localeCompare(b.item.listing.sellerId) ||
+        a.item.listing.id.localeCompare(b.item.listing.id)
     );
 
     const result = await prisma.$transaction(async (tx) => {
@@ -231,10 +243,20 @@ export async function POST(request: NextRequest) {
       }
 
       // One buyer-side debit + ledger row for the whole cart.
-      await tx.user.update({
-        where: { id: userId },
+      //
+      // Compare-and-set, not a plain decrement: the affordability check earlier
+      // in this handler runs OUTSIDE the transaction, so it is check-then-act.
+      // Two purchases fired concurrently from different routes — this one and a
+      // course enrolment, say — both passed their own check against the same
+      // balance and both debited it, leaving the user negative while two sellers
+      // were credited real cash.
+      const paid = await tx.user.updateMany({
+        where: { id: userId, cashBalance: { gte: total } },
         data: { cashBalance: { decrement: total } },
       });
+      if (paid.count === 0) {
+        throw new Error("INSUFFICIENT_BALANCE");
+      }
       await tx.transaction.create({
         data: {
           userId,
@@ -323,6 +345,17 @@ export async function POST(request: NextRequest) {
       /just purchased by someone else/i.test(error.message)
     ) {
       return NextResponse.json({ error: error.message }, { status: 409 });
+    }
+    // The debit compare-and-set matched nothing — the balance was spent between
+    // the check above and the transaction. Nothing was purchased or charged.
+    if (error instanceof Error && error.message === "INSUFFICIENT_BALANCE") {
+      return NextResponse.json(
+        {
+          error:
+            "Your balance changed while this was going through, so nothing was charged. Check your wallet and try again.",
+        },
+        { status: 402 }
+      );
     }
     console.error("Cart checkout failed:", error);
     return NextResponse.json(

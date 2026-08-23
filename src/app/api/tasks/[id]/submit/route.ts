@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { withIdempotency } from "@/lib/idempotency";
 import { prisma } from "@/lib/prisma";
+import { calculateLevel } from "@/lib/level";
+import { requireActiveUser } from "@/lib/require-active";
 import {
   SubmissionStatus,
   TransactionType,
@@ -37,7 +39,11 @@ import {
   hasRichProof,
   type AppInstallConfig,
 } from "@/lib/app-install-tasks";
-import { socialWatchTargetSeconds, normalizeSocialConfig } from "@/lib/social-tasks";
+import {
+  socialWatchTargetSeconds,
+  normalizeSocialConfig,
+  getAction,
+} from "@/lib/social-tasks";
 import { verifyCodeFor, contentHasCode } from "@/lib/task-verify-code";
 import {
   verifyTelegramMember,
@@ -52,6 +58,13 @@ import {
   PHASH_HAMMING_THRESHOLD,
 } from "@/lib/phash";
 import { createHash } from "crypto";
+import { recordUserAction } from "@/lib/goal-progress";
+import {
+  coerceQuizQuestions,
+  coerceQuizAnswers,
+  scoreQuiz,
+  quizPayout,
+} from "@/lib/quiz-shape";
 
 // POST /api/tasks/:id/submit - Submit task proof
 export async function POST(
@@ -62,6 +75,17 @@ export async function POST(
 
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // A banned or suspended account must not be able to earn. `User.status`
+  // is otherwise only ever read at login, and the JWT lives 30 days with no
+  // status claim, so a ban had no effect until the session expired.
+  const active = await requireActiveUser(session.user.id);
+  if (!active.ok) {
+    return NextResponse.json(
+      { error: active.message },
+      { status: active.httpStatus }
+    );
   }
 
   return withIdempotency(request, session.user.id, async () => {
@@ -244,20 +268,15 @@ export async function POST(
     // Validate quiz answers if it's a quiz task
     let score: number | null = null;
     if (task.type === "QUIZ" && answers && task.questions) {
-      const questions = task.questions as Array<{
-        question: string;
-        options: string[];
-        correctAnswer: number;
-      }>;
-
-      let correctCount = 0;
-      questions.forEach((q, index) => {
-        if (answers[index] === q.correctAnswer) {
-          correctCount++;
-        }
-      });
-
-      score = Math.round((correctCount / questions.length) * 100);
+      // `task.questions` is `Json?` and is a double-encoded STRING on some rows;
+      // the old cast-and-forEach threw "not a function" on those, and only ever
+      // looked for `correctAnswer` while the seed writes `correct`. See
+      // src/lib/quiz-shape.ts.
+      const questions = coerceQuizQuestions(task.questions);
+      if (questions) {
+        const picks = coerceQuizAnswers(answers);
+        score = Math.round((scoreQuiz(questions, picks) / questions.length) * 100);
+      }
     }
 
     // ── Article task: check unique key + force PENDING (admin reviews) ──
@@ -416,6 +435,70 @@ export async function POST(
         });
       }
       appInstallMeta = { appKind: cfg?.appKind ?? "app", items: metaItems };
+    }
+
+    // ── Social task: enforce each action's configured proof requirements ──
+    // These were previously checked only in the browser, so a crafted POST with
+    // an empty `items` array was accepted and went to a reviewer with no proof
+    // at all. APPINSTALL (above) and VIDEO (below) both enforce server-side;
+    // this brings SOCIAL in line.
+    if (task.type === "SOCIAL") {
+      const socialCfg = normalizeSocialConfig(task.socialConfig);
+      if (socialCfg.items.length > 0) {
+        const submittedItems = Array.isArray(socialItems) ? socialItems : null;
+        for (let i = 0; i < socialCfg.items.length; i++) {
+          const cfgItem = socialCfg.items[i];
+          const def = getAction(socialCfg.platform, cfgItem.action);
+          const label = def?.label ?? cfgItem.action;
+          // A single-action task submitted by the legacy (non-bundle) client
+          // sends its proof at the top level instead of in `items`.
+          const p =
+            submittedItems?.[i] ??
+            (!submittedItems && socialCfg.items.length === 1
+              ? { proofUrl, screenshotUrl, username }
+              : null);
+          if (!p) {
+            return NextResponse.json(
+              { error: `Proof is missing for: ${label}` },
+              { status: 400 }
+            );
+          }
+          // The admin edited the task after this user started it, so the proof
+          // they collected no longer lines up with the configured actions.
+          if (
+            submittedItems &&
+            typeof p.action === "string" &&
+            p.action.toUpperCase() !== cfgItem.action.toUpperCase()
+          ) {
+            return NextResponse.json(
+              {
+                error:
+                  "This task was updated while you were working on it. Reload the page and try again.",
+              },
+              { status: 400 }
+            );
+          }
+          const req = cfgItem.proofRequirements;
+          if (req.url && !String(p.proofUrl ?? "").trim()) {
+            return NextResponse.json(
+              { error: `Please provide the proof URL for: ${label}` },
+              { status: 400 }
+            );
+          }
+          if (req.screenshot && !String(p.screenshotUrl ?? "").trim()) {
+            return NextResponse.json(
+              { error: `Upload a screenshot for: ${label}` },
+              { status: 400 }
+            );
+          }
+          if (req.username && !String(p.username ?? "").trim()) {
+            return NextResponse.json(
+              { error: `Please provide your username for: ${label}` },
+              { status: 400 }
+            );
+          }
+        }
+      }
     }
 
     // ── Video task: hard-fail on bad unique key (auto-reject) ──
@@ -828,7 +911,12 @@ export async function POST(
         (task.type !== "ARTICLE" &&
           task.type !== "CUSTOM" &&
           task.type !== "APPINSTALL" &&
-          (task.autoApprove || task.type === "VIDEO" || task.type === "QUIZ")));
+          // `task.autoApprove` alone. This used to be or-ed with a hardcoded
+          // `|| task.type === "VIDEO" || task.type === "QUIZ"`, which overrode
+          // the admin's own switch: a VIDEO or QUIZ task with auto-approve
+          // explicitly turned OFF still paid out instantly. The toggle is the
+          // decision; the type is not.
+          task.autoApprove));
 
     // VIDEO YouTube-style engagement that requires a screenshot is manually
     // reviewed (a screenshot only has value if a human checks it). Honor-based
@@ -953,8 +1041,20 @@ export async function POST(
       const multiplier =
         (userPlan as unknown as { package: { taskRewardMultiplier: number } | null })?.package
           ?.taskRewardMultiplier ?? 1;
-      const effectivePoints = Math.round(task.pointsReward * multiplier);
-      const effectiveXp = Math.round(task.xpReward * multiplier);
+      // A QUIZ pays on the score, exactly as /api/tasks/quiz does. This path
+      // computed `score` above and then ignored it, paying the full reward for
+      // a 0% answer sheet — so which route the client happened to use decided
+      // what a wrong answer was worth. `quizPayout` is now the only rule.
+      const rewardBase =
+        task.type === "QUIZ" && score !== null
+          ? quizPayout(score, task.pointsReward)
+          : task.pointsReward;
+      const xpBase =
+        task.type === "QUIZ" && score !== null
+          ? quizPayout(score, task.xpReward)
+          : task.xpReward;
+      const effectivePoints = Math.round(rewardBase * multiplier);
+      const effectiveXp = Math.round(xpBase * multiplier);
       const pointsPerUsd = await getPointsPerUsd();
 
       // Funded (user-created) task: draw from the pool FIRST (CAS). If the pool
@@ -1027,7 +1127,12 @@ export async function POST(
       ]);
 
       // Check for level up
-      const newLevel = calculateLevel(user.xp + effectiveXp);
+      // `user` is the RESULT of the `user.update` above, so `user.xp` already
+      // includes `effectiveXp`. Adding it again counted every reward twice and
+      // levelled people up at roughly half the intended XP, compounding on
+      // every task. (`daily-reward` reads the user BEFORE its transaction,
+      // which is why the same expression is correct there and was wrong here.)
+      const newLevel = calculateLevel(user.xp);
       if (newLevel > user.level) {
         await prisma.user.update({
           where: { id: session.user.id },
@@ -1055,7 +1160,23 @@ export async function POST(
       });
 
       // Process referral commissions on the effective (multiplied) reward.
-      await processReferralCommissions(session.user.id, effectivePoints, task.id);
+      // The submission id makes the payout idempotent per completion — keyed on
+      // the task alone, a repeatable task paid the upline again on every run.
+      await processReferralCommissions(
+        session.user.id,
+        effectivePoints,
+        task.id,
+        submission.id
+      );
+
+      // Event progress — the auto-approved twin of the admin approval path in
+      // /api/admin/submissions/[id]. Same dedup key, so a task that somehow
+      // travels both routes still counts once.
+      await recordUserAction({
+        userId: session.user.id,
+        action: task.type === "QUIZ" ? "quiz_approved" : "task_approved",
+        targetId: submission.id,
+      });
 
       return NextResponse.json({
         submission: updatedSubmission,
@@ -1065,7 +1186,9 @@ export async function POST(
           points: effectivePoints,
           xp: effectiveXp,
         },
-        newBalance: user.pointsBalance + effectivePoints,
+        // Same reason as the level above: `user` is the post-increment row, so
+        // this reported a balance one full reward higher than the wallet held.
+        newBalance: user.pointsBalance,
         score,
       });
     }
@@ -1124,22 +1247,4 @@ export async function POST(
   });
 }
 
-// Calculate user level based on XP
-function calculateLevel(xp: number): number {
-  // Level formula: Each level requires more XP than the previous
-  // Level 1: 0 XP, Level 2: 100 XP, Level 3: 250 XP, etc.
-  if (xp < 100) return 1;
-  if (xp < 250) return 2;
-  if (xp < 500) return 3;
-  if (xp < 1000) return 4;
-  if (xp < 2000) return 5;
-  if (xp < 4000) return 6;
-  if (xp < 7000) return 7;
-  if (xp < 11000) return 8;
-  if (xp < 16000) return 9;
-  if (xp < 22000) return 10;
-
-  // After level 10, each level requires 10000 more XP
-  return Math.floor(10 + (xp - 22000) / 10000);
-}
 

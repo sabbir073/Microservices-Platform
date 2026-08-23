@@ -1,20 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { TaskStatus, SubmissionStatus } from "@/generated/prisma/client";
-import { taskAudienceWhere } from "@/lib/task-targeting";
-
-// Viewer profile fields matched by task audience targeting.
-const AUDIENCE_SELECT = {
-  country: true,
-  region: true,
-  division: true,
-  district: true,
-  subDistrict: true,
-  postalCode: true,
-  gender: true,
-  dateOfBirth: true,
-} as const;
+import { SubmissionStatus } from "@/generated/prisma/client";
+import {
+  getTaskViewerContext,
+  visibleTaskWhere,
+  visibleBoardWhere,
+} from "@/lib/task-visibility";
 
 export async function GET(
   _req: Request,
@@ -26,8 +18,18 @@ export async function GET(
   }
   const { id } = await params;
 
-  const board = await prisma.taskBoard.findUnique({ where: { id } });
-  if (!board || !board.isActive) {
+  // Viewer context first — the board fetch itself is now eligibility-gated, so
+  // a board targeted at someone else is a 404 rather than an empty board.
+  const ctx = await getTaskViewerContext(session.user.id);
+  const board = ctx
+    ? await prisma.taskBoard.findFirst({
+        where: {
+          id,
+          ...visibleBoardWhere(ctx.viewer, { accessLevel: ctx.accessLevel }),
+        },
+      })
+    : null;
+  if (!board) {
     return NextResponse.json({ error: "Board not found" }, { status: 404 });
   }
 
@@ -62,21 +64,21 @@ export async function GET(
     }
   }
 
-  // STRICT audience targeting — only surface board tasks the viewer is eligible
-  // for (same rules as the standalone task list).
-  const viewer = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: AUDIENCE_SELECT,
-  });
-
-  const tasks = await prisma.task.findMany({
-    where: {
-      boardId: id,
-      status: TaskStatus.ACTIVE,
-      AND: taskAudienceWhere(viewer ?? {}),
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  // Same visibility rules as the standalone task list.
+  const tasks = ctx
+    ? await prisma.task.findMany({
+        where: {
+          ...visibleTaskWhere(ctx.viewer, {
+            accessLevel: ctx.accessLevel,
+            allowedTypes: ctx.allowedTypes,
+            // the board detail lists its tasks
+            includeBoardTasks: true,
+          }),
+          boardId: id,
+        },
+        orderBy: [{ order: "asc" }, { createdAt: "asc" }],
+      })
+    : [];
 
   const taskIds = tasks.map((t) => t.id);
   const submissions = taskIds.length

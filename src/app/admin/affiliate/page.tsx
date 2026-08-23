@@ -1,19 +1,19 @@
+import { usd } from "@/lib/utils";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import { Handshake, Coins, Users, TrendingUp, MousePointerClick, Percent } from "lucide-react";
 import { getAffiliateConfig } from "@/lib/affiliate";
 import { AffiliateConfigForm } from "@/components/admin/affiliate/affiliate-config-form";
 
 export default async function AdminAffiliatePage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
-  const role = session.user.role as UserRole | undefined;
-  if (!hasPermission(role, "marketplace.view")) redirect("/admin");
-  const canManage = hasPermission(role, "marketplace.manage");
+  if (!session?.user?.id) redirect("/login");
+  if (!(await can(session.user.id, "marketplace.view"))) redirect("/admin");
+  const canManage = await can(session.user.id, "marketplace.manage");
 
   const affiliateConfig = await getAffiliateConfig();
 
@@ -83,7 +83,7 @@ export default async function AdminAffiliatePage() {
       {canManage && <AffiliateConfigForm initial={affiliateConfig} />}
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-        <Stat icon={<Coins className="w-5 h-5" />} label="Total paid" value={`$${totalPaid.toFixed(2)}`} tone="text-emerald-400" />
+        <Stat icon={<Coins className="w-5 h-5" />} label="Total paid" value={`${usd(totalPaid)}`} tone="text-emerald-400" />
         <Stat icon={<TrendingUp className="w-5 h-5" />} label="Commissions" value={conversions.toLocaleString()} tone="text-indigo-400" />
         <Stat icon={<Users className="w-5 h-5" />} label="Affiliates joined" value={activeAffiliates.toLocaleString()} tone="text-amber-400" />
       </div>
@@ -125,7 +125,7 @@ export default async function AdminAffiliatePage() {
                     <p className="text-[11px] text-slate-500">{a._count._all} sales</p>
                   </Link>
                   <span className="text-sm font-bold text-emerald-400 tabular-nums">
-                    ${toNum(a._sum.commissionAmount ?? 0).toFixed(2)}
+                    {usd(toNum(a._sum.commissionAmount ?? 0))}
                   </span>
                 </div>
               );
@@ -147,11 +147,11 @@ export default async function AdminAffiliatePage() {
                     {r.sourceType === "COURSE" ? "Course" : "Product"} · {userMap.get(r.affiliateUserId)?.name ?? r.affiliateUserId.slice(0, 8)}
                   </p>
                   <p className="text-[11px] text-slate-500">
-                    {new Date(r.createdAt).toLocaleDateString()} · sale ${toNum(r.saleAmount).toFixed(2)}
+                    {new Date(r.createdAt).toLocaleDateString()} · sale {usd(toNum(r.saleAmount))}
                   </p>
                 </div>
                 <span className="text-sm font-bold text-emerald-400 tabular-nums">
-                  +${toNum(r.commissionAmount).toFixed(2)}
+                  +{usd(toNum(r.commissionAmount))}
                 </span>
               </div>
             ))

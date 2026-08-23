@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { calculateLevel } from "@/lib/level";
 import { writeAudit } from "@/lib/audit";
 import { processReferralCommissions } from "@/lib/referral-commissions";
 import { Prisma } from "@/generated/prisma/client";
@@ -9,6 +10,7 @@ import { normalizeSocialConfig } from "@/lib/social-tasks";
 import { getPointsPerUsd } from "@/lib/economy";
 import { bumpTrust, TRUST_APPROVE, TRUST_REJECT } from "@/lib/trust";
 import { notifyUser } from "@/lib/notify";
+import { recordUserAction } from "@/lib/goal-progress";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -124,6 +126,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json(
         { error: "Submission has already been reviewed" },
         { status: 400 }
+      );
+    }
+
+    // `/start` creates a PENDING row the moment a user opens a task, so PENDING
+    // alone does not mean "there is something to review". Without this an admin
+    // could approve — and pay for — a row whose proof, images and answers are
+    // all still null, simply because it appeared in the queue.
+    if (!existingSubmission.submittedAt) {
+      return NextResponse.json(
+        {
+          error:
+            "This task was opened but never submitted, so there's nothing to review yet.",
+        },
+        { status: 409 }
       );
     }
 
@@ -261,14 +277,28 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
             }
           }
           if (credit) {
-            await tx.user.update({
+            const credited = await tx.user.update({
               where: { id: existingSubmission.userId },
               data: {
                 pointsBalance: { increment: earnedPoints },
                 xp: { increment: earnedXp },
                 totalEarnings: { increment: earnedPoints / pointsPerUsd },
               },
+              select: { xp: true, level: true },
             });
+            // Recompute the level. This path never did, so a user whose XP came
+            // only from manually-reviewed tasks accumulated XP and never levelled
+            // up — until some other earning path happened to fire and jumped them
+            // several levels at once. `minLevel` gates task visibility, so it
+            // quietly locked them out of content they had already earned.
+            // `credited.xp` is the post-increment value; do NOT add earnedXp again.
+            const newLevel = calculateLevel(credited.xp);
+            if (newLevel > credited.level) {
+              await tx.user.update({
+                where: { id: existingSubmission.userId },
+                data: { level: newLevel },
+              });
+            }
             await tx.transaction.create({
               data: {
                 userId: existingSubmission.userId,
@@ -296,6 +326,19 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       // (finalStatus flipped to REJECTED) counts as a fraud strike instead.
       if (finalStatus === "APPROVED") {
         await bumpTrust(existingSubmission.userId, TRUST_APPROVE);
+        // Event progress is credited at APPROVAL, not at submission time. The
+        // old read-time computation filtered on `createdAt`, so a task
+        // submitted before an event but approved during it never counted, and
+        // one submitted during the window counted even if it was approved after
+        // the event ended.
+        await recordUserAction({
+          userId: existingSubmission.userId,
+          action:
+            existingSubmission.task?.type === "QUIZ"
+              ? "quiz_approved"
+              : "task_approved",
+          targetId: existingSubmission.id,
+        });
       } else {
         await bumpTrust(existingSubmission.userId, TRUST_REJECT, {
           strike: true,
@@ -308,7 +351,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         await processReferralCommissions(
           existingSubmission.userId,
           referralPoints,
-          existingSubmission.taskId
+          existingSubmission.taskId,
+          existingSubmission.id
         );
       }
 
@@ -369,6 +413,26 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
 
+      // Claim the review before doing anything else. Without this, the reject
+      // path was guarded only by the status read at the top of the handler, so
+      // two concurrent rejects both applied the penalty — and rejecting an
+      // already-APPROVED submission ran the penalty against a reference the
+      // approval had already used (see below), which P2002'd: no penalty
+      // applied, the awarded points never clawed back, and a 500 to the admin.
+      const claimed = await prisma.taskSubmission.updateMany({
+        where: { id, status: "PENDING" },
+        data: { status: "REJECTED" },
+      });
+      if (claimed.count === 0) {
+        return NextResponse.json(
+          {
+            error:
+              "This submission was already reviewed by someone else. Reload to see its current status.",
+          },
+          { status: 409 }
+        );
+      }
+
       // Optional penalty: deduct points from the user's balance (clamped so it
       // can't go negative) + record a PENALTY transaction.
       let appliedPenalty = 0;
@@ -392,7 +456,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
                 points: -applied,
                 amount: 0,
                 description: `Penalty: rejected task "${existingSubmission.task.title}"`,
-                reference: existingSubmission.id,
+                // Prefixed. This used to be the bare submission id — the SAME
+                // reference the approval's EARNING row writes — so an earning
+                // and a penalty for one submission collided on
+                // @@unique([userId, reference]).
+                reference: `task_penalty_${existingSubmission.id}`,
               },
             });
           }

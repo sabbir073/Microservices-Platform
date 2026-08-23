@@ -1,5 +1,7 @@
+import { usd } from "@/lib/utils";
 import { parsePage } from "@/lib/paginate";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
@@ -21,7 +23,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import { CreateListingButton } from "@/components/admin/marketplace-actions";
 import { DisputeResolveButton } from "@/components/admin/marketplace/dispute-resolve-button";
 import { AdminTable } from "@/components/admin/ui/admin-table";
@@ -114,10 +115,9 @@ type TabId = (typeof TABS)[number]["id"];
 
 export default async function AdminMarketplacePage({ searchParams }: PageProps) {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
 
-  const adminRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(adminRole, "marketplace.view")) redirect("/admin");
+  if (!(await can(session.user.id, "marketplace.view"))) redirect("/admin");
 
   const params = await searchParams;
   const tab: TabId = (TABS.find((t) => t.id === params.tab)?.id ??
@@ -151,8 +151,8 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
     prisma.marketplacePurchase.aggregate({ _sum: { amount: true } }),
   ]);
 
-  const canManage = hasPermission(adminRole, "marketplace.manage");
-  const canResolveDisputes = hasPermission(adminRole, "marketplace.disputes");
+  const canManage = await can(session.user.id, "marketplace.manage");
+  const canResolveDisputes = await can(session.user.id, "marketplace.disputes");
 
   // Per-tab data fetch
   let listings: Awaited<ReturnType<typeof fetchListings>> = {
@@ -284,7 +284,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
         <StatCard
           icon={<DollarSign className="w-5 h-5" />}
           tone="amber"
-          value={`$${(totalRevenue._sum.amount || 0).toFixed(2)}`}
+          value={usd(totalRevenue._sum.amount ?? 0)}
           label="Revenue"
           extra={`${totalListings.toLocaleString()} total listings`}
         />
@@ -495,7 +495,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                     key: "price",
                     header: "Price",
                     className: "text-white font-semibold",
-                    cell: (listing) => <>${listing.price.toFixed(2)}</>,
+                    cell: (listing) => <>{usd(listing.price)}</>,
                   },
                   {
                     key: "status",
@@ -631,7 +631,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                     key: "amount",
                     header: "Amount",
                     className: "text-white tabular-nums",
-                    cell: (o) => <>${o.amount.toFixed(2)}</>,
+                    cell: (o) => <>{usd(o.amount)}</>,
                   },
                   {
                     key: "status",
@@ -743,7 +743,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                     key: "amount",
                     header: "Amount",
                     className: "text-white tabular-nums",
-                    cell: (d) => <>${d.amount.toFixed(2)}</>,
+                    cell: (d) => <>{usd(d.amount)}</>,
                   },
                   {
                     key: "status",

@@ -1,3 +1,10 @@
+/* eslint-disable react-hooks/purity -- This is an async Server Component: it
+   runs once per request on the server and is never hydrated, so `Date.now()`
+   here is not an impure render. The React Compiler lint rule cannot tell a
+   Server Component from a Client one, so it flags every call. Do not "fix" this
+   by passing the time in as a prop — the value is needed to build the database
+   query, before any rendering happens. */
+import { usd } from "@/lib/utils";
 import { parsePage } from "@/lib/paginate";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -220,7 +227,7 @@ export default async function UserActivityPage({ searchParams }: PageProps) {
                       )}
                       {cash !== 0 && (
                         <span className={`block ${cash > 0 ? "text-emerald-400" : "text-red-400"}`}>
-                          {cash > 0 ? "+" : ""}${Math.abs(cash).toFixed(2)}
+                          {cash > 0 ? "+" : ""}{usd(Math.abs(cash))}
                         </span>
                       )}
                     </div>

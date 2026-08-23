@@ -151,24 +151,161 @@ enum BannerLocation {
   ALL
 }
 
-// HTML5 game catalog entry — admin supplies an icon + embed URL; users play it
-// in a full-screen iframe with interstitial ads on open/resume/quit. No reward.
+/// Game catalog taxonomy. Replaces the free-text `Game.category`, where
+/// "Puzzle" / "puzzle" / "Puzzles" were three different categories and the user
+/// catalog had no filter at all. Mirrors CourseCategory.
+model GameCategory {
+  id       String  @id @default(cuid())
+  slug     String  @unique
+  name     String
+  iconKey  String?
+  color    String?
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+
+  games     Game[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, order])
+}
+
+/// HTML5 game catalog entry — admin supplies art + an embed URL; users play it
+/// in a full-screen iframe with interstitial ads on open/resume/quit.
+///
+/// Earning is OFF by default (`rewardEnabled`), so every pre-existing game keeps
+/// the original "no reward" contract exactly.
 model Game {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   title       String
+  /// legacy free-text category — kept as a fallback for rows not yet migrated,
+  /// and as the source for the one-off backfill. Superseded by `categoryId`.
   category    String?
-  description String?  @db.Text
+  categoryId  String?
+  categoryRel GameCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  description String? @db.Text
+  /// Square tile art.
   iconUrl     String
+  /// Wide cover art for the featured row. Optional; falls back to `iconUrl`.
+  coverUrl    String?
   embedUrl    String
-  order       Int      @default(0)
-  isActive    Boolean  @default(true)
-  playsCount  Int      @default(0)
+  isFeatured  Boolean @default(false)
+  /// ANY | PORTRAIT | LANDSCAPE — a hint for the player shell.
+  orientation String  @default("ANY")
+  /// Last server-side framing probe: {ok, xfo, csp, checkedAt}. Cross-origin JS
+  /// cannot detect `X-Frame-Options: DENY`, so without this a refusing URL just
+  /// shows users a black screen and nobody finds out.
+  embedProbe  Json?
+  order       Int     @default(0)
+  isActive    Boolean @default(true)
+  /// Historical value counts client mounts (the old, farmable endpoint). From
+  /// the session protocol onward it counts authenticated, rate-limited sessions,
+  /// so the number legitimately slows down — the UI labels it "legacy plays".
+  playsCount  Int     @default(0)
+
+  // ── Per-game ad control ──────────────────────────────────────────────────
+  adsEnabled        Boolean @default(true)
+  adOnOpen          Boolean @default(true)
+  adOnResume        Boolean @default(true)
+  adOnQuit          Boolean @default(true)
+  /// Mid-session interstitial cadence. 0 = none.
+  adIntervalSeconds Int     @default(0)
+  /// Minimum gap between interstitials (was a hardcoded AD_THROTTLE_MS).
+  adThrottleSeconds Int     @default(60)
+  /// Validated server-side against AD_PLACEMENTS and restricted to *_INTERSTITIAL:
+  /// pointing a game at IN_FEED would serve advertiser inventory full-screen in
+  /// a slot it was never bought for.
+  adPlacement       String  @default("GAME_INTERSTITIAL")
+
+  // ── Earning rules (all clamped by the global games.* SystemSettings) ─────
+  rewardEnabled        Boolean @default(false)
+  rewardPointsPerTick  Int     @default(0)
+  rewardTickSeconds    Int     @default(60)
+  /// 0 = only the daily caps apply.
+  rewardMaxPerSession  Int     @default(0)
+  rewardDailyCapPoints Int     @default(0)
+  /// Tie payout to the ads that fund it. The count is server-authoritative:
+  /// the game asks the SERVER for its interstitial (see /api/games/[id]/ad).
+  rewardRequiresAd     Boolean @default(false)
+
+  // ── Score rewards — deliberately inert without a signed callback ─────────
+  scoreRewardEnabled  Boolean @default(false)
+  /// A score posted from an arbitrary third-party embed is unverifiable. Only a
+  /// first-party game with an HMAC-signed callback may be trusted.
+  scoreTrusted        Boolean @default(false)
+  scorePointsPer1000  Int     @default(0)
+  scoreDailyCapPoints Int     @default(0)
+
+  // ── Denormalised analytics, folded in when a session ends ────────────────
+  uniquePlayersCount Int @default(0)
+  totalPlaySeconds   Int @default(0)
+  adsShownCount      Int @default(0)
+  pointsAwardedTotal Int @default(0)
+
   createdById String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  sessions GameSession[]
+
   @@index([isActive])
   @@index([order])
+  @@index([isFeatured, order])
+  @@index([categoryId, isActive, order])
+}
+
+/// One play session. Time is measured by the SERVER from heartbeat gaps — the
+/// client never sends a duration, because there would be nothing stopping it
+/// sending a large one.
+///
+/// `onDelete: Restrict` on purpose: these rows are the record of what was paid.
+/// Deleting a game must not erase its payout history, so the admin route
+/// deactivates a game that has sessions instead.
+model GameSession {
+  id     String @id @default(cuid())
+  gameId String
+  game   Game   @relation(fields: [gameId], references: [id], onDelete: Restrict)
+  userId String
+
+  startedAt  DateTime  @default(now())
+  lastBeatAt DateTime?
+  endedAt    DateTime?
+
+  /// Server-measured foreground seconds.
+  playedSeconds   Int @default(0)
+  /// Seconds already converted into points. The gap between this and
+  /// `playedSeconds` is what the next tick pays, which makes crediting
+  /// exactly-once even if a heartbeat is replayed.
+  creditedSeconds Int @default(0)
+  pointsAwarded   Int @default(0)
+  /// Incremented by the server when it serves this session an interstitial.
+  adsShown        Int @default(0)
+  score           Int?
+
+  createdAt DateTime @default(now())
+
+  @@index([gameId, startedAt])
+  @@index([userId, startedAt])
+  /// Serves the "one open session per user" lookup.
+  @@index([userId, endedAt])
+}
+
+/// Money log for game earnings. Deliberately FK-free, mirroring BrowseEarnLog
+/// and AdCreditLedger: deleting a game must never delete the record of what it
+/// paid out.
+model GameEarnLog {
+  id        String   @id @default(cuid())
+  userId    String
+  gameId    String
+  sessionId String?
+  points    Int      @default(0)
+  /// TIME | SCORE
+  kind      String   @default("TIME")
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, gameId, createdAt])
+  @@index([gameId, createdAt])
 }
 
 model Banner {
@@ -237,24 +374,123 @@ model Campaign {
   @@index([startDate, endDate])
 }
 
+/// Long-running "big prize" missions — the middle of the three goal systems.
+///
+///  - **DailyMissionTemplate** = do today's tasks properly; resets at the
+///    user's local midnight and feeds the referral day-claim.
+///  - **Mission** (this) = a large reward that takes real effort, with tiers and
+///    an unlock chain, so finishing one pulls the user toward the next.
+///  - **Event** = time-boxed marketing pushes.
+///
+/// All three now share ONE progress engine (src/lib/goal-progress.ts) and the
+/// same `EventActionType` vocabulary. Mission used to have its own five-value
+/// `type` string that nothing on the user side ever read — the whole model was
+/// admin CRUD with no reader, no progress table and no claim route.
 model Mission {
-  id            String   @id @default(cuid())
-  title         String
-  description   String?  @db.Text
-  type          String // TASK_COMPLETION | LOGIN_STREAK | REFERRAL | SPEND | EARN
-  targetValue   Int
-  pointsReward  Int      @default(0)
-  cashReward    Decimal  @default(0) @db.Decimal(18, 6)
-  xpReward      Int      @default(0)
-  duration      String   @default("DAILY") // DAILY | WEEKLY
-  autoRefresh   Boolean  @default(true)
-  requiredLevel Int      @default(1)
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id          String  @id @default(cuid())
+  title       String
+  description String? @db.Text
+  iconEmoji   String?
+
+  /// Legacy free-text kind (TASK_COMPLETION | LOGIN_STREAK | REFERRAL | SPEND |
+  /// EARN). Superseded by `actionType`; kept only so the pre-existing rows are
+  /// still readable. Nothing reads it.
+  type String @default("TASK_COMPLETION")
+
+  /// What counts. Shared with Event so one ACCEPTS map drives both.
+  actionType EventActionType @default(TASK_COMPLETE)
+  /// The goal. (Was `targetValue`, which the admin form already edits.)
+  targetValue Int
+  /// Optional ascending tiers [{threshold, rewardPoints, rewardXp}], claimed
+  /// independently — this is what makes a mission worth rushing.
+  tiers Json?
+
+  pointsReward Int     @default(0)
+  cashReward   Decimal @default(0) @db.Decimal(18, 6)
+  xpReward     Int     @default(0)
+
+  /// Max actions credited per user per LOCAL day. 0 = unlimited.
+  dailyCap Int @default(0)
+
+  duration    String   @default("DAILY") /// legacy, unused
+  autoRefresh Boolean  @default(true) /// legacy, unused
+  startAt     DateTime?
+  endAt       DateTime?
+  order       Int      @default(0)
+  /// Prerequisite mission — must be claimed before this one unlocks.
+  unlockMissionId String?
+  unlockMission   Mission?  @relation("MissionUnlockChain", fields: [unlockMissionId], references: [id], onDelete: SetNull)
+  unlocks         Mission[] @relation("MissionUnlockChain")
+
+  requiredLevel       Int @default(1)
+  requiredAccessLevel Int @default(0)
+  // Audience targeting — same nine columns and STRICT semantics as Task.
+  countries    String[] @default([])
+  genders      String[] @default([])
+  regions      String[] @default([])
+  divisions    String[] @default([])
+  districts    String[] @default([])
+  subDistricts String[] @default([])
+  postalCodes  String[] @default([])
+  minAge       Int?
+  maxAge       Int?
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  progress   UserMissionProgress[]
+  actionLogs MissionActionLog[]
 
   @@index([isActive])
   @@index([duration])
+  @@index([isActive, order])
+  @@index([unlockMissionId])
+}
+
+/// Per-user mission counter. Mirrors UserEventProgress exactly — same rules,
+/// same guarantees. Only goal-progress.ts increments `progress`; claiming must
+/// never write it, or a claim-time snapshot clobbers the real count.
+model UserMissionProgress {
+  id        String  @id @default(cuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  missionId String
+  mission   Mission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  progress     Int       @default(0)
+  claimedAt    DateTime?
+  claimedTiers Int[]     @default([])
+  joinedAt     DateTime?
+  lastActionAt DateTime?
+  dayKey       String?
+  dayCount     Int       @default(0)
+  notifiedComplete Boolean @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([userId, missionId])
+  @@index([missionId])
+}
+
+/// One row per action that actually counted toward a mission.
+///
+/// The `@@unique` is the whole anti-farm guarantee — NOT application logic.
+/// Without it, like → unlike → like would count three times against a mission
+/// whose prize is deliberately large.
+model MissionActionLog {
+  id        String   @id @default(cuid())
+  missionId String
+  mission   Mission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  userId    String
+  actionKey String
+  /// Stable per-action identity, e.g. "like:<postId>".
+  dedupKey  String
+  units     Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@unique([missionId, userId, dedupKey])
+  @@index([userId, createdAt])
 }
 
 // Daily Task Mission — admin-defined per-package mission template that bundles
@@ -268,10 +504,34 @@ model DailyMissionTemplate {
   requiredLevel          Int      @default(1)
   completionXpReward     Int      @default(0)
   completionPointsReward Int      @default(0)
+  /// Paid alongside points on completion. 0 = points/XP only.
+  completionCashReward   Decimal  @default(0) @db.Decimal(18, 6)
+  /// Streak bonus: every `streakBonusEvery` consecutive days, add
+  /// `streakBonusPoints`. 0 on either disables it. `DailyMissionClaim.streak`
+  /// was already being computed and stored but never rewarded anything.
+  streakBonusEvery       Int      @default(0)
+  streakBonusPoints      Int      @default(0)
   isActive               Boolean  @default(true)
   autoRefresh            Boolean  @default(true)
   linkReferralBonus      Boolean  @default(false)
   order                  Int      @default(0)
+  /// Optional schedule. null = always running.
+  startAt                DateTime?
+  endAt                  DateTime?
+
+  // Audience targeting — same nine columns and STRICT semantics as Task.
+  // Without these, a "Bangladesh only" daily mission was impossible: the
+  // template was picked purely by tier and level.
+  countries    String[] @default([])
+  genders      String[] @default([])
+  regions      String[] @default([])
+  divisions    String[] @default([])
+  districts    String[] @default([])
+  subDistricts String[] @default([])
+  postalCodes  String[] @default([])
+  minAge       Int?
+  maxAge       Int?
+
   createdById            String?
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
@@ -287,7 +547,10 @@ model DailyMissionItem {
   id                String               @id @default(cuid())
   missionId         String
   mission           DailyMissionTemplate @relation(fields: [missionId], references: [id], onDelete: Cascade)
-  taskType          String // ARTICLE | VIDEO | QUIZ | SURVEY | SOCIAL | PROXY | OFFERWALL | BOARD | MANUAL | CUSTOM
+  /// One of MISSION_TASK_TYPES in src/lib/mission-labels.ts — that list is the
+  /// single definition. This comment used to enumerate the values here too and
+  /// had already fallen behind by five (the SOCIAL_* ones).
+  taskType          String
   description       String?              @db.Text
   targetCount       Int                  @default(1)
   xpPerComplete     Int                  @default(0)
@@ -692,6 +955,25 @@ model TaskBoard {
   unlockBoardId String?
   unlockBoard   TaskBoard?  @relation("BoardUnlockChain", fields: [unlockBoardId], references: [id], onDelete: SetNull)
   unlocks       TaskBoard[] @relation("BoardUnlockChain")
+
+  // Eligibility. A board had NO per-user gate of any kind except the unlock
+  // chain, so every active board was listed to everyone — a board whose tasks
+  // were all country-targeted simply rendered with a task count of 0 and then
+  // failed its claim with "Board has no active tasks".
+  minLevel            Int      @default(1)
+  requiredAccessLevel Int      @default(0)
+  // Audience targeting — same nine columns and the same STRICT semantics as
+  // Task (empty array = no constraint). See src/lib/task-targeting.ts.
+  countries    String[] @default([])
+  genders      String[] @default([])
+  regions      String[] @default([])
+  divisions    String[] @default([])
+  districts    String[] @default([])
+  subDistricts String[] @default([])
+  postalCodes  String[] @default([])
+  minAge       Int?
+  maxAge       Int?
+
   createdById   String?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -703,6 +985,7 @@ model TaskBoard {
   @@index([order])
   @@index([category])
   @@index([unlockBoardId])
+  @@index([isActive, requiredAccessLevel, minLevel])
 }
 
 // Per-user record of a Task Board reward claim. One row per (user, board);
@@ -923,6 +1206,35 @@ enum LotteryStatus {
   CANCELLED
 }
 
+/// FIXED = `Lottery.prizes` holds absolute point amounts (how every lottery
+/// worked before pool mode). POOL = the prize is derived from ticket sales at
+/// draw time via `prizeTiers` percentages. See src/lib/lottery-prizes.ts.
+enum LotteryPrizeMode {
+  FIXED
+  POOL
+}
+
+/// What happens when `minTickets` isn't reached by the draw date.
+enum LotteryShortfallAction {
+  /// Draw anyway with whatever accumulated.
+  DRAW
+  /// Cancel and return every ticket price.
+  REFUND
+  /// Move the pot to `rolloverTargetId`. Tickets are NOT refunded, so the
+  /// user-facing page must say so before purchase.
+  ROLLOVER
+}
+
+/// How a lottery ended. Recorded once on LotterySettlement.
+enum LotteryOutcome {
+  DRAWN
+  REFUNDED
+  ROLLED_OVER
+  /// Nobody bought a ticket. Terminal — previously this left the lottery
+  /// ACTIVE forever and the hourly sweep retried it on every run.
+  VOID_NO_TICKETS
+}
+
 enum NotificationType {
   SYSTEM
   TASK
@@ -981,6 +1293,17 @@ model User {
   kycSubmittedAt                    DateTime?
   kycApprovedAt                     DateTime?
   kycPromptedAt                     DateTime? // set once when we nudge a completed-profile user to do KYC
+  // First-login onboarding (the @handle picker). Null = never completed, and the
+  // Edge middleware sends the user to /welcome. Stamped by provisionUser for
+  // paths that don't need it, by the onboarding action, and backfilled for every
+  // account that existed before the screen shipped.
+  onboardedAt                       DateTime?
+  // When a Google identity was first linked to this row. Null = never linked, so
+  // the next Google sign-in runs the one-time repair + stale-password revocation;
+  // non-null = steady state, skip all of it. Without this the link branch can't
+  // tell a first link from the 400th login of someone who later set a password
+  // via Forgot Password — both look identical (`password != null`).
+  googleLinkedAt                    DateTime?
   featureOverrides                  Json? // per-user feature grants/denials { [featureKey]: boolean } overriding the package
   permissionOverrides               Json? // per-user RBAC permission grants/denials { [permission]: boolean } on top of the role
   pageOverrides                     Json? // per-user page-visibility grants/denials { [path]: boolean } — super-admin page hiding
@@ -988,6 +1311,12 @@ model User {
   // cap + VPN/proxy heuristic). @@index on signupIp for the per-IP count.
   signupIp                          String?
   lastIp                            String?
+  // When the user last changed a field that decides which targeted tasks they
+  // are served (country/region/division/district/subDistrict/postalCode/gender/
+  // dateOfBirth). All nine were freely editable with no limit and no trail, so
+  // the play was: set your country to match a high-paying geo-targeted task,
+  // complete it, set it back. See src/lib/profile-targeting.ts.
+  targetingChangedAt                DateTime?
   isBlueVerified                    Boolean                      @default(false)
   // Visual style for the verified badge. Null/"BLUE" = classic blue tick.
   // Other presets (GOLD, RAINBOW, EMERALD, PURPLE, ROSE, OCEAN) render
@@ -1004,6 +1333,9 @@ model User {
   affiliateCommissions              AffiliateCommission[]        @relation("AffiliateCommissions")
   // Events/quests progress (feature #10).
   eventProgress                     UserEventProgress[]
+  missionProgress                   UserMissionProgress[]
+  eventActionLogs                   EventActionLog[]
+  socialRatioTallies                SocialRatioTally[]
   // Per-viewer boosted-post impression caps (feed boost frequency cap).
   postBoostViews                    PostBoostView[]
   // Extended profile fields (admin_oo.md §5.02)
@@ -1141,6 +1473,13 @@ model User {
   @@index([language])
   @@index([dateOfBirth])
   @@index([country, gender])
+  // Mention autocomplete + "who to follow" both sort on followersCount, which
+  // had no index at all — a full sort of the users table.
+  @@index([followersCount])
+  @@index([status, followersCount])
+  // FK index — present in the live database; declared here so schema and DB
+  // agree and a future `db push` can't drop it.
+  @@index([customRoleId])
 }
 
 model Account {
@@ -1339,6 +1678,12 @@ model Task {
   @@index([status, order])
   @@index([createdById])
   @@index([fundedByUserId])
+  // The user-facing task list: status + hidden equality, then the [order,
+  // createdAt] sort. [status, order] missed `hidden` and the tiebreak.
+  @@index([status, hidden, order, createdAt])
+  // Unindexed FK: deleting a TaskBoard SET NULLs every task, which without this
+  // is a sequential scan of the Task table.
+  @@index([boardId])
 }
 
 model TaskCategory {
@@ -1393,6 +1738,11 @@ model TaskSubmission {
   articleKey      ArticleTaskKey?
   pageProgress    ArticleTaskPageProgress[]
 
+  // NOT a duplicate-submission guard, despite reading like one: `createdAt` is a
+  // millisecond timestamp, so every row is trivially unique and this constrains
+  // nothing. The real guards are the `submittedAt` CAS in /submit and the
+  // status CAS in the admin review route. Left in place — dropping a unique
+  // index on a live table buys nothing at runtime.
   @@unique([taskId, userId, createdAt])
   @@index([userId])
   @@index([taskId])
@@ -1401,6 +1751,13 @@ model TaskSubmission {
   @@index([userId, createdAt])
   @@index([status, createdAt])
   @@index([userId, status, createdAt])
+  // Admin "all submissions" tab + analytics groupBy over a date range.
+  @@index([createdAt])
+  // Admin dashboard home counts today's approvals; reviewedAt was unindexed.
+  @@index([status, reviewedAt])
+  // Per-task rollups (board progress, admin task detail).
+  @@index([taskId, status])
+  @@index([taskId, createdAt])
 }
 
 // Anti-fraud fingerprint of a SOCIAL task's submitted proof values (feature #10).
@@ -1494,6 +1851,10 @@ model Transaction {
   // Kept for reference-only lookups (findFirst by reference) that can't use the
   // composite (userId, reference) index.
   @@index([reference])
+  // Monthly finance rollup (status + createdAt range).
+  @@index([status, createdAt])
+  // Wallet history filtered by source type.
+  @@index([userId, type, createdAt])
 }
 
 // Client-driven request idempotency. A money POST may send an `Idempotency-Key`
@@ -1501,6 +1862,26 @@ model Transaction {
 // once, stores the response, and replays the SAME response for any retry that
 // reuses the key. Complements the P5 ledger `@@unique([userId, reference])`
 // (which dedupes the money ROW) by deduping the whole HTTP request/response.
+/// Shared rate-limit counters.
+///
+/// The in-memory limiter in `src/lib/rate-limit.ts` is per serverless instance,
+/// so it cannot actually bound anything on Vercel. This table is the shared
+/// version, used for the endpoints where money moves. One row per
+/// (bucket, window); the unique index is what makes the increment atomic.
+model RateLimitHit {
+  id        String   @id @default(cuid())
+  /// scope + subject, e.g. "withdraw:user_123" or "signup:ip:1.2.3.4"
+  bucket    String
+  /// floor(epochMs / windowMs) — the time slice this count belongs to
+  window    BigInt
+  count     Int      @default(1)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@unique([bucket, window])
+  @@index([expiresAt])
+}
+
 model IdempotencyKey {
   id             String   @id @default(cuid())
   userId         String
@@ -1672,7 +2053,10 @@ model ReferralLevel {
   level           Int            @unique
   commissionType  CommissionType @default(PERCENTAGE)
   commissionValue Float          @default(0)
-  commissionRate  Float? // Legacy field, will be migrated
+  // Legacy. `commissionValue` + `commissionType` superseded it; nothing reads
+  // this. Left in place deliberately: a destructive migration on a live table
+  // for a column that costs nothing is not worth the risk.
+  commissionRate  Float?
   description     String?
   isActive        Boolean        @default(true)
   createdAt       DateTime       @default(now())
@@ -1935,6 +2319,10 @@ model CartItem {
 
   @@unique([userId, listingId])
   @@index([userId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([listingId])
 }
 
 // Users can "watch" listings — soft favorites that surface in seller analytics
@@ -1969,6 +2357,8 @@ model MarketplaceListingView {
   @@unique([listingId, sessionHash])
   @@index([listingId])
   @@index([viewedAt])
+  // Unindexed FK: deleting a user does SET NULL across this whole log table.
+  @@index([userId])
 }
 
 // A bid in an auction-mode listing. Only one ACTIVE bid exists per listing at
@@ -2091,6 +2481,10 @@ model Course {
   @@index([tutorId])
   @@index([isFeatured])
   @@index([slug])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([subcategoryId])
 }
 
 model CourseCategory {
@@ -2171,6 +2565,12 @@ model CourseLesson {
 
   @@index([courseId])
   @@index([moduleId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([quizId])
+  @@index([assignmentId])
+  @@index([liveClassId])
 }
 
 model CourseEnrollment {
@@ -2229,6 +2629,10 @@ model CourseReview {
 
   @@unique([courseId, userId])
   @@index([courseId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([userId])
 }
 
 model CourseQuestion {
@@ -2249,6 +2653,10 @@ model CourseQuestion {
 
   @@index([courseId])
   @@index([askerId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([answeredById])
 }
 
 model CourseBookmark {
@@ -2261,6 +2669,10 @@ model CourseBookmark {
 
   @@unique([userId, courseId])
   @@index([userId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([courseId])
 }
 
 model CourseAnnouncement {
@@ -2274,6 +2686,10 @@ model CourseAnnouncement {
   createdAt DateTime @default(now())
 
   @@index([courseId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([authorId])
 }
 
 model CourseQuiz {
@@ -2361,6 +2777,10 @@ model CourseAssignmentSubmission {
 
   @@index([assignmentId])
   @@index([userId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([gradedById])
 }
 
 model CourseLiveClass {
@@ -2417,6 +2837,10 @@ model CourseCoupon {
   updatedAt        DateTime    @updatedAt
 
   @@index([isActive])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([createdById])
 }
 
 model CourseRefundRequest {
@@ -2438,6 +2862,12 @@ model CourseRefundRequest {
 
   @@index([status])
   @@index([userId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([enrollmentId])
+  @@index([courseId])
+  @@index([processedById])
 }
 
 model CourseListingView {
@@ -2453,6 +2883,7 @@ model CourseListingView {
   @@index([courseId])
   @@index([viewedAt])
   @@index([courseId, sessionHash])
+  @@index([userId])
 }
 
 model TutorApplication {
@@ -2473,6 +2904,10 @@ model TutorApplication {
 
   @@index([userId])
   @@index([status])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([reviewedById])
 }
 
 enum CreatorApplicationType {
@@ -2510,6 +2945,10 @@ model CreatorApplication {
   @@index([userId])
   @@index([status])
   @@index([type])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([reviewedById])
 }
 
 model TutorProfile {
@@ -2549,16 +2988,92 @@ model Lottery {
   maxTickets        Int?
   ticketsSold       Int             @default(0)
   maxTicketsPerUser Int             @default(10)
+  /// FIXED mode only: [{position, amount, description}] absolute point amounts.
   prizes            Json
   status            LotteryStatus   @default(UPCOMING)
+  /// legacy, unused — generated and stored but the draw never read it.
   winningNumbers    String?
   winners           Json?
+
+  // ── Prize mode ───────────────────────────────────────────────────────────
+  prizeMode       LotteryPrizeMode @default(FIXED)
+  /// POOL mode only: [{position, percent, description}] shares of the pool.
+  /// Deliberately a SEPARATE column from `prizes` — overloading `amount` as a
+  /// percent would make every existing `reduce(sum, p.amount)` reader render a
+  /// percentage as a points total.
+  prizeTiers      Json?
+  /// 0-90. Taken off GROSS TICKET SALES only — never the seed, never rolled-in
+  /// points (those were already cut at their source).
+  houseCutPercent Int              @default(0)
+  /// Platform-funded floor so an under-sold pool draw isn't insulting.
+  poolSeedPoints  Int              @default(0)
+  /// Liability ceiling. Anything above it is recorded as overflow to house.
+  poolCapPoints   Int?
+
+  // ── Minimum tickets / rollover ───────────────────────────────────────────
+  /// 0 = no floor.
+  minTickets       Int                    @default(0)
+  shortfallAction  LotteryShortfallAction @default(DRAW)
+  /// Where the pot goes on ROLLOVER. Validated at draw time; if it is no longer
+  /// usable the draw degrades to REFUND rather than stranding user money.
+  rolloverTargetId String?
+  /// Carried IN from a lottery that rolled over into this one.
+  rolloverInPoints Int                    @default(0)
+  rolloverFromId   String?
+
+  settlement LotterySettlement?
+
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   tickets           LotteryTicket[]
 
   @@index([status])
   @@index([drawDate])
+  @@index([status, drawDate])
+}
+
+/// Immutable accounting record for a finished lottery — created once, never
+/// updated (there is no update path, and `@@unique(lotteryId)` is a second
+/// idempotency guard behind the draw's status CAS).
+///
+/// Before this, a COMPLETED lottery recorded nothing about what the pot was
+/// worth or what the platform kept, which makes POOL mode unauditable. Finance
+/// reporting reads THIS table, not `Lottery` — points the house never credits
+/// are the house's margin, so there is no ledger row to count.
+model LotterySettlement {
+  id        String  @id @default(cuid())
+  lotteryId String  @unique
+  lottery   Lottery @relation(fields: [lotteryId], references: [id], onDelete: Cascade)
+
+  outcome   LotteryOutcome
+  prizeMode LotteryPrizeMode
+
+  ticketsSold      Int
+  ticketPrice      Int
+  grossSalesPoints Int @default(0)
+  houseCutPercent  Int @default(0)
+  houseCutPoints   Int @default(0)
+  seedPoints       Int @default(0)
+  rolloverInPoints Int @default(0)
+  /// The pool as computed at draw time — the number the winners were paid from.
+  prizePoolPoints  Int @default(0)
+  paidOutPoints    Int @default(0)
+  refundedPoints   Int @default(0)
+  rolledOverPoints Int @default(0)
+  /// Amount above `poolCapPoints` the house kept.
+  overflowToHouse  Int @default(0)
+
+  rolloverToId String?
+  /// The EFFECTIVE tiers used (after re-normalising for ticket count).
+  tiers        Json?
+  winners      Json?
+  /// sha256 of the shuffled ticket-id order — a post-hoc fairness record.
+  drawOrderHash String?
+
+  settledAt DateTime @default(now())
+
+  @@index([outcome, settledAt])
+  @@index([rolloverToId])
 }
 
 model LotteryTicket {
@@ -2577,6 +3092,10 @@ model LotteryTicket {
   @@index([lotteryId])
   @@index([userId])
   @@index([lotteryId, userId])
+  @@index([userId, createdAt])
+  // Public "recent winners" list — isWinner was unindexed.
+  @@index([isWinner, createdAt])
+  @@index([userId, isWinner])
 }
 
 model Post {
@@ -2622,6 +3141,11 @@ model Post {
   donationGoal          Int?
   donationCollected     Int             @default(0)
   groupId               String?
+  // Optional relation → Prisma's implicit `onDelete: SetNull`. Deleting a group
+  // would therefore null `groupId` on its posts, and a post whose `isPublic`
+  // defaults to true would surface in the PUBLIC feed. There is no group-delete
+  // route today, so this is latent, not live — but anything that adds one must
+  // decide the posts' fate explicitly rather than inherit this.
   group                 Group?          @relation(fields: [groupId], references: [id])
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
@@ -2647,6 +3171,13 @@ model Post {
   @@index([isPublic, createdAt])
   @@index([isPublic, isHidden, isPinned, createdAt])
   @@index([isPublic, isHidden, lastActivityAt])
+  // Main feed: filters on four booleans, sorts by [isPinned, lastActivityAt].
+  // The existing [isPublic, isHidden, lastActivityAt] omits isPinned, so Postgres
+  // had to sort every matching row instead of walking an index.
+  @@index([isPublic, isHidden, isAnnouncement, isPromoted, isPinned, lastActivityAt])
+  // Profile timelines + the per-day post-limit count on every new post.
+  @@index([userId, createdAt])
+  @@index([userId, isPublic, isHidden, createdAt])
 }
 
 model Follow {
@@ -2799,6 +3330,8 @@ model SocialActionLog {
   // Lifetime distinct-post count per actor+action (social-earning batch reward).
   @@index([userId, action, postId])
   @@index([createdAt])
+  // Event progress counts a user's actions over a date range.
+  @@index([userId, createdAt])
 }
 
 // Per-user daily AI-generation counter (rate limit for /api/ai/generate).
@@ -2811,6 +3344,36 @@ model AiUsageDaily {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, dateKey])
+}
+
+// Progress toward a social-earning ratio reward ("every 100 likes → 10 pts").
+//
+// Replaces a live `COUNT(DISTINCT postId)` over SocialActionLog, which was wrong
+// in two ways: that table is keyed by the ACTOR (so it can't answer "likes MY
+// posts received"), and log retention prunes it at 120 days — so the count went
+// BACKWARDS and long-lived users silently stopped earning forever.
+//
+// `count` is the REMAINDER toward the next milestone, not a running total. That
+// is what makes changing `perCount` safe: there is no batch index to misalign,
+// so lowering 100→50 for someone sitting at 60 pays them once (they earned it)
+// instead of replaying an already-paid index.
+model SocialRatioTally {
+  id     String @id @default(cuid())
+  userId String // the user who gets PAID — author for recipient, engager for actor
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   String // "recipient" | "actor"
+  action String // SocialAction, e.g. "LIKE_RECEIVED"
+  window String // "daily" | "lifetime"
+  // The PAID user's local day for `daily`; the literal "*" for `lifetime`.
+  dateKey   String
+  count     Int      @default(0) // progress toward the next milestone
+  paidCount Int      @default(0) // milestones paid — monotonic, never reset
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, role, action, window, dateKey])
+  // Retention prunes stale DAILY rows only — see lib/log-retention.ts.
+  @@index([window, updatedAt])
 }
 
 model Group {
@@ -2936,6 +3499,10 @@ model UserBadge {
 
   @@unique([userId, badgeId])
   @@index([userId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([badgeId])
 }
 
 model Achievement {
@@ -2966,6 +3533,10 @@ model UserAchievement {
 
   @@unique([userId, achievementId])
   @@index([userId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([achievementId])
 }
 
 model PointGift {
@@ -3001,6 +3572,13 @@ model Notification {
   @@index([userId, isRead])
   @@index([userId, createdAt])
   @@index([userId, isRead, createdAt])
+  // The live-class dedup check filters on `type` with a JSON predicate and no
+  // other bound — a full scan of the fastest-growing table, every 15 minutes.
+  @@index([type, createdAt])
+  // Typed notification tabs.
+  @@index([userId, type, createdAt])
+  // The nightly retention prune (isRead + createdAt).
+  @@index([isRead, createdAt])
 }
 
 model Conversation {
@@ -3189,6 +3767,10 @@ model OfferwallOffer {
 
   @@index([isActive, categoryId, order])
   @@index([providerId, externalOfferId])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([categoryId])
 }
 
 // One "Start Work" click — the subid glue matched by the provider postback.
@@ -3267,6 +3849,11 @@ model AuditLog {
   @@index([entity, entityId])
   @@index([targetUserId, createdAt])
   @@index([action])
+  // Every audit read filters then sorts by createdAt; the filter and the sort
+  // lived in separate indexes, so Postgres bitmap-and'd and re-sorted.
+  @@index([userId, createdAt])
+  @@index([entity, createdAt])
+  @@index([userId, action, entity])
 }
 
 enum DisputeStatus {
@@ -3401,16 +3988,29 @@ model PageVisitDaily {
 
 // ── Events / Quests (feature #10) ────────────────────────────────────────────
 // Admin-authored, time-boxed challenges: hit a target action count within the
-// window → claim a reward. Progress is computed live from existing activity
-// tables (team adds, task/quiz completions, lottery buys, social actions);
-// UPLOAD_PROOF events store the user's uploaded proof URL instead.
+// window → claim a reward.
+//
+// Progress is a FORWARD-ONLY counter written at the moment the action happens
+// (src/lib/event-progress.ts), deduped by EventActionLog. It used to be
+// recomputed on read by counting rows in shared activity tables over
+// [startAt … now], so whatever a user had already done counted the instant an
+// event was published — the Claim button could be green before they had even
+// seen the event. Never reintroduce a read-time computation here.
+//
+// UPLOAD_PROOF is the one exception: it stores the user's proof URL instead.
 enum EventActionType {
-  TEAM_ADD
+  TEAM_ADD // legacy alias for REFERRAL_SIGNUP
   TASK_COMPLETE
   QUIZ_COMPLETE
   LOTTERY_BUY
   UPLOAD_PROOF
-  SOCIAL_ACTION
+  SOCIAL_ACTION // legacy catch-all: satisfied by any FEED_* action
+  FEED_LIKE
+  FEED_COMMENT
+  FEED_SHARE
+  FEED_POST
+  FEED_VOTE
+  REFERRAL_SIGNUP
 }
 
 model Event {
@@ -3428,9 +4028,15 @@ model Event {
   startAt             DateTime
   endAt               DateTime
   isActive            Boolean             @default(true)
+  // AudienceCriteria (src/lib/audience.ts) — country/gender/age/package/etc.
+  audience            Json?
+  // Max actions credited per user per local day. 0 = unlimited.
+  dailyCap            Int                 @default(0)
+  notifyOnStart       Boolean             @default(false)
   createdAt           DateTime            @default(now())
   updatedAt           DateTime            @updatedAt
   progress            UserEventProgress[]
+  actionLogs          EventActionLog[]
 
   @@index([isActive, startAt, endAt])
 }
@@ -3441,16 +4047,55 @@ model UserEventProgress {
   user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   eventId      String
   event        Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  // Authoritative counter. Only event-progress.ts increments it; claiming must
+  // never write it — a claim-time snapshot would clobber the real count.
   progress     Int       @default(0)
   proofUrl     String?
   claimedAt    DateTime?
   // Which tier thresholds this user has already claimed (multi-tier events).
   claimedTiers Int[]     @default([])
+  // First credited action — this user's personal start line for the event.
+  joinedAt     DateTime?
+  lastActionAt DateTime?
+  // User-local day key + count, for Event.dailyCap.
+  dayKey       String?
+  dayCount     Int       @default(0)
+  // Dedups the one-time "reward ready" notification.
+  notifiedComplete Boolean @default(false)
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
   @@unique([userId, eventId])
   @@index([eventId])
+}
+
+// One row per action that actually counted toward an event.
+//
+// The unique constraint is the single enforcement point for every anti-abuse
+// rule: liking the same post twice, unlike-then-relike, a replayed referral
+// verification, a retried lottery purchase — all collapse to one row, so the
+// counter above can only move once per real action.
+model EventActionLog {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  // The emitted key, e.g. "feed_like" — narrower than the event's actionType,
+  // which may be a legacy alias that accepts several keys.
+  actionKey String
+  // What makes this action unique, e.g. "like:<postId>", "referral:<userId>".
+  dedupKey  String
+  units     Int      @default(1)
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, userId, dedupKey])
+  @@index([eventId, userId])
+  @@index([createdAt])
+
+  // Foreign key with no covering index — Postgres does not create one,
+  // so both the join and the parent-delete referential check were scans.
+  @@index([userId])
 }
 
 // Per-viewer impression counter for boosted posts (feed boost frequency cap).

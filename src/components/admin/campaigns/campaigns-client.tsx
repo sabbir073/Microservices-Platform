@@ -1,10 +1,12 @@
 "use client";
+import { usd } from "@/lib/utils";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, X, Loader2, Save, Megaphone } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { format } from "date-fns";
+import { DateField } from "@/components/ui/date-field";
 
 interface Campaign {
   id: string;
@@ -107,7 +109,7 @@ export function CampaignsClient({ initial, canManage }: Props) {
                 <div>
                   <p className="text-xs text-slate-500">Budget</p>
                   <p className="text-slate-300 tabular-nums">
-                    {c.budget ? `$${c.budget.toFixed(2)}` : "—"}
+                    {c.budget ? `${usd(c.budget)}` : "—"}
                   </p>
                 </div>
               </div>
@@ -116,7 +118,7 @@ export function CampaignsClient({ initial, canManage }: Props) {
                   {c.participantCount} participants
                 </span>
                 <span className="text-emerald-400 tabular-nums">
-                  ${c.rewardsDistributed.toFixed(2)} distributed
+                  {usd(c.rewardsDistributed)} distributed
                 </span>
               </div>
             </div>
@@ -239,20 +241,20 @@ function CreateCampaignModal({ onClose }: { onClose: () => void }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Start Date">
-              <input
+              <DateField
                 type="datetime-local"
                 value={form.startDate}
-                onChange={(e) =>
-                  setForm({ ...form, startDate: e.target.value })
+                onChange={(v) =>
+                  setForm({ ...form, startDate: v })
                 }
                 className={inp}
               />
             </Field>
             <Field label="End Date">
-              <input
+              <DateField
                 type="datetime-local"
                 value={form.endDate}
-                onChange={(e) => setForm({ ...form, endDate: e.target.value })}
+                onChange={(v) => setForm({ ...form, endDate: v })}
                 className={inp}
               />
             </Field>

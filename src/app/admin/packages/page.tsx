@@ -1,4 +1,6 @@
+import { usd } from "@/lib/utils";
 import { auth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { gt, toNum } from "@/lib/money";
@@ -16,15 +18,13 @@ import {
   Star,
 } from "lucide-react";
 import Link from "next/link";
-import { hasPermission, type UserRole } from "@/lib/rbac";
 import { AdminTable } from "@/components/admin/ui/admin-table";
 
 export default async function AdminPackagesPage() {
   const session = await auth();
-  if (!session?.user) redirect("/login");
+  if (!session?.user?.id) redirect("/login");
 
-  const adminRole = session.user.role as UserRole | undefined;
-  if (!hasPermission(adminRole, "packages.view")) redirect("/admin");
+  if (!(await can(session.user.id, "packages.view"))) redirect("/admin");
 
   const now = new Date();
 
@@ -95,7 +95,7 @@ export default async function AdminPackagesPage() {
   type RecentSub = (typeof recentSubs)[number];
   type Pkg = (typeof packages)[number];
 
-  const canEdit = hasPermission(adminRole, "packages.edit");
+  const canEdit = await can(session.user.id, "packages.edit");
 
   return (
     <div className="space-y-8">
@@ -126,7 +126,7 @@ export default async function AdminPackagesPage() {
         <Stat
           icon={<DollarSign className="w-5 h-5" />}
           tone="emerald"
-          value={`$${estimatedRevenue.toFixed(2)}`}
+          value={`${usd(estimatedRevenue)}`}
           label="Est. Monthly Revenue"
         />
       </div>
@@ -195,7 +195,7 @@ export default async function AdminPackagesPage() {
             className: "text-right",
             cell: (pkg) => (
               <span className="text-emerald-400 font-bold tabular-nums">
-                ${pkg.priceMonthly.toFixed(2)}
+                {usd(pkg.priceMonthly)}
               </span>
             ),
           },
@@ -329,7 +329,7 @@ export default async function AdminPackagesPage() {
                 key: "amount",
                 header: "Amount",
                 className: "text-right text-amber-400 font-bold tabular-nums",
-                cell: (s) => <>${s.amount.toFixed(2)}</>,
+                cell: (s) => <>{usd(s.amount)}</>,
               },
               {
                 key: "status",

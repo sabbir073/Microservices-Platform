@@ -3,6 +3,8 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { getPointsPerUsd } from "@/lib/economy";
+import { releaseHeldCompletion } from "@/lib/offerwall";
 
 const schema = z.object({
   action: z.enum(["APPROVE", "REJECT"]),
@@ -49,7 +51,64 @@ export async function PATCH(
   }
 
   if (action === "APPROVE") {
-    // Credit user, mark approved
+    // A callback carrying an `internalOfferId` is a CATALOG completion that was
+    // held. Its money belongs to `releaseHeldCompletion()`, which the hold cron
+    // also calls — one status CAS, one ledger reference, so approving here and
+    // the cron firing cannot both pay. Crediting it inline (as this route used
+    // to) wrote a second ledger row under the callback's own id, which the
+    // unique constraint could not match against the cron's, and the user was
+    // paid twice for one offer.
+    if (callback.internalOfferId) {
+      const completion = await prisma.offerwallCompletion.findFirst({
+        where: {
+          offerId: callback.internalOfferId,
+          userId: callback.userId,
+          ...(callback.transactionId ? { txid: callback.transactionId } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, status: true },
+      });
+
+      const credited = completion
+        ? await releaseHeldCompletion(completion.id)
+        : false;
+
+      await prisma.offerwallCallback.update({
+        where: { id },
+        data: {
+          status: "APPROVED",
+          reviewedById: session.user.id,
+          reviewNote: note ?? null,
+          processedAt: new Date(),
+          creditedAt: credited ? new Date() : null,
+        },
+      });
+      await prisma.auditLog.create({
+        data: {
+          userId: session.user.id,
+          action: "OFFERWALL_CALLBACK_APPROVED",
+          entity: "OfferwallCallback",
+          entityId: id,
+          newData: {
+            releasedEarly: credited,
+            completionId: completion?.id ?? null,
+            completionStatus: completion?.status ?? null,
+            transactionId: callback.transactionId,
+          },
+        },
+      });
+
+      return NextResponse.json({
+        success: true,
+        credited,
+        message: credited
+          ? "Hold released early and the user was credited."
+          : "Already credited — nothing further was paid.",
+      });
+    }
+
+    const pointsPerUsd = await getPointsPerUsd();
+    // Legacy pure-wall callback (no catalog completion behind it): credit here.
     await prisma.$transaction([
       prisma.offerwallCallback.update({
         where: { id },
@@ -65,7 +124,11 @@ export async function PATCH(
         where: { id: callback.userId },
         data: {
           pointsBalance: { increment: callback.userPayout },
-          totalEarnings: { increment: callback.payoutAmount },
+          // The USD value of what the USER earned. This used to increment by
+          // `payoutAmount` — the network's payout to the platform — mixing a
+          // different quantity (and a different unit basis) into the same
+          // column every other earn path writes as points ÷ pointsPerUsd.
+          totalEarnings: { increment: callback.userPayout / pointsPerUsd },
         },
       }),
       prisma.transaction.create({

@@ -4,7 +4,7 @@ import { getEffectivePackage } from "@/lib/packages";
 import { getAdClickCost } from "@/lib/ad-billing";
 import { matchesTargeting, type TargetableUser } from "@/lib/ad-targeting";
 import { getSetting } from "@/lib/system-settings";
-import { bumpAdDailyStat } from "@/lib/ad-stats";
+import { bufferImpression } from "@/lib/ad-counters";
 import { firstPartyMediaUrl, isFirstPartyAdType } from "@/lib/ad-proxy";
 import { composeNetworkAdHtml, getNetworkGlobals } from "@/lib/ad-network";
 import type { FeedAd } from "@/components/user/feed/feed-ad-card";
@@ -118,12 +118,28 @@ export async function serveAd(opts: {
   // run on dead or unfunded campaigns.
   const interstitial = placement.endsWith("_INTERSTITIAL");
 
-  let viewer: TargetableUser | null = null;
+  // Starts as an EMPTY viewer, not null.
+  //
+  // Targeting was applied only when `viewer` was non-null, and `viewer` stayed
+  // null for every anonymous request — so a logged-out visitor was served EVERY
+  // ad on the placement regardless of country, age, gender, level or KYC rules,
+  // and `bufferImpression` counted it. An advertiser paying for Bangladesh was
+  // billed for impressions from anywhere, ad-free plans were ignored, and every
+  // live creative plus its `targetUrl` was enumerable without an account.
+  // `serveFeedAds` below already does it this way and always filters; this is
+  // that behaviour, applied to the banner path too. `matchesTargeting({}, {})`
+  // correctly passes an untargeted ad and rejects a targeted one.
+  let viewer: TargetableUser = {};
   let houseOnly = false;
   if (userId && !preview) {
     const [pkg, u] = await Promise.all([
       getEffectivePackage(userId),
-      prisma.user.findUnique({ where: { id: userId }, select: VIEWER_SELECT }),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: VIEWER_SELECT,
+        // Targeting attributes (country/gender/level…) change rarely.
+        cacheStrategy: { ttl: 60, swr: 300 },
+      }),
     ]);
     if (pkg?.adFree && !interstitial) return EMPTY; // Watch & Earn is unaffected
     houseOnly = !!pkg?.adFree;
@@ -138,6 +154,11 @@ export async function serveAd(opts: {
 
   const cost = await getAdClickCost();
   const now = new Date();
+  // The eligible pool is IDENTICAL for every viewer of a placement, so it is a
+  // textbook shared read: cache it. Targeting and the weighted pick still run
+  // per request in JS below, so rotation variety is unchanged. `take` also caps
+  // the response so a placement with many ads can't hit Accelerate's payload
+  // limit (P6009), which is explicitly non-retryable.
   const allAds = await prisma.ad.findMany({
     where: {
       placementId: placementRow.id,
@@ -148,11 +169,12 @@ export async function serveAd(opts: {
       ...(preview ? {} : { campaign: servableCampaignWhere(cost, now, houseOnly) }),
     },
     include: { campaign: { select: { title: true } } },
+    take: 50,
+    ...(preview ? {} : { cacheStrategy: { ttl: 30, swr: 120 } }),
   });
 
-  const targeted = viewer
-    ? allAds.filter((a) => matchesTargeting(a.targeting, viewer))
-    : allAds;
+  // Always filter. See the note on `viewer` above.
+  const targeted = allAds.filter((a) => matchesTargeting(a.targeting, viewer));
   if (targeted.length === 0) return EMPTY;
 
   const fresh = targeted.filter((a) => !exclude.has(a.id));
@@ -172,13 +194,9 @@ export async function serveAd(opts: {
 
   const counted = opts.countImpression !== false && !preview;
   if (counted) {
-    prisma.ad
-      .update({
-        where: { id: chosen.id },
-        data: { impressions: { increment: 1 } },
-      })
-      .catch(() => {});
-    void bumpAdDailyStat(chosen.id, { impressions: 1 });
+    // Buffered — see src/lib/ad-counters.ts. This used to be two hot-row writes
+    // per served ad, on the few rows currently in rotation.
+    bufferImpression(chosen.id);
   }
 
   const rotateSecondsRaw =
@@ -262,7 +280,12 @@ export async function serveFeedAds(opts: {
   if (userId) {
     const [pkg, u] = await Promise.all([
       getEffectivePackage(userId),
-      prisma.user.findUnique({ where: { id: userId }, select: VIEWER_SELECT }),
+      prisma.user.findUnique({
+        where: { id: userId },
+        select: VIEWER_SELECT,
+        // Targeting attributes (country/gender/level…) change rarely.
+        cacheStrategy: { ttl: 60, swr: 300 },
+      }),
     ]);
     if (pkg?.adFree) return [];
     viewer = { ...(u ?? {}), packageSlug: pkg?.slug ?? null };
