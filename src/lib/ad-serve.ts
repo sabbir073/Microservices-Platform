@@ -1,12 +1,20 @@
 import { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getEffectivePackage } from "@/lib/packages";
-import { getAdClickCost } from "@/lib/ad-billing";
+import { getActiveBooking, getPlacementClickCost } from "@/lib/ad-rate-card";
+import {
+  claimInterstitialSlot,
+  isFrequencyCapped,
+} from "@/lib/ad-frequency";
 import { matchesTargeting, type TargetableUser } from "@/lib/ad-targeting";
 import { getSetting } from "@/lib/system-settings";
-import { bufferImpression } from "@/lib/ad-counters";
+import { bufferImpression, bufferServeOutcome } from "@/lib/ad-counters";
 import { firstPartyMediaUrl, isFirstPartyAdType } from "@/lib/ad-proxy";
-import { composeNetworkAdHtml, getNetworkGlobals } from "@/lib/ad-network";
+import {
+  getNetworkGlobals,
+  resolveNetworkSlot,
+  type NetworkSlotConfig,
+} from "@/lib/ad-network";
 import type { FeedAd } from "@/components/user/feed/feed-ad-card";
 
 /** Shaped banner/interstitial ad — identical to the `/api/ads/serve` payload. */
@@ -28,6 +36,8 @@ export interface ServedAd {
   clickTracker?: string;
   /** Admin-granted per-ad escape hatch for network creatives (see SandboxedAdFrame). */
   allowSameOrigin?: boolean;
+  /** Present only for ADSENSE / GAM — what the client needs to build a real slot. */
+  network?: NetworkSlotConfig;
 }
 
 export interface ServeResult {
@@ -41,6 +51,23 @@ export interface ServeResult {
 }
 
 const EMPTY: ServeResult = {
+  poolSize: 0,
+  rotateMs: 0,
+  interstitialSeconds: 5,
+  ad: null,
+};
+
+/**
+ * Identical to EMPTY on the wire, but tells the wrapper below that no ad was
+ * WITHHELD rather than missing — an ad-free plan, or a frequency cap.
+ *
+ * The distinction is the whole point of fill-rate tracking. Counting a
+ * deliberate suppression as a no-fill would make every space look starved for
+ * reasons that have nothing to do with inventory, and the number would then be
+ * useless for the one decision it exists to inform: which spaces are worth
+ * keeping. Referential identity is the marker, so nothing leaks to the client.
+ */
+const SUPPRESSED: ServeResult = {
   poolSize: 0,
   rotateMs: 0,
   interstitialSeconds: 5,
@@ -100,7 +127,7 @@ export function servableCampaignWhere(
  * (so a blocked client fetch can't hide it). Returns `{ ad: null }` when nothing
  * is eligible (incl. ad-free viewers). `countImpression` defaults true.
  */
-export async function serveAd(opts: {
+async function serveAdInner(opts: {
   placement: string;
   userId?: string | null;
   exclude?: Iterable<string>;
@@ -108,6 +135,15 @@ export async function serveAd(opts: {
   /** Admin preview: serve any ACTIVE ad on the placement (skip ad-free /
    *  targeting / budget / flight gates) and never count an impression. */
   preview?: boolean;
+  /**
+   * Skip AdSense/GAM and serve own/direct inventory only.
+   *
+   * Used when a Google slot comes back unfilled: rather than leave a hole where
+   * an ad should be, the client re-requests with this and gets a house or
+   * direct-sold creative. While AdSense approval is still pending this is what
+   * makes the network spaces earn anything at all.
+   */
+  ownInventoryOnly?: boolean;
 }): Promise<ServeResult> {
   const { placement, userId, preview } = opts;
   const exclude = new Set(opts.exclude ?? []);
@@ -141,9 +177,24 @@ export async function serveAd(opts: {
         cacheStrategy: { ttl: 60, swr: 300 },
       }),
     ]);
-    if (pkg?.adFree && !interstitial) return EMPTY; // Watch & Earn is unaffected
+    if (pkg?.adFree && !interstitial) return SUPPRESSED; // Watch & Earn is unaffected
     houseOnly = !!pkg?.adFree;
     viewer = { ...(u ?? {}), packageSlug: pkg?.slug ?? null };
+  }
+
+  // Full-screen frequency cap. Checked before the placement lookup so a capped
+  // user costs one cheap limiter query rather than the whole serve path.
+  //
+  // Returning EMPTY is the entire mechanism: `AdInterstitialOverlay` calls
+  // `onDone()` immediately when the serve has no ad, so a capped user's reward
+  // is neither delayed nor blocked — they simply aren't shown one. See
+  // ad-frequency.ts for why the cap has to exist at all.
+  //
+  // Skipped for previews (an admin looking at a space must always see it) and
+  // for anonymous viewers (there is no per-user budget to spend).
+  if (!preview && userId && isFrequencyCapped(placement)) {
+    const slot = await claimInterstitialSlot(userId, placement);
+    if (!slot.allowed) return SUPPRESSED;
   }
 
   const placementRow = await prisma.adPlacement.findFirst({
@@ -152,7 +203,10 @@ export async function serveAd(opts: {
   });
   if (!placementRow) return EMPTY;
 
-  const cost = await getAdClickCost();
+  // Per-space click price, falling back to the global one. This is the budget
+  // FLOOR here, not a charge — an ad may only serve if its campaign can afford
+  // a click on this particular space.
+  const cost = await getPlacementClickCost(placement);
   const now = new Date();
   // The eligible pool is IDENTICAL for every viewer of a placement, so it is a
   // textbook shared read: cache it. Targeting and the weighted pick still run
@@ -167,6 +221,7 @@ export async function serveAd(opts: {
       // path allowed to look past the campaign gate, so an admin can still see
       // what a space renders while a campaign is paused.
       ...(preview ? {} : { campaign: servableCampaignWhere(cost, now, houseOnly) }),
+      ...(opts.ownInventoryOnly ? { type: { notIn: ["ADSENSE", "GAM"] } } : {}),
     },
     include: { campaign: { select: { title: true } } },
     take: 50,
@@ -177,8 +232,25 @@ export async function serveAd(opts: {
   const targeted = allAds.filter((a) => matchesTargeting(a.targeting, viewer));
   if (targeted.length === 0) return EMPTY;
 
-  const fresh = targeted.filter((a) => !exclude.has(a.id));
-  const ads = fresh.length > 0 ? fresh : targeted;
+  // A space rented outright belongs to its buyer for the period.
+  //
+  // The guard is the important half: if the booked campaign has nothing
+  // servable right now — every creative paused, rejected, or filtered out by
+  // targeting — the space falls through to the normal pool rather than going
+  // dark. An empty space is the failure mode Phase 2 existed to kill, and a
+  // sponsor who paid for a month would not thank anyone for a blank rectangle.
+  // Previews skip this: an admin looking at a space must see what it holds.
+  let pool = targeted;
+  if (!preview) {
+    const booking = await getActiveBooking(placementRow.id, now);
+    if (booking?.exclusive) {
+      const booked = targeted.filter((a) => a.campaignId === booking.campaignId);
+      if (booked.length > 0) pool = booked;
+    }
+  }
+
+  const fresh = pool.filter((a) => !exclude.has(a.id));
+  const ads = fresh.length > 0 ? fresh : pool;
 
   // Weighted pick.
   const totalWeight = ads.reduce((sum, a) => sum + (a.weight ?? 10), 0);
@@ -193,11 +265,6 @@ export async function serveAd(opts: {
   }
 
   const counted = opts.countImpression !== false && !preview;
-  if (counted) {
-    // Buffered — see src/lib/ad-counters.ts. This used to be two hot-row writes
-    // per served ad, on the few rows currently in rotation.
-    bufferImpression(chosen.id);
-  }
 
   const rotateSecondsRaw =
     placementRow.rotationSeconds ??
@@ -209,15 +276,39 @@ export async function serveAd(opts: {
   );
 
   const proxy = isFirstPartyAdType(chosen.type);
-  // Network types (ADSENSE/GAM): compose a self-contained document server-side;
-  // fall back to any raw htmlContent when config is incomplete.
-  let html = chosen.htmlContent ?? undefined;
+  // Network types (ADSENSE/GAM) ship their SLOT CONFIG, not markup.
+  //
+  // They used to be composed into a self-contained document here and rendered in
+  // a sandboxed iframe, so every slot loaded its own copy of Google's script.
+  // The client now renders a real in-page `<ins>` / GPT slot from this config,
+  // against the single page-level tag in the root layout — the only arrangement
+  // Google supports, and the only one that fills properly.
+  const html = chosen.htmlContent ?? undefined;
+  let network: NetworkSlotConfig | undefined;
   if (chosen.type === "ADSENSE" || chosen.type === "GAM") {
-    const composed = composeNetworkAdHtml(chosen, await getNetworkGlobals());
-    if (composed) html = composed;
+    network =
+      resolveNetworkSlot(chosen, await getNetworkGlobals(), placement) ??
+      undefined;
+    // Incomplete network setup — the normal state before an account exists.
+    // Serving nothing is right: it keeps every Google reference off the page.
+    if (!network) return EMPTY;
   }
+
+  // The impression is counted HERE, after every path that can still decide not
+  // to serve.
+  //
+  // It used to be counted at the weighted pick above, which is before the
+  // network-config check — so an AdSense ad with no slot id recorded an
+  // impression for a creative the viewer never saw, and inflated the numbers of
+  // exactly the ad type that can least afford to look wrong to Google.
+  if (counted) {
+    // Buffered — see src/lib/ad-counters.ts. This used to be two hot-row writes
+    // per served ad, on the few rows currently in rotation.
+    bufferImpression(chosen.id);
+  }
+
   return {
-    poolSize: targeted.length,
+    poolSize: ads.length,
     rotateMs: rotateSeconds * 1000,
     interstitialSeconds,
     countedServerSide: counted,
@@ -239,6 +330,7 @@ export async function serveAd(opts: {
       ctaLabel: "Learn More",
       ctaUrl: chosen.targetUrl ?? undefined,
       html,
+      network,
       sponsor: undefined,
       size: chosen.size ?? undefined,
       width: chosen.width ?? undefined,
@@ -248,6 +340,58 @@ export async function serveAd(opts: {
       allowSameOrigin: chosen.allowSameOrigin || undefined,
     },
   };
+}
+
+/**
+ * Select an ad for a placement, and record whether the request was filled.
+ *
+ * The recording is the reason this wrapper exists. `serveAdInner` has eight paths
+ * that return no ad, and instrumenting each of them would guarantee that the next
+ * early return added silently stops counting — the denominator would drift away
+ * from the numerator and nobody would notice, because the number would still look
+ * plausible. Counting once, here, at the single boundary, cannot drift.
+ *
+ * Two outcomes are deliberately NOT counted:
+ *
+ *  - **Suppression** (ad-free plan, frequency cap). Nothing was missing; an ad was
+ *    withheld on purpose. Counting it would make every space look starved for
+ *    reasons that have nothing to do with inventory.
+ *  - **Previews.** An admin looking at a space is not a viewer.
+ *
+ * Never throws and never delays the serve: a failure to record a diagnostic must
+ * not cost a real impression.
+ */
+export async function serveAd(opts: {
+  placement: string;
+  userId?: string | null;
+  exclude?: Iterable<string>;
+  countImpression?: boolean;
+  preview?: boolean;
+  ownInventoryOnly?: boolean;
+}): Promise<ServeResult> {
+  const result = await serveAdInner(opts);
+  if (!opts.preview && result !== SUPPRESSED) {
+    // Fire-and-forget. The placement id is resolved from the same cached read
+    // `serveAdInner` just made, so this is a cache hit rather than a query.
+    void recordServeOutcome(opts.placement, !!result.ad);
+  }
+  return result;
+}
+
+async function recordServeOutcome(placement: string, filled: boolean) {
+  try {
+    const row = await prisma.adPlacement.findFirst({
+      where: { name: placement, isActive: true },
+      select: { id: true },
+      cacheStrategy: { ttl: 30, swr: 60 },
+    });
+    // An unknown or inactive space has no row to attribute the request to. That
+    // is a configuration problem, not a fill problem, and it is already visible
+    // in the placement list.
+    if (row) bufferServeOutcome(row.id, filled);
+  } catch {
+    /* a diagnostic must never break ad serving */
+  }
 }
 
 /** Order items by a weighted-random draw (higher weight → earlier, on average). */
@@ -297,7 +441,8 @@ export async function serveFeedAds(opts: {
   });
   if (!placement) return [];
 
-  const cost = await getAdClickCost();
+  // IN_FEED has its own rate on the card, like every other space.
+  const cost = await getPlacementClickCost("IN_FEED");
   const now = new Date();
   const ads = await prisma.ad.findMany({
     where: {

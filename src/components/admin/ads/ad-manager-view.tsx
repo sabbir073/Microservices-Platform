@@ -2,7 +2,7 @@
 
 import { confirmDialog } from "@/lib/confirm";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore} from "react";
 import {
   Newspaper,
   Megaphone,
@@ -29,19 +29,23 @@ import {
   Pause,
   Play,
   type LucideIcon,
-} from "lucide-react";
+
+  CalendarClock,
+  ReceiptText,} from "lucide-react";
 import { toast } from "@/lib/toast";
 import { cn, usd } from "@/lib/utils";
 import { AdWizard } from "@/components/admin/ads/ad-wizard";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import { AudienceBuilder } from "@/components/admin/ads/audience-builder";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
-import { AD_PLACEMENTS, placementSizeKey } from "@/lib/ad-placements";
+import { AD_PLACEMENTS, placementSizeKey, placementSpec } from "@/lib/ad-placements";
 import { AD_SIZES, resolveAdSize } from "@/lib/ad-sizes";
 import { SandboxedAdFrame } from "@/components/user/primitives/sandboxed-ad-frame";
 import { AdReviewQueue } from "@/components/admin/ads/ad-review-queue";
 import { AdReviewPanel } from "@/components/admin/ads/ad-review-panel";
 import { ModalShell } from "@/components/admin/ads/modal-shell";
+import { BookingsTab } from "@/components/admin/ads/bookings-tab";
+import { InvoicesTab } from "@/components/admin/ads/invoices-tab";
 // Shared presentation so this view and the review console can't drift apart.
 import { StatusPill, targetingSummary } from "@/components/admin/ads/ad-ui";
 import { type AdTargeting } from "@/lib/ad-targeting";
@@ -53,6 +57,8 @@ interface Campaign {
   description: string | null;
   budget: number;
   status: string;
+  /** Platform-owned inventory: exempt from the budget floor, never billed. */
+  isHouse?: boolean;
   startAt?: string | null;
   endAt?: string | null;
   _count?: { ads: number };
@@ -68,6 +74,9 @@ interface Placement {
   name: string;
   isActive: boolean;
   rotationSeconds?: number | null;
+  cpcUsd?: number | string | null;
+  monthlyUsd?: number | string | null;
+  isRentable?: boolean;
   interstitialSeconds?: number | null;
   _count?: { ads: number };
   stats?: PlacementStats;
@@ -130,6 +139,8 @@ const TABS = [
   { id: "approvals", label: "Approvals", icon: ShieldCheck },
   { id: "campaigns", label: "Campaigns", icon: Megaphone },
   { id: "placements", label: "Ad Spaces", icon: Layers },
+  { id: "bookings", label: "Bookings", icon: CalendarClock },
+  { id: "invoices", label: "Invoices", icon: ReceiptText },
   { id: "analytics", label: "Analytics", icon: BarChart3 },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -168,6 +179,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   const [reviewAdId, setReviewAdId] = useState<string | null>(null);
   const [adFilter, setAdFilter] = useState({ status: "", placement: "", q: "" });
   const [campModal, setCampModal] = useState<Campaign | "new" | null>(null);
+  const [campDetail, setCampDetail] = useState<string | null>(null);
   const [newPlacement, setNewPlacement] = useState("");
   const [demoBusy, setDemoBusy] = useState(false);
   const [rotationSeconds, setRotationSeconds] = useState(12);
@@ -397,6 +409,24 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rotationSeconds: secs }),
     });
+    loadAll();
+  };
+  /** Per-space price. `cpcUsd: null` clears the override → back to the global rate. */
+  const setPlacementRate = async (
+    p: Placement,
+    patch: { cpcUsd?: number | null; monthlyUsd?: number | null; isRentable?: boolean }
+  ) => {
+    const res = await fetch(`/api/admin/ads/placements/${p.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+    if (!res.ok) {
+      // The route REJECTS a bad price rather than clamping it, so the admin has
+      // to be told — a silently-corrected price is a price nobody chose.
+      const d = await res.json().catch(() => ({}));
+      toast.error(d.error ?? "Couldn't save the rate");
+    }
     loadAll();
   };
   // Per-space interstitial ad duration. `secs === null` clears it (→ default 5s).
@@ -694,12 +724,17 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <span className="text-sm font-bold text-white tabular-nums">{usd(c.budget)}</span>
-                      {canManage && (
-                        <div className="flex gap-1">
-                          <IconBtn onClick={() => setCampModal(c)} title="Edit"><Pencil className="w-4 h-4" /></IconBtn>
-                          <IconBtn onClick={() => deleteCampaign(c.id)} title="Delete" danger><Trash2 className="w-4 h-4" /></IconBtn>
-                        </div>
-                      )}
+                      <div className="flex gap-1">
+                        {/* These rows were dead text — there was no way to look
+                            at a campaign, only to edit or delete one. */}
+                        <IconBtn onClick={() => setCampDetail(c.id)} title="Performance"><BarChart3 className="w-4 h-4" /></IconBtn>
+                        {canManage && (
+                          <>
+                            <IconBtn onClick={() => setCampModal(c)} title="Edit"><Pencil className="w-4 h-4" /></IconBtn>
+                            <IconBtn onClick={() => deleteCampaign(c.id)} title="Delete" danger><Trash2 className="w-4 h-4" /></IconBtn>
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -804,8 +839,17 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                 </div>
                 <label className="flex items-center gap-2 text-sm text-slate-200">
                   <input type="checkbox" checked={underPostBanner} disabled={!canManage} onChange={(e) => setUnderPostBanner(e.target.checked)} />
-                  Show a compact banner under <b className="mx-1">every</b> post, above its like/comment/share row (placement <span className="font-mono text-xs text-slate-400">FEED_POST_BELOW</span>)
+                  Show a compact banner under posts, above the like/comment/share row (placement <span className="font-mono text-xs text-slate-400">FEED_POST_BELOW</span>)
                 </label>
+                {underPostBanner && (
+                  <div className="max-w-xs">
+                    {/* This setting existed and was saved, but had no input and no
+                        effect — the banner rendered under every post regardless. */}
+                    <label className="block text-xs text-slate-400 mb-1">Under-post banner — every N posts</label>
+                    <input type="number" min={1} max={20} value={underPostInterval} disabled={!canManage} onChange={(e) => setUnderPostInterval(Math.max(1, Number(e.target.value) || 3))} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm disabled:opacity-50" />
+                    <p className="text-[11px] text-slate-500 mt-1">1 = under every post. On a 20-post page that is 20 ad requests at once.</p>
+                  </div>
+                )}
                 <div className="max-w-xs">
                   <label className="block text-xs text-slate-400 mb-1">Boosted post — max times shown per user (0 = unlimited)</label>
                   <input type="number" min={0} max={1000} value={boostMaxPerUser} disabled={!canManage} onChange={(e) => setBoostMaxPerUser(Math.max(0, Number(e.target.value) || 0))} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm disabled:opacity-50" />
@@ -860,15 +904,27 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                     placement={p}
                     canManage={canManage}
                     rotationSeconds={rotationSeconds}
+                    cpcUsd={cpcUsd}
                     onToggle={() => togglePlacement(p)}
                     onSetRotation={(secs) => setPlacementRotation(p, secs)}
                     onSetInterstitial={(secs) => setPlacementInterstitial(p, secs)}
+                    onSetRate={(patch) => setPlacementRate(p, patch)}
                     onDelete={() => deletePlacement(p.id)}
                   />
                 ))}
               </div>
             </div>
           )}
+
+          {tab === "bookings" && (
+            <BookingsTab
+              canManage={canManage}
+              placements={placements}
+              campaigns={campaigns}
+            />
+          )}
+
+          {tab === "invoices" && <InvoicesTab canManage={canManage} />}
 
           {tab === "analytics" && <AnalyticsTab />}
         </>
@@ -913,6 +969,12 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
             setCampModal(null);
             loadAll();
           }}
+        />
+      )}
+      {campDetail && (
+        <CampaignDetailModal
+          campaignId={campDetail}
+          onClose={() => setCampDetail(null)}
         />
       )}
     </div>
@@ -1009,17 +1071,22 @@ function AdSpaceCard({
   placement: p,
   canManage,
   rotationSeconds,
+  cpcUsd,
   onToggle,
   onSetRotation,
   onSetInterstitial,
+  onSetRate,
   onDelete,
 }: {
   placement: Placement;
   canManage: boolean;
   rotationSeconds: number;
+  /** The global click price, shown as the placeholder when a space has no rate. */
+  cpcUsd: number;
   onToggle: () => void;
   onSetRotation: (secs: number | null) => void;
   onSetInterstitial: (secs: number | null) => void;
+  onSetRate: (patch: { cpcUsd?: number | null; monthlyUsd?: number | null; isRentable?: boolean }) => void;
   onDelete: () => void;
 }) {
   // Effective interval for this space: its own override, else the global default.
@@ -1095,7 +1162,10 @@ function AdSpaceCard({
         Recommended size: <span className="text-slate-300 font-mono">{spaceSizeLabel(p.name)}</span>
       </p>
 
-      {/* Live stats */}
+      {/* Live stats — LIFETIME counters straight off the Ad rows. The Analytics
+          tab sums AdDailyStat over a window instead, so the two are both right
+          and will never match. Labelled rather than "reconciled". */}
+      <p className="text-[9px] uppercase tracking-wider text-slate-600 text-center">All time</p>
       <div className="grid grid-cols-3 gap-2 text-center">
         <div>
           <p className="text-sm font-bold text-white tabular-nums">{stats.impressions.toLocaleString()}</p>
@@ -1158,6 +1228,50 @@ function AdSpaceCard({
         </div>
       )}
 
+      {canManage && (
+        <div className="pt-1 border-t border-slate-800 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Rate card</p>
+          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <label className="whitespace-nowrap w-20">Per click $</label>
+            <input
+              type="number"
+              step={0.01}
+              min={0.001}
+              defaultValue={p.cpcUsd == null ? "" : String(p.cpcUsd)}
+              placeholder={String(cpcUsd)}
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if ((p.cpcUsd == null ? "" : String(Number(p.cpcUsd))) === (v === "" ? "" : String(Number(v)))) return;
+                onSetRate({ cpcUsd: v === "" ? null : Number(v) });
+              }}
+              className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-white text-center"
+            />
+            {p.cpcUsd == null && (
+              <span className="whitespace-nowrap text-slate-600">global rate</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2 text-[11px] text-slate-400">
+            <label className="whitespace-nowrap w-20">Per month $</label>
+            <input
+              type="number"
+              step={1}
+              min={0}
+              defaultValue={p.monthlyUsd == null ? "" : String(p.monthlyUsd)}
+              placeholder="not for rent"
+              onBlur={(e) => {
+                const v = e.target.value.trim();
+                if ((p.monthlyUsd == null ? "" : String(Number(p.monthlyUsd))) === (v === "" ? "" : String(Number(v)))) return;
+                onSetRate({ monthlyUsd: v === "" ? null : Number(v), isRentable: v !== "" });
+              }}
+              className="w-20 px-2 py-1 bg-slate-800 border border-slate-700 rounded text-white text-center"
+            />
+            {p.isRentable && p.monthlyUsd != null && (
+              <span className="whitespace-nowrap text-emerald-400 font-semibold">for rent</span>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-800">
         <span className="text-[11px] text-slate-400">
           <span className="text-emerald-400 font-bold">{stats.activeAds}</span> active ·{" "}
@@ -1193,17 +1307,80 @@ function AdSpaceCard({
 }
 
 interface DayStat { date: string; impressions: number; clicks: number; spendUsd: number }
-interface ReportRow { impressions: number; clicks: number; spend: number; ctr: number }
+interface ReportRow {
+  impressions: number;
+  clicks: number;
+  spend: number;
+  ctr: number;
+  /** Impressions on house inventory — they earn nothing and must not drag eCPM down. */
+  houseImpressions: number;
+  paidImpressions: number;
+  /** Revenue per thousand PAID impressions. */
+  ecpm: number;
+}
 interface AdRow extends ReportRow { type: string; campaign: string; placement: string }
-interface PlacementRow extends ReportRow { name: string }
+interface PlacementRow extends ReportRow {
+  name: string;
+  requests: number;
+  fills: number;
+  /** null = not measured yet (the counters only start from the day they shipped). */
+  fillRate: number | null;
+}
 interface CampaignRow extends ReportRow { title: string }
 const RANGES = [7, 14, 30, 90];
+
+/**
+ * "A day" in every ad report means a UTC day, not the reader's day.
+ *
+ * `AdDailyStat.date` is a DATE column written from `todayUtc()`, so a bar
+ * labelled 2026-08-24 covers 24 Aug 00:00 UTC to 25 Aug 00:00 UTC — which for a
+ * reader in UTC+6 is 06:00 to 06:00 local. Nothing used to disclose that, so
+ * "today" quietly looked wrong every morning.
+ *
+ * The offset is the BROWSER's and the server has its own, so this is read
+ * through `useSyncExternalStore` with a distinct server snapshot: React renders
+ * the neutral string on the server and swaps in the reader's offset on the
+ * client, with no hydration mismatch and no setState-in-an-effect.
+ */
+const NEUTRAL_UTC_NOTE = "Days are UTC (00:00–24:00 UTC).";
+
+/** The timezone cannot change mid-session, so there is nothing to subscribe to. */
+const noSubscribe = () => () => {};
+
+function utcDayNoteSnapshot(): string {
+  const mins = -new Date().getTimezoneOffset();
+  if (mins === 0) return "Days are UTC — the same as your timezone.";
+  const abs = Math.abs(mins);
+  const hh = Math.floor(abs / 60);
+  const mm = abs % 60;
+  const label = `UTC${mins > 0 ? "+" : "-"}${hh}${mm ? `:${String(mm).padStart(2, "0")}` : ""}`;
+  // Local clock time at which a UTC day begins.
+  const startMin = ((mins % 1440) + 1440) % 1440;
+  const startsAt = `${String(Math.floor(startMin / 60)).padStart(2, "0")}:${String(startMin % 60).padStart(2, "0")}`;
+  return `Days are UTC. You are ${label}, so each day here starts at ${startsAt} your time.`;
+}
+
+function UtcDayNote() {
+  const note = useSyncExternalStore(
+    noSubscribe,
+    utcDayNoteSnapshot,
+    () => NEUTRAL_UTC_NOTE
+  );
+  return <p className="text-[10px] text-slate-500 mb-3">{note}</p>;
+}
 const isNetworkType = (t: string) => t === "ADSENSE" || t === "GAM";
 
 function AnalyticsTab() {
   const [days, setDays] = useState(14);
   const [series, setSeries] = useState<DayStat[]>([]);
   const [totals, setTotals] = useState({ impressions: 0, clicks: 0, ctr: 0 });
+  const [revenue, setRevenue] = useState({
+    windowSpend: 0,
+    lifetime: 0,
+    unspent: 0,
+    cashCollected: 0,
+    ecpm: 0,
+  });
   const [perAd, setPerAd] = useState<AdRow[]>([]);
   const [perPlacement, setPerPlacement] = useState<PlacementRow[]>([]);
   const [perCampaign, setPerCampaign] = useState<CampaignRow[]>([]);
@@ -1219,6 +1396,7 @@ function AnalyticsTab() {
         if (!active) return;
         setSeries(a.series ?? []);
         setTotals(a.totals ?? { impressions: 0, clicks: 0, ctr: 0 });
+        if (a.revenue) setRevenue(a.revenue);
         setPerAd(rep.perAd ?? []);
         setPerPlacement(rep.perPlacement ?? []);
         setPerCampaign(rep.perCampaign ?? []);
@@ -1237,19 +1415,34 @@ function AnalyticsTab() {
     <div className="space-y-3">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <p className="text-sm font-semibold text-white">Performance</p>
-        <div className="inline-flex rounded-lg border border-slate-700 overflow-hidden">
-          {RANGES.map((d) => (
-            <button
-              key={d}
-              onClick={() => {
-                setLoading(true);
-                setDays(d);
-              }}
-              className={`px-3 py-1.5 text-xs font-semibold ${days === d ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
-            >
-              {d}d
-            </button>
-          ))}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Ads were the one money domain with no export at all. */}
+          <div className="inline-flex items-center gap-1">
+            <span className="text-[11px] text-slate-500">Export</span>
+            {(["ad", "placement", "campaign", "daily"] as const).map((scope) => (
+              <a
+                key={scope}
+                href={`/api/admin/ads/report/export?days=${days}&scope=${scope}`}
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[11px] font-semibold"
+              >
+                {scope === "daily" ? "raw" : scope}
+              </a>
+            ))}
+          </div>
+          <div className="inline-flex rounded-lg border border-slate-700 overflow-hidden">
+            {RANGES.map((d) => (
+              <button
+                key={d}
+                onClick={() => {
+                  setLoading(true);
+                  setDays(d);
+                }}
+                className={`px-3 py-1.5 text-xs font-semibold ${days === d ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -1257,11 +1450,23 @@ function AnalyticsTab() {
         <StatCard icon={<Eye className="w-5 h-5" />} value={totals.impressions.toLocaleString()} label="Impressions (all time)" tone="purple" />
         <StatCard icon={<MousePointer className="w-5 h-5" />} value={totals.clicks.toLocaleString()} label="Clicks (all time)" tone="amber" />
         <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${totals.ctr.toFixed(2)}%`} label="CTR" tone="emerald" />
-        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(spend)}`} label={`Spend (${days}d)`} tone="indigo" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(spend)}`} label={`Revenue (${days}d)`} tone="indigo" />
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.lifetime)}`} label="Revenue (lifetime)" tone="emerald" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.ecpm)}`} label={`eCPM (${days}d)`} tone="purple" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.unspent)}`} label="Advertiser budget unspent" tone="amber" />
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.cashCollected)}`} label="Ad credit purchased" tone="indigo" />
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
-        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-3">Impressions · last {days} days</p>
+        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Impressions · last {days} days</p>
+        {/* Every ad figure is bucketed on midnight UTC (AdDailyStat.date is a
+            DATE column written via todayUtc()). Re-bucketing per viewer would
+            mean a second rollup table, so the honest move is to say so — a
+            reader in UTC+6 is otherwise looking at a "day" that closed at 6am. */}
+        <UtcDayNote />
         {loading ? (
           <p className="text-xs text-slate-500 py-6 text-center">Loading…</p>
         ) : series.every((s) => s.impressions === 0) ? (
@@ -1295,13 +1500,20 @@ function AnalyticsTab() {
       </ReportTable>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <ReportTable title="By placement" cols={["Placement", "Impr", "Clicks", "CTR"]}>
+        <ReportTable title="By placement" cols={["Placement", "Impr", "Fill", "Revenue", "eCPM"]}>
           {perPlacement.map((r, i) => (
             <tr key={i} className="border-t border-slate-800">
               <td className="py-1.5 pr-2 text-white truncate max-w-40">{PLACEMENT_LABEL[r.name] ?? r.name}</td>
               <td className="py-1.5 text-right tabular-nums text-slate-300">{r.impressions.toLocaleString()}</td>
-              <td className="py-1.5 text-right tabular-nums text-slate-300">{r.clicks.toLocaleString()}</td>
-              <td className="py-1.5 text-right tabular-nums text-slate-300">{r.ctr.toFixed(2)}%</td>
+              {/* A dash, not 0% — no requests recorded means "not measured yet",
+                  and a hard zero would read as "this space is broken". */}
+              <td className="py-1.5 text-right tabular-nums text-slate-300">
+                {r.fillRate === null ? "—" : `${r.fillRate.toFixed(0)}%`}
+              </td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">{usd(r.spend)}</td>
+              <td className="py-1.5 text-right tabular-nums text-slate-300">
+                {r.paidImpressions > 0 ? usd(r.ecpm) : "house"}
+              </td>
             </tr>
           ))}
         </ReportTable>
@@ -1316,10 +1528,201 @@ function AnalyticsTab() {
           ))}
         </ReportTable>
       </div>
-      <p className="text-[10px] text-slate-500">
-        Network (AdSense / Ad Manager) ads show served impressions only — their clicks &amp; revenue are in the network&apos;s own console.
-      </p>
+      <div className="space-y-1">
+        <p className="text-[10px] text-slate-500">
+          Network (AdSense / Ad Manager) ads show served impressions only — their clicks &amp; revenue are in the network&apos;s own console.
+        </p>
+        <p className="text-[10px] text-slate-500">
+          <b>eCPM</b> is revenue per 1,000 <i>paid</i> impressions. A space filled
+          entirely with your own house ads shows &quot;house&quot;: it earns nothing
+          by design, so dividing by its impressions would only make a working space
+          look broken.
+        </p>
+        <p className="text-[10px] text-slate-500">
+          <b>Fill</b> is how often a request for that space actually produced an ad.
+          A low fill rate means the space is asking more often than there is
+          inventory to answer — widen its interval or add creatives.
+        </p>
+      </div>
     </div>
+  );
+}
+
+interface CampaignDetail {
+  days: number;
+  campaign: {
+    id: string;
+    title: string;
+    status: string;
+    isHouse: boolean;
+    startAt: string | null;
+    endAt: string | null;
+    advertiser: { id: string; name: string | null; email: string } | null;
+    remaining: number;
+    spent: number;
+    funded: number;
+  };
+  series: DayStat[];
+  ads: Array<{
+    id: string;
+    label: string;
+    type: string;
+    status: string;
+    placement: string;
+    impressions: number;
+    clicks: number;
+    spend: number;
+    ctr: number;
+    lifetimeImpressions: number;
+    lifetimeClicks: number;
+  }>;
+}
+
+/**
+ * One campaign's performance — the drill-down that did not exist.
+ *
+ * The per-ad rows are windowed to the SAME range as the chart above them. The
+ * advertiser's own campaign view shows lifetime counters beside a windowed
+ * chart, which is two different periods on one screen; that is not repeated
+ * here, and the lifetime figures are shown separately and labelled.
+ */
+function CampaignDetailModal({
+  campaignId,
+  onClose,
+}: {
+  campaignId: string;
+  onClose: () => void;
+}) {
+  const [days, setDays] = useState(14);
+  const [data, setData] = useState<CampaignDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    // `setLoading(true)` lives on the range button, not here — setting state in
+    // an effect body cascades a render, and the initial value is already true.
+    fetch(`/api/admin/ads/campaigns/${campaignId}?days=${days}`)
+      .then((r) => r.json())
+      .then((d) => active && setData(d?.campaign ? d : null))
+      .catch(() => {})
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [campaignId, days]);
+
+  const c = data?.campaign;
+  const series = data?.series ?? [];
+  const maxImp = Math.max(1, ...series.map((s) => s.impressions));
+  const windowSpend = series.reduce((s, d) => s + d.spendUsd, 0);
+
+  return (
+    <ModalShell title={c ? c.title : "Campaign"} onClose={onClose} size="xl">
+      {loading && !data ? (
+        <p className="text-xs text-slate-500 py-10 text-center">Loading…</p>
+      ) : !c ? (
+        <p className="text-xs text-slate-500 py-10 text-center">Campaign not found.</p>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <StatusPill status={c.status} />
+              {c.isHouse && (
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-700 text-slate-200">
+                  House — never billed
+                </span>
+              )}
+              <span className="text-[11px] text-slate-500">
+                {c.advertiser ? c.advertiser.email : "Platform-owned"}
+              </span>
+            </div>
+            <div className="inline-flex rounded-lg border border-slate-700 overflow-hidden">
+              {RANGES.map((d) => (
+                <button
+                  key={d}
+                  onClick={() => {
+                    setLoading(true);
+                    setDays(d);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-semibold ${days === d ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+                >
+                  {d}d
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: "Funded", value: usd(c.funded) },
+              { label: "Spent (all time)", value: usd(c.spent) },
+              { label: "Remaining", value: usd(c.remaining) },
+              { label: `Spend (${days}d)`, value: usd(windowSpend) },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl border border-slate-800 bg-slate-900/50 p-3">
+                <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500">{s.label}</p>
+                <p className="text-lg font-extrabold tabular-nums text-white mt-0.5">{s.value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">
+              Impressions · last {days} days
+            </p>
+            <UtcDayNote />
+            {series.every((s) => s.impressions === 0) ? (
+              <p className="text-xs text-slate-500 py-6 text-center">
+                No impressions in this window.
+              </p>
+            ) : (
+              <div className="flex items-end gap-1 h-24">
+                {series.map((s) => (
+                  <div
+                    key={s.date}
+                    className="flex-1"
+                    title={`${s.date}: ${s.impressions} impr, ${s.clicks} clicks, ${usd(s.spendUsd)}`}
+                  >
+                    <div
+                      className="w-full rounded-t bg-linear-to-t from-blue-600 to-indigo-500"
+                      style={{ height: `${(s.impressions / maxImp) * 100}%` }}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <ReportTable
+            title={`Ads · last ${days} days`}
+            cols={["Ad", "Impr", "Clicks", "CTR", "Spend"]}
+          >
+            {(data?.ads ?? []).map((a) => {
+              const net = isNetworkType(a.type);
+              return (
+                <tr key={a.id} className="border-t border-slate-800">
+                  <td className="py-1.5 pr-2 text-white truncate max-w-52">
+                    {a.label}
+                    <span className="text-[10px] text-slate-500">
+                      {" "}· {PLACEMENT_LABEL[a.placement] ?? a.placement} · {a.status}
+                      {net ? ` · ${a.type}` : ""}
+                    </span>
+                  </td>
+                  <td className="py-1.5 text-right tabular-nums text-slate-300">{a.impressions.toLocaleString()}</td>
+                  <td className="py-1.5 text-right tabular-nums text-slate-300">{net ? "—" : a.clicks.toLocaleString()}</td>
+                  <td className="py-1.5 text-right tabular-nums text-slate-300">{net ? "—" : `${a.ctr.toFixed(2)}%`}</td>
+                  <td className="py-1.5 text-right tabular-nums text-slate-300">{net ? "network" : usd(a.spend)}</td>
+                </tr>
+              );
+            })}
+          </ReportTable>
+          <p className="text-[10px] text-slate-500">
+            Every figure above is for the selected window. The Ads tab shows
+            lifetime counters instead, so the two will differ.
+          </p>
+        </div>
+      )}
+    </ModalShell>
   );
 }
 
@@ -1349,7 +1752,15 @@ function spaceSizeLabel(name: string): string {
   return `${s.w}×${s.h}`;
 }
 
-interface PreviewAd { html?: string; videoUrl?: string; imageUrl?: string; title?: string }
+interface PreviewAd {
+  html?: string;
+  videoUrl?: string;
+  imageUrl?: string;
+  title?: string;
+  type?: string;
+  /** Present for ADSENSE/GAM — described here, never rendered. See below. */
+  network?: { kind: string; slot?: string; unitPath?: string; width?: number; height?: number };
+}
 
 /** Live, side-effect-free preview of a real served creative for a placement. */
 function SpacePreview({ placement, isFeed }: { placement: string; isFeed: boolean }) {
@@ -1385,7 +1796,26 @@ function SpacePreview({ placement, isFeed }: { placement: string; isFeed: boolea
   }
   return (
     <div className="rounded-lg overflow-hidden border border-slate-800 bg-slate-950 mx-auto w-full" style={{ aspectRatio: ratio, maxWidth: dim?.w }}>
-      {ad.html ? (
+      {ad.network ? (
+        // A network slot is DESCRIBED, never rendered here.
+        //
+        // Rendering it would make the admin panel fetch a real Google ad every
+        // time a space preview is on screen — ad requests with no viewer behind
+        // them, which is exactly the invalid-traffic pattern publisher accounts
+        // are banned for. The same reason the preview route refuses to fire the
+        // impression pixel.
+        <div className="w-full h-full grid place-items-center p-2 text-center">
+          <div>
+            <div className="text-[10px] font-semibold text-slate-300">
+              {ad.network.kind === "ADSENSE" ? "Google AdSense" : "Google Ad Manager"}
+            </div>
+            <div className="text-[9px] text-slate-500 mt-0.5 break-all">
+              {ad.network.unitPath ?? ad.network.slot}
+            </div>
+            <div className="text-[9px] text-slate-600 mt-0.5">renders on the live page</div>
+          </div>
+        </div>
+      ) : ad.html ? (
         <SandboxedAdFrame html={ad.html} height={dim?.h ?? 120} badge={false} />
       ) : ad.videoUrl ? (
         <video src={ad.videoUrl} muted autoPlay loop playsInline className="w-full h-full object-cover" />
@@ -1454,6 +1884,21 @@ function AdModal({
         placements.find((pl) => pl.id === (ad?.placement.id ?? placements[0]?.id))?.name ?? ""
       )
   );
+  // The space currently selected in this modal, and what it will accept.
+  const activePlacementName =
+    placements.find((pl) => pl.id === placementId)?.name ?? "";
+  const activeSpec = placementSpec(activePlacementName);
+  // Changing the space re-derives the size, so the form can never sit on a
+  // combination the server is about to reject.
+  useEffect(() => {
+    if (!activePlacementName) return;
+    setSize((prev) =>
+      prev === "custom" || activeSpec.sizes.includes(prev)
+        ? prev
+        : placementSizeKey(activePlacementName)
+    );
+  }, [activePlacementName, activeSpec]);
+
   const [width, setWidth] = useState(String(ad?.width ?? ""));
   const [height, setHeight] = useState(String(ad?.height ?? ""));
   const [weight, setWeight] = useState(String(ad?.weight ?? 10));
@@ -1462,6 +1907,11 @@ function AdModal({
   const isReviewState = ["PENDING", "REJECTED", "CHANGES_REQUESTED"].includes(status);
   const [rewardPoints, setRewardPoints] = useState(String(ad?.rewardPoints ?? 0));
   const [watchSeconds, setWatchSeconds] = useState(String(ad?.watchSeconds ?? 15));
+  // The API has always accepted this; the form never had a field for it, so
+  // every rewarded ad silently landed on the 3600s default.
+  const [rewardCooldownSec, setRewardCooldownSec] = useState(
+    String(ad?.rewardCooldownSec ?? 3600)
+  );
   // Native (post-like feed ad) fields
   const [format, setFormat] = useState(ad?.format ?? "BANNER");
   const [headline, setHeadline] = useState(ad?.headline ?? "");
@@ -1514,6 +1964,7 @@ function AdModal({
         // auto-approved server-side (the admin IS the reviewer).
         rewardPoints: Number(rewardPoints) || 0,
         watchSeconds: Number(watchSeconds) || 15,
+        rewardCooldownSec: Number(rewardCooldownSec) || 3600,
         headline,
         brandName,
         brandLogo,
@@ -1634,15 +2085,28 @@ function AdModal({
 
         <div>
           <label className="block text-xs text-slate-400 mb-1">Size</label>
+          {/* Only the sizes the chosen space can hold. Every size used to be
+              offered for every space, so a 1080x1920 "story" creative could be
+              dropped into a 728x90 banner slot — which is how ads ended up
+              taking over the page. The server refuses the same combinations, so
+              this list is a convenience, not the guard. */}
           <select value={size} onChange={(e) => setSize(e.target.value)} className={inputCls}>
-            {AD_SIZES.map((s) => (
+            {AD_SIZES.filter(
+              (s) => s.key === "custom" || activeSpec.sizes.includes(s.key)
+            ).map((s) => (
               <option key={s.key} value={s.key}>{s.label}</option>
             ))}
           </select>
+          <p className="mt-1 text-[11px] text-slate-500">
+            {PLACEMENT_LABEL[activePlacementName] ?? activePlacementName} allows up to{" "}
+            {activeSpec.maxHeightPx}px tall.
+            {!activeSpec.networkAllowed &&
+              " Google ads (AdSense / Ad Manager) can't run here — it's an incentivised space."}
+          </p>
           {size === "custom" && (
             <div className="grid grid-cols-2 gap-3 mt-2">
               <input type="number" min={1} value={width} onChange={(e) => setWidth(e.target.value)} placeholder="Width (px)" className={inputCls} />
-              <input type="number" min={1} value={height} onChange={(e) => setHeight(e.target.value)} placeholder="Height (px)" className={inputCls} />
+              <input type="number" min={1} max={activeSpec.maxHeightPx} value={height} onChange={(e) => setHeight(e.target.value)} placeholder={`Height (max ${activeSpec.maxHeightPx})`} className={inputCls} />
             </div>
           )}
         </div>
@@ -1725,7 +2189,7 @@ function AdModal({
 
         <div className="rounded-lg border border-slate-800 p-3">
           <p className="text-xs font-bold text-slate-400 mb-2">Reward (Watch &amp; Earn — optional)</p>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-slate-400 mb-1">Reward points</label>
               <input type="number" min={0} value={rewardPoints} onChange={(e) => setRewardPoints(e.target.value)} className={inputCls} />
@@ -1734,8 +2198,12 @@ function AdModal({
               <label className="block text-xs text-slate-400 mb-1">Watch seconds</label>
               <input type="number" min={1} value={watchSeconds} onChange={(e) => setWatchSeconds(e.target.value)} className={inputCls} />
             </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Cooldown (sec)</label>
+              <input type="number" min={60} value={rewardCooldownSec} onChange={(e) => setRewardCooldownSec(e.target.value)} className={inputCls} />
+            </div>
           </div>
-          <p className="text-[11px] text-slate-500 mt-1">Set reward points &gt; 0 to make this ad appear on the &quot;Watch &amp; Earn&quot; page.</p>
+          <p className="text-[11px] text-slate-500 mt-1">Set reward points &gt; 0 to make this ad appear on the &quot;Watch &amp; Earn&quot; page. Cooldown is how long before the same user may earn from it again (minimum 60s — a 0 would remove the gate entirely). Watch &amp; Earn must also be switched on in Monetization.</p>
         </div>
 
         <button onClick={save} disabled={busy} className="w-full inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold disabled:opacity-50">
@@ -1755,6 +2223,11 @@ function CampaignModal({ campaign, onClose, onSaved }: { campaign: Campaign | nu
   const toDateInput = (v: string | null | undefined) => (v ? v.slice(0, 10) : "");
   const [startAt, setStartAt] = useState(toDateInput(campaign?.startAt));
   const [endAt, setEndAt] = useState(toDateInput(campaign?.endAt));
+  // House = the platform's own inventory. Exempt from the budget floor when
+  // serving, and never billed, so it can run on a zero budget. Nothing in the
+  // app used to set this, so every campaign created after the initial migration
+  // was a paying campaign that had to carry real money to serve at all.
+  const [isHouse, setIsHouse] = useState(campaign?.isHouse ?? !campaign);
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -1772,6 +2245,7 @@ function CampaignModal({ campaign, onClose, onSaved }: { campaign: Campaign | nu
           description,
           budget: Number(budget) || 0,
           status,
+          isHouse,
           startAt: startAt ? new Date(startAt).toISOString() : null,
           endAt: endAt ? new Date(endAt).toISOString() : null,
         }),
@@ -1797,6 +2271,24 @@ function CampaignModal({ campaign, onClose, onSaved }: { campaign: Campaign | nu
           <label className="block text-xs text-slate-400 mb-1">Description</label>
           <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} className={inputCls} />
         </div>
+        <label className="flex items-start gap-2.5 rounded-lg border border-slate-700 bg-slate-950/50 px-3 py-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={isHouse}
+            onChange={(e) => setIsHouse(e.target.checked)}
+            className="mt-0.5 rounded bg-slate-800 border-slate-600 text-blue-500"
+          />
+          <span>
+            <span className="block text-sm text-white font-medium">
+              House campaign (your own inventory)
+            </span>
+            <span className="block text-xs text-slate-500 mt-0.5">
+              Runs on a zero budget and is never billed — the platform isn&apos;t
+              paying itself. Leave this on for your own promos and house ads;
+              turn it off only for a campaign a real advertiser is funding.
+            </span>
+          </span>
+        </label>
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-slate-400 mb-1">Budget ($)</label>

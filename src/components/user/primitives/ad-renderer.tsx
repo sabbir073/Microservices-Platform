@@ -4,8 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Megaphone, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveAdSize } from "@/lib/ad-sizes";
-import { placementSizeKey, type AdPlacementName } from "@/lib/ad-placements";
+import type { NetworkSlotConfig } from "@/lib/ad-network";
+import {
+  placementSizeKey,
+  placementSpec,
+  type AdPlacementName,
+} from "@/lib/ad-placements";
 import { SandboxedAdFrame } from "@/components/user/primitives/sandboxed-ad-frame";
+import { NetworkAdSlot } from "@/components/user/primitives/network-ad-slot";
 
 // Derive from the canonical catalog so this never drifts again (previously a
 // hand-maintained duplicate that was missing VIDEO_OVERLAY / REWARD_INTERSTITIAL).
@@ -30,6 +36,8 @@ export interface AdResponse {
   impressionPixel?: string;
   clickTracker?: string;
   allowSameOrigin?: boolean;
+  /** Present only for ADSENSE / GAM — what a real in-page slot needs. */
+  network?: NetworkSlotConfig;
 }
 
 interface AdRendererProps {
@@ -69,7 +77,12 @@ export function AdRenderer({
   // Fetch an ad, excluding the recently-shown ids kept in sessionStorage. On
   // success it records the new id and updates the rotation interval.
   const loadAd = useCallback(
-    async (opts?: { rotate?: boolean; initial?: boolean }) => {
+    async (opts?: {
+      rotate?: boolean;
+      initial?: boolean;
+      /** Ask for own/direct inventory only — used when a Google slot goes unfilled. */
+      excludeNetwork?: boolean;
+    }) => {
       const storeKey = `ad-recent-${placement}`;
       let recent: string[] = [];
       try {
@@ -82,7 +95,10 @@ export function AdRenderer({
         const qs = recent.length
           ? `&exclude=${encodeURIComponent(recent.join(","))}`
           : "";
-        const res = await fetch(`/api/spaces/panel?placement=${placement}${qs}`);
+        const noNet = opts?.excludeNetwork ? "&own=1" : "";
+        const res = await fetch(
+          `/api/spaces/panel?placement=${placement}${qs}${noNet}`
+        );
         const data = res.ok ? await res.json() : null;
         if (!data?.ad) {
           // Only hide the slot when the very first load finds nothing; a failed
@@ -186,7 +202,12 @@ export function AdRenderer({
     // Truly no ad → collapse (no permanent blank box).
     if (!loading) return null;
     // First load in flight → reserve a size-shaped skeleton so nothing jumps.
+    // Uses the same space ceiling the real ad does, so the reserved box and the
+    // box that lands are the same box. They used to disagree: the skeleton was
+    // shaped from the placement while the ad was shaped from itself, which is
+    // why the layout jumped when an oversized creative arrived.
     const reserved = resolveAdSize(placementSizeKey(placement));
+    const cap = placementSpec(placement).maxHeightPx;
     return (
       <div
         className={cn(
@@ -196,7 +217,8 @@ export function AdRenderer({
         style={{
           aspectRatio: reserved ? `${reserved.w} / ${reserved.h}` : undefined,
           maxWidth: reserved?.w,
-          minHeight: reserved ? undefined : 90,
+          maxHeight: cap,
+          minHeight: reserved ? undefined : Math.min(90, cap),
         }}
       />
     );
@@ -219,11 +241,30 @@ export function AdRenderer({
   };
 
   const dim = resolveAdSize(ad.size, ad.width, ad.height);
-  // Fixed-size ads cap their width and honor the aspect ratio (no crop);
-  // responsive ads stretch to the container at natural height.
-  const mediaStyle = dim
-    ? { aspectRatio: `${dim.w} / ${dim.h}` }
-    : undefined;
+  // The SPACE decides the ceiling; the ad decides its shape within it.
+  //
+  // This used to read the ad's size alone. `Ad.size` defaults to "responsive",
+  // and `resolveAdSize` returns null for that (and for an unknown string, and
+  // for a malformed "custom") — which meant no maxWidth, no aspect ratio and no
+  // height cap anywhere. Every ad in the database is "responsive", so in
+  // practice nothing was ever capped: a tall creative rendered `w-full h-auto`
+  // and ran for several screens. The loading skeleton above already sized
+  // itself from the placement, so the layout jumped when the ad landed.
+  //
+  // `maxHeight` is the part that matters. Write-time validation cannot reach
+  // rows that already exist; this can.
+  const spec = placementSpec(placement);
+  // The ceiling goes on the MEDIA, not on the card. A LOCAL ad renders the
+  // image above a title/body block, and capping the whole card would clip the
+  // text instead of the thing that was oversized. Capping the media bounds the
+  // card anyway: image ≤ maxHeightPx, plus a fixed text block.
+  //
+  // `object-contain` (already on both elements) letterboxes rather than crops,
+  // so a tall creative is shown whole at a smaller size instead of being cut.
+  const mediaStyle = {
+    ...(dim ? { aspectRatio: `${dim.w} / ${dim.h}` } : {}),
+    maxHeight: spec.maxHeightPx,
+  };
   // Merge the rotation fade into the outer style.
   const outerStyle = {
     ...(dim ? { maxWidth: dim.w } : {}),
@@ -231,12 +272,30 @@ export function AdRenderer({
     transition: "opacity 180ms ease",
   } as const;
 
-  // HTML / AdSense / GAM creative — runs inside the shared sandboxed iframe so
-  // injected <script> actually executes (dangerouslySetInnerHTML never does).
-  if (
-    (ad.type === "HTML" || ad.type === "ADSENSE" || ad.type === "GAM") &&
-    ad.html
-  ) {
+  // AdSense / Ad Manager — a REAL in-page slot, not an iframe.
+  //
+  // These used to be composed into a self-contained document and rendered in the
+  // sandboxed frame below, which loaded Google's script once per slot. The
+  // script now loads once from the root layout and this renders against it.
+  //
+  // `onUnfilled` is the fallback the platform needs while AdSense is young: when
+  // Google returns nothing, the slot asks for own/direct inventory instead of
+  // leaving a hole. Without it every unsold impression is simply lost.
+  if ((ad.type === "ADSENSE" || ad.type === "GAM") && ad.network) {
+    return (
+      <div className={cn("relative mx-auto", className)} style={outerStyle}>
+        <NetworkAdSlot
+          config={ad.network}
+          maxHeightPx={spec.maxHeightPx}
+          onUnfilled={() => void loadAd({ rotate: true, excludeNetwork: true })}
+        />
+      </div>
+    );
+  }
+
+  // HTML creative — runs inside the shared sandboxed iframe so injected <script>
+  // actually executes (dangerouslySetInnerHTML never does).
+  if (ad.type === "HTML" && ad.html) {
     return (
       <div className={cn("relative mx-auto", className)} style={outerStyle}>
         {dismissible && (
@@ -251,7 +310,10 @@ export function AdRenderer({
         )}
         <SandboxedAdFrame
           html={ad.html}
-          height={dim?.h ?? 250}
+          // Clamped by the space, not just the ad. A `custom` size could set an
+          // arbitrary pixel height here, and the frame applies it inline with no
+          // ceiling of its own.
+          height={Math.min(dim?.h ?? 250, spec.maxHeightPx)}
           impressionPixel={ad.impressionPixel}
           allowSameOrigin={ad.allowSameOrigin}
         />

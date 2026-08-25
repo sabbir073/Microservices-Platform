@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { getAdClickCost } from "@/lib/ad-billing";
+import { clicksAreBillable, getPlacementClickCost } from "@/lib/ad-rate-card";
 import { bumpAdDailyStat } from "@/lib/ad-stats";
 import { bufferImpression } from "@/lib/ad-counters";
 // `ad-serve` does not import this module, so there is no cycle.
@@ -106,7 +106,18 @@ export async function recordClick(
   // REJECTED or CHANGES_REQUESTED ad must never bill: the advertiser was told it
   // had stopped.
   const ad = await prisma.ad
-    .findUnique({ where: { id: adId }, select: { campaignId: true, status: true } })
+    .findUnique({
+      where: { id: adId },
+      select: {
+        campaignId: true,
+        status: true,
+        // The space decides the price now, and whether a click bills at all —
+        // a flat-rate sponsor has already paid for the period.
+        placementId: true,
+        placement: { select: { name: true } },
+        campaign: { select: { isHouse: true } },
+      },
+    })
     .catch(() => null);
 
   if (!ad?.campaignId || ad.status !== "ACTIVE") {
@@ -114,7 +125,39 @@ export async function recordClick(
     return { billed: false };
   }
 
-  const cost = await getAdClickCost();
+  // House inventory is the platform advertising to its own users. Billing it
+  // would take the platform's money from the platform's pocket and put it into
+  // `spentTotal`, which is the figure that reports "ad revenue earned" — so it
+  // would report income that never existed. The click is still counted; only the
+  // money movement is skipped.
+  //
+  // The demo campaign has been doing exactly this: seeded with a $100,000
+  // budget, it had already "spent" its way down to 99998.10.
+  if (ad.campaign?.isHouse) {
+    await prisma.ad
+      .update({ where: { id: adId }, data: { clicks: { increment: 1 } } })
+      .catch(() => null);
+    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 });
+    return { billed: false };
+  }
+
+  // A space rented outright at a flat rate does not bill per click on top. The
+  // sponsor bought the period; charging again for each click inside it would be
+  // charging twice for the same inventory. The click is still counted, exactly
+  // as a house click is — only the money movement is skipped.
+  if (!(await clicksAreBillable(ad.placementId, ad.campaignId))) {
+    await prisma.ad
+      .update({ where: { id: adId }, data: { clicks: { increment: 1 } } })
+      .catch(() => null);
+    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 });
+    return { billed: false };
+  }
+
+  // Per-space click price, falling back to the global `ads.cpcUsd` for any space
+  // with no rate of its own. Whatever is resolved here is what gets snapshotted
+  // into `spentTotal` and `AdDailyStat.spendUsd` below, so a later rate change
+  // never rewrites this click.
+  const cost = await getPlacementClickCost(ad.placement?.name);
   const now = new Date();
   // Atomic, no-overspend: only decrements when the budget still covers a click.
   // `spentTotal` moves in the same statement so reporting never has to derive
@@ -126,8 +169,8 @@ export async function recordClick(
   // billing until `runAdCampaignSweep` next ran, and a suspended advertiser's
   // campaign billed against its pre-funded budget. Billing for delivery the
   // advertiser was promised had stopped is the one thing an ad system must not
-  // do. (`isHouse` campaigns are exempt from the budget floor there, so they
-  // pass the clause and simply decrement toward zero, as before.)
+  // do. (House campaigns returned above, so anything reaching here is a real
+  // advertiser with a real budget.)
   const billed = await prisma.adCampaign.updateMany({
     where: { id: ad.campaignId, ...servableCampaignWhere(cost, now, false) },
     data: { budget: { decrement: cost }, spentTotal: { increment: cost } },

@@ -6,6 +6,8 @@ import { ensureDefaultPlacements } from "@/lib/ad-placements-server";
 import { getSetting } from "@/lib/system-settings";
 import { getAdDensity } from "@/lib/ad-density";
 import { getBrowseEarnConfig } from "@/lib/browse-earn";
+import { getRewardedConfig } from "@/lib/ads-rewarded";
+import { getAdFrequencyConfig } from "@/lib/ad-frequency";
 
 export async function GET() {
   const session = await auth();
@@ -65,8 +67,31 @@ export async function GET() {
   );
   const adsenseClient = String((await getSetting<string>("ads.adsense_client", "")) || "");
   const gamNetworkCode = String((await getSetting<string>("ads.gam_network_code", "")) || "");
+  // Google policy plumbing (Phase 5): certified CMP, auto ads, ads.txt.
+  const googleCmpEnabled = !!(await getSetting<boolean>("ads.google_cmp_enabled", false));
+  const autoAdsEnabled = !!(await getSetting<boolean>("ads.auto_ads_enabled", false));
+  const adsTxt = String((await getSetting<string>("ads.txt_content", "")) || "");
+  // Volume discount on ad-credit purchases. Fully implemented since the credit
+  // system shipped, and permanently 0 because no UI ever set it.
+  const creditBonusPct = Math.min(
+    100,
+    Math.max(0, Number(await getSetting<number>("ads.credit_bonus_pct", 0)) || 0)
+  );
+  // Who the invoice is FROM, and whether tax applies. Empty is fine — the PDF
+  // simply omits what is not set, and at 0% no tax line is rendered at all.
+  const billing = {
+    sellerName: String((await getSetting<string>("billing.seller_name", "")) || ""),
+    sellerAddress: String((await getSetting<string>("billing.seller_address", "")) || ""),
+    sellerEmail: String((await getSetting<string>("billing.seller_email", "")) || ""),
+    sellerPhone: String((await getSetting<string>("billing.seller_phone", "")) || ""),
+    taxPct: Math.min(100, Math.max(0, Number(await getSetting<number>("billing.tax_pct", 0)) || 0)),
+    taxLabel: String((await getSetting<string>("billing.tax_label", "VAT")) || "VAT"),
+    taxId: String((await getSetting<string>("billing.tax_id", "")) || ""),
+  };
   const density = await getAdDensity();
   const browseEarn = await getBrowseEarnConfig();
+  const rewarded = await getRewardedConfig();
+  const adFrequency = await getAdFrequencyConfig();
 
   return NextResponse.json({
     placements: withStats,
@@ -74,8 +99,15 @@ export async function GET() {
     cpcUsd,
     adsenseClient,
     gamNetworkCode,
+    googleCmpEnabled,
+    autoAdsEnabled,
+    adsTxt,
+    creditBonusPct,
+    billing,
     density,
     browseEarn,
+    rewarded,
+    adFrequency,
   });
 }
 
