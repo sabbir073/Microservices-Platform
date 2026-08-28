@@ -56,9 +56,23 @@ export function SocialFeedView({
   feedAdInterval = 2,
   underPostBanner = false,
   underPostInterval = 3,
+  groupsEnabled = false,
 }: Props) {
   const [tab, setTab] = useState<ViewTab>("feed");
   const [sort, setSort] = useState<Sort>("recent");
+
+  // Groups is behind an admin switch (`ui.groups_enabled`, default off) and the
+  // flag arrives from the server — see src/lib/groups-gate.ts. `activeTab`
+  // rather than `tab` is what the render reads, so if the switch is turned off
+  // while someone is sitting on the Groups tab they fall back to the feed
+  // instead of staring at an empty column.
+  const tabs = [
+    { key: "feed", label: "Feed", icon: Compass },
+    ...(groupsEnabled
+      ? [{ key: "groups", label: "Groups", icon: Users } as const]
+      : []),
+  ] as const satisfies readonly { key: ViewTab; label: string; icon: typeof Compass }[];
+  const activeTab: ViewTab = tabs.some((t) => t.key === tab) ? tab : "feed";
 
   return (
     // The right rail appears at `xl`, not `lg`, and the mobile strips below hold
@@ -82,34 +96,33 @@ export function SocialFeedView({
         {/* Active-events strip, below the banner. Shown until the rail appears at xl. */}
         <ActiveEventsCard className="xl:hidden" />
 
-        {/* Top tabs */}
-        <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
-          {(
-            [
-              { key: "feed", label: "Feed", icon: Compass },
-              { key: "groups", label: "Groups", icon: Users },
-            ] as const
-          ).map((t) => {
-            const isActive = t.key === tab;
-            return (
-              <button
-                key={t.key}
-                onClick={() => setTab(t.key)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors",
-                  isActive
-                    ? "text-white border-indigo-500"
-                    : "text-gray-500 border-transparent hover:text-white"
-                )}
-              >
-                <t.icon className="w-4 h-4" />
-                {t.label}
-              </button>
-            );
-          })}
-        </nav>
+        {/* Top tabs — only rendered when there is a choice to make. With Groups
+            switched off there is one tab, and a tab strip holding a single
+            "Feed" button is worse than no strip at all. */}
+        {tabs.length > 1 && (
+          <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
+            {tabs.map((t) => {
+              const isActive = t.key === activeTab;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => setTab(t.key)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors",
+                    isActive
+                      ? "text-white border-indigo-500"
+                      : "text-gray-500 border-transparent hover:text-white"
+                  )}
+                >
+                  <t.icon className="w-4 h-4" />
+                  {t.label}
+                </button>
+              );
+            })}
+          </nav>
+        )}
 
-        {tab === "feed" && (
+        {activeTab === "feed" && (
           <FeedTab
             user={user}
             initialFeedAd={initialFeedAd}
@@ -126,12 +139,38 @@ export function SocialFeedView({
           />
         )}
 
-        {tab === "groups" && <GroupsTab />}
+        {groupsEnabled && activeTab === "groups" && <GroupsTab />}
       </div>
 
-      {/* Right rail — only where both columns actually fit (xl+). See above. */}
+      {/* Right rail — only where both columns actually fit (xl+). See above.
+          The aside is deliberately left to stretch to the row height: `sticky`
+          needs a taller ancestor to travel inside, so adding `self-start` here
+          would shrink it to its content and stop the stickiness working. */}
       <aside className="hidden xl:block w-80 shrink-0">
-        <div className="sticky top-20 space-y-4">
+        {/* The rail scrolls on its own.
+            `sticky` alone pinned this column 80px below the header and then let
+            it move with the page — so once the widgets were taller than the
+            viewport, the bottom ones could never be brought into view. There was
+            no height bound and no overflow, so the column had no scrollbar of its
+            own. It stacks Active Events, best earners, who-to-follow, trending
+            hashtags, a promo, quick-earn tiles and any custom widgets, which
+            clears a laptop screen easily.
+
+            6rem = the `top-20` offset plus a little breathing room at the bottom.
+            `--anchor-ad-h` is published on the document by AnchorAdBar and is 0px
+            when there is no bar, so the rail only gives up height for a strip
+            that is actually there — the same allowance `<main>` makes.
+
+            The scrollbar is deliberately the DEFAULT one, not `scrollbar-thin`.
+            Measured in a real browser: the rail holds 2423px of widgets in a
+            666px window, and the thin variant is 4px wide — which, sitting
+            inside `pr-1`'s 4px of padding, was invisible against a dark
+            background. The column scrolled perfectly well; nobody could tell
+            that it could. `pr-2` keeps the cards clear of the 8px track.
+
+            `overscroll-contain` stops a flick at the end of the rail carrying on
+            into the page behind it. */}
+        <div className="sticky top-20 space-y-4 max-h-[calc(100vh-6rem-var(--anchor-ad-h,0px))] overflow-y-auto overscroll-contain pr-2">
           <ActiveEventsCard />
           <FeedRightRail
             bestEarners={bestEarners}
