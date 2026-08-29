@@ -64,6 +64,12 @@ enum TaskStatus {
   EXPIRED
   PENDING_REVIEW
   REJECTED
+  /// Retired by an admin. Used instead of deleting a task that already has
+  /// submissions: those rows are the record of work users were PAID for, and
+  /// every ledger entry is keyed `task_<taskId>_<submissionId>`, so removing
+  /// them would orphan the money trail. `visibleTaskWhere()` only matches
+  /// ACTIVE, so an archived task leaves every user-facing list on its own.
+  ARCHIVED
 }
 
 enum SubmissionStatus {
@@ -1437,7 +1443,10 @@ model User {
   // Extended profile fields (admin_oo.md §5.02)
   gender                            String?
   dateOfBirth                       DateTime?
-  nidNumber                         String?
+  /// One verified national ID per account. Unique so a code path that forgets
+  /// the duplicate check still cannot create a second verified account on the
+  /// same document — the database is the backstop, not the guard.
+  nidNumber                         String?                      @unique
   profession                        String?
   maritalStatus                     String?
   studyLevel                        String?
@@ -1476,6 +1485,7 @@ model User {
   accounts                          Account[]
   sessions                          Session[]
   kycDocuments                      KYCDocument[]
+  savedPosts                        SavedPost[]
   kycAppeals                        KYCAppeal[]
   taskSubmissions                   TaskSubmission[]
   transactions                      Transaction[]
@@ -1656,6 +1666,16 @@ model KYCDocument {
   user            User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   documentType    String
   documentUrl     String
+  /// The ID number on the document, normalised (see `src/lib/kyc/document-number.ts`).
+  ///
+  /// There was no such column: the number lived only inside `extracted` JSON and
+  /// only when OCR had run, and the manual route captured nothing at all — so
+  /// the same NID could verify unlimited accounts and nothing noticed.
+  ///
+  /// Deliberately NOT unique. One user resubmitting their own ID after a
+  /// rejection is legitimate and already happens. Uniqueness belongs on
+  /// `User.nidNumber`, which is one row per account.
+  documentNumber  String?
   status          KYCStatus   @default(PENDING)
   method          String      @default("MANUAL") // MANUAL | AUTO (Gemini OCR + face match)
   extracted       Json? // auto results: { fullName, dateOfBirth, idNumber, expiry, ocrConfidence, faceSimilarity, faceMatched, decision, reasons[] }
@@ -1668,6 +1688,7 @@ model KYCDocument {
 
   @@index([userId])
   @@index([status])
+  @@index([documentNumber])
 }
 
 enum KYCAppealStatus {
@@ -1796,6 +1817,10 @@ model TaskCategory {
 model TaskSubmission {
   id              String                    @id @default(cuid())
   taskId          String
+  /// No `onDelete` on purpose — Prisma defaults to Restrict, and that is the
+  /// behaviour we want: a task with submissions must not be deletable, because
+  /// these rows back real payments. The admin route archives such a task
+  /// instead of failing. Do NOT "fix" this to Cascade.
   task            Task                      @relation(fields: [taskId], references: [id])
   userId          String
   user            User                      @relation(fields: [userId], references: [id])
@@ -3226,6 +3251,7 @@ model Post {
   // the feed (not a permanent pin), capped per-viewer via PostBoostView.
   boostedUntil          DateTime?
   boostViews            PostBoostView[]
+  savedBy               SavedPost[]
   likesCount            Int             @default(0)
   commentsCount         Int             @default(0)
   sharesCount           Int             @default(0)
@@ -3571,11 +3597,35 @@ model Like {
   post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
   userId    String
   user      User     @relation(fields: [userId], references: [id])
+  /// Which reaction: LIKE | LOVE | HAHA | WOW | SAD.
+  ///
+  /// One row per (post, user) whatever the emoji — so `Post.likesCount` keeps
+  /// meaning "people who reacted" and every existing sort, counter and
+  /// notification stays correct. Changing the emoji updates this column and
+  /// nothing else; it must NOT re-credit `awardSocialEarning`, or cycling
+  /// through five reactions would be a points printer.
+  type      String   @default("LIKE")
   createdAt DateTime @default(now())
 
   @@unique([postId, userId])
   @@index([postId])
   @@index([userId, postId])
+  @@index([postId, type])
+}
+
+/// A post someone kept for later. Private to the user — no counters, no points,
+/// nothing here can affect earnings.
+model SavedPost {
+  id        String   @id @default(cuid())
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+  @@index([userId, createdAt])
+  @@index([postId])
 }
 
 model Badge {

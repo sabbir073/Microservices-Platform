@@ -21,6 +21,12 @@ import { getAdDensity } from "@/lib/ad-density";
 import { getSetting } from "@/lib/system-settings";
 import type { Prisma } from "@/generated/prisma/client";
 import { recordUserAction } from "@/lib/goal-progress";
+import {
+  FEED_AUTHOR_SELECT,
+  FEED_POST_SELECT,
+  formatFeedPost,
+  type FeedViewerContext,
+} from "@/lib/feed-post-shape";
 
 // GET /api/feed - Get feed posts
 // Exactly the columns `formatPost` below reads. Without a select, Prisma
@@ -28,34 +34,10 @@ import { recordUserAction } from "@/lib/goal-progress";
 // pollOptions/linkPreview JSON — which is 1-2 MB per feed request through the
 // Accelerate proxy, and heads straight for its response-size cap (P6009, which
 // this codebase deliberately never retries).
-const FEED_POST_SELECT = {
-  id: true,
-  userId: true,
-  content: true,
-  images: true,
-  backgroundStyle: true,
-  isPublic: true,
-  isPinned: true,
-  isAnnouncement: true,
-  isPromoted: true,
-  promotedUntil: true,
-  promotedNote: true,
-  boostedUntil: true,
-  likesCount: true,
-  commentsCount: true,
-  sharesCount: true,
-  viewsCount: true,
-  linkClicksCount: true,
-  uniqueLinkClicksCount: true,
-  pollOptions: true,
-  pollEndsAt: true,
-  donationGoal: true,
-  donationCollected: true,
-  linkPreview: true,
-  groupId: true,
-  createdAt: true,
-  lastActivityAt: true,
-} as const;
+// The select and the row→payload mapping live in `src/lib/feed-post-shape.ts`
+// because the saved-posts list renders the SAME `FeedPostCard` and therefore
+// has to produce the same object. A second copy here is exactly how the two
+// lists end up quietly disagreeing about which fields a post has.
 
 /** A pool row: exactly the columns FEED_POST_SELECT asks for. */
 type FeedPostRow = Prisma.PostGetPayload<{ select: typeof FEED_POST_SELECT }>;
@@ -305,32 +287,56 @@ export async function GET(request: NextRequest) {
     const userIds = [...new Set(allPosts.map((p) => p.userId))];
     const users = await prisma.user.findMany({
       where: { id: { in: userIds } },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        avatar: true,
-        level: true,
-        package: { select: { slug: true, name: true } },
-        isBlueVerified: true,
-        verifiedBadgeStyle: true,
-        role: true,
-      },
+      select: FEED_AUTHOR_SELECT,
     });
     const userMap = new Map(users.map((u) => [u.id, u]));
 
+    // Which reaction did the viewer leave, and what does the post's cluster look
+    // like? Both are answered for the WHOLE page in one query each — a per-post
+    // lookup would be a query per card.
+    const pageIds = allPosts.map((p) => p.id);
+
+    // Per-type totals for the little emoji cluster. Deliberately computed rather
+    // than denormalised onto Post: at this size the grouping is cheap, and a
+    // cached counter is the kind of thing that drifts away from the rows.
+    const reactionCounts: Record<string, Record<string, number>> = {};
+    if (pageIds.length > 0) {
+      const grouped = await prisma.like.groupBy({
+        by: ["postId", "type"],
+        where: { postId: { in: pageIds } },
+        _count: { _all: true },
+      });
+      for (const g of grouped as Array<{
+        postId: string;
+        type: string;
+        _count: { _all: number };
+      }>) {
+        (reactionCounts[g.postId] ??= {})[g.type] = g._count._all;
+      }
+    }
+
     // Check if current user has liked each post
     let userLikes: Set<string> = new Set();
+    let myReactions = new Map<string, string>();
+    let savedSet: Set<string> = new Set();
     let followingSet: Set<string> = new Set();
     if (session?.user?.id) {
       const likes = await prisma.like.findMany({
         where: {
           userId: session.user.id,
-          postId: { in: allPosts.map((p) => p.id) },
+          postId: { in: pageIds },
         },
-        select: { postId: true },
+        select: { postId: true, type: true },
       });
       userLikes = new Set(likes.map((l) => l.postId));
+      myReactions = new Map(likes.map((l) => [l.postId, l.type]));
+
+      // Saved posts — same batching as likes, one query for the page.
+      const saved = await prisma.savedPost.findMany({
+        where: { userId: session.user.id, postId: { in: pageIds } },
+        select: { postId: true },
+      });
+      savedSet = new Set(saved.map((x) => x.postId));
 
       // Which post-authors does the viewer already follow?
       if (userIds.length > 0) {
@@ -359,37 +365,20 @@ export async function GET(request: NextRequest) {
     }
 
     type FormattablePost = (typeof allPosts)[number];
-    const formatPost = (post: FormattablePost) => ({
-      id: post.id,
-      content: post.content,
-      images: post.images,
-      backgroundStyle: post.backgroundStyle,
-      isPublic: post.isPublic,
-      isPinned: post.isPinned,
-      isAnnouncement: post.isAnnouncement,
-      isPromoted: post.isPromoted,
-      promotedUntil: post.promotedUntil,
-      promotedNote: post.promotedNote,
-      boostedUntil: post.boostedUntil,
-      likesCount: post.likesCount,
-      commentsCount: post.commentsCount,
-      sharesCount: post.sharesCount,
-      viewsCount: post.viewsCount,
-      linkClicksCount: post.linkClicksCount,
-      uniqueLinkClicksCount: post.uniqueLinkClicksCount,
-      pollOptions: post.pollOptions ?? null,
-      pollEndsAt: post.pollEndsAt,
-      donationGoal: post.donationGoal,
-      donationCollected: post.donationCollected,
-      linkPreview: post.linkPreview ?? null,
-      groupId: post.groupId,
-      myVote: userVoteMap.get(post.id) ?? null,
-      createdAt: post.createdAt,
-      user: userMap.get(post.userId),
-      isLiked: userLikes.has(post.id),
-      isOwner: session?.user?.id === post.userId,
-      isFollowingAuthor: followingSet.has(post.userId),
-    });
+    // Everything per-viewer is looked up in bulk above; the shared formatter
+    // just reads from those maps, so both lists shape a post identically.
+    const viewerCtx: FeedViewerContext = {
+      viewerId: session?.user?.id ?? null,
+      liked: userLikes,
+      myReactions,
+      reactionCounts,
+      saved: savedSet,
+      votes: userVoteMap,
+      following: followingSet,
+      users: userMap as Map<string, unknown>,
+    };
+    const formatPost = (post: FormattablePost) =>
+      formatFeedPost(post, viewerCtx);
 
     // Interleave: announcements at top → organic posts with one promoted
     // injected every N entries (admin-configurable, default 4).
