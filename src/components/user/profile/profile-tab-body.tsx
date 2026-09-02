@@ -145,9 +145,16 @@ export function ProfileTabBody({
                 </p>
               </div>
             </div>
+            {/* No inner scroll, and no `slice`.
+
+                A scrollbar inside a card the page can already scroll hides work
+                the user is being asked to do — the list said "16 items left" and
+                showed four, with the rest behind a track most people never
+                notice. The column has the room now that Verification and
+                Courses sit under it. */}
             {completion.missing.length > 0 && (
-              <div className="mt-3 space-y-1.5 max-h-44 overflow-y-auto">
-                {completion.missing.slice(0, 8).map((it) => (
+              <div className="mt-3 space-y-1.5">
+                {completion.missing.map((it) => (
                   <button
                     key={it.key}
                     onClick={() => onJumpCompletion(it.href)}
@@ -163,7 +170,7 @@ export function ProfileTabBody({
           </Card>
         </div>
 
-        {/* Right rail (2/3) — about, address, verification, socials, lifetime */}
+        {/* Right rail (2/3) — about, address, socials, lifetime */}
         <div className="space-y-5 lg:col-span-2">
           <Card
             title="Personal Info"
@@ -255,59 +262,99 @@ export function ProfileTabBody({
             </div>
           </Card>
 
-          <Card
-            title="Verification & Security"
-            icon={<Shield className="w-3.5 h-3.5" />}
-            tone="sky"
+
+          <BecomeTutorCard />
+
+          {/* Sell & earn — apply for marketplace / advertiser / agency / affiliate access */}
+          <Link
+            href="/profile/become-creator"
+            className="block rounded-2xl border border-fuchsia-500/30 bg-linear-to-br from-fuchsia-500/10 via-indigo-500/5 to-transparent p-4 hover:border-fuchsia-500/50 transition-colors"
           >
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <VerifTile
-                icon={<Mail className="w-4 h-4" />}
-                label="Email"
-                ok={verification.isEmailVerified}
-                action={
-                  verification.isEmailVerified
-                    ? null
-                    : { label: "Verify", href: "/verify-email" }
-                }
-              />
-              <VerifTile
-                icon={<Phone className="w-4 h-4" />}
-                label="Phone"
-                ok={verification.isPhoneVerified}
-                action={
-                  verification.isPhoneVerified
-                    ? null
-                    : { label: "Verify", href: "/verify-phone" }
-                }
-              />
-              <VerifTile
-                icon={<Shield className="w-4 h-4" />}
-                label="KYC"
-                ok={verification.kycStatus === "APPROVED"}
-                pending={verification.kycStatus === "PENDING"}
-                rejected={verification.kycStatus === "REJECTED"}
-                action={
-                  verification.kycStatus === "APPROVED"
-                    ? null
-                    : verification.kycStatus === "REJECTED"
-                    ? { label: "Appeal", href: "/kyc/appeal" }
-                    : { label: "Submit", href: "/kyc" }
-                }
-              />
-              <VerifTile
-                icon={<Lock className="w-4 h-4" />}
-                label="2FA"
-                ok={verification.twoFactorEnabled}
-                action={
-                  verification.twoFactorEnabled
-                    ? null
-                    : { label: "Enable", href: "/2fa-setup" }
-                }
-              />
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-fuchsia-500/20 text-fuchsia-300 flex items-center justify-center shrink-0">
+                  <ShoppingBag className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-white">Sell &amp; earn as a creator</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Apply to sell on the marketplace, run ads, become an affiliate, or start a
+                    promotion agency. Admin reviews each request.
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-bold whitespace-nowrap">
+                Explore <ArrowRight className="w-3.5 h-3.5" />
+              </span>
+            </div>
+          </Link>
+
+          <Card
+            title="Connected Social Accounts"
+            icon={<Globe className="w-3.5 h-3.5" />}
+            tone="amber"
+          >
+            {socialAccounts.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-700 bg-gray-950 p-4 text-center">
+                <Globe className="w-6 h-6 text-gray-600 mx-auto mb-1" />
+                <p className="text-sm text-gray-400 font-semibold">
+                  No social accounts connected
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Connect them to show your reach.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {socialAccounts.map((acc) => {
+                  const meta = PLATFORM_META[acc.platform];
+                  return (
+                    <div
+                      key={acc.id}
+                      className="flex items-center gap-2 p-2 rounded-lg bg-gray-950 border border-gray-800"
+                    >
+                      <div
+                        className={cn(
+                          "w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0 bg-linear-to-br",
+                          meta.gradient
+                        )}
+                      >
+                        <BrandIcon brand={acc.platform} fallback="🔗" className="w-4 h-4 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-white truncate">
+                          @{acc.username}
+                        </p>
+                        <p className="text-[10px] text-gray-500">
+                          {acc.followers.toLocaleString()} {meta.countLabel.toLowerCase()}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="flex justify-end pt-3 mt-3 border-t border-gray-800">
+              <button
+                onClick={() => openEdit("social")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-bold"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Manage Social Accounts
+              </button>
             </div>
           </Card>
+        </div>
+      </div>
 
+      {/* Courses & Marketplace beside Verification & Security, full width.
+
+          They used to sit stacked in the 1/3 column, which left that column
+          far taller than the 2/3 one beside it — so the page ended in a tall
+          empty band down the right-hand side, and both cards were squeezed
+          into a third of the width for no reason. Side by side across the
+          full width they fill the row, and the void goes with them. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <Card
             title="Courses & Marketplace"
             icon={<GraduationCap className="w-3.5 h-3.5" />}
@@ -421,88 +468,58 @@ export function ProfileTabBody({
             </div>
           </Card>
 
-          <BecomeTutorCard />
-
-          {/* Sell & earn — apply for marketplace / advertiser / agency / affiliate access */}
-          <Link
-            href="/profile/become-creator"
-            className="block rounded-2xl border border-fuchsia-500/30 bg-linear-to-br from-fuchsia-500/10 via-indigo-500/5 to-transparent p-4 hover:border-fuchsia-500/50 transition-colors"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-fuchsia-500/20 text-fuchsia-300 flex items-center justify-center shrink-0">
-                  <ShoppingBag className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-white">Sell &amp; earn as a creator</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Apply to sell on the marketplace, run ads, become an affiliate, or start a
-                    promotion agency. Admin reviews each request.
-                  </p>
-                </div>
-              </div>
-              <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-bold whitespace-nowrap">
-                Explore <ArrowRight className="w-3.5 h-3.5" />
-              </span>
-            </div>
-          </Link>
-
           <Card
-            title="Connected Social Accounts"
-            icon={<Globe className="w-3.5 h-3.5" />}
-            tone="amber"
+            title="Verification & Security"
+            icon={<Shield className="w-3.5 h-3.5" />}
+            tone="sky"
           >
-            {socialAccounts.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-gray-700 bg-gray-950 p-4 text-center">
-                <Globe className="w-6 h-6 text-gray-600 mx-auto mb-1" />
-                <p className="text-sm text-gray-400 font-semibold">
-                  No social accounts connected
-                </p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Connect them to show your reach.
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {socialAccounts.map((acc) => {
-                  const meta = PLATFORM_META[acc.platform];
-                  return (
-                    <div
-                      key={acc.id}
-                      className="flex items-center gap-2 p-2 rounded-lg bg-gray-950 border border-gray-800"
-                    >
-                      <div
-                        className={cn(
-                          "w-8 h-8 rounded-lg flex items-center justify-center text-white shrink-0 bg-linear-to-br",
-                          meta.gradient
-                        )}
-                      >
-                        <BrandIcon brand={acc.platform} fallback="🔗" className="w-4 h-4 text-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-bold text-white truncate">
-                          @{acc.username}
-                        </p>
-                        <p className="text-[10px] text-gray-500">
-                          {acc.followers.toLocaleString()} {meta.countLabel.toLowerCase()}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <div className="flex justify-end pt-3 mt-3 border-t border-gray-800">
-              <button
-                onClick={() => openEdit("social")}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-bold"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                Manage Social Accounts
-              </button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <VerifTile
+                icon={<Mail className="w-4 h-4" />}
+                label="Email"
+                ok={verification.isEmailVerified}
+                action={
+                  verification.isEmailVerified
+                    ? null
+                    : { label: "Verify", href: "/verify-email" }
+                }
+              />
+              <VerifTile
+                icon={<Phone className="w-4 h-4" />}
+                label="Phone"
+                ok={verification.isPhoneVerified}
+                action={
+                  verification.isPhoneVerified
+                    ? null
+                    : { label: "Verify", href: "/verify-phone" }
+                }
+              />
+              <VerifTile
+                icon={<Shield className="w-4 h-4" />}
+                label="KYC"
+                ok={verification.kycStatus === "APPROVED"}
+                pending={verification.kycStatus === "PENDING"}
+                rejected={verification.kycStatus === "REJECTED"}
+                action={
+                  verification.kycStatus === "APPROVED"
+                    ? null
+                    : verification.kycStatus === "REJECTED"
+                    ? { label: "Appeal", href: "/kyc/appeal" }
+                    : { label: "Submit", href: "/kyc" }
+                }
+              />
+              <VerifTile
+                icon={<Lock className="w-4 h-4" />}
+                label="2FA"
+                ok={verification.twoFactorEnabled}
+                action={
+                  verification.twoFactorEnabled
+                    ? null
+                    : { label: "Enable", href: "/2fa-setup" }
+                }
+              />
             </div>
           </Card>
-        </div>
       </div>
 
       {/* Edit drawer (in-page accordion) */}
@@ -571,7 +588,11 @@ export function ProfileTabBody({
               />
             )}
             {editTab === "privacy" && (
-              <PrivacyTab privacy={preferences.privacy} patch={patch} />
+              <PrivacyTab
+                privacy={preferences.privacy}
+                privacyFields={preferences.privacyFields}
+                patch={patch}
+              />
             )}
             {editTab === "theme" && <ThemeTab preferences={preferences} patch={patch} />}
             {editTab === "security" && <SecurityTab verification={verification} />}

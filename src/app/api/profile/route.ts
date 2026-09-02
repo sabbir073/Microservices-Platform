@@ -15,6 +15,15 @@ import { getPointsPerUsd } from "@/lib/economy";
 import { toNum } from "@/lib/money";
 import { checkUsername, USERNAME_RULE_MESSAGE } from "@/lib/username";
 import { getUserDayContext } from "@/lib/user-day";
+import {
+  BIO_CHAR_LIMIT,
+  BIO_WORD_LIMIT,
+  countWords,
+} from "@/lib/word-count";
+import {
+  effectivePrivacy,
+  parsePrivacyFields,
+} from "@/lib/profile-privacy";
 
 const PROFILE_FIELDS = {
   id: true,
@@ -77,6 +86,7 @@ const PROFILE_FIELDS = {
   privacyStats: true,
   privacyEarnings: true,
   privacyLocation: true,
+  privacyFields: true,
   followersCount: true,
   followingCount: true,
   displayFollowersBoost: true,
@@ -350,6 +360,10 @@ export async function GET() {
           email: u.emailNotifications,
           push: u.pushNotifications,
         },
+        // The five legacy keys stay, so nothing that reads them breaks. The
+        // settings page reads `privacyFields` instead: every controllable item
+        // with the level actually in force, defaults resolved, so it renders
+        // exactly what the public API will enforce.
         privacy: {
           avatar: u.privacyAvatar,
           bio: u.privacyBio,
@@ -357,6 +371,7 @@ export async function GET() {
           earnings: u.privacyEarnings,
           location: u.privacyLocation,
         },
+        privacyFields: effectivePrivacy(u),
       },
       socialAccounts: socialAccounts.map((s) => ({
         id: s.id,
@@ -437,10 +452,33 @@ export async function PATCH(request: NextRequest) {
     }
     // `gender` is NOT in this list: it is a targeting dimension and must be one
     // of the three canonical values, not free text. See below.
+    // Bio is validated on WORDS, not the 200-character rule the fields below
+    // share. Seventy words of ordinary prose runs well past 200 characters, so
+    // leaving it in that loop would have made the word limit unreachable — the
+    // character check would always fire first.
+    if (body.bio !== undefined) {
+      const raw = body.bio === null ? null : String(body.bio).trim();
+      if (raw) {
+        const words = countWords(raw);
+        if (words > BIO_WORD_LIMIT) {
+          return NextResponse.json(
+            { error: `Your bio is ${words} words — the limit is ${BIO_WORD_LIMIT}.` },
+            { status: 400 }
+          );
+        }
+        // Seventy "words" can still be one enormous run of characters.
+        if (raw.length > BIO_CHAR_LIMIT) {
+          return NextResponse.json(
+            { error: "Your bio is too long." },
+            { status: 400 }
+          );
+        }
+      }
+      updateData.bio = raw || null;
+    }
     for (const f of [
       "firstName",
       "lastName",
-      "bio",
       "profession",
       "maritalStatus",
       "studyLevel",
@@ -611,6 +649,22 @@ export async function PATCH(request: NextRequest) {
         }
         updateData[f] = v;
       }
+    }
+
+    // Per-field privacy. Merged, not replaced: the settings page sends one
+    // changed key at a time, and a replace would wipe every other choice.
+    // Unknown keys and bad levels are dropped by `parsePrivacyFields`, so a
+    // stale key cannot linger looking like a setting that does something.
+    if (body.privacyFields !== undefined) {
+      const incoming = parsePrivacyFields(body.privacyFields);
+      // Read only when there is something to merge into — a settings save that
+      // does not touch privacy should not pay for this query.
+      const existing = (await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { privacyFields: true },
+      })) as { privacyFields: unknown } | null;
+      const current = parsePrivacyFields(existing?.privacyFields);
+      updateData.privacyFields = { ...current, ...incoming };
     }
 
     // Notification prefs
