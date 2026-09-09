@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { TaskInstructions } from "@/components/user/tasks/task-instructions";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -389,22 +390,11 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
       <AdRenderer placement="TASK_START" />
 
       {/* Instructions */}
-      {task.instructions && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-3 sm:p-5">
-          <h2 className="text-[11px] uppercase tracking-wider text-gray-500 font-bold mb-2 sm:mb-3">
-            Steps
-          </h2>
-          <ol className="space-y-1.5 text-sm text-gray-200 list-decimal pl-5 wrap-break-word">
-            {task.instructions
-              .split("\n")
-              .map((s) => s.trim())
-              .filter(Boolean)
-              .map((step, i) => (
-                <li key={i}>{step}</li>
-              ))}
-          </ol>
-        </section>
-      )}
+      {/* One renderer for every surface — see components/user/tasks/task-instructions. */}
+      <TaskInstructions
+        value={task.instructions}
+        className="rounded-xl border border-gray-800 bg-gray-900 p-3 sm:p-5"
+      />
 
       {task.instructionVideoUrl && (
         <section className="space-y-2">

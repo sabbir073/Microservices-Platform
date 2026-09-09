@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { TaskInstructions } from "@/components/user/tasks/task-instructions";
 import { ClipboardList, Upload, Loader2, Video as VideoIcon } from "lucide-react";
 import { TaskCard } from "@/components/user/primitives/task-card";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
@@ -256,22 +257,11 @@ export function ManualTasksView() {
             </div>
           )}
 
-          {submitting?.instructions && (
-            <div className="rounded-lg bg-gray-950 border border-gray-800 p-3">
-              <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">
-                Steps
-              </p>
-              <ol className="space-y-1 text-sm text-gray-300 list-decimal pl-4">
-                {submitting.instructions
-                  .split("\n")
-                  .map((s) => s.trim())
-                  .filter(Boolean)
-                  .map((step, i) => (
-                    <li key={i}>{step}</li>
-                  ))}
-              </ol>
-            </div>
-          )}
+          {/* One renderer for every surface — see components/user/tasks/task-instructions. */}
+          <TaskInstructions
+            value={submitting?.instructions}
+            className="rounded-lg bg-gray-950 border border-gray-800 p-3"
+          />
 
           {submitting?.instructionVideoUrl && (
             <div className="space-y-2">

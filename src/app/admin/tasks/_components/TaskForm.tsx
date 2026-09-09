@@ -4,6 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Save, X, Plus, Trash2, AlertCircle, Loader2, Image as ImageIcon, Smartphone } from "lucide-react";
 import { MediaSelector } from "@/components/media/MediaSelector";
+import dynamic from "next/dynamic";
+import {
+  instructionsToEditorHtml,
+  isEmptyInstructionsHtml,
+} from "@/lib/task-instructions";
+
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import { notifyCenter } from "@/lib/notify-center";
 import type { MediaItem } from "@/types/media";
@@ -44,6 +50,18 @@ import {
   TaskAudienceTargeting,
   type TaskAudienceValue,
 } from "@/components/admin/tasks/task-audience-targeting";
+
+// Dynamic: Tiptap and its ProseMirror deps are a large bundle, and most visits
+// to this form never touch the instructions field.
+const RichTextEditor = dynamic(
+  () => import("@/components/admin/offers/rich-text-editor").then((m) => m.RichTextEditor),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-lg border border-gray-700 bg-gray-950 min-h-48 animate-pulse" />
+    ),
+  }
+);
 
 // Task types with icons and colors
 const taskTypes = [
@@ -265,8 +283,13 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
   }, []);
 
   // Instructions steps
-  const [instructionSteps, setInstructionSteps] = useState<string[]>(
-    task?.instructions ? task.instructions.split("\n").filter(Boolean) : [""]
+  // Instructions are rich text now. Existing tasks hold one plain step per
+  // line; `instructionsToEditorHtml` shows those as the numbered list they
+  // have always been, so opening an old task shows the work already there
+  // instead of an empty box. Nothing migrates the column - both shapes
+  // render. See lib/task-instructions.
+  const [instructionsHtml, setInstructionsHtml] = useState<string>(() =>
+    instructionsToEditorHtml(task?.instructions)
   );
 
   // Quiz questions
@@ -310,7 +333,12 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
   );
 
   // Media selector state
-  const [mediaSelectorTarget, setMediaSelectorTarget] = useState<"thumbnail" | { type: "quiz"; index: number } | null>(null);
+  const [mediaSelectorTarget, setMediaSelectorTarget] = useState<
+    "thumbnail" | { type: "quiz"; index: number } | { type: "instructions" } | null
+  >(null);
+  // The editor asks for an image and waits; the media library answers later,
+  // so the promise it is waiting on is parked here until a pick comes back.
+  const instructionImageResolve = useRef<((url: string | null) => void) | null>(null);
   const [mediaSelectorOpen, setMediaSelectorOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
@@ -514,7 +542,11 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
         duration: durationOut
           ? parseInt(durationOut.toString())
           : null,
-        instructions: instructionSteps.filter(Boolean).join("\n"),
+        // An "empty" editor still serialises as <p></p>; store nothing
+        // rather than markup that renders as a blank instructions box.
+        instructions: isEmptyInstructionsHtml(instructionsHtml)
+          ? ""
+          : instructionsHtml,
         dailyLimit: formData.dailyLimit ? parseInt(formData.dailyLimit.toString()) : null,
         totalLimit: formData.totalLimit ? parseInt(formData.totalLimit.toString()) : null,
         order: parseInt((formData.order ?? 0).toString()) || 0,
@@ -584,19 +616,6 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
     }
   };
 
-  const addInstructionStep = () => {
-    setInstructionSteps([...instructionSteps, ""]);
-  };
-
-  const removeInstructionStep = (index: number) => {
-    setInstructionSteps(instructionSteps.filter((_, i) => i !== index));
-  };
-
-  const updateInstructionStep = (index: number, value: string) => {
-    const newSteps = [...instructionSteps];
-    newSteps[index] = value;
-    setInstructionSteps(newSteps);
-  };
 
   const addQuestion = () => {
     setQuestions([
@@ -633,12 +652,35 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
       setThumbnailAuto(false); // admin chose one manually → stop auto-overwriting
     } else if (mediaSelectorTarget && typeof mediaSelectorTarget === "object" && mediaSelectorTarget.type === "quiz") {
       updateQuestion(mediaSelectorTarget.index, "imageUrl", url);
+    } else if (
+      mediaSelectorTarget &&
+      typeof mediaSelectorTarget === "object" &&
+      mediaSelectorTarget.type === "instructions"
+    ) {
+      instructionImageResolve.current?.(url);
+      instructionImageResolve.current = null;
     }
     setMediaSelectorOpen(false);
     setMediaSelectorTarget(null);
   };
 
-  const openMediaSelector = (target: "thumbnail" | { type: "quiz"; index: number }) => {
+  /**
+   * Give the editor a real image picker.
+   *
+   * A URL prompt is no use for a screenshot the admin has just taken — it is
+   * not anywhere yet. This opens the same media library the rest of the form
+   * uses, which uploads, and resolves once they pick.
+   */
+  const pickInstructionImage = () =>
+    new Promise<string | null>((resolve) => {
+      instructionImageResolve.current = resolve;
+      setMediaSelectorTarget({ type: "instructions" });
+      setMediaSelectorOpen(true);
+    });
+
+  const openMediaSelector = (
+    target: "thumbnail" | { type: "quiz"; index: number } | { type: "instructions" }
+  ) => {
     setMediaSelectorTarget(target);
     setMediaSelectorOpen(true);
   };
@@ -1420,47 +1462,29 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
           </p>
         </div>
 
-        {/* Text Instructions */}
+        {/* Text Instructions — a rich editor, not a row of plain inputs.
+            It was one <input> per step, so there was no bold, no colour, no
+            image, no link and no alignment, and pasting from ChatGPT landed as
+            literal `##` and `**` with every heading flattened. The editor
+            handles all of that, converts a Markdown paste, and takes
+            screenshots through the media library the rest of this form uses. */}
         <div>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-gray-400">
               <FileText className="w-4 h-4 inline mr-1" />
               Text Instructions (Optional)
             </label>
-            <button
-              type="button"
-              onClick={addInstructionStep}
-              className="inline-flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              Add Step
-            </button>
           </div>
-          <div className="space-y-3">
-            {instructionSteps.map((step, index) => (
-              <div key={index} className="flex items-center gap-3">
-                <span className="w-8 h-8 shrink-0 flex items-center justify-center bg-gray-800 rounded-lg text-sm text-gray-400">
-                  {index + 1}
-                </span>
-                <input
-                  type="text"
-                  value={step}
-                  onChange={(e) => updateInstructionStep(index, e.target.value)}
-                  placeholder={`Step ${index + 1} instructions...`}
-                  className="flex-1 px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-red-500"
-                />
-                {instructionSteps.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => removeInstructionStep(index)}
-                    className="p-2 text-gray-500 hover:text-red-400 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
+          <RichTextEditor
+            value={instructionsHtml}
+            onChange={setInstructionsHtml}
+            onPickImage={pickInstructionImage}
+            minHeightClass="min-h-48"
+          />
+          <p className="text-[11px] text-gray-500 mt-2">
+            Paste straight from ChatGPT — headings, bold, lists and links come
+            across formatted. Use the image button for screenshots.
+          </p>
         </div>
       </div>
 

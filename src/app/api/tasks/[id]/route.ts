@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getUserDayContext } from "@/lib/user-day";
 import { normalizeSocialConfig } from "@/lib/social-tasks";
 import { verifyCodeFor } from "@/lib/task-verify-code";
+import { CRITERION_LABEL } from "@/lib/link-verify";
 import { matchesTaskAudience } from "@/lib/task-targeting";
 import { toPlayerTask } from "@/lib/task-player-view";
 
@@ -119,11 +120,30 @@ export async function GET(
     // server-side (HMAC) so each user's code is unique and can't be computed on
     // the client. Keyed by item index → the code the user must embed in content.
     const socialVerifyCodes: Record<number, string> = {};
+    // What each auto-checked item will be graded on, so the user can see the
+    // requirements BEFORE publishing. A task that can auto-reject must state
+    // its rules up front — otherwise the first a user hears of them is a
+    // rejection for something nobody told them to do.
+    const socialContentRules: Record<
+      number,
+      { labels: string[]; matchMode: "all" | "any"; canReject: boolean }
+    > = {};
     if (task.type === "SOCIAL") {
       const { items } = normalizeSocialConfig(task.socialConfig);
       items.forEach((it, idx) => {
         if (it.verify === "CODE") {
           socialVerifyCodes[idx] = verifyCodeFor(id, idx, session.user.id);
+        }
+        if (it.verify === "CONTENT" && it.contentRules?.criteria.length) {
+          socialContentRules[idx] = {
+            // Labels only — the personal code is already delivered above, and
+            // the rest are the admin's own words, nothing secret.
+            labels: it.contentRules.criteria
+              .filter((c) => c.kind !== "code")
+              .map((c) => `${CRITERION_LABEL[c.kind]}: ${c.value}`),
+            matchMode: it.contentRules.matchMode,
+            canReject: it.contentRules.onMismatch === "reject",
+          };
         }
       });
     }
@@ -145,6 +165,7 @@ export async function GET(
           : null,
       },
       socialVerifyCodes,
+      socialContentRules,
       userStatus: {
         audienceEligible,
         hasActiveSubmission: !!activeSubmission,

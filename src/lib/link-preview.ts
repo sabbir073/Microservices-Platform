@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
+import { decodeHtml, metaContent } from "@/lib/html-text";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Link preview (OpenGraph) — SSRF-guarded, best-effort. Used to render a card
@@ -20,6 +21,21 @@ const MAX_REDIRECTS = 3;
 // A realistic browser UA — some sites 403 obvious bot user-agents.
 const BROWSER_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+/**
+ * The link-preview crawler UA.
+ *
+ * Several large sites render nothing for a browser fetch but serve complete
+ * Open Graph tags to a known preview crawler — that is how a link pasted into
+ * Facebook or WhatsApp gets a title and description. Measured: a real Reddit
+ * post returns no OG tags at all to the browser UA above, and its actual title
+ * and body text to this one. TikTok behaves the same way.
+ *
+ * Not the default, because the opposite is also true — some sites 403 an
+ * obvious bot. Callers that want page CONTENT (verification) ask for this;
+ * callers that want to look like a person keep the browser UA.
+ */
+export const CRAWLER_UA =
+  "facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)";
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h
 const CACHE_MAX = 500;
 
@@ -84,33 +100,6 @@ export async function assertPublicUrl(raw: string): Promise<URL> {
     }
   }
   return u;
-}
-
-function decodeHtml(s: string): string {
-  return s
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#0*39;/g, "'")
-    .replace(/&#x0*27;/gi, "'")
-    .trim();
-}
-
-/** Pull a <meta> content by property/name, tolerating attribute order. */
-function metaContent(html: string, keys: string[]): string {
-  for (const key of keys) {
-    const attr = key.includes(":") && key.startsWith("og:") ? "property" : "(?:property|name)";
-    const m =
-      html.match(
-        new RegExp(`<meta[^>]+${attr}=["']${key}["'][^>]+content=["']([^"']*)["']`, "i")
-      ) ??
-      html.match(
-        new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+${attr}=["']${key}["']`, "i")
-      );
-    if (m && m[1]) return decodeHtml(m[1]);
-  }
-  return "";
 }
 
 /** Read up to MAX_BYTES of the response body as UTF-8 text, then abort. */
@@ -208,7 +197,10 @@ async function fetchViaOEmbed(
 
 /** Fetch following up to MAX_REDIRECTS hops, re-validating each hop's host/DNS
  *  (keeps the SSRF guard across redirects). Shares one overall timeout. */
-async function fetchFollowingRedirects(start: URL): Promise<Response> {
+async function fetchFollowingRedirects(
+  start: URL,
+  userAgent: string = BROWSER_UA
+): Promise<Response> {
   const signal = AbortSignal.timeout(TIMEOUT_MS);
   let current = start;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
@@ -217,7 +209,7 @@ async function fetchFollowingRedirects(start: URL): Promise<Response> {
       signal,
       redirect: "manual",
       headers: {
-        "User-Agent": BROWSER_UA,
+        "User-Agent": userAgent,
         Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
       },
@@ -314,10 +306,13 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview | nu
  * non-HTML, timeout, login wall, HTTP error) so callers can fall back to manual
  * review. NOT cached — proof content changes over time and must be read live.
  */
-export async function fetchRawHtml(rawUrl: string): Promise<string | null> {
+export async function fetchRawHtml(
+  rawUrl: string,
+  userAgent?: string
+): Promise<string | null> {
   try {
     const u = await assertPublicUrl(rawUrl);
-    const res = await fetchFollowingRedirects(u);
+    const res = await fetchFollowingRedirects(u, userAgent);
     if (!res.ok) return null;
     const ctype = (res.headers.get("content-type") ?? "").toLowerCase();
     if (!ctype.includes("text/html") && !ctype.includes("application/xhtml")) {

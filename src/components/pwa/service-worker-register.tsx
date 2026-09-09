@@ -17,6 +17,40 @@ export function ServiceWorkerRegister() {
     if (typeof window === "undefined") return;
     if (!("serviceWorker" in navigator)) return;
 
+    // In development, tear the worker down instead of installing it.
+    //
+    // Turbopack rehashes its chunk URLs on every rebuild and the dev server is
+    // restarted constantly, so a cached chunk routinely names a module that no
+    // longer exists — which surfaces as "Failed to load chunk …" and a wall of
+    // FetchEvent errors that look like application bugs and are not. There is
+    // no offline story for a dev server, so nothing is lost.
+    //
+    // It UNREGISTERS rather than merely skipping registration: a worker
+    // installed by an earlier session keeps controlling the page and would go
+    // on serving stale chunks forever, since a waiting worker deliberately does
+    // not take over on its own. Push still works in dev — `push-client.ts`
+    // registers on demand when the user actually enables notifications.
+    if (process.env.NODE_ENV !== "production") {
+      void navigator.serviceWorker
+        .getRegistrations()
+        .then((regs) => Promise.all(regs.map((r) => r.unregister())))
+        .then(() =>
+          typeof caches !== "undefined"
+            ? caches
+                .keys()
+                .then((keys) =>
+                  Promise.all(
+                    keys
+                      .filter((k) => k.startsWith("earngpt-"))
+                      .map((k) => caches.delete(k))
+                  )
+                )
+            : undefined
+        )
+        .catch(() => {});
+      return;
+    }
+
     // Only reload for an UPDATE (a controller already existed at load); this
     // avoids the first-install `clients.claim()` controllerchange reload.
     const hadController = !!navigator.serviceWorker.controller;

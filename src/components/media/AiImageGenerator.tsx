@@ -66,7 +66,7 @@ export function AiImageGenerator({ onGenerated }: AiImageGeneratorProps) {
           if ((e.metaKey || e.ctrlKey) && e.key === "Enter") handleGenerate();
         }}
         rows={4}
-        maxLength={1000}
+        maxLength={5000}
         disabled={loading}
         placeholder="e.g. A colorful banner showing people earning rewards on their phones, flat illustration style"
         className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none disabled:opacity-60"
