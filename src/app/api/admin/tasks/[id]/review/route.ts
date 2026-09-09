@@ -57,7 +57,22 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   }
 
   if (action === "approve") {
-    await prisma.task.update({ where: { id }, data: { status: "ACTIVE" } });
+    // The admin may narrow who sees a buyer's task to a plan tier as they
+    // approve it. Deliberately admin-only: the buyer's create endpoint does not
+    // accept `requiredAccessLevel` at all, so a buyer can neither restrict
+    // their task to premium members nor widen it past what was approved.
+    const rawLevel = Number(body.requiredAccessLevel);
+    const requiredAccessLevel = Number.isFinite(rawLevel)
+      ? Math.max(0, Math.min(100, Math.floor(rawLevel)))
+      : null;
+
+    await prisma.task.update({
+      where: { id },
+      data: {
+        status: "ACTIVE",
+        ...(requiredAccessLevel === null ? {} : { requiredAccessLevel }),
+      },
+    });
     if (task.fundedByUserId) {
       await notifyUser({
         userId: task.fundedByUserId,
@@ -73,8 +88,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       entity: "Task",
       entityId: id,
       targetUserId: task.fundedByUserId ?? null,
-      summary: `Approved "${task.title}" — now live`,
-      meta: { decision: "approve", title: task.title },
+      summary: `Approved "${task.title}" — now live${
+        requiredAccessLevel ? ` (plans at level ${requiredAccessLevel}+)` : ""
+      }`,
+      meta: {
+        decision: "approve",
+        title: task.title,
+        requiredAccessLevel,
+      },
     });
     return NextResponse.json({ success: true, status: "ACTIVE" });
   }

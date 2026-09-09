@@ -49,6 +49,7 @@ const read = (p: string) => fs.readFileSync(path.join(root, p), "utf8");
 
 const CREATE = "src/app/api/tasks/create/route.ts";
 const REVIEW = "src/app/api/admin/tasks/[id]/review/route.ts";
+const REVIEW_API = REVIEW;
 const VIEW = "src/components/user/tasks/create-task-view.tsx";
 const FORM = "src/components/admin/settings/system-settings-form.tsx";
 
@@ -260,6 +261,42 @@ async function main() {
       "the client and server share one list of buyer task types",
       /from "@\/lib\/buyer-task-types"/.test(form) &&
         /from "@\/lib\/buyer-task-types"/.test(read("src/lib/buyer-settings.ts"))
+    );
+  }
+
+  /* ── 6b. Audience is the admin's call, never the buyer's ── */
+  console.log("\n6b. Who sees the task is an admin decision");
+  {
+    const create = read(CREATE);
+    const api = read(REVIEW_API);
+    const ui = read("src/components/admin/task-review-actions.tsx");
+
+    check(
+      "the buyer's create endpoint does not accept requiredAccessLevel",
+      !/requiredAccessLevel/.test(create),
+      "a buyer must not be able to restrict their task to premium members, nor widen it"
+    );
+    check(
+      "the admin sets it when approving",
+      /body\.requiredAccessLevel/.test(api)
+    );
+    check(
+      "the value is clamped rather than trusted",
+      /Math\.max\(0, Math\.min\(100, Math\.floor\(rawLevel\)\)\)/.test(api)
+    );
+    check(
+      "omitting it leaves the task's existing audience alone",
+      /requiredAccessLevel === null \? \{\} :/.test(api),
+      "an approve with no audience must not silently reset it to 0"
+    );
+    check(
+      "the choice is recorded in the audit row",
+      /requiredAccessLevel,/.test(api) && /decision: "approve"/.test(api)
+    );
+    check(
+      "the admin picks a PLAN NAME, not a raw access level",
+      /and up/.test(ui) && /Everyone/.test(ui),
+      "asking an admin to remember that 2 means Gold is how a control goes unused"
     );
   }
 

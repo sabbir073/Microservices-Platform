@@ -5,9 +5,19 @@ import { useRouter } from "next/navigation";
 import { Check, X, Loader2 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { promptDialog } from "@/lib/confirm";
+import { cn } from "@/lib/utils";
+
+export interface AudienceTier {
+  accessLevel: number;
+  /** Plan name(s) at this tier, e.g. "Gold" or "Gold / Gold Annual". */
+  label: string;
+}
 
 interface TaskReviewActionsProps {
   taskId: string;
+  /** Plan tiers this task can be limited to. Admin-only — buyers never see it. */
+  tiers?: AudienceTier[];
+  currentAccessLevel?: number;
 }
 
 /**
@@ -30,10 +40,18 @@ const PRESET_REASONS = [
   "This looks like a duplicate of a task you already have running.",
 ];
 
-export function TaskReviewActions({ taskId }: TaskReviewActionsProps) {
+export function TaskReviewActions({
+  taskId,
+  tiers = [],
+  currentAccessLevel = 0,
+}: TaskReviewActionsProps) {
   const router = useRouter();
   const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
   const [picking, setPicking] = useState(false);
+  // Who will see this once it is live. Admin-only: `POST /api/tasks/create`
+  // does not accept an access level from the buyer, so a buyer can never widen
+  // or narrow their own audience.
+  const [accessLevel, setAccessLevel] = useState(currentAccessLevel);
 
   const review = async (action: "approve" | "reject", reason?: string) => {
     setBusy(action);
@@ -41,7 +59,11 @@ export function TaskReviewActions({ taskId }: TaskReviewActionsProps) {
       const res = await fetch(`/api/admin/tasks/${taskId}/review`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, reason }),
+        body: JSON.stringify({
+          action,
+          reason,
+          ...(action === "approve" ? { requiredAccessLevel: accessLevel } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || `Failed to ${action} task`);
@@ -75,6 +97,36 @@ export function TaskReviewActions({ taskId }: TaskReviewActionsProps) {
   };
 
   return (
+    <div className="space-y-2">
+      {/* Audience — admin-only, and deliberately not offered to the buyer. */}
+      {tiers.length > 1 && (
+        <div>
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+            Show this task to
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {tiers.map((t) => {
+              const on = accessLevel === t.accessLevel;
+              return (
+                <button
+                  key={t.accessLevel}
+                  type="button"
+                  onClick={() => setAccessLevel(t.accessLevel)}
+                  className={cn(
+                    "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+                    on
+                      ? "border-indigo-500/50 bg-indigo-500/15 text-indigo-300"
+                      : "border-slate-700 text-slate-400 hover:text-white"
+                  )}
+                >
+                  {t.accessLevel === 0 ? "Everyone" : `${t.label} and up`}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
     <div className="relative flex items-center gap-2">
       <button
         onClick={() => review("approve")}
@@ -134,6 +186,7 @@ export function TaskReviewActions({ taskId }: TaskReviewActionsProps) {
           </div>
         </>
       )}
+    </div>
     </div>
   );
 }

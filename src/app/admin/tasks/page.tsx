@@ -148,6 +148,32 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
     select: { id: true, title: true },
   });
 
+  // Plans, so approving a buyer's task can say WHICH members will see it in
+  // plan names rather than raw access-level integers. Task visibility is
+  // `requiredAccessLevel <= the viewer's plan accessLevel`, and asking an admin
+  // to remember that "2" means Gold is how the control goes unused.
+  const plans = await prisma.package.findMany({
+    where: { isActive: true },
+    orderBy: { accessLevel: "asc" },
+    select: { id: true, name: true, accessLevel: true },
+  });
+  // One entry per distinct tier: several plans can share an accessLevel, and
+  // offering the same choice three times helps nobody.
+  const audienceTiers = [
+    ...new Map(
+      plans.map((p) => [
+        p.accessLevel,
+        {
+          accessLevel: p.accessLevel,
+          label: plans
+            .filter((x) => x.accessLevel === p.accessLevel)
+            .map((x) => x.name)
+            .join(" / "),
+        },
+      ])
+    ).values(),
+  ];
+
   // Who made each task on this page, by name.
   //
   // `Task.createdById` is a bare string with no relation, so the card was
@@ -527,7 +553,13 @@ export default async function AdminTasksPage({ searchParams }: PageProps) {
                         </p>
                       </div>
                     </div>
-                    {canCreate && <TaskReviewActions taskId={task.id} />}
+                    {canCreate && (
+                      <TaskReviewActions
+                        taskId={task.id}
+                        tiers={audienceTiers}
+                        currentAccessLevel={task.requiredAccessLevel}
+                      />
+                    )}
                   </div>
                 )}
 
