@@ -502,14 +502,21 @@ export function evaluateContentRules(
   const ok =
     rules.matchMode === "any" ? matchedCount > 0 : matchedCount === results.length;
 
+  // State the match rate as a figure. "Matched all rules" is true but vague;
+  // an admin glancing at a queue wants to see 3/3 — 100% and move on, and on a
+  // near miss wants to see how near without reading every line.
+  const pct = results.length
+    ? Math.round((matchedCount / results.length) * 100)
+    : 0;
+
   if (ok) {
     return {
       verdict: "verified",
       results,
       summary:
         rules.matchMode === "any"
-          ? `Matched ${matchedCount} of ${results.length} rules (any required)`
-          : `Matched all ${results.length} rules`,
+          ? `${matchedCount}/${results.length} matched (any required) — passed`
+          : `${matchedCount}/${results.length} matched — 100%`,
     };
   }
 
@@ -517,7 +524,7 @@ export function evaluateContentRules(
   return {
     verdict: "criteria_failed",
     results,
-    summary: `Missing ${missing.join(", ")}`,
+    summary: `${matchedCount}/${results.length} matched — ${pct}%. Missing ${missing.join(", ")}`,
   };
 }
 

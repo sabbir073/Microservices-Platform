@@ -56,7 +56,12 @@ import {
   verifyTelegramMember,
   verifyDiscordMember,
 } from "@/lib/social-verify-membership";
-import { fetchRawHtml, fetchRawBytes, CRAWLER_UA } from "@/lib/link-preview";
+import {
+  fetchRawHtml,
+  fetchRawBytes,
+  CRAWLER_UA,
+  VERIFY_MAX_BYTES,
+} from "@/lib/link-preview";
 import { getSetting } from "@/lib/system-settings";
 import { bumpTrust, TRUST_APPROVE } from "@/lib/trust";
 import {
@@ -837,11 +842,11 @@ export async function POST(
             // is cheaper than a wrongly unverifiable submission.
             const fetched = await Promise.all(
               fetchUrls.map(async (u) => {
-                const asCrawler = await fetchRawHtml(u, CRAWLER_UA).catch(() => null);
+                const asCrawler = await fetchRawHtml(u, CRAWLER_UA, VERIFY_MAX_BYTES).catch(() => null);
                 if (asCrawler && !looksUnreadable(toPageContent(asCrawler))) {
                   return asCrawler;
                 }
-                const asBrowser = await fetchRawHtml(u).catch(() => null);
+                const asBrowser = await fetchRawHtml(u, undefined, VERIFY_MAX_BYTES).catch(() => null);
                 // Keep whichever actually said something; prefer the browser
                 // result only when the crawler result was unusable.
                 if (asBrowser && !looksUnreadable(toPageContent(asBrowser))) {

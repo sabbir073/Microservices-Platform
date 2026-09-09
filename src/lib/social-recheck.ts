@@ -5,7 +5,7 @@ import {
   TransactionType,
   TransactionStatus,
 } from "@/generated/prisma/client";
-import { fetchRawHtml, CRAWLER_UA } from "@/lib/link-preview";
+import { fetchRawHtml, CRAWLER_UA, VERIFY_MAX_BYTES } from "@/lib/link-preview";
 import {
   toPageContent,
   looksUnreadable,
@@ -65,9 +65,9 @@ function verifyStatuses(metadata: unknown): string[] {
 
 /** Ask as a link-preview crawler first, then as a browser. Same chain as submit. */
 async function verifyFetch(url: string): Promise<string | null> {
-  const asCrawler = await fetchRawHtml(url, CRAWLER_UA).catch(() => null);
+  const asCrawler = await fetchRawHtml(url, CRAWLER_UA, VERIFY_MAX_BYTES).catch(() => null);
   if (asCrawler && !looksUnreadable(toPageContent(asCrawler))) return asCrawler;
-  const asBrowser = await fetchRawHtml(url).catch(() => null);
+  const asBrowser = await fetchRawHtml(url, undefined, VERIFY_MAX_BYTES).catch(() => null);
   if (asBrowser && !looksUnreadable(toPageContent(asBrowser))) return asBrowser;
   return asCrawler ?? asBrowser;
 }
@@ -177,10 +177,17 @@ export async function recheckPendingSocialSubmissions(opts?: {
       .map((it, i) => ({ it, i }))
       .filter((x) => x.it.verify === "CONTENT" || x.it.verify === "CODE");
     if (verifyItems.length === 0) continue;
-    // Only revisit what we failed to READ. A submission that was genuinely
-    // checked and did not match is a decision, not an accident.
+    // Revisit what we failed to READ, and what was never read at all.
+    //
+    // A submission that was genuinely checked and did not match is a decision,
+    // not an accident, so `criteria_failed` is left alone. But a submission
+    // carrying NO verify status is one the check never reached — it predates
+    // the feature, or the fetch died before recording anything — and skipping
+    // those left them waiting for a human forever, which is the one outcome
+    // this job exists to prevent.
     const statuses = verifyStatuses(sub.metadata);
-    if (!statuses.includes("unverifiable")) continue;
+    const neverChecked = statuses.length === 0;
+    if (!neverChecked && !statuses.includes("unverifiable")) continue;
 
     summary.examined++;
 
