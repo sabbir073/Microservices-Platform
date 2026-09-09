@@ -23,7 +23,8 @@ import {
 import { userDisplayId } from "@/lib/display-id";
 import { isAdmin, PERMISSION_CATALOG, permissionLabel, permissionDescription, type UserRole } from "@/lib/rbac";
 import { USER_PAGES } from "@/lib/page-visibility";
-import { FEATURES } from "@/lib/features";
+import { FEATURES, type PackageFeatureKey } from "@/lib/features";
+import { FEATURE_BUNDLES, missingFor } from "@/lib/feature-bundles";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import { DateField } from "@/components/ui/date-field";
 
@@ -108,6 +109,13 @@ interface UserEditFormProps {
   plans: Array<{ id: string; slug: string; name: string }>;
   /** Active super-admin-defined custom roles, for the role dropdown. */
   customRoles?: Array<{ id: string; name: string }>;
+  /**
+   * The user's PLAN-level feature values, before their per-user overrides.
+   * The form needs them to work out what the user will actually end up with:
+   * a dependency already supplied by their package is not missing, and one the
+   * admin has just switched Off is.
+   */
+  packageFeatures?: Partial<Record<PackageFeatureKey, boolean>>;
   /** Called when admin clicks Cancel or after successful Save. Defaults to router.back(). */
   onDone?: () => void;
 }
@@ -157,6 +165,7 @@ export function UserEditForm({
   isSuperAdmin,
   plans,
   customRoles = [],
+  packageFeatures = {},
   onDone,
 }: UserEditFormProps) {
   const router = useRouter();
@@ -1306,6 +1315,14 @@ export function UserEditForm({
                   </p>
                   {FEATURES.filter((f) => f.group === grp).map((f) => {
                     const cur = form.featureOverrides[f.key];
+                    // What this user will END UP with once saved: the pending
+                    // override if the admin set one, otherwise their plan.
+                    const effective = (k: PackageFeatureKey) =>
+                      form.featureOverrides[k] ?? packageFeatures[k] ?? false;
+                    const bundle = FEATURE_BUNDLES[f.key];
+                    const gaps = effective(f.key)
+                      ? missingFor(f.key, effective)
+                      : { requires: [], suggests: [] };
                     const setOv = (val: boolean | null) => {
                       const next = { ...form.featureOverrides };
                       if (val === null) delete next[f.key];
@@ -1320,8 +1337,9 @@ export function UserEditForm({
                     return (
                       <div
                         key={f.key}
-                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-slate-950/50 border border-slate-800"
+                        className="rounded-lg bg-slate-950/50 border border-slate-800"
                       >
+                      <div className="flex items-center justify-between gap-3 px-3 py-2">
                         <span className="text-sm text-white">{f.label}</span>
                         <div className="inline-flex rounded-lg border border-slate-700 overflow-hidden text-xs font-semibold shrink-0">
                           {opts.map(({ lbl, val }) => {
@@ -1348,6 +1366,117 @@ export function UserEditForm({
                             );
                           })}
                         </div>
+                      </div>
+
+                      {/*
+                        What else this grant needs. Granting a capability is not
+                        the same as making it usable: an admin who ticks
+                        "Create Tasks" and stops there leaves the buyer to hit
+                        "Social task creation isn't enabled for your account"
+                        with no clue which of 28 switches is missing.
+                      */}
+                      {effective(f.key) && bundle && (
+                        <div className="border-t border-slate-800 px-3 py-2.5 space-y-2">
+                          <p className="text-[11px] leading-relaxed text-slate-500">
+                            {bundle.summary}
+                          </p>
+
+                          {gaps.requires.length > 0 && (
+                            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2">
+                              <p className="text-[11px] font-bold text-amber-300">
+                                Needs {gaps.requires.length} more to work
+                              </p>
+                              {gaps.requires.map((d) => (
+                                <div key={d.key} className="mt-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      set("featureOverrides", {
+                                        ...form.featureOverrides,
+                                        [d.key]: true,
+                                      })
+                                    }
+                                    className="rounded border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold text-amber-200 hover:bg-amber-400/25"
+                                  >
+                                    Turn on{" "}
+                                    {FEATURES.find((x) => x.key === d.key)
+                                      ?.label ?? d.key}
+                                  </button>
+                                  <p className="mt-0.5 text-[11px] leading-relaxed text-amber-200/60">
+                                    {d.why}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {gaps.suggests.length > 0 && (
+                            <div className="space-y-1">
+                              {gaps.suggests.map((d) => (
+                                <div key={d.key}>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      set("featureOverrides", {
+                                        ...form.featureOverrides,
+                                        [d.key]: true,
+                                      })
+                                    }
+                                    className="rounded border border-slate-700 px-2 py-0.5 text-[11px] font-semibold text-slate-300 hover:text-white"
+                                  >
+                                    Also turn on{" "}
+                                    {FEATURES.find((x) => x.key === d.key)
+                                      ?.label ?? d.key}
+                                  </button>
+                                  <p className="mt-0.5 text-[11px] leading-relaxed text-slate-600">
+                                    {d.why}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {bundle.alsoNeeds && bundle.alsoNeeds.length > 0 && (
+                            <div>
+                              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                                Check separately
+                              </p>
+                              <ul className="mt-0.5 space-y-0.5">
+                                {bundle.alsoNeeds.map((n) => (
+                                  <li
+                                    key={n.label}
+                                    className="text-[11px] leading-relaxed text-slate-500"
+                                  >
+                                    <span className="text-slate-400">
+                                      {n.label}
+                                    </span>{" "}
+                                    — {n.why}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {bundle.doesNotGrant &&
+                            bundle.doesNotGrant.length > 0 && (
+                              <div>
+                                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                                  Does NOT grant
+                                </p>
+                                <ul className="mt-0.5 space-y-0.5">
+                                  {bundle.doesNotGrant.map((n) => (
+                                    <li
+                                      key={n}
+                                      className="text-[11px] leading-relaxed text-slate-500"
+                                    >
+                                      {n}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
+                      )}
                       </div>
                     );
                   })}

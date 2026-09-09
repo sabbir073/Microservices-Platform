@@ -3081,6 +3081,10 @@ enum CreatorApplicationType {
   ADVERTISER
   AGENCY
   AFFILIATE
+  /// Buy and fund tasks, and nothing else. AGENCY also grants `agencyMode` and
+  /// `advertiser`, which is far more than someone who just wants 200 people to
+  /// follow their page ever asked for.
+  TASK_BUYER
 }
 
 enum CreatorApplicationStatus {

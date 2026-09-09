@@ -26,6 +26,7 @@ import {
   Award,
   Package,
   Briefcase,
+  ClipboardPlus,
   ArrowUpRight,
   HelpCircle,
   Bell,
@@ -107,6 +108,11 @@ const navigationGroups: { section: string; items: NavItem[] }[] = [
     section: "Marketing",
     items: [
       { name: "Create Ad", href: "/advertiser", icon: Briefcase, feature: "advertiser" },
+      // `/create-task` had no navigation entry anywhere in the app. A user
+      // granted `createTasks` could only reach it from the link inside a task
+      // approval notification — so the permission worked and the page was
+      // effectively unreachable.
+      { name: "Create Task", href: "/create-task", icon: ClipboardPlus, feature: "createTasks" },
       { name: "Add Funds", href: "/deposit", icon: CreditCard },
     ],
   },

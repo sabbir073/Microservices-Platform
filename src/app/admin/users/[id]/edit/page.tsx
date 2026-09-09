@@ -8,6 +8,8 @@ import { can } from "@/lib/permissions";
 import { toNum } from "@/lib/money";
 import { usd } from "@/lib/utils";
 import { UserEditForm } from "@/components/admin/users/edit-user-modal";
+import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
+import { FEATURE_KEYS, type PackageFeatureKey } from "@/lib/features";
 import {
   UserDetailActions,
   AdjustBalanceButton,
@@ -118,6 +120,15 @@ export default async function EditUserPage({
     tutorSuspended: tutorProfile?.isSuspended ?? false,
   };
 
+  // The user's PLAN-level feature values, so the Feature Access tab can tell
+  // the admin what a grant still NEEDS. Without these the form could only see
+  // the per-user overrides and would report a dependency as missing when the
+  // user's package already supplies it.
+  const effectivePkg = await getEffectivePackage(id);
+  const packageFeatures = Object.fromEntries(
+    FEATURE_KEYS.map((k) => [k, packageHasFeature(effectivePkg, k)])
+  ) as Partial<Record<PackageFeatureKey, boolean>>;
+
   const isSuperAdmin = adminRole === "SUPER_ADMIN";
   // `can()` (effective: role table + custom role + per-user overrides) — the
   // API gates on this, and gating the page on the static role table instead
@@ -211,6 +222,7 @@ export default async function EditUserPage({
         isSuperAdmin={isSuperAdmin}
         plans={plans}
         customRoles={customRolesRaw}
+        packageFeatures={packageFeatures}
       />
     </div>
   );
