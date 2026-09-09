@@ -38,9 +38,9 @@ export async function POST(request: NextRequest) {
     if (!prompt) {
       return NextResponse.json({ error: "Prompt is required" }, { status: 400 });
     }
-    if (prompt.length > 1000) {
+    if (prompt.length > 5000) {
       return NextResponse.json(
-        { error: "Prompt is too long (max 1000 characters)" },
+        { error: "Prompt is too long (max 5000 characters)" },
         { status: 400 }
       );
     }

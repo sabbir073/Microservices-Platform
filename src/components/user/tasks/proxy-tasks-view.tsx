@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { TaskInstructions } from "@/components/user/tasks/task-instructions";
 import { confirmDialog } from "@/lib/confirm";
 import {
   Globe,
@@ -403,22 +404,11 @@ export function ProxyTasksView() {
       >
         {active && (
           <div className="space-y-4">
-            {active.instructions && (
-              <div className="rounded-lg bg-gray-950 border border-gray-800 p-3">
-                <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">
-                  Steps
-                </p>
-                <ol className="space-y-1 text-sm text-gray-300 list-decimal pl-4">
-                  {active.instructions
-                    .split("\n")
-                    .map((s) => s.trim())
-                    .filter(Boolean)
-                    .map((step, i) => (
-                      <li key={i}>{step}</li>
-                    ))}
-                </ol>
-              </div>
-            )}
+            {/* One renderer for every surface — see components/user/tasks/task-instructions. */}
+            <TaskInstructions
+              value={active.instructions}
+              className="rounded-lg bg-gray-950 border border-gray-800 p-3"
+            />
 
             {active.instructionVideoUrl && (
               <div className="space-y-2">

@@ -382,19 +382,33 @@ export function AdminSidebar({
 
   return (
     <>
-      {/* Mobile Sidebar Overlay */}
-      {isMobileOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/60 lg:hidden"
-          onClick={() => setIsMobileOpen(false)}
-        />
-      )}
-
-      {/* Mobile Sidebar (always full width on mobile) */}
+      {/* Mobile sidebar overlay.
+          Always mounted, shown by class rather than conditionally rendered.
+          As a conditional FIRST child of this fragment it changed the sibling
+          count between closed and open, so any disagreement about
+          `isMobileOpen` — or anything else perturbing the DOM before React
+          hydrates — shifted every following node by one and reported as a
+          whole-tree hydration mismatch rooted here.
+          `pointer-events-none` while closed is load-bearing: an always-mounted
+          full-screen overlay would otherwise swallow every click in the admin. */}
       <div
+        aria-hidden={!isMobileOpen}
+        onClick={() => setIsMobileOpen(false)}
+        className={cn(
+          "fixed inset-0 z-40 bg-black/60 lg:hidden transition-opacity duration-300",
+          isMobileOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+      />
+
+      {/* Mobile Sidebar (always full width on mobile).
+          `aria-hidden` when closed: it is only moved off-screen, so without
+          this every nav link stays in the tab order and a keyboard or screen
+          reader user walks through a menu they cannot see. */}
+      <div
+        aria-hidden={!isMobileOpen}
         className={cn(
           "fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 transform transition-transform duration-300 lg:hidden",
-          isMobileOpen ? "translate-x-0" : "-translate-x-full"
+          isMobileOpen ? "translate-x-0" : "-translate-x-full pointer-events-none"
         )}
       >
         <button

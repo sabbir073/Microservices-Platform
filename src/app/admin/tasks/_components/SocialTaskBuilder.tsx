@@ -10,6 +10,7 @@ import {
   bundleTotalPoints,
   actionPriority,
   isWatchAction,
+  AI_PROMPT_MAX,
   type AiMode,
   type SocialBundleConfig,
   type BundleItem,
@@ -19,6 +20,15 @@ import {
 } from "@/lib/social-tasks";
 import { diyPromptFor } from "@/lib/social-ai-recipe";
 import {
+  CRITERION_KINDS,
+  CRITERION_LABEL,
+  CRITERION_HINT,
+  defaultContentRules,
+  type Criterion,
+  type CriterionKind,
+  type ContentRules,
+} from "@/lib/link-verify";
+import {
   Sparkles,
   AlertCircle,
   Plus,
@@ -26,6 +36,8 @@ import {
   Trash2,
   GripVertical,
   ShieldCheck,
+  ScanSearch,
+  Wand2,
 } from "lucide-react";
 import { BrandIcon } from "@/components/ui/brand-icon";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
@@ -516,6 +528,16 @@ function SocialActionCard({
         </label>
       )}
 
+      {/* Smart Auto Verification — fetch the submitted link and check it
+          against the admin's own rules. Offered on the same actions as the code
+          check: both need a public page to read. */}
+      {def.supportsAiPrompt && (
+        <ContentRulesEditor
+          item={item}
+          onUpdate={onUpdate}
+        />
+      )}
+
       {/* Auto-verify membership by bot — Telegram/Discord join actions. */}
       {memberVerify && (
         <div className="space-y-2">
@@ -669,12 +691,21 @@ function AiPromptSection({
         defaults.
       </p>
       <textarea
-        rows={3}
+        rows={6}
         value={prompt}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="e.g. 'Friendly tone, under 200 characters, add 1-2 relevant hashtags.'"
-        className="w-full px-3 py-2 bg-gray-950 border border-purple-500/30 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500"
+        onChange={(e) => onChange(e.target.value.slice(0, AI_PROMPT_MAX))}
+        maxLength={AI_PROMPT_MAX}
+        placeholder="e.g. 'Friendly tone, 2-3 short sentences, add 1-2 relevant hashtags.'"
+        className="w-full px-3 py-2 bg-gray-950 border border-purple-500/30 rounded-lg text-sm text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 resize-y min-h-24"
       />
+      {/* The old placeholder read "under 200 characters" — that was advice for
+          the AI about how long the POST should be, but sitting inside the input
+          it looked like a cap on what the admin could type. There was never a
+          limit here at all. Stating the real allowance and counting up to it
+          removes the doubt in the place the doubt was created. */}
+      <p className="text-[11px] text-gray-500 text-right tabular-nums">
+        {prompt.length.toLocaleString()} / {AI_PROMPT_MAX.toLocaleString()}
+      </p>
       <p className="text-[11px] text-gray-500">
         AI writes:{" "}
         <span className="text-purple-300">{generatableLabels.join(", ")}</span>.
@@ -941,4 +972,235 @@ function deriveDefaultProofRequirements(
     screenshot: keys.includes("screenshotUrl"),
     username: keys.includes("proofUsername"),
   };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Smart Auto Verification — the admin's rules for one action.
+
+   On submit the server fetches the URL the user published and checks it
+   against these. Deliberately plain rows rather than a query builder: the
+   whole value is that an admin can add "must contain our link" in two clicks.
+   ───────────────────────────────────────────────────────────────────────── */
+
+function ContentRulesEditor({
+  item,
+  onUpdate,
+}: {
+  item: BundleItem;
+  onUpdate: (patch: Partial<BundleItem>) => void;
+}) {
+  const on = item.verify === "CONTENT";
+  const rules: ContentRules = item.contentRules ?? defaultContentRules();
+
+  const setRules = (next: Partial<ContentRules>) =>
+    onUpdate({ contentRules: { ...rules, ...next } });
+
+  /**
+   * Rules seeded from what the admin has already typed into this action.
+   *
+   * The destination URL and the hashtags are usually sitting in the fields
+   * above. Re-typing them into the rules is tedious and a chance to introduce a
+   * typo that then fails every submission for a reason nobody can see.
+   */
+  const seededFromFields = (existing: Criterion[]): Criterion[] => {
+    const next: Criterion[] = [...existing];
+    const seen = new Set(next.map((c) => `${c.kind}:${c.value.toLowerCase()}`));
+    const push = (kind: CriterionKind, value: string) => {
+      const v = value.trim().replace(/^[,\s]+|[,\s]+$/g, "");
+      if (!v) return;
+      const key = `${kind}:${v.toLowerCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      next.push({ kind, value: v });
+    };
+    for (const [key, val] of Object.entries(item.fields ?? {})) {
+      if (!val || typeof val !== "string") continue;
+      if (/url$/i.test(key)) push("url", val);
+      else if (/hashtag/i.test(key))
+        val.split(/[\s,]+/).forEach((t) => push("hashtag", t));
+    }
+    return next;
+  };
+
+  const toggle = () =>
+    onUpdate(
+      on
+        ? { verify: undefined }
+        : {
+            verify: "CONTENT",
+            // Seed from the fields on the way IN. Switching the feature on and
+            // landing on an empty list meant the next Save was refused — the
+            // admin turned something on and was immediately blocked by it. When
+            // the action already carries a destination URL or hashtags, those
+            // are the rules they meant, so start with them.
+            contentRules: {
+              ...rules,
+              criteria: seededFromFields(rules.criteria),
+            },
+            // Nothing to fetch without a URL — the same forcing the code
+            // checkbox already does.
+            proofRequirements: { ...item.proofRequirements, url: true },
+          }
+    );
+
+  const update = (i: number, patch: Partial<Criterion>) =>
+    setRules({
+      criteria: rules.criteria.map((c, k) => (k === i ? { ...c, ...patch } : c)),
+    });
+
+  const add = (kind: CriterionKind = "text", value = "") =>
+    setRules({ criteria: [...rules.criteria, { kind, value }] });
+
+  const remove = (i: number) =>
+    setRules({ criteria: rules.criteria.filter((_, k) => k !== i) });
+
+  /**
+   * Pull rules out of what the admin already typed into this action.
+   *
+   * The target URL and the hashtags are usually already sitting in the fields
+   * above — retyping them into the rules is tedious and a chance to introduce
+   * a typo that then fails every submission for a reason nobody can see.
+   */
+  const prefill = () => setRules({ criteria: seededFromFields(rules.criteria) });
+
+  return (
+    <div className="space-y-2">
+      <label
+        className="flex items-start gap-2 px-3 py-2 rounded-lg bg-sky-500/10 border border-sky-500/30 cursor-pointer"
+        title="On submit the server opens the link the user published and checks it against the rules you set here. Works wherever the page is publicly readable."
+      >
+        <input
+          type="checkbox"
+          checked={on}
+          onChange={toggle}
+          className="mt-0.5 rounded bg-gray-800 border-gray-600 text-sky-500"
+        />
+        <ScanSearch className="w-4 h-4 text-sky-400 mt-0.5 shrink-0" />
+        <span className="text-xs">
+          <span className="font-semibold text-sky-300">
+            Smart Auto Verification (check the link&apos;s content)
+          </span>
+          <span className="block text-sky-400/70">
+            Server opens the submitted link and matches your keywords, hashtags
+            and required link. Auto-approves when everything matches.
+          </span>
+        </span>
+      </label>
+
+      {on && (
+        <div className="space-y-2 pl-3 border-l-2 border-sky-500/30">
+          {/* The limitation, stated where the decision is made. An admin who
+              expects Facebook to auto-approve and finds everything sitting in
+              manual review will read it as a bug rather than as physics. */}
+          <p className="text-[11px] text-amber-400/90 bg-amber-500/10 border border-amber-500/25 rounded px-2 py-1.5">
+            <strong className="text-emerald-300">Checks automatically:</strong>{" "}
+            Reddit, X, LinkedIn, TikTok, Instagram, YouTube, Medium, blogs and
+            your own site.{" "}
+            <strong className="text-amber-300">Always manual review:</strong>{" "}
+            Pinterest and Facebook — they hand our server a page with no post
+            content in it, so there is nothing to check. Those say
+            &ldquo;couldn&apos;t check&rdquo; and go to a human; they are{" "}
+            <strong>never auto-rejected</strong> for it.
+            <br />
+            On Instagram and TikTok prefer <em>keyword</em> and{" "}
+            <em>hashtag</em> rules — they publish the caption but not the
+            outgoing link, so a <em>required link</em> rule will not match.
+          </p>
+
+          {rules.criteria.length === 0 && (
+            <p className="text-[11px] text-gray-500">
+              No rules yet — add at least one, or there is nothing to verify.
+            </p>
+          )}
+
+          {rules.criteria.map((c, i) => (
+            <div key={i} className="flex items-start gap-1.5">
+              <select
+                value={c.kind}
+                onChange={(e) =>
+                  update(i, { kind: e.target.value as CriterionKind })
+                }
+                className="px-2 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-xs shrink-0"
+              >
+                {CRITERION_KINDS.map((k) => (
+                  <option key={k} value={k}>
+                    {CRITERION_LABEL[k]}
+                  </option>
+                ))}
+              </select>
+              <div className="flex-1 min-w-0">
+                <input
+                  value={c.value}
+                  onChange={(e) => update(i, { value: e.target.value })}
+                  disabled={c.kind === "code"}
+                  placeholder={CRITERION_HINT[c.kind]}
+                  className="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder:text-gray-500 text-xs focus:outline-none focus:border-sky-500 disabled:opacity-50"
+                />
+                {c.kind !== "code" && !c.value.trim() && (
+                  <p className="text-[10px] text-amber-400/80 mt-0.5">
+                    Empty rules are dropped when the task is saved.
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => remove(i)}
+                aria-label="Remove rule"
+                className="p-2 rounded-lg text-gray-500 hover:text-red-400 hover:bg-gray-800 shrink-0"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => add()}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-[11px] font-semibold"
+            >
+              <Plus className="w-3 h-3" /> Add rule
+            </button>
+            <button
+              type="button"
+              onClick={prefill}
+              title="Create rules from the target URL and hashtags you already typed above"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-gray-200 text-[11px] font-semibold"
+            >
+              <Wand2 className="w-3 h-3" /> Add from task fields
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+            <label className="text-[11px] text-gray-400">
+              How many must match
+              <select
+                value={rules.matchMode}
+                onChange={(e) =>
+                  setRules({ matchMode: e.target.value as "all" | "any" })
+                }
+                className="mt-1 w-full px-2 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-xs"
+              >
+                <option value="all">All rules must match</option>
+                <option value="any">Any one rule is enough</option>
+              </select>
+            </label>
+            <label className="text-[11px] text-gray-400">
+              If the page doesn&apos;t match
+              <select
+                value={rules.onMismatch}
+                onChange={(e) =>
+                  setRules({ onMismatch: e.target.value as "manual" | "reject" })
+                }
+                className="mt-1 w-full px-2 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-xs"
+              >
+                <option value="manual">Send to manual review</option>
+                <option value="reject">Reject automatically</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }

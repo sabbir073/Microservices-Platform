@@ -9,6 +9,8 @@ import TextAlign from "@tiptap/extension-text-align";
 // Tiptap v3: TextStyle + Color both live in @tiptap/extension-text-style.
 import { TextStyle, Color } from "@tiptap/extension-text-style";
 import Image from "@tiptap/extension-image";
+// Aliased: `DOMParser` alone would shadow the browser one used just below it.
+import { DOMParser as ProseMirrorDOMParser } from "@tiptap/pm/model";
 import {
   Bold,
   Italic,
@@ -29,6 +31,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { OFFER_RICHTEXT_CLASS } from "@/lib/offers";
+import { looksLikeMarkdown, markdownToHtml } from "@/lib/markdown-paste";
 
 const TEXT_COLORS = [
   "#ffffff", "#94a3b8", "#ef4444", "#f59e0b",
@@ -41,9 +44,18 @@ const TEXT_COLORS = [
 export function RichTextEditor({
   value,
   onChange,
+  onPickImage,
+  minHeightClass = "min-h-32",
 }: {
   value: string;
   onChange: (html: string) => void;
+  /**
+   * Supply a picker (the media library) for the image button. Without it the
+   * button falls back to asking for a URL, which is no use for a screenshot
+   * that has not been uploaded anywhere yet.
+   */
+  onPickImage?: () => Promise<string | null> | void;
+  minHeightClass?: string;
 }) {
   const [showSource, setShowSource] = useState(false);
   const [source, setSource] = useState(value);
@@ -61,7 +73,34 @@ export function RichTextEditor({
     onUpdate: ({ editor }) => onChange(editor.getHTML()),
     editorProps: {
       attributes: {
-        class: `${OFFER_RICHTEXT_CLASS} min-h-32 px-3 py-2 focus:outline-none`,
+        class: `${OFFER_RICHTEXT_CLASS} ${minHeightClass} px-3 py-2 focus:outline-none`,
+      },
+      /**
+       * Paste from ChatGPT.
+       *
+       * A rich `text/html` flavour (a web page, a word processor) already
+       * pastes correctly, so it is left alone. ChatGPT's plain-text flavour is
+       * Markdown, which used to arrive as literal `##` and `**` with every
+       * heading flattened. Convert it — but only when it really looks like
+       * Markdown, so ordinary prose is never rewritten.
+       */
+      handlePaste: (view, event) => {
+        const html = event.clipboardData?.getData("text/html");
+        if (html && html.trim()) return false; // rich paste: Tiptap handles it
+        const text = event.clipboardData?.getData("text/plain") ?? "";
+        if (!looksLikeMarkdown(text)) return false;
+        event.preventDefault();
+        const { state, dispatch } = view;
+        const parsed = new DOMParser().parseFromString(
+          markdownToHtml(text),
+          "text/html"
+        );
+        const slice = ProseMirrorDOMParser.fromSchema(state.schema).parseSlice(
+          parsed.body,
+          { preserveWhitespace: false }
+        );
+        dispatch(state.tr.replaceSelection(slice).scrollIntoView());
+        return true;
       },
     },
   });
@@ -106,7 +145,11 @@ export function RichTextEditor({
         </>
       ) : (
         <>
-          <Toolbar editor={editor} onToggleSource={toggleSource} />
+          <Toolbar
+            editor={editor}
+            onToggleSource={toggleSource}
+            onPickImage={onPickImage}
+          />
           <EditorContent editor={editor} />
         </>
       )}
@@ -147,9 +190,11 @@ function Btn({
 function Toolbar({
   editor,
   onToggleSource,
+  onPickImage,
 }: {
   editor: Editor;
   onToggleSource: () => void;
+  onPickImage?: () => Promise<string | null> | void;
 }) {
   const [colorOpen, setColorOpen] = useState(false);
 
@@ -165,6 +210,14 @@ function Toolbar({
   };
 
   const insertImage = async () => {
+    // A screenshot the admin just took is not at a URL yet, so prefer the host's
+    // picker (the media library, which uploads) and keep the URL prompt only as
+    // the fallback for hosts that have not supplied one.
+    if (onPickImage) {
+      const picked = await onPickImage();
+      if (picked) editor.chain().focus().setImage({ src: picked }).run();
+      return;
+    }
     const url = await promptDialog({ title: "Image URL", defaultValue: "https://", tone: "info", confirmLabel: "Insert" });
     if (!url) return;
     editor.chain().focus().setImage({ src: url }).run();

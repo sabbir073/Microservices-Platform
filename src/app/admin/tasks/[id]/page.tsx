@@ -1,4 +1,6 @@
 import { auth } from "@/lib/auth";
+import { TaskInstructions } from "@/components/user/tasks/task-instructions";
+import { hasInstructions } from "@/lib/task-instructions";
 import { can } from "@/lib/permissions";
 import { redirect, notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
@@ -118,7 +120,9 @@ export default async function TaskDetailPage({ params }: PageProps) {
   const canCreate = await can(session.user.id, "tasks.create");
 
   // Parse instructions into steps
-  const instructionSteps = task.instructions?.split("\n").filter(Boolean) || [];
+  // Instructions may be rich text (new) or one plain step per line (old).
+  // `hasInstructions` answers both without this page having to know which.
+  const showInstructions = hasInstructions(task.instructions);
 
   return (
     <div className="space-y-6">
@@ -224,7 +228,7 @@ export default async function TaskDetailPage({ params }: PageProps) {
           </div>
 
           {/* Instructions */}
-          {(task.instructionVideoUrl || instructionSteps.length > 0) && (
+          {(task.instructionVideoUrl || showInstructions) && (
             <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
               <h2 className="text-lg font-semibold text-white">Instructions</h2>
 
@@ -239,23 +243,15 @@ export default async function TaskDetailPage({ params }: PageProps) {
                 </div>
               )}
 
-              {/* Text Instructions */}
-              {instructionSteps.length > 0 && (
+              {/* Text Instructions — the same renderer the users see, so what
+                  an admin reviews here is exactly what was published. */}
+              {showInstructions && (
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <FileText className="w-4 h-4 text-blue-400" />
                     <h3 className="text-sm font-medium text-gray-300">Text Instructions</h3>
                   </div>
-                  <div className="space-y-3">
-                    {instructionSteps.map((step, index) => (
-                      <div key={index} className="flex items-start gap-3">
-                        <span className="w-6 h-6 shrink-0 flex items-center justify-center bg-indigo-500/10 rounded-full text-xs text-indigo-400">
-                          {index + 1}
-                        </span>
-                        <p className="text-gray-400">{step}</p>
-                      </div>
-                    ))}
-                  </div>
+                  <TaskInstructions value={task.instructions} title={null} className="" />
                 </div>
               )}
             </div>

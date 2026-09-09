@@ -206,7 +206,7 @@ export function AiContentGenerator({ configured }: AiContentGeneratorProps) {
             <input
               type="number"
               min={20}
-              max={2000}
+              max={5000}
               value={maxLength}
               onChange={(e) => setMaxLength(parseInt(e.target.value))}
               className={inp}

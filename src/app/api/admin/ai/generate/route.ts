@@ -18,11 +18,11 @@ const schema = z.object({
     "article",
     "marketing_copy",
   ]),
-  topic: z.string().min(2).max(500),
+  topic: z.string().min(2).max(5000),
   tone: z.enum(["informative", "casual", "professional", "exciting"]).optional(),
   count: z.number().int().min(1).max(20).optional(),
   difficulty: z.enum(["easy", "medium", "hard"]).optional(),
-  maxLength: z.number().int().min(20).max(2000).optional(),
+  maxLength: z.number().int().min(20).max(5000).optional(),
   includeEmojis: z.boolean().optional(),
   includeHashtags: z.boolean().optional(),
 });

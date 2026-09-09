@@ -123,6 +123,30 @@ function main() {
       )
     );
 
+    // The admin sidebar's mobile overlay is mounted unconditionally and shown
+    // by class. As a conditional first child it changed the fragment's child
+    // count, so any DOM perturbation before hydration shifted every following
+    // node and surfaced as a whole-tree hydration mismatch rooted at the
+    // sidebar.
+    {
+      const sb = code("src/components/admin/sidebar.tsx");
+      check(
+        "the mobile overlay is not conditionally mounted",
+        !/\{isMobileOpen && \(/.test(sb),
+        "a conditional first child makes the sibling count differ between renders"
+      );
+      check(
+        "…and it cannot swallow clicks while closed",
+        /opacity-0 pointer-events-none/.test(sb),
+        "an always-mounted full-screen overlay without this blocks every click in the admin"
+      );
+      check(
+        "a closed drawer is hidden from assistive tech",
+        (sb.match(/aria-hidden=\{!isMobileOpen\}/g) ?? []).length === 2,
+        "it is only moved off-screen, so its links otherwise stay in the tab order"
+      );
+    }
+
     // The sites that used to disagree.
     const RETURN_SITES = [
       "src/components/admin/header.tsx",

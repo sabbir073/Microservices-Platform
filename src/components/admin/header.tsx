@@ -134,7 +134,15 @@ export function AdminHeader({
           setUnreadCount(data.unreadCount || 0);
         }
       } catch (error) {
-        console.error("Error fetching notifications:", error);
+        // A poll that runs every 30s will hit the network being unavailable —
+        // wifi dropping, the tab waking from sleep, a deploy or a dev-server
+        // restart. That is expected and self-heals on the next tick, so it is
+        // not worth a red console error every half minute. Anything else still
+        // gets logged, because anything else is a real problem.
+        const offline =
+          error instanceof TypeError ||
+          (typeof navigator !== "undefined" && navigator.onLine === false);
+        if (!offline) console.error("Error fetching notifications:", error);
       }
     };
 

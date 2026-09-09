@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TaskInstructions } from "@/components/user/tasks/task-instructions";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -70,6 +71,10 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // What the automatic check has decided so far, while the user watches.
+  const [verifyState, setVerifyState] = useState<
+    "idle" | "checking" | "approved" | "manual"
+  >("idle");
   const [upgradeMsg, setUpgradeMsg] = useState<string | null>(null);
   const [lockedMsg, setLockedMsg] = useState<string | null>(null);
   const [adBlocked, setAdBlocked] = useState(false);
@@ -107,6 +112,10 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
   const [hydrated, setHydrated] = useState(false);
   // Per-user auto-verify codes (item index → code), from the task GET response.
   const [verifyCodes, setVerifyCodes] = useState<Record<number, string>>({});
+  /** What Smart Auto Verification will check, per item index. */
+  const [contentRules, setContentRules] = useState<
+    Record<number, { labels: string[]; matchMode: "all" | "any"; canReject: boolean }>
+  >({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Mirror of submissionId for async callers, plus a shared in-flight /start
   // promise so mount + submit never fire two concurrent /start calls (which
@@ -237,6 +246,14 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
         setTask(mapped);
         if (d.socialVerifyCodes && typeof d.socialVerifyCodes === "object") {
           setVerifyCodes(d.socialVerifyCodes as Record<number, string>);
+        }
+        if (d.socialContentRules && typeof d.socialContentRules === "object") {
+          setContentRules(
+            d.socialContentRules as Record<
+              number,
+              { labels: string[]; matchMode: "all" | "any"; canReject: boolean }
+            >
+          );
         }
 
         const us = (d.userStatus ?? {}) as { awaitingReview?: boolean };
@@ -536,6 +553,65 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
     }
   };
 
+  /**
+   * Ask whether this submission has verified yet.
+   *
+   * A social page is frequently not readable at the instant it is published, so
+   * the check at submit time says "couldn't read this" and the submission would
+   * otherwise sit waiting for a reviewer. Asking again over the next couple of
+   * minutes catches it as soon as the page appears — and because the person is
+   * still on this screen, they watch it turn green instead of being told to
+   * come back later.
+   *
+   * This is what makes the feature work with no scheduler. The cron route does
+   * the same for people who closed the tab.
+   */
+  useEffect(() => {
+    if (!submitted || !submissionId) return;
+    let stop = false;
+    let attempt = 0;
+    setVerifyState("checking");
+
+    const tick = async () => {
+      if (stop) return;
+      attempt++;
+      try {
+        const res = await fetch(`/api/tasks/submissions/${submissionId}/recheck`, {
+          method: "POST",
+        });
+        const d = (await res.json().catch(() => ({}))) as {
+          status?: string;
+          done?: boolean;
+        };
+        if (stop) return;
+        if (d.done) {
+          setVerifyState(
+            d.status === "APPROVED" || d.status === "AUTO_APPROVED"
+              ? "approved"
+              : "manual"
+          );
+          return;
+        }
+      } catch {
+        /* a failed poll is not worth telling the user about — try again */
+      }
+      // Give up after ~2 minutes and say a human will look. Backing off rather
+      // than a fixed interval: each attempt costs a fetch to somebody else's
+      // site, and the later ones are the less likely to succeed.
+      if (attempt >= 8) {
+        if (!stop) setVerifyState("manual");
+        return;
+      }
+      timer = setTimeout(tick, attempt < 3 ? 8000 : 20000);
+    };
+
+    let timer = setTimeout(tick, 6000);
+    return () => {
+      stop = true;
+      clearTimeout(timer);
+    };
+  }, [submitted, submissionId]);
+
   // ── States ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -574,18 +650,64 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
   if (submitted) {
     return (
       <div className="max-w-lg mx-auto py-16 text-center space-y-4">
-        <div className="w-16 h-16 rounded-full bg-emerald-500/15 flex items-center justify-center mx-auto">
-          <CheckCircle2 className="w-9 h-9 text-emerald-400" />
+        <div
+          className={cn(
+            "w-16 h-16 rounded-full flex items-center justify-center mx-auto transition-colors",
+            verifyState === "approved"
+              ? "bg-emerald-500/20 ring-2 ring-emerald-400/40"
+              : "bg-emerald-500/15"
+          )}
+        >
+          {verifyState === "checking" ? (
+            <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
+          ) : (
+            <CheckCircle2
+              className={cn(
+                "w-9 h-9",
+                verifyState === "approved" ? "text-emerald-400" : "text-emerald-400"
+              )}
+            />
+          )}
         </div>
         <div>
-          <h1 className="text-xl font-bold text-white">Submitted!</h1>
-          <p className="text-sm text-gray-400 mt-1">
-            Your proof is awaiting verification.{" "}
-            <span className="text-amber-400 font-semibold">
-              +{task.pointsReward.toLocaleString()} pts
-            </span>{" "}
-            pending.
-          </p>
+          {/* Three honest states rather than one hopeful one. The check runs
+              while the user is still here, so "we are looking at your link now"
+              is true and worth saying — and when it lands they see the points
+              become theirs instead of being told to come back later. */}
+          {verifyState === "approved" ? (
+            <>
+              <h1 className="text-xl font-bold text-emerald-400">Approved!</h1>
+              <p className="text-sm text-gray-400 mt-1">
+                Your link was checked automatically.{" "}
+                <span className="text-emerald-400 font-semibold">
+                  +{task.pointsReward.toLocaleString()} pts
+                </span>{" "}
+                added to your balance.
+              </p>
+            </>
+          ) : verifyState === "checking" ? (
+            <>
+              <h1 className="text-xl font-bold text-white">Submitted!</h1>
+              <p className="text-sm text-gray-400 mt-1">
+                Checking your link now — this takes up to a minute or two.{" "}
+                <span className="text-amber-400 font-semibold">
+                  +{task.pointsReward.toLocaleString()} pts
+                </span>{" "}
+                pending.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-xl font-bold text-white">Submitted!</h1>
+              <p className="text-sm text-gray-400 mt-1">
+                Your proof is awaiting verification.{" "}
+                <span className="text-amber-400 font-semibold">
+                  +{task.pointsReward.toLocaleString()} pts
+                </span>{" "}
+                pending.
+              </p>
+            </>
+          )}
         </div>
         <AdRenderer placement="TASK_COMPLETE" />
         <div className="flex flex-col sm:flex-row gap-2 justify-center pt-2">
@@ -711,21 +833,8 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
         </div>
       )}
 
-      {task.instructions && (
-        <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2">
-            Steps
-          </p>
-          <ol className="space-y-1 text-sm text-gray-300 list-decimal pl-4">
-            {task.instructions
-              .split("\n")
-              .filter(Boolean)
-              .map((line, i) => (
-                <li key={i}>{line}</li>
-              ))}
-          </ol>
-        </div>
-      )}
+      {/* One renderer for every surface — see components/user/tasks/task-instructions. */}
+      <TaskInstructions value={task.instructions} />
 
       {task.instructionVideoUrl && (
         <div className="space-y-2">
@@ -952,6 +1061,40 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
                   We fetch your public link and auto-approve when the code is
                   found — no screenshot needed. Private/login-only pages fall back
                   to manual review.
+                </p>
+              </div>
+            )}
+
+            {/* Smart Auto Verification — what the server will look for.
+                Shown BEFORE the user publishes, because a task that can
+                auto-reject has to state its rules up front; otherwise the first
+                anyone hears of a requirement is a rejection for missing it. */}
+            {item.verify === "CONTENT" && !!contentRules[idx]?.labels.length && (
+              <div className="rounded-lg bg-sky-500/5 border border-sky-500/30 p-3 space-y-1.5">
+                <p className="text-xs font-bold text-sky-300 inline-flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4" />
+                  Your {def?.label?.toLowerCase() ?? "post"} must include
+                  {contentRules[idx].matchMode === "any"
+                    ? " at least one of these"
+                    : " all of these"}
+                </p>
+                <ul className="space-y-1">
+                  {contentRules[idx].labels.map((l, k) => (
+                    <li
+                      key={k}
+                      className="text-[12px] text-sky-100/90 flex items-start gap-1.5"
+                    >
+                      <span className="text-sky-400 shrink-0">•</span>
+                      <span className="break-all">{l}</span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-[11px] text-sky-400/70">
+                  {contentRules[idx].canReject
+                    ? "We check your link automatically. If something is missing, the submission is rejected — you can fix the post and submit again."
+                    : "We check your link automatically and approve instantly on a match. Otherwise an admin reviews it."}{" "}
+                  Pages that need a login (Facebook, Instagram) can&apos;t be read
+                  by us, so those always go to an admin.
                 </p>
               </div>
             )}

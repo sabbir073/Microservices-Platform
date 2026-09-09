@@ -1,3 +1,5 @@
+import { parseContentRules, type ContentRules } from "@/lib/link-verify";
+
 /**
  * Social Media Task Taxonomy
  * --------------------------
@@ -274,6 +276,31 @@ const ROLE_ORDER: FieldRole[] = [
   "link",
   "image",
   "imagePrompt",
+  "board",
+  "meta",
+];
+
+/**
+ * Platforms where the picture comes FIRST.
+ *
+ * On Pinterest the image is the pin — the title and description are written to
+ * suit the image, not the other way round, and a pin cannot be published
+ * without one. Showing "write the description" above "make the image" asks
+ * people to work in an order the platform does not allow, so the image prompt
+ * leads there.
+ *
+ * Everything else keeps the text-first order, where the words are the post and
+ * the picture is optional decoration.
+ */
+const IMAGE_FIRST_PLATFORMS = new Set(["PINTEREST"]);
+
+const IMAGE_FIRST_ROLE_ORDER: FieldRole[] = [
+  "image",
+  "imagePrompt",
+  "title",
+  "body",
+  "hashtags",
+  "link",
   "board",
   "meta",
 ];
@@ -3422,19 +3449,39 @@ export interface BundleItem {
   /** Server-side auto-verification method for this action (anti-fake proof):
    *  - "CODE": user must include their unique code in the published content; the
    *    server fetches the proof URL and confirms it.
+   *  - "CONTENT": the server fetches the proof URL and checks it against the
+   *    admin's own rules in `contentRules` — a required link, keywords,
+   *    hashtags, a username. See lib/link-verify.
    *  - "TELEGRAM_MEMBER" / "DISCORD_MEMBER": a bot confirms the user joined.
    *  undefined = no auto-verify (manual proof review, the default). */
-  verify?: "CODE" | "TELEGRAM_MEMBER" | "DISCORD_MEMBER";
+  verify?: "CODE" | "CONTENT" | "TELEGRAM_MEMBER" | "DISCORD_MEMBER";
+  /** Rules for `verify: "CONTENT"`. Ignored by every other method. */
+  contentRules?: ContentRules;
 }
+
+/**
+ * Longest extra-AI-instruction an admin may write for one action.
+ *
+ * Generous on purpose: this is guidance an admin types once per task, and the
+ * previous UI implied a 200-character ceiling that never actually existed.
+ * Enforced in BOTH places — the editor stops at it and `coerceBundleItem`
+ * clamps on the way in, so a value that skipped the editor cannot exceed it.
+ */
+export const AI_PROMPT_MAX = 5000;
 
 /** How a bundle item sources its content. See `BundleItem.aiMode`. */
 export type AiMode = "off" | "generate" | "diy" | "both";
 const AI_MODES: AiMode[] = ["off", "generate", "diy", "both"];
 
 /** Auto-verification methods a bundle item can use. */
-export type VerifyMethod = "CODE" | "TELEGRAM_MEMBER" | "DISCORD_MEMBER";
+export type VerifyMethod =
+  | "CODE"
+  | "CONTENT"
+  | "TELEGRAM_MEMBER"
+  | "DISCORD_MEMBER";
 const VERIFY_METHODS: VerifyMethod[] = [
   "CODE",
+  "CONTENT",
   "TELEGRAM_MEMBER",
   "DISCORD_MEMBER",
 ];
@@ -3486,7 +3533,10 @@ function coerceBundleItem(raw: unknown): BundleItem | null {
       ? coerceProofRequirements(r.proofRequirements)
       : { ...DEFAULT_PROOF },
     aiPromptEnabled: aiMode !== "off",
-    aiPrompt: typeof r.aiPrompt === "string" ? r.aiPrompt : null,
+    aiPrompt:
+      typeof r.aiPrompt === "string"
+        ? r.aiPrompt.slice(0, AI_PROMPT_MAX)
+        : null,
     watchSeconds:
       typeof r.watchSeconds === "number" && Number.isFinite(r.watchSeconds)
         ? r.watchSeconds
@@ -3496,6 +3546,11 @@ function coerceBundleItem(raw: unknown): BundleItem | null {
       VERIFY_METHODS.includes(r.verify as VerifyMethod)
         ? (r.verify as VerifyMethod)
         : undefined,
+    // Only carried for CONTENT. Parsing it unconditionally would leave stale
+    // rules attached to an item whose method was switched away, and a later
+    // switch back would silently revive them.
+    contentRules:
+      r.verify === "CONTENT" ? parseContentRules(r.contentRules) : undefined,
   };
 }
 
@@ -3909,6 +3964,26 @@ export function validateSocialBundle(cfg: {
     });
     if (missing) {
       itemErrors[idx] = `Fill "${missing.label}" for ${def.label}.`;
+      return;
+    }
+    // Smart Auto Verification with nothing to check would send every single
+    // submission to manual review while the admin believes it is automated —
+    // a switch that looks on and does nothing. Caught at save time, where it
+    // is one edit away from being fixed.
+    // Count the rules that will SURVIVE saving, not the rows on screen.
+    // `parseContentRules` drops any criterion with a blank value (a rule that
+    // matches anything is worse than no rule), so counting the raw array let an
+    // admin add one empty row, pass this check, and save a task with the switch
+    // on and nothing behind it — precisely what this guard exists to stop.
+    if (
+      item.verify === "CONTENT" &&
+      !parseContentRules(item.contentRules).criteria.length
+    ) {
+      itemErrors[idx] = `Add at least one verification rule for ${def.label}, or turn Smart Auto Verification off.`;
+      return;
+    }
+    if (item.verify === "CONTENT" && !item.proofRequirements.url) {
+      itemErrors[idx] = `${def.label} needs a proof URL — there is nothing to fetch without one.`;
     }
   });
   if (Object.keys(itemErrors).length) {
@@ -3936,7 +4011,14 @@ export function isPostCreationAction(actionKey: string): boolean {
   return actionPriority(actionKey) === 80 && !NON_CREATION_TIER_80.has(actionKey);
 }
 
-function buildRecipeSpec(a: SocialAction): RecipeStepSpec[] {
+function buildRecipeSpec(
+  a: SocialAction,
+  platformKey?: string
+): RecipeStepSpec[] {
+  const order =
+    platformKey && IMAGE_FIRST_PLATFORMS.has(platformKey)
+      ? IMAGE_FIRST_ROLE_ORDER
+      : ROLE_ORDER;
   return a.adminFields
     .filter((f) => fieldRole(f) !== "target")
     .map((f) => {
@@ -3949,7 +4031,7 @@ function buildRecipeSpec(a: SocialAction): RecipeStepSpec[] {
         aiGeneratable: a.supportsAiPrompt && AI_ROLES.has(role),
       };
     })
-    .sort((x, y) => ROLE_ORDER.indexOf(x.role) - ROLE_ORDER.indexOf(y.role));
+    .sort((x, y) => order.indexOf(x.role) - order.indexOf(y.role));
 }
 
 /**
@@ -3993,7 +4075,7 @@ function augmentCatalog(): void {
           .map((f) => f.key);
       }
 
-      action.recipe = buildRecipeSpec(action);
+      action.recipe = buildRecipeSpec(action, platform.key);
     }
   }
 }

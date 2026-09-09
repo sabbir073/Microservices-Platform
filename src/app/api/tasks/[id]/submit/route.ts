@@ -46,10 +46,17 @@ import {
 } from "@/lib/social-tasks";
 import { verifyCodeFor, contentHasCode } from "@/lib/task-verify-code";
 import {
+  defaultContentRules,
+  evaluateContentRules,
+  shouldAutoReject,
+  toPageContent,
+  looksUnreadable,
+} from "@/lib/link-verify";
+import {
   verifyTelegramMember,
   verifyDiscordMember,
 } from "@/lib/social-verify-membership";
-import { fetchRawHtml, fetchRawBytes } from "@/lib/link-preview";
+import { fetchRawHtml, fetchRawBytes, CRAWLER_UA } from "@/lib/link-preview";
 import { getSetting } from "@/lib/system-settings";
 import { bumpTrust, TRUST_APPROVE } from "@/lib/trust";
 import {
@@ -571,6 +578,10 @@ export async function POST(
     // at their public URLs — then the submission is trustworthy enough to
     // auto-approve without human review.
     let socialCodeAutoApprove = false;
+    // Set only when a CONTENT-verified page was READ and genuinely failed the
+    // admin's rules, on a task configured to reject rather than review. Stays
+    // null for every "we couldn't read it" case — see lib/link-verify.
+    let socialAutoRejectReason: string | null = null;
     if (isSocial) {
       if (socialBundle) {
         // Store per-action proof; mirror item[0] into the legacy keys so any
@@ -797,22 +808,106 @@ export async function POST(
             links.forEach((l) => linkByPlatform.set(l.platform, l.platformUserId));
           }
 
+          // Fetch every proof page ONCE, up front, in parallel.
+          //
+          // This loop used to `await fetchRawHtml` inside itself, so a 4-item
+          // bundle serialised four 6s-timeout fetches — up to ~24s inside a
+          // request. Distinct URLs only: a bundle often points several actions
+          // at the same post. Nothing here runs inside a transaction (Accelerate
+          // rejects tx > 15s, P6005).
+          const fetchUrls = [
+            ...new Set(
+              verifyIdx
+                .filter((x) => x.it.verify === "CODE" || x.it.verify === "CONTENT")
+                .map((x) => (socialBundle[x.i]?.proofUrl as string | undefined) ?? "")
+                .filter(Boolean)
+            ),
+          ];
+          const pageByUrl = new Map<string, string | null>();
+          if (fetchUrls.length > 0) {
+            // Ask as a link-preview crawler FIRST.
+            //
+            // Measured, not assumed: a real Reddit post serves no Open Graph
+            // tags at all to a browser user-agent and its full title and body
+            // text to this one. TikTok is the same. Those platforms were being
+            // sent to manual review for a header we chose.
+            //
+            // Falls back to the browser UA, because the reverse also happens —
+            // some sites 403 an obvious bot — and one extra request on failure
+            // is cheaper than a wrongly unverifiable submission.
+            const fetched = await Promise.all(
+              fetchUrls.map(async (u) => {
+                const asCrawler = await fetchRawHtml(u, CRAWLER_UA).catch(() => null);
+                if (asCrawler && !looksUnreadable(toPageContent(asCrawler))) {
+                  return asCrawler;
+                }
+                const asBrowser = await fetchRawHtml(u).catch(() => null);
+                // Keep whichever actually said something; prefer the browser
+                // result only when the crawler result was unusable.
+                if (asBrowser && !looksUnreadable(toPageContent(asBrowser))) {
+                  return asBrowser;
+                }
+                return asCrawler ?? asBrowser;
+              })
+            );
+            fetchUrls.forEach((u, k) => pageByUrl.set(u, fetched[k]));
+          }
+
           let allVerified = true;
           for (const { it, i } of verifyIdx) {
-            let status: "verified" | "failed" | "code_missing" | "unverifiable" =
-              "unverifiable";
+            let status:
+              | "verified"
+              | "failed"
+              | "code_missing"
+              | "criteria_failed"
+              | "unverifiable" = "unverifiable";
             if (it.verify === "CODE") {
               const proofUrl =
                 (socialBundle[i]?.proofUrl as string | undefined) ?? "";
               const expected = verifyCodeFor(task.id, i, session.user.id);
               if (!proofUrl) status = "code_missing";
               else {
-                const html = await fetchRawHtml(proofUrl);
+                const html = pageByUrl.get(proofUrl) ?? null;
                 if (html === null) status = "unverifiable";
                 else
                   status = contentHasCode(html, expected)
                     ? "verified"
                     : "code_missing";
+              }
+            } else if (it.verify === "CONTENT") {
+              // Smart Auto Verification: compare the published page against the
+              // admin's own rules (required link / keywords / hashtags /
+              // username). See lib/link-verify for why a login wall must come
+              // back "unverifiable" and never "criteria_failed".
+              const proofUrl =
+                (socialBundle[i]?.proofUrl as string | undefined) ?? "";
+              const rules = it.contentRules ?? defaultContentRules();
+              const html = proofUrl ? (pageByUrl.get(proofUrl) ?? null) : null;
+              const evaluation = evaluateContentRules(
+                html === null ? null : toPageContent(html),
+                rules,
+                {
+                  submittedUsername:
+                    (socialBundle[i]?.username as string | undefined) ?? null,
+                  expectedCode: verifyCodeFor(task.id, i, session.user.id),
+                  codeMatcher: contentHasCode,
+                }
+              );
+              status =
+                evaluation.verdict === "verified"
+                  ? "verified"
+                  : evaluation.verdict === "criteria_failed"
+                    ? "criteria_failed"
+                    : "unverifiable";
+              if (metaItems[i]) {
+                metaItems[i].verifyDetails = evaluation.results;
+                metaItems[i].verifySummary = evaluation.summary;
+              }
+              // Only a page we actually READ, that genuinely did not match, on a
+              // task whose admin asked for it. `shouldAutoReject` is the single
+              // place that judgement lives.
+              if (shouldAutoReject(evaluation.verdict, rules)) {
+                socialAutoRejectReason ??= evaluation.summary;
               }
             } else if (
               it.verify === "TELEGRAM_MEMBER" ||
@@ -968,9 +1063,16 @@ export async function POST(
     // Computed after all metadata (incl. heldForReview) is finalized.
     const hasMetadata = Object.keys(submissionMetadata).length > 0;
 
+    // Auto-reject rides the SAME atomic claim below rather than a second write,
+    // so the concurrency guard that stops a double-submit paying twice also
+    // stops it rejecting twice. It can only be set when the page was read and
+    // genuinely failed, so it never contends with shouldAutoApprove.
+    const autoRejected = !shouldAutoApprove && !!socialAutoRejectReason;
     const newStatus = shouldAutoApprove
       ? SubmissionStatus.AUTO_APPROVED
-      : SubmissionStatus.PENDING;
+      : autoRejected
+        ? SubmissionStatus.REJECTED
+        : SubmissionStatus.PENDING;
 
     const resolvedProof = isSocial
       ? socialBundle
@@ -1014,6 +1116,12 @@ export async function POST(
           reviewedAt: new Date(),
           pointsEarned: isBoardTask ? 0 : task.pointsReward,
           xpEarned: isBoardTask ? 0 : task.xpReward,
+        }),
+        // No points penalty, matching the VIDEO unique-key auto-reject above:
+        // a penalty is a deliberate admin act, not something a fetch decides.
+        ...(autoRejected && {
+          reviewedAt: new Date(),
+          rejectionReason: socialAutoRejectReason,
         }),
       },
     });
@@ -1239,6 +1347,17 @@ export async function POST(
         message: shouldAutoApprove
           ? "Counted toward your Task Board progress. Claim the board once all tasks are done."
           : "Submitted. Reward will be granted when you claim the Task Board.",
+      });
+    }
+
+    // Auto-rejected by content verification: say WHICH rule was missing, so the
+    // user can fix the post and resubmit instead of guessing. A bare "rejected"
+    // on an automated decision is how a support ticket gets written.
+    if (autoRejected) {
+      return NextResponse.json({
+        submission: updatedSubmission,
+        status: "rejected",
+        message: `Your link didn't meet the task requirements — ${socialAutoRejectReason}. Edit your post and submit again.`,
       });
     }
 

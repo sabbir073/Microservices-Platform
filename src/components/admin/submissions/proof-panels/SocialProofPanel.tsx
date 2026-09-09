@@ -9,6 +9,14 @@ interface Props {
   task: PanelTask;
 }
 
+/** One admin rule and whether the fetched page satisfied it. */
+interface VerifyDetail {
+  kind?: string | null;
+  value?: string | null;
+  matched?: boolean | null;
+  label?: string | null;
+}
+
 interface ItemProof {
   action?: string | null;
   proofUrl?: string | null;
@@ -17,7 +25,16 @@ interface ItemProof {
   generatedContent?: string | null;
   watched?: boolean | null;
   reviewStatus?: "approved" | "rejected" | null;
-  verifyStatus?: "verified" | "code_missing" | "failed" | "unverifiable" | null;
+  verifyStatus?:
+    | "verified"
+    | "code_missing"
+    | "failed"
+    | "criteria_failed"
+    | "unverifiable"
+    | null;
+  /** Per-rule outcome from Smart Auto Verification. */
+  verifyDetails?: VerifyDetail[] | null;
+  verifySummary?: string | null;
 }
 
 const VERIFY_BADGE: Record<
@@ -25,7 +42,7 @@ const VERIFY_BADGE: Record<
   { label: string; cls: string }
 > = {
   verified: {
-    label: "✓ code verified",
+    label: "✓ verified",
     cls: "bg-emerald-500/15 text-emerald-400",
   },
   code_missing: {
@@ -35,6 +52,13 @@ const VERIFY_BADGE: Record<
   failed: {
     label: "⚠ not a member",
     cls: "bg-red-500/15 text-red-400",
+  },
+  // Amber, not red: the page WAS read and did not match, which is a real
+  // finding — but it is a different thing from "we could not look", and an
+  // admin deciding by hand needs to be able to tell them apart at a glance.
+  criteria_failed: {
+    label: "⚠ content didn't match",
+    cls: "bg-amber-500/15 text-amber-300",
   },
   unverifiable: {
     label: "⏳ couldn't verify — review",
@@ -178,6 +202,43 @@ export function SocialProofPanel({ submission, task }: Props) {
                   <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-gray-800 border border-gray-700 text-gray-200">
                     <AtSign className="w-3.5 h-3.5 text-pink-400" />
                     <span className="font-mono">{proof.username}</span>
+                  </div>
+                )}
+
+                {/* Which rule passed and which failed. A badge saying "didn't
+                    match" is a verdict; this is the evidence behind it, so
+                    approving anyway is an informed decision rather than a
+                    guess about what the machine objected to. */}
+                {!!proof.verifyDetails?.length && (
+                  <div className="rounded-lg bg-gray-950 border border-gray-800 p-2.5">
+                    <p className="text-[11px] text-gray-500 mb-1.5">
+                      Auto-verification{proof.verifySummary ? ` — ${proof.verifySummary}` : ""}
+                    </p>
+                    <ul className="space-y-1">
+                      {proof.verifyDetails.map((d, k) => (
+                        <li
+                          key={k}
+                          className="flex items-start gap-1.5 text-xs"
+                        >
+                          <span
+                            className={
+                              d.matched
+                                ? "text-emerald-400 shrink-0"
+                                : "text-red-400 shrink-0"
+                            }
+                          >
+                            {d.matched ? "✓" : "✗"}
+                          </span>
+                          <span
+                            className={
+                              d.matched ? "text-gray-300" : "text-gray-400"
+                            }
+                          >
+                            {d.label ?? `${d.kind ?? "rule"} “${d.value ?? ""}”`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
 

@@ -1,10 +1,10 @@
 // EarnGPT service worker — web-push notifications + minimal offline shell +
 // runtime asset caching for offline depth.
-const CACHE = "earngpt-shell-v3";
+const CACHE = "earngpt-shell-v4";
 // Separate cache for hashed static assets / images / fonts served
 // stale-while-revalidate. Kept apart from the shell so a shell bump doesn't
 // throw away already-fetched bundles.
-const RUNTIME = "earngpt-runtime-v3";
+const RUNTIME = "earngpt-runtime-v4";
 // Soft cap so the runtime cache can't grow unbounded on a long session.
 const RUNTIME_MAX_ENTRIES = 160;
 const OFFLINE_URL = "/";
@@ -48,9 +48,19 @@ self.addEventListener("activate", (event) => {
 // Only same-origin, cache-friendly assets: Next's hashed build output, fonts,
 // PWA icons and images. Everything else (API, HTML docs, range media) is left
 // to the network so we never serve stale data or break streaming.
+const IS_DEV_HOST =
+  self.location.hostname === "localhost" ||
+  self.location.hostname === "127.0.0.1" ||
+  self.location.hostname === "[::1]";
+
 function isRuntimeAsset(url, req) {
   if (url.origin !== self.location.origin) return false;
   if (req.headers.has("range")) return false;
+  // Dev builds rehash their chunk URLs on every rebuild and the dev server is
+  // restarted constantly, so a cached chunk routinely outlives the module it
+  // names — producing "Failed to load chunk" for a file that no longer exists.
+  // There is no offline story for a dev server, so there is nothing to trade.
+  if (IS_DEV_HOST) return false;
   const p = url.pathname;
   if (p.startsWith("/api/")) return false;
   return (
@@ -72,17 +82,29 @@ async function trimRuntime() {
 
 // Stale-while-revalidate: serve the cached copy immediately (if any) and
 // refresh it in the background; fall back to the network on a cache miss.
+//
+// EVERY path here must resolve to a real Response. `respondWith()` takes what
+// this returns, and handing it `undefined` throws
+// "Failed to convert value to 'Response'" — which is what happened on a cache
+// MISS while the network was down: `cached` was undefined, the catch returned
+// that same undefined, and the whole request died inside the service worker
+// instead of failing like a normal network error. That is precisely the offline
+// case this function exists to handle, so it was broken exactly when it
+// mattered. `Response.error()` is the honest answer: it surfaces to the page as
+// an ordinary network failure that the app's own error handling can see.
 async function staleWhileRevalidate(req) {
   const cache = await caches.open(RUNTIME);
   const cached = await cache.match(req);
   const network = fetch(req)
     .then((res) => {
       if (res && res.ok && res.type === "basic") {
-        cache.put(req, res.clone()).then(trimRuntime);
+        // No unhandled rejection: a full quota makes cache.put throw, and an
+        // unhandled rejection inside a SW is a console error on every asset.
+        cache.put(req, res.clone()).then(trimRuntime).catch(() => {});
       }
       return res;
     })
-    .catch(() => cached);
+    .catch(() => cached || Response.error());
   return cached || network;
 }
 
@@ -110,7 +132,11 @@ self.addEventListener("fetch", (event) => {
     return;
   }
   if (isRuntimeAsset(url, req)) {
-    event.respondWith(staleWhileRevalidate(req));
+    // Belt and braces: even if the helper is later changed to resolve to
+    // something falsy, the page gets a Response rather than a SW TypeError.
+    event.respondWith(
+      staleWhileRevalidate(req).then((res) => res || Response.error())
+    );
   }
 });
 

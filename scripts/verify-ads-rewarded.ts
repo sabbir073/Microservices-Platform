@@ -56,7 +56,14 @@ const code = (p: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 
-const SANDBOX = "ZZ_VERIFY_REWARDED";
+// Unique per run.
+//
+// This was a fixed string, so the fixture user's email was the same every time
+// and two overlapping runs raced to create it — the loser died with
+// "Unique constraint failed on (email)" and reported a failure that had nothing
+// to do with the code under test. A suite that fails when it runs twice at once
+// teaches you to distrust its failures, which is worse than no suite.
+const SANDBOX = `ZZ_VERIFY_REWARDED_${process.pid}_${Date.now().toString(36)}`;
 const cleanup: Array<() => Promise<unknown>> = [];
 
 async function main() {
