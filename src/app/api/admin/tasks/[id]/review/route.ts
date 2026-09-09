@@ -46,6 +46,16 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     );
   }
 
+  // A rejection without a reason is one the buyer cannot act on: they paid for
+  // this, and "rejected" alone tells them nothing to change. Required on the
+  // server too, so it holds for any caller, not just the admin UI.
+  if (action === "reject" && reason.length < 5) {
+    return NextResponse.json(
+      { error: "Give the buyer a reason — they see it in their Buyer Hub." },
+      { status: 400 }
+    );
+  }
+
   if (action === "approve") {
     await prisma.task.update({ where: { id }, data: { status: "ACTIVE" } });
     if (task.fundedByUserId) {
@@ -100,7 +110,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
   await prisma.$transaction(async (tx) => {
     await tx.task.update({
       where: { id },
-      data: { status: "REJECTED", remainingBudget: 0, rejectionReason: reason || "Not approved." },
+      data: { status: "REJECTED", remainingBudget: 0, rejectionReason: reason },
     });
     if (task.fundedByUserId && refundUsd > 0) {
       await tx.user.update({

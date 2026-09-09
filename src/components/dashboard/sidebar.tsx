@@ -27,6 +27,7 @@ import {
   Package,
   Briefcase,
   ClipboardPlus,
+  ShoppingBag,
   ArrowUpRight,
   HelpCircle,
   Bell,
@@ -136,6 +137,14 @@ const adminNavigation = [
 
 const tutorNavigation = [
   { name: "Tutor Hub", href: "/tutor/dashboard", icon: GraduationCap },
+];
+
+// Same shape as the admin and tutor entries above: a mode you switch INTO,
+// pinned below the main nav rather than buried inside it, because a buyer's
+// work is a different job from earning and mixing them makes both harder to
+// scan. Gated on the `createTasks` capability, not a role.
+const buyerNavigation = [
+  { name: "Buyer Hub", href: "/buyer", icon: ShoppingBag },
 ];
 
 // Extract SidebarContent as a separate component
@@ -265,6 +274,38 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features, hidde
                       isActive
                         ? "bg-indigo-500/10 text-indigo-300"
                         : "text-gray-400 hover:text-indigo-300 hover:bg-gray-800"
+                    )}
+                  >
+                    <item.icon className="w-5 h-5" />
+                    {item.name}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+
+      {/* Buyer Navigation — for anyone granted task creation */}
+      {features?.includes("createTasks") && !hidden.has("/buyer") && (
+        <div className="border-t border-gray-800 px-3 py-4">
+          <p className="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
+            Buying
+          </p>
+          <ul className="space-y-1">
+            {buyerNavigation.map((item) => {
+              const isActive =
+                pathname === item.href || pathname.startsWith(`${item.href}/`);
+              return (
+                <li key={item.name}>
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    className={cn(
+                      "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                      isActive
+                        ? "bg-emerald-500/10 text-emerald-300"
+                        : "text-gray-400 hover:text-emerald-300 hover:bg-gray-800"
                     )}
                   >
                     <item.icon className="w-5 h-5" />

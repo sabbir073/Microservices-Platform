@@ -7,6 +7,7 @@ import {
   isFrequencyCapped,
 } from "../src/lib/ad-frequency";
 import { validateSettingValues } from "../src/lib/setting-guards";
+import { dbMinGap } from "../src/lib/rate-limit-db";
 
 /**
  * Phase 4 verification — full-screen ad pacing.
@@ -109,6 +110,55 @@ async function main() {
     "the other nine are refusals, not errors — the reward still pays",
     burst.filter((b) => !b.allowed).length === 9
   );
+
+  // The gap must slide with the last ad, not with the wall clock.
+  //
+  // This suite used to fail roughly whenever a run happened to straddle a
+  // minute boundary, and "10 claims can't take 60 seconds" made that look like
+  // a flake. It was not: the gap was built on `dbRateLimit`, which buckets by
+  // floor(now / windowMs), so an ad at 10:59:59 and another at 11:00:00 both
+  // passed a 60-second gap one second apart. Asserted directly here rather
+  // than left to chance, since chance is what hid it.
+  console.log("\n3b. The gap slides, it is not a per-minute quota");
+  {
+    const gapMs = 60_000;
+    const userC = `freqverify-c-${Date.now()}`;
+    buckets.push(`adfreq:gap:${userC}`);
+
+    const first = await dbMinGap(`adfreq:gap:${userC}`, gapMs);
+    check("the first claim takes the slot", first.ok);
+
+    const again = await dbMinGap(`adfreq:gap:${userC}`, gapMs);
+    check("an immediate second is refused", !again.ok);
+    check(
+      "…and is told how long is left, not a bare no",
+      again.retryAfterSec > 0 && again.retryAfterSec <= 60,
+      `retryAfter=${again.retryAfterSec}`
+    );
+
+    // The boundary itself: a fixed-window limiter resets here, a sliding one
+    // does not. Rewinding the stored re-open time to just after the next
+    // wall-clock window start reproduces the straddle deterministically.
+    const nextWindowStart = (Math.floor(Date.now() / gapMs) + 1) * gapMs;
+    await prisma.rateLimitHit.updateMany({
+      where: { bucket: `adfreq:gap:${userC}` },
+      data: { expiresAt: new Date(nextWindowStart + 30_000) },
+    });
+    const acrossBoundary = await dbMinGap(`adfreq:gap:${userC}`, gapMs);
+    check(
+      "a claim on the far side of a wall-clock window is STILL refused",
+      !acrossBoundary.ok,
+      "this is the case the old fixed-window gap let through"
+    );
+
+    // And it does re-open once the gap has genuinely elapsed.
+    await prisma.rateLimitHit.updateMany({
+      where: { bucket: `adfreq:gap:${userC}` },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    const afterGap = await dbMinGap(`adfreq:gap:${userC}`, gapMs);
+    check("once the gap has elapsed, the next ad is allowed", afterGap.ok);
+  }
 
   /* 4. An exempt placement is never refused */
   console.log("\n4. Exempt surfaces");
