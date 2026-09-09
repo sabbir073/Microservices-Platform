@@ -6,6 +6,8 @@ import { writeAudit } from "@/lib/audit";
 import { usd } from "@/lib/utils";
 import { notifyUser } from "@/lib/notify";
 import { getPointsPerUsd } from "@/lib/economy";
+import { getBuyerSettings } from "@/lib/buyer-settings";
+import { toNum } from "@/lib/money";
 import { TransactionType, TransactionStatus, NotificationType } from "@/generated/prisma/client";
 
 interface RouteParams {
@@ -67,12 +69,33 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ success: true, status: "ACTIVE" });
   }
 
-  // Reject → refund the remaining budget to the creator's wallet.
+  // Reject -> refund the remaining budget to the creator's wallet.
   const pointsPerUsd = await getPointsPerUsd();
-  const refundUsd =
+  const budgetRefundUsd =
     task.fundedByUserId && task.remainingBudget > 0
       ? task.remainingBudget / pointsPerUsd
       : 0;
+
+  // ...and the platform fee they paid to submit it, unless the admin has
+  // chosen to keep it as a review charge. Charging a buyer a commission for a
+  // task you then refuse is the fastest way to lose the buyer, so the setting
+  // defaults to refunding. The fee is found on its own ledger row rather than
+  // recomputed from the current fee percent — the rate may have changed since
+  // they paid, and they are owed what they actually paid.
+  const buyer = await getBuyerSettings();
+  let feeRefundUsd = 0;
+  if (task.fundedByUserId && buyer.refundFeeOnReject) {
+    const feeRow = await prisma.transaction.findFirst({
+      where: {
+        userId: task.fundedByUserId,
+        reference: `task_fee_${task.id}`,
+      },
+      select: { amount: true },
+    });
+    // The fee was written as a negative charge on the payer.
+    feeRefundUsd = feeRow ? Math.abs(toNum(feeRow.amount)) : 0;
+  }
+  const refundUsd = budgetRefundUsd + feeRefundUsd;
 
   await prisma.$transaction(async (tx) => {
     await tx.task.update({
@@ -93,9 +116,30 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
           points: 0,
           description: `Task budget refund — "${task.title}"`,
           reference: `task_refund_${task.id}`,
-          metadata: { taskId: task.id, kind: "task_refund" },
+          metadata: {
+            taskId: task.id,
+            kind: "task_refund",
+            budgetRefundUsd,
+            feeRefundUsd,
+          },
         },
       });
+      // Reverse the revenue row as well, so the finance console does not keep
+      // reporting a fee the platform gave back as income.
+      if (feeRefundUsd > 0) {
+        await tx.transaction.create({
+          data: {
+            userId: task.fundedByUserId,
+            type: TransactionType.ADMIN_FEE,
+            status: TransactionStatus.COMPLETED,
+            amount: feeRefundUsd,
+            points: 0,
+            description: `Platform fee refunded — "${task.title}"`,
+            reference: `task_fee_refund_${task.id}`,
+            metadata: { taskId: task.id, kind: "task_fee_refund" },
+          },
+        });
+      }
     }
   });
 
@@ -104,7 +148,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       userId: task.fundedByUserId,
       type: NotificationType.SYSTEM,
       title: "Task rejected",
-      message: `Your task "${task.title}" was rejected${reason ? `: ${reason}` : ""}. Your budget was refunded.`,
+      message: `Your task "${task.title}" was rejected${reason ? `: ${reason}` : ""}. ${usd(refundUsd)} was refunded to your wallet${feeRefundUsd > 0 ? " (budget + platform fee)" : ""}.`,
       link: "/create-task",
     }).catch(() => {});
   }

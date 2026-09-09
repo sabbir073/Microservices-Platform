@@ -18,6 +18,10 @@ export type SourceKey =
   | "lottery"
   | "checkin"
   | "adcredit"
+  // Commission the platform takes when a buyer funds a task. Its own bucket
+  // rather than folded into "admin": it is a revenue STREAM the owner needs to
+  // read off the finance console, not an occasional administrative charge.
+  | "taskfee"
   | "purchase"
   | "refund"
   | "admin"
@@ -49,8 +53,11 @@ export function deriveSource(type: string, reference?: string | null): SourceKey
       return "checkin";
     case "AD_CREDIT_PURCHASE":
       return "adcredit";
-    case "PENALTY":
     case "ADMIN_FEE":
+      // Buyer task commission is written as ADMIN_FEE with a `task_fee_`
+      // reference (see /api/tasks/create).
+      return ref.startsWith("task_fee_") ? "taskfee" : "admin";
+    case "PENALTY":
       return "admin";
     case "REFUND":
       return "refund";
@@ -96,6 +103,7 @@ export const SOURCE_META: Record<SourceKey, SourceMeta> = {
   lottery: { label: "Lottery", icon: "Trophy", tone: "bg-amber-500/10 text-amber-400", swatch: "bg-amber-500" },
   checkin: { label: "Check-in", icon: "CalendarCheck", tone: "bg-teal-500/10 text-teal-400", swatch: "bg-teal-500" },
   adcredit: { label: "Ad Credit", icon: "Megaphone", tone: "bg-violet-500/10 text-violet-400", swatch: "bg-violet-500", outflow: true },
+  taskfee: { label: "Task fees", icon: "Receipt", tone: "bg-teal-500/10 text-teal-400", swatch: "bg-teal-500" },
   purchase: { label: "Purchase", icon: "ShoppingCart", tone: "bg-amber-500/10 text-amber-400", swatch: "bg-amber-500", outflow: true },
   refund: { label: "Refund", icon: "Undo2", tone: "bg-green-500/10 text-green-400", swatch: "bg-green-500" },
   admin: { label: "Adjustment", icon: "Shield", tone: "bg-slate-500/10 text-slate-400", swatch: "bg-slate-500" },
@@ -106,5 +114,5 @@ export const SOURCE_META: Record<SourceKey, SourceMeta> = {
 export const SOURCE_ORDER: SourceKey[] = [
   "task", "social", "referral", "affiliate", "course", "marketplace",
   "deposit", "convert", "withdraw", "bonus", "lottery", "checkin",
-  "adcredit", "purchase", "refund", "admin", "other",
+  "adcredit", "taskfee", "purchase", "refund", "admin", "other",
 ];

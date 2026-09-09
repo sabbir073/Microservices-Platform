@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Send, Share2, Sparkles, Wallet, Target } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { usd } from "@/lib/utils";
+import { quoteTask } from "@/lib/buyer-quote";
 import {
   TaskAudienceTargeting,
   type TaskAudienceValue,
@@ -26,13 +28,29 @@ const EMPTY_AUDIENCE: TaskAudienceValue = {
 export function CreateTaskView({
   pointsPerUsd,
   canTarget = false,
+  feePercent = 0,
+  minPoints = 1,
+  maxPoints = 100000,
+  maxCompletions = 100000,
+  allowedTypes = ["SOCIAL", "CUSTOM"],
+  needsReview = true,
 }: {
   pointsPerUsd?: number;
   /** When true, the user may set audience targeting (admin-granted `targetTasks`). */
   canTarget?: boolean;
+  /** Platform commission, from the admin Buyer & Task Funding settings. */
+  feePercent?: number;
+  minPoints?: number;
+  maxPoints?: number;
+  maxCompletions?: number;
+  allowedTypes?: string[];
+  /** False when the admin publishes buyer tasks without review. */
+  needsReview?: boolean;
 }) {
   const router = useRouter();
-  const [type, setType] = useState<TaskType>("SOCIAL");
+  const [type, setType] = useState<TaskType>(
+    allowedTypes.includes("SOCIAL") ? "SOCIAL" : "CUSTOM"
+  );
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   // SOCIAL
@@ -48,8 +66,25 @@ export function CreateTaskView({
   const [audience, setAudience] = useState<TaskAudienceValue>(EMPTY_AUDIENCE);
   const [busy, setBusy] = useState(false);
 
-  const budget = Math.max(0, Math.floor(pointsReward) * Math.floor(targetCount));
-  const budgetUsd = (budget / (pointsPerUsd || 1000)).toFixed(2);
+  // The SAME function the server prices the charge with, so the number on this
+  // screen and the number debited cannot drift apart.
+  const quote = quoteTask({
+    pointsPerCompletion: pointsReward,
+    completions: targetCount,
+    pointsPerUsd: pointsPerUsd || 1000,
+    feePercent,
+  });
+  const budget = quote.budgetPoints;
+
+  // Admin bounds, surfaced before submit rather than as a server rejection.
+  const limitError =
+    pointsReward < minPoints
+      ? `Minimum reward is ${minPoints.toLocaleString()} points per completion.`
+      : pointsReward > maxPoints
+        ? `Maximum reward is ${maxPoints.toLocaleString()} points per completion.`
+        : targetCount > maxCompletions
+          ? `One task can be funded for at most ${maxCompletions.toLocaleString()} completions.`
+          : null;
 
   const submit = async () => {
     if (!title.trim() || !description.trim()) {
@@ -140,14 +175,17 @@ export function CreateTaskView({
         </p>
       </div>
 
-      {/* Type toggle */}
+      {/* Type toggle. Only the types the admin allows buyers to create — an
+          option that the API will refuse is worse than no option. */}
       <div className="grid grid-cols-2 gap-2">
         {(
           [
             { value: "SOCIAL", label: "Social", icon: Share2 },
             { value: "CUSTOM", label: "Custom", icon: Sparkles },
           ] as const
-        ).map((opt) => {
+        )
+          .filter((opt) => allowedTypes.includes(opt.value))
+          .map((opt) => {
           const Icon = opt.icon;
           const active = type === opt.value;
           return (
@@ -310,31 +348,70 @@ export function CreateTaskView({
         </div>
       )}
 
-      {/* Live cost estimate */}
-      <div className="glass rounded-xl p-4 flex items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-indigo-500/10 ring-1 ring-indigo-500/20 flex items-center justify-center shrink-0">
-          <Wallet className="w-5 h-5 text-indigo-400" />
+      {/* Invoice — what this task costs, itemised before you commit to it. */}
+      <div className="glass rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 ring-1 ring-indigo-500/20 flex items-center justify-center shrink-0">
+            <Wallet className="w-5 h-5 text-indigo-400" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">Order summary</p>
+            <p className="text-[11px] text-gray-500">
+              {pointsReward.toLocaleString()} pts ×{" "}
+              {targetCount.toLocaleString()} completions
+            </p>
+          </div>
         </div>
-        <div className="flex-1">
-          <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-white tabular-nums">
-              {budget.toLocaleString()}
+
+        <div className="mt-3 space-y-1.5 text-sm">
+          <div className="flex justify-between">
+            <span className="text-gray-400">
+              Reward pool ({budget.toLocaleString()} pts)
             </span>
-            <span className="text-sm text-gray-400">pts</span>
-            <span className="text-sm text-gray-500">
-              ≈ ${budgetUsd}
+            <span className="tabular-nums text-gray-200">
+              {usd(quote.rewardUsd)}
             </span>
           </div>
-          <p className="text-[11px] text-gray-500 mt-0.5">
-            {pointsReward.toLocaleString()} pts × {targetCount.toLocaleString()}{" "}
-            completions. Funded from your wallet; refunded if rejected.
+          {feePercent > 0 && (
+            <div className="flex justify-between">
+              <span className="text-gray-400">Platform fee ({feePercent}%)</span>
+              <span className="tabular-nums text-gray-200">
+                {usd(quote.feeUsd)}
+              </span>
+            </div>
+          )}
+          <div className="flex justify-between border-t border-white/10 pt-1.5 font-bold">
+            <span className="text-white">Charged to your wallet</span>
+            <span className="tabular-nums text-white">
+              {usd(quote.totalUsd)}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-3 space-y-1 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-gray-500">
+          <p>
+            Each approved completion draws{" "}
+            {pointsReward.toLocaleString()} pts from the pool. Whatever is left
+            when the task ends is returned to your wallet.
+          </p>
+          <p>
+            {needsReview
+              ? "An admin reviews the task before it goes live. If it is rejected you get the budget"
+              : "The task goes live as soon as it is funded. If it is later rejected you get the budget"}
+            {feePercent > 0 ? " and the fee" : ""} back.
           </p>
         </div>
       </div>
 
+      {limitError && (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          {limitError}
+        </p>
+      )}
+
       <button
         onClick={submit}
-        disabled={busy}
+        disabled={busy || !!limitError}
         className="w-full py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50"
       >
         {busy ? (
@@ -342,7 +419,7 @@ export function CreateTaskView({
         ) : (
           <Send className="w-4 h-4" />
         )}
-        Submit for review
+        {needsReview ? "Submit for review" : "Fund and publish"}
       </button>
     </div>
   );

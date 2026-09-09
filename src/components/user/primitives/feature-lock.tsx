@@ -10,9 +10,17 @@ import { Lock, ArrowUpRight, ArrowRight } from "lucide-react";
 export function FeatureLock({
   title,
   applyHref,
+  message,
 }: {
   title: string;
   applyHref?: string;
+  /**
+   * Override the "not in your plan" copy. Used when the feature is switched off
+   * platform-wide rather than missing from this account — telling a buyer to
+   * upgrade their plan when the admin has simply paused buyer tasks sends them
+   * to buy something that would not help.
+   */
+  message?: string;
 }) {
   return (
     <div className="max-w-md mx-auto px-4 py-10">
@@ -22,12 +30,14 @@ export function FeatureLock({
         </div>
         <h1 className="text-lg font-bold text-white">{title} is not available</h1>
         <p className="text-sm text-gray-400 mt-1">
-          {applyHref
+          {message
+            ? message
+            : applyHref
             ? `${title} isn't unlocked for your account yet. Apply for access or upgrade your plan.`
-            : `${title} isn't included in your current plan. Upgrade to unlock it.`}
+              : `${title} isn't included in your current plan. Upgrade to unlock it.`}
         </p>
         <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-2">
-          {applyHref && (
+          {!message && applyHref && (
             <Link
               href={applyHref}
               className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold active:scale-[0.97] transition-transform"
@@ -36,6 +46,7 @@ export function FeatureLock({
               <ArrowRight className="w-4 h-4" />
             </Link>
           )}
+          {!message && (
           <Link
             href="/packages"
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold active:scale-[0.97] transition-transform"
@@ -43,6 +54,7 @@ export function FeatureLock({
             View plans
             <ArrowUpRight className="w-4 h-4" />
           </Link>
+          )}
         </div>
       </div>
     </div>
