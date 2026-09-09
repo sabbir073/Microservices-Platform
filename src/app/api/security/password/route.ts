@@ -3,10 +3,12 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
+import { validatePassword } from "@/lib/password-policy";
 
 const schema = z.object({
   current: z.string().min(1, "Current password required"),
-  next: z.string().min(8, "New password must be at least 8 characters"),
+  // Enforced against the admin Security policy after parsing.
+  next: z.string().min(1, "New password is required"),
 });
 
 export async function POST(request: NextRequest) {
@@ -21,6 +23,12 @@ export async function POST(request: NextRequest) {
       { error: v.error.issues[0]?.message ?? "Invalid input" },
       { status: 400 }
     );
+  }
+
+  // Admin Security policy (password_min_length + require_strong_passwords).
+  const pwError = await validatePassword(v.data.next);
+  if (pwError) {
+    return NextResponse.json({ error: pwError }, { status: 400 });
   }
 
   const user = await prisma.user.findUnique({

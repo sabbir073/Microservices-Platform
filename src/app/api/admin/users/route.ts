@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { type UserRole } from "@/lib/rbac";
 import { z } from "zod";
+import { validatePassword } from "@/lib/password-policy";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import { USERNAME_REGEX, USERNAME_RULE_MESSAGE } from "@/lib/username";
@@ -16,7 +17,9 @@ const optStr = z.string().max(200).optional().nullable();
 const createUserSchema = z.object({
   // Required core
   email: z.string().email(),
-  password: z.string().min(8),
+  // Admin-set passwords follow the same Security policy as self-serve ones;
+  // enforced after parsing (see the POST handler).
+  password: z.string().min(1),
 
   // Account
   name: z.string().min(2).max(80).optional(),
@@ -102,6 +105,12 @@ export async function POST(request: NextRequest) {
     }
 
     const data = validation.data;
+
+    // Admin Security policy (password_min_length + require_strong_passwords).
+    const pwError = await validatePassword(data.password);
+    if (pwError) {
+      return NextResponse.json({ error: pwError }, { status: 400 });
+    }
 
     // Only super admin can create admin accounts
     if (data.role !== "USER" && adminRole !== "SUPER_ADMIN") {

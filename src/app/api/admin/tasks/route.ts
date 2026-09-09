@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
         videoConfig,
         articleConfig,
       },
-      { aiQuizAvailable: isGeminiConfigured() }
+      { aiQuizAvailable: await isGeminiConfigured() }
     );
     if (completability) {
       return NextResponse.json({ error: completability }, { status: 400 });

@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!isGeminiConfigured()) {
+  if (!(await isGeminiConfigured())) {
     return NextResponse.json({ error: "AI is not configured" }, { status: 503 });
   }
   const body = await request.json().catch(() => ({}));

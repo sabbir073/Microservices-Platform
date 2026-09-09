@@ -138,9 +138,12 @@ check(
     /if \(completability\) \{[\s\S]{0,120}status: 400/.test(update)
 );
 check(
+  // `isGeminiConfigured` is awaited since the key gained an admin setting
+  // (Settings → Integrations) on top of the env var — a module-scope constant
+  // could never see a key saved after boot.
   "both pass the real AI availability, not a hardcoded true",
-  /aiQuizAvailable: isGeminiConfigured\(\)/.test(create) &&
-    /aiQuizAvailable: isGeminiConfigured\(\)/.test(update)
+  /aiQuizAvailable: await isGeminiConfigured\(\)/.test(create) &&
+    /aiQuizAvailable: await isGeminiConfigured\(\)/.test(update)
 );
 check(
   "the create route checks the SERVER-side points, not the client's",

@@ -11,6 +11,7 @@ import {
 import { getUiToggles } from "@/lib/ui-toggles-server";
 import { defaultPackage } from "@/lib/packages";
 import { getPointsPerUsd } from "@/lib/economy";
+import { getSetting } from "@/lib/system-settings";
 import { v4 as uuidv4 } from "uuid";
 
 /**
@@ -206,7 +207,22 @@ export async function provisionUser(input: ProvisionUserInput) {
       select: { id: true, email: true },
     });
     if (referrer && referrer.email?.toLowerCase() !== email) {
-      referredById = referrer.id;
+      // Admin cap on how many people one account may refer (Limits settings).
+      // The box existed and nothing read it, so a referral farm was unbounded.
+      // 0 or less means no cap. The signup itself always succeeds — only the
+      // attribution (and therefore the commission) is dropped, because failing
+      // registration would punish the new user for the referrer's behaviour.
+      const maxReferrals = Math.max(
+        0,
+        Math.floor(
+          Number(await getSetting<number>("max_referrals_per_user", 0)) || 0
+        )
+      );
+      const overCap =
+        maxReferrals > 0 &&
+        (await prisma.user.count({ where: { referredById: referrer.id } })) >=
+          maxReferrals;
+      if (!overCap) referredById = referrer.id;
     }
   }
 

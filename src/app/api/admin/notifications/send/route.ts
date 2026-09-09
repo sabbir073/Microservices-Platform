@@ -291,7 +291,7 @@ export async function POST(request: NextRequest) {
     // Email channel — batched, best-effort. Skips opted-out + deleted accounts.
     let emailResult: { success: boolean; sent?: number; error?: string } | null = null;
     if (sendEmail) {
-      if (!isSmtpConfigured()) {
+      if (!(await isSmtpConfigured())) {
         emailResult = { success: false, sent: 0, error: "SMTP not configured" };
       } else {
         const recipients = await prisma.user.findMany({

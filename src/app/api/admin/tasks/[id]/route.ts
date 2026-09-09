@@ -211,7 +211,7 @@ export async function PUT(request: NextRequest, { params }: RouteParams) {
         videoConfig,
         articleConfig,
       },
-      { aiQuizAvailable: isGeminiConfigured() }
+      { aiQuizAvailable: await isGeminiConfigured() }
     );
     if (completability) {
       return NextResponse.json({ error: completability }, { status: 400 });

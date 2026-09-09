@@ -192,9 +192,14 @@ async function main() {
       "the tab is no longer labelled Popups",
       /\{ id: "ui_toggles", label: "Toggles"/.test(f)
     );
+    // The dead CATEGORY_CONFIG surface is gone entirely. It was a second,
+    // unreachable settings UI (nothing linked to `/admin/settings/<category>`)
+    // writing a rival key namespace — `site_name` beside `platform_name`,
+    // `smtp_user` beside `smtp_username`. It was also the ONLY editor for
+    // `allow_withdrawals`, so the withdrawal kill-switch had no reachable UI.
     check(
-      "it is NOT added to the dead CATEGORY_CONFIG surface",
-      !/ui\.groups_enabled/.test(code("src/app/admin/settings/[category]/page.tsx"))
+      "the rival CATEGORY_CONFIG settings surface no longer exists",
+      !fs.existsSync(path.join(root, "src/app/admin/settings/[category]/page.tsx"))
     );
   }
 

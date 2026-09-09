@@ -249,23 +249,46 @@ export async function POST(request: NextRequest) {
     // only cash is withdrawable under the unified wallet model.
     const availableCash = toNum(user.cashBalance);
 
-    // Check cooldown (24 hours between withdrawals)
-    const lastWithdrawal = await prisma.withdrawal.findFirst({
-      where: {
-        userId: session.user.id,
-        status: { in: [WithdrawalStatus.PENDING, WithdrawalStatus.PROCESSING, WithdrawalStatus.COMPLETED] },
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    // Rolling 24-hour request cap.
+    //
+    // This was a hardcoded "one withdrawal per 24 hours" cooldown, which meant
+    // the admin's "Max Withdrawals Per Day" box (Limits settings, default 3)
+    // was decorative — the platform enforced 1 no matter what was typed there.
+    // The setting is now the limit; 0 disables the cap entirely.
+    if (wcfg.maxPerDay > 0) {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recent = await prisma.withdrawal.findMany({
+        where: {
+          userId: session.user.id,
+          createdAt: { gte: since },
+          status: {
+            in: [
+              WithdrawalStatus.PENDING,
+              WithdrawalStatus.PROCESSING,
+              WithdrawalStatus.COMPLETED,
+            ],
+          },
+        },
+        orderBy: { createdAt: "asc" },
+        select: { createdAt: true },
+      });
 
-    if (lastWithdrawal) {
-      const hoursSinceLastWithdrawal =
-        (Date.now() - lastWithdrawal.createdAt.getTime()) / (1000 * 60 * 60);
-
-      if (hoursSinceLastWithdrawal < 24) {
-        const waitHours = Math.ceil(24 - hoursSinceLastWithdrawal);
+      if (recent.length >= wcfg.maxPerDay) {
+        // The window frees up when the OLDEST request inside it ages out.
+        const waitHours = Math.max(
+          1,
+          Math.ceil(
+            (recent[0].createdAt.getTime() + 24 * 60 * 60 * 1000 - Date.now()) /
+              (1000 * 60 * 60)
+          )
+        );
         return NextResponse.json(
-          { error: `Please wait ${waitHours} more hours before requesting another withdrawal` },
+          {
+            error:
+              wcfg.maxPerDay === 1
+                ? `Please wait ${waitHours} more hours before requesting another withdrawal`
+                : `You can request ${wcfg.maxPerDay} withdrawals per day. Please wait ${waitHours} more hours.`,
+          },
           { status: 400 }
         );
       }

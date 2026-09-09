@@ -2,6 +2,40 @@ import webpush from "web-push";
 import { prisma } from "@/lib/prisma";
 import { sendNotificationEmail } from "@/lib/email";
 import { NotificationType } from "@/generated/prisma/client";
+import { getSetting } from "@/lib/system-settings";
+
+/**
+ * Platform-wide notification switches (admin → Settings → Notifications).
+ *
+ * Every one of these boxes wrote a `SystemSetting` row that nothing read: the
+ * only gates were the per-user `emailNotifications` / `pushNotifications`
+ * columns, so an admin turning "Notify on new task" off changed nothing for
+ * anybody. These are the master switches — a user preference can still opt OUT
+ * of something the admin leaves on, but never back IN to something switched off.
+ *
+ * Types with no switch of their own are always allowed; only the four listed
+ * categories are separately controllable, which is what the screen offers.
+ */
+const TYPE_SWITCH: Partial<Record<NotificationType, string>> = {
+  [NotificationType.TASK]: "notify_new_task",
+  [NotificationType.WALLET]: "notify_withdrawal",
+  [NotificationType.REFERRAL]: "notify_referral",
+  [NotificationType.ACHIEVEMENT]: "notify_level_up",
+};
+
+/** False when the admin has switched this category of notification off. */
+async function typeAllowed(type: NotificationType): Promise<boolean> {
+  const key = TYPE_SWITCH[type];
+  if (!key) return true;
+  return (await getSetting<boolean>(key, true)) !== false;
+}
+
+/** False when the admin has switched web push off for the whole platform. */
+async function pushAllowed(): Promise<boolean> {
+  return (
+    (await getSetting<boolean>("push_notifications_enabled", true)) !== false
+  );
+}
 
 let vapidReady: boolean | null = null;
 
@@ -50,7 +84,7 @@ export async function deliverToUser(opts: {
         () => {}
       );
     }
-    if (user.pushNotifications && ensureVapid()) {
+    if (user.pushNotifications && (await pushAllowed()) && ensureVapid()) {
       const subs = await prisma.pushSubscription.findMany({
         where: { userId: opts.userId },
       });
@@ -119,7 +153,12 @@ export async function notifyUser(opts: NotifyOptions) {
     })
     .catch(() => null);
 
+  // The in-app row is always written — an admin switch mutes the *delivery*
+  // channels, it does not erase the record of what happened to the user.
+  const allowed = await typeAllowed(type);
+
   if (
+    allowed &&
     user?.emailNotifications &&
     user.email &&
     !user.email.endsWith("@deleted.local")
@@ -127,7 +166,12 @@ export async function notifyUser(opts: NotifyOptions) {
     sendNotificationEmail(user.email, title, message, link).catch(() => {});
   }
 
-  if (user?.pushNotifications && ensureVapid()) {
+  if (
+    allowed &&
+    user?.pushNotifications &&
+    (await pushAllowed()) &&
+    ensureVapid()
+  ) {
     const subs = await prisma.pushSubscription
       .findMany({ where: { userId } })
       .catch(() => []);

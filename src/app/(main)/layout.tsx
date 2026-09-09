@@ -9,6 +9,8 @@ import { getEffectiveFeatures } from "@/lib/packages";
 import { getHiddenPaths } from "@/lib/page-visibility-server";
 import { PageAccessGuard } from "@/components/dashboard/page-access-guard";
 import { AnchorAdBar } from "@/components/user/primitives/anchor-ad-bar";
+import { maintenanceFor } from "@/lib/maintenance";
+import { MaintenanceScreen } from "@/components/dashboard/maintenance-screen";
 
 export default async function MainLayout({
   children,
@@ -34,7 +36,10 @@ export default async function MainLayout({
   //  - getHiddenPaths: super-admin page visibility → nav hiding + route guard
   //  - the avatar: the session doesn't carry it, and the header/sidebar need it.
   //    Short cache so a new upload appears after PhotoModal's router.refresh.
-  const [{ enabled }, hiddenPaths, dbUser] = await Promise.all([
+  //  - maintenanceFor: the admin's Maintenance Mode switch. It joins this
+  //    Promise.all rather than sitting in front of it so a platform that is UP
+  //    — every request but the rare one — pays nothing extra for the check.
+  const [{ enabled }, hiddenPaths, dbUser, maintenance] = await Promise.all([
     getEffectiveFeatures(session.user.id),
     getHiddenPaths(session.user.id),
     prisma.user
@@ -44,7 +49,18 @@ export default async function MainLayout({
         cacheStrategy: { ttl: 10, swr: 30 },
       })
       .catch(() => null),
+    maintenanceFor(session.user.id).catch(() => ({
+      // Never close the platform because the settings read failed — an
+      // unreachable database must not look like a deliberate shutdown.
+      active: false,
+      message: "",
+    })),
   ]);
+
+  // Closed for everyone but staff, who need to be able to see the fix land.
+  if (maintenance.active) {
+    return <MaintenanceScreen message={maintenance.message} />;
+  }
   const features = Array.from(enabled);
   const avatar = dbUser?.avatar ?? null;
 

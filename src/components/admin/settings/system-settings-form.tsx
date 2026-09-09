@@ -4,6 +4,7 @@ import { confirmDialog } from "@/lib/confirm";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Settings as SettingsIcon,
   DollarSign,
@@ -17,11 +18,12 @@ import {
   Save,
   Send,
   MonitorSmartphone,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { cn } from "@/lib/utils";
-import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
+import { cn, usd } from "@/lib/utils";
 import { Section, Toggle } from "@/components/admin/shared/controls";
+import { BUYER_TASK_TYPES } from "@/lib/buyer-task-types";
 
 export type SettingsBag = Record<string, unknown>;
 
@@ -46,39 +48,38 @@ type TabId = (typeof TABS)[number]["id"];
 const DEFAULTS: SettingsBag = {
   // General
   platform_name: "EarnGPT",
-  platform_url: "https://earngpt.com",
-  support_email: "support@earngpt.com",
-  logo_url: "/logo.png",
-  favicon_url: "/favicon.ico",
-  timezone: "UTC",
-  language: "en",
-  workspace_locked: false,
   maintenance_mode: false,
+  maintenance_message: "",
   // Financial
   currency: "USD",
   min_withdrawal: 5,
   max_withdrawal: 10000,
-  withdrawal_fee_pct: 2.5,
-  referral_l1_pct: 10,
-  referral_l2_pct: 5,
-  referral_l3_pct: 2,
-  task_reward_multiplier: 1.0,
+  withdrawal_fee_percent: 5,
+  allow_withdrawals: true,
+  withdrawal_requires_subscription: false,
+  withdrawal_payout_time_message: "1-3 business days",
   points_per_usd: 1000,
+  points_convert_threshold: 1000,
+  "bkash.usdToBdtRate": 123,
   vat_enabled: false,
   vat_pct: 15,
+  // Buyer & task funding
+  "buyer.enabled": true,
+  "buyer.fee_percent": 0,
+  "buyer.min_points_per_task": 1,
+  "buyer.max_points_per_task": 100000,
+  "buyer.max_completions": 100000,
+  "buyer.allowed_task_types": ["SOCIAL", "CUSTOM"],
+  "buyer.require_kyc": false,
+  "buyer.auto_approve_tasks": false,
+  "buyer.refund_fee_on_reject": true,
   // Security
-  session_timeout_seconds: 3600,
-  max_login_attempts: 5,
   password_min_length: 8,
-  require_kyc: true,
-  require_2fa: false,
   require_strong_passwords: true,
-  ip_whitelist_enabled: false,
-  fraud_detection_enabled: true,
-  require_full_profile_for_withdraw: false,
   "kyc.autoEnabled": true,
   "kyc.faceMinSimilarity": 88,
   "kyc.ocrMinConfidence": 0.7,
+  "kyc.ocrRejectBelow": 0.2,
   // Email
   smtp_host: "smtp.gmail.com",
   smtp_port: 587,
@@ -89,31 +90,27 @@ const DEFAULTS: SettingsBag = {
   email_notifications_enabled: true,
   // Notifications
   push_notifications_enabled: true,
-  sms_notifications_enabled: false,
   notify_new_task: true,
   notify_withdrawal: true,
   notify_referral: true,
   notify_level_up: true,
   // Integrations
   gemini_api_key: "",
-  stripe_public_key: "",
-  stripe_secret_key: "",
-  twilio_sid: "",
-  twilio_token: "",
-  google_analytics_id: "",
-  facebook_pixel_id: "",
+  "bkash.appKey": "",
+  "bkash.appSecret": "",
+  "bkash.username": "",
+  "bkash.password": "",
+  "sslcommerz.storeId": "",
+  "sslcommerz.storePasswd": "",
   "integrations.telegram_bot_token": "",
   "integrations.telegram_bot_username": "",
   "integrations.discord_client_id": "",
   "integrations.discord_client_secret": "",
   "integrations.discord_bot_token": "",
   // Limits
-  max_tasks_per_day: 50,
-  max_withdrawals_per_day: 3,
-  max_referrals_per_user: 1000,
-  max_active_listings: 10,
-  file_upload_max_mb: 5,
-  api_rate_limit_per_min: 100,
+  max_withdrawals_per_day: 1,
+  max_referrals_per_user: 0,
+  max_active_listings: 0,
   "ai.daily_limit_per_user": 50,
   "social.ai_regenerate_limit": 2,
   "tasks.sequential_unlock": false,
@@ -134,48 +131,54 @@ const DEFAULTS: SettingsBag = {
   "ui.require_profile_completion": false,
   "ui.require_kyc_for_withdrawal": true,
   "ui.groups_enabled": false,
+  analytics_pageviews_enabled: true,
 };
 
 const CATEGORY_FOR_KEY: Record<string, string> = {
   // General
-  platform_name: "general", platform_url: "general", support_email: "general",
-  logo_url: "general", favicon_url: "general", timezone: "general",
-  language: "general", workspace_locked: "general", maintenance_mode: "general",
+  platform_name: "general", maintenance_mode: "general",
+  maintenance_message: "general",
   // Financial
   currency: "financial", min_withdrawal: "financial", max_withdrawal: "financial",
-  withdrawal_fee_pct: "financial", referral_l1_pct: "financial",
-  referral_l2_pct: "financial", referral_l3_pct: "financial",
-  task_reward_multiplier: "financial", points_per_usd: "financial",
+  withdrawal_fee_percent: "financial", allow_withdrawals: "financial",
+  withdrawal_requires_subscription: "financial",
+  withdrawal_payout_time_message: "financial",
+  points_per_usd: "financial", points_convert_threshold: "financial",
+  "bkash.usdToBdtRate": "financial",
   vat_enabled: "financial", vat_pct: "financial",
+  "buyer.enabled": "financial", "buyer.fee_percent": "financial",
+  "buyer.min_points_per_task": "financial",
+  "buyer.max_points_per_task": "financial",
+  "buyer.max_completions": "financial",
+  "buyer.allowed_task_types": "financial",
+  "buyer.require_kyc": "financial",
+  "buyer.auto_approve_tasks": "financial",
+  "buyer.refund_fee_on_reject": "financial",
   // Security
-  session_timeout_seconds: "security", max_login_attempts: "security",
-  password_min_length: "security", require_kyc: "security", require_2fa: "security",
-  require_strong_passwords: "security", ip_whitelist_enabled: "security",
-  fraud_detection_enabled: "security", require_full_profile_for_withdraw: "security",
+  password_min_length: "security", require_strong_passwords: "security",
   "kyc.autoEnabled": "security", "kyc.faceMinSimilarity": "security",
-  "kyc.ocrMinConfidence": "security",
+  "kyc.ocrMinConfidence": "security", "kyc.ocrRejectBelow": "security",
   // Email
   smtp_host: "email", smtp_port: "email", smtp_username: "email",
   smtp_password: "email", email_from_address: "email", email_from_name: "email",
   email_notifications_enabled: "email",
   // Notifications
-  push_notifications_enabled: "notifications", sms_notifications_enabled: "notifications",
+  push_notifications_enabled: "notifications",
   notify_new_task: "notifications", notify_withdrawal: "notifications",
   notify_referral: "notifications", notify_level_up: "notifications",
   // Integrations
-  gemini_api_key: "integrations", stripe_public_key: "integrations",
-  stripe_secret_key: "integrations", twilio_sid: "integrations",
-  twilio_token: "integrations", google_analytics_id: "integrations",
-  facebook_pixel_id: "integrations",
+  gemini_api_key: "integrations",
+  "bkash.appKey": "integrations", "bkash.appSecret": "integrations",
+  "bkash.username": "integrations", "bkash.password": "integrations",
+  "sslcommerz.storeId": "integrations", "sslcommerz.storePasswd": "integrations",
   "integrations.telegram_bot_token": "integrations",
   "integrations.telegram_bot_username": "integrations",
   "integrations.discord_client_id": "integrations",
   "integrations.discord_client_secret": "integrations",
   "integrations.discord_bot_token": "integrations",
   // Limits
-  max_tasks_per_day: "limits", max_withdrawals_per_day: "limits",
+  max_withdrawals_per_day: "limits",
   max_referrals_per_user: "limits", max_active_listings: "limits",
-  file_upload_max_mb: "limits", api_rate_limit_per_min: "limits",
   "ai.daily_limit_per_user": "limits", "social.ai_regenerate_limit": "limits",
   "tasks.sequential_unlock": "limits",
   "antifraud.auto_approve_min_trust": "limits",
@@ -195,6 +198,7 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   "ui.require_kyc_for_withdrawal": "ui_toggles",
   "ui.require_email_verification": "ui_toggles",
   "ui.groups_enabled": "ui_toggles",
+  analytics_pageviews_enabled: "ui_toggles",
 };
 
 export function SystemSettingsForm({
@@ -302,7 +306,10 @@ export function SystemSettingsForm({
       <div className="p-6 space-y-4">
         {tab === "general" && (
           <div className="space-y-4">
-            <Field label="Platform Name">
+            <Field
+              label="Platform Name"
+              hint="Names outgoing email and the entry in authenticator apps"
+            >
               <input
                 value={(values.platform_name as string) || ""}
                 onChange={(e) => set("platform_name", e.target.value)}
@@ -310,90 +317,41 @@ export function SystemSettingsForm({
                 className={inp}
               />
             </Field>
-            <Field label="Platform URL">
-              <input
-                value={(values.platform_url as string) || ""}
-                onChange={(e) => set("platform_url", e.target.value)}
-                disabled={!canEdit}
-                className={inp}
-                placeholder="https://earngpt.com"
-              />
-            </Field>
-            <Field label="Support Email">
-              <input
-                type="email"
-                value={(values.support_email as string) || ""}
-                onChange={(e) => set("support_email", e.target.value)}
-                disabled={!canEdit}
-                className={inp}
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Logo">
-                <ImageUploadField
-                  value={(values.logo_url as string) || ""}
-                  onChange={(url) => set("logo_url", url)}
-                  title="Select Logo"
-                  previewSize="square"
-                />
-              </Field>
-              <Field label="Favicon">
-                <ImageUploadField
-                  value={(values.favicon_url as string) || ""}
-                  onChange={(url) => set("favicon_url", url)}
-                  title="Select Favicon"
-                  previewSize="sm"
-                />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Timezone">
-                <select
-                  value={(values.timezone as string) || "UTC"}
-                  onChange={(e) => set("timezone", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                >
-                  <option>UTC</option>
-                  <option value="America/New_York">Eastern (US)</option>
-                  <option value="America/Chicago">Central (US)</option>
-                  <option value="America/Los_Angeles">Pacific (US)</option>
-                  <option value="Europe/London">London</option>
-                  <option value="Asia/Dhaka">Dhaka</option>
-                  <option value="Asia/Tokyo">Tokyo</option>
-                </select>
-              </Field>
-              <Field label="Language">
-                <select
-                  value={(values.language as string) || "en"}
-                  onChange={(e) => set("language", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                >
-                  <option value="en">English</option>
-                  <option value="es">Español</option>
-                  <option value="fr">Français</option>
-                  <option value="de">Deutsch</option>
-                  <option value="bn">বাংলা</option>
-                </select>
-              </Field>
-            </div>
-            <Toggle
-              label="Workspace Locked"
-              description="Restricts all earning activities (use during incidents)"
-              checked={!!values.workspace_locked}
-              onChange={(v) => set("workspace_locked", v)}
-              disabled={!canEdit}
-              tone="amber"
+            <NotWired
+              items={[
+                {
+                  label: "Platform URL, Logo, Favicon, Support email",
+                  why: "The page title, social cards, logo, favicon and the support address are compile-time values (app/layout.tsx, config/company.ts). Changing them is a rebrand \u2014 canonical URLs, the PWA manifest and the legal pages all have to move together \u2014 not a settings row.",
+                },
+                {
+                  label: "Timezone & Language",
+                  why: "Dates render in each visitor's own locale and the app ships in English only. Neither box has anything to change yet.",
+                },
+              ]}
             />
             <Toggle
               label="Maintenance Mode"
-              description="Show maintenance page to all users"
+              description="Closes the whole app for everyone except staff, who keep full access so they can see the fix land. The marketing and login pages stay up."
               checked={!!values.maintenance_mode}
               onChange={(v) => set("maintenance_mode", v)}
               disabled={!canEdit}
               tone="red"
             />
+            {!!values.maintenance_mode && (
+              <Field
+                label="Maintenance message"
+                hint="Shown on the closed-app screen"
+              >
+                <textarea
+                  rows={3}
+                  value={(values.maintenance_message as string) || ""}
+                  onChange={(e) => set("maintenance_message", e.target.value)}
+                  disabled={!canEdit}
+                  className={inp}
+                  placeholder="We are performing scheduled maintenance. Please check back shortly."
+                />
+              </Field>
+            )}
           </div>
         )}
 
@@ -435,65 +393,67 @@ export function SystemSettingsForm({
                 />
               </Field>
             </div>
-            <Field label="Withdrawal Fee (%)">
+            <Field
+              label="Withdrawal Fee (%)"
+              hint="Deducted from every approved withdrawal"
+            >
               <input
                 type="number"
                 step={0.1}
-                value={Number(values.withdrawal_fee_pct ?? 0)}
+                min={0}
+                max={100}
+                value={Number(values.withdrawal_fee_percent ?? 5)}
                 onChange={(e) =>
-                  set("withdrawal_fee_pct", parseFloat(e.target.value))
+                  set("withdrawal_fee_percent", parseFloat(e.target.value))
                 }
                 disabled={!canEdit}
                 className={inp}
               />
             </Field>
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Referral L1 (%)">
-                <input
-                  type="number"
-                  value={Number(values.referral_l1_pct ?? 0)}
-                  onChange={(e) =>
-                    set("referral_l1_pct", parseFloat(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="Referral L2 (%)">
-                <input
-                  type="number"
-                  value={Number(values.referral_l2_pct ?? 0)}
-                  onChange={(e) =>
-                    set("referral_l2_pct", parseFloat(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="Referral L3 (%)">
-                <input
-                  type="number"
-                  value={Number(values.referral_l3_pct ?? 0)}
-                  onChange={(e) =>
-                    set("referral_l3_pct", parseFloat(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-            </div>
-            <Field label="Task Reward Multiplier">
+            <Toggle
+              label="Allow withdrawals"
+              description="Master switch. Turning this off stops every new withdrawal request platform-wide."
+              checked={values.allow_withdrawals !== false}
+              onChange={(v) => set("allow_withdrawals", v)}
+              disabled={!canEdit}
+              tone="amber"
+            />
+            <Toggle
+              label="Require a subscription to withdraw"
+              description="Users on the free/default package must buy a package before they can withdraw"
+              checked={!!values.withdrawal_requires_subscription}
+              onChange={(v) => set("withdrawal_requires_subscription", v)}
+              disabled={!canEdit}
+            />
+            <Field
+              label="Payout time message"
+              hint="Shown to the user after they request a withdrawal"
+            >
               <input
-                type="number"
-                step={0.1}
-                value={Number(values.task_reward_multiplier ?? 1)}
+                type="text"
+                value={
+                  (values.withdrawal_payout_time_message as string) ??
+                  "1-3 business days"
+                }
                 onChange={(e) =>
-                  set("task_reward_multiplier", parseFloat(e.target.value))
+                  set("withdrawal_payout_time_message", e.target.value)
                 }
                 disabled={!canEdit}
                 className={inp}
               />
             </Field>
+            <ManagedElsewhere
+              label="Referral commission %"
+              href="/admin/referrals/settings"
+              linkLabel="Referral Settings"
+              why="Commission is per level and there can be up to 10 of them, so it lives in its own table — three boxes here could never describe it."
+            />
+            <ManagedElsewhere
+              label="Task reward multiplier"
+              href="/admin/packages"
+              linkLabel="Packages"
+              why="The multiplier is a property of the user's package, not one global number — that is what task approval actually reads."
+            />
             <Field
               label="Points per $1 (USD)"
               /* eslint-disable-next-line no-restricted-syntax -- a per-point
@@ -510,6 +470,38 @@ export function SystemSettingsForm({
                 value={Number(values.points_per_usd ?? 1000)}
                 onChange={(e) =>
                   set("points_per_usd", parseFloat(e.target.value))
+                }
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
+            <Field
+              label="Points needed before cash conversion unlocks"
+              hint="Below this, the wallet hides the points-to-cash button"
+            >
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={Number(values.points_convert_threshold ?? 1000)}
+                onChange={(e) =>
+                  set("points_convert_threshold", parseInt(e.target.value))
+                }
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
+            <Field
+              label="bKash rate (BDT per $1)"
+              hint="bKash settles in taka; a USD deposit is charged at this rate"
+            >
+              <input
+                type="number"
+                min={1}
+                step={0.01}
+                value={Number(values["bkash.usdToBdtRate"] ?? 123)}
+                onChange={(e) =>
+                  set("bkash.usdToBdtRate", parseFloat(e.target.value))
                 }
                 disabled={!canEdit}
                 className={inp}
@@ -537,52 +529,179 @@ export function SystemSettingsForm({
                 />
               </Field>
             )}
+            <Section title="Buyer & task funding">
+              <p className="-mt-1 mb-2 text-xs leading-relaxed text-slate-500">
+                A buyer funds a task from their wallet: the reward pool is held
+                against the task and paid out per approved completion, and the
+                fee below is the platform&rsquo;s cut. Unspent budget is
+                refunded if the task is rejected. Who may create tasks at all is
+                a per-user grant (Users &rarr; features), not a switch here.
+              </p>
+              <Toggle
+                label="Allow buyers to fund tasks"
+                description="Off closes the create-task API for everyone, even accounts that already hold the permission."
+                checked={values["buyer.enabled"] !== false}
+                onChange={(v) => set("buyer.enabled", v)}
+                disabled={!canEdit}
+                tone="amber"
+              />
+              <Field
+                label="Platform fee (%)"
+                hint={(() => {
+                  const pct = Number(values["buyer.fee_percent"] ?? 0);
+                  const ppu = Math.max(1, Number(values.points_per_usd ?? 1000));
+                  const example = (100 * 50) / ppu;
+                  return pct > 0
+                    ? `e.g. 100 people x 50 pts = ${usd(example)} of rewards + ${usd((example * pct) / 100)} fee = ${usd(example * (1 + pct / 100))} charged`
+                    : "0 means buyers pay only the reward pool and the platform earns nothing on task funding";
+                })()}
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={Number(values["buyer.fee_percent"] ?? 0)}
+                  onChange={(e) =>
+                    set("buyer.fee_percent", parseFloat(e.target.value))
+                  }
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Min points per completion">
+                  <input
+                    type="number"
+                    min={1}
+                    value={Number(values["buyer.min_points_per_task"] ?? 1)}
+                    onChange={(e) =>
+                      set("buyer.min_points_per_task", parseInt(e.target.value))
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field label="Max points per completion">
+                  <input
+                    type="number"
+                    min={1}
+                    value={Number(values["buyer.max_points_per_task"] ?? 100000)}
+                    onChange={(e) =>
+                      set("buyer.max_points_per_task", parseInt(e.target.value))
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+              </div>
+              <Field
+                label="Max completions per task"
+                hint="Caps how large one buyer-funded task can get"
+              >
+                <input
+                  type="number"
+                  min={1}
+                  value={Number(values["buyer.max_completions"] ?? 100000)}
+                  onChange={(e) =>
+                    set("buyer.max_completions", parseInt(e.target.value))
+                  }
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+              <Field
+                label="Task types buyers may create"
+                hint="Unticking both closes buyer task creation as surely as the switch above"
+              >
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {BUYER_TASK_TYPES.map((t) => {
+                    const list = Array.isArray(values["buyer.allowed_task_types"])
+                      ? (values["buyer.allowed_task_types"] as string[])
+                      : [];
+                    const on = list.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        disabled={!canEdit}
+                        onClick={() =>
+                          set(
+                            "buyer.allowed_task_types",
+                            on ? list.filter((x) => x !== t) : [...list, t]
+                          )
+                        }
+                        className={cn(
+                          "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
+                          on
+                            ? "border-blue-500/50 bg-blue-500/15 text-blue-300"
+                            : "border-slate-700 text-slate-500 hover:text-slate-300"
+                        )}
+                      >
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
+              <Toggle
+                label="Require KYC before funding"
+                description="Checked when the buyer spends, not when they are paid — an unverified account is stopped before the money moves."
+                checked={!!values["buyer.require_kyc"]}
+                onChange={(v) => set("buyer.require_kyc", v)}
+                disabled={!canEdit}
+              />
+              <Toggle
+                label="Publish buyer tasks without review"
+                description="Off (recommended) sends every buyer task to the admin review queue first. On means a funded task goes live immediately."
+                checked={!!values["buyer.auto_approve_tasks"]}
+                onChange={(v) => set("buyer.auto_approve_tasks", v)}
+                disabled={!canEdit}
+                tone="red"
+              />
+              <Toggle
+                label="Refund the fee when a task is rejected"
+                description="On (recommended): a buyer whose task you turn down gets the fee back too. Off keeps it as a review charge."
+                checked={values["buyer.refund_fee_on_reject"] !== false}
+                onChange={(v) => set("buyer.refund_fee_on_reject", v)}
+                disabled={!canEdit}
+              />
+            </Section>
           </div>
         )}
 
         {tab === "security" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Session Timeout (seconds)">
+            <Section title="Passwords">
+              <Field
+                label="Password Min Length"
+                hint="6–64 · applies to sign-up, reset, change and admin-created accounts"
+              >
                 <input
                   type="number"
-                  value={Number(values.session_timeout_seconds ?? 3600)}
+                  min={6}
+                  max={64}
+                  value={Number(values.password_min_length ?? 8)}
                   onChange={(e) =>
-                    set("session_timeout_seconds", parseInt(e.target.value))
+                    set("password_min_length", parseInt(e.target.value))
                   }
                   disabled={!canEdit}
                   className={inp}
                 />
               </Field>
-              <Field label="Max Login Attempts">
-                <input
-                  type="number"
-                  value={Number(values.max_login_attempts ?? 5)}
-                  onChange={(e) =>
-                    set("max_login_attempts", parseInt(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-            </div>
-            <Field label="Password Min Length">
-              <input
-                type="number"
-                min={6}
-                value={Number(values.password_min_length ?? 8)}
-                onChange={(e) =>
-                  set("password_min_length", parseInt(e.target.value))
-                }
+              <Toggle
+                label="Require Strong Passwords"
+                description="At least one uppercase letter, one lowercase letter and one number"
+                checked={values.require_strong_passwords !== false}
+                onChange={(v) => set("require_strong_passwords", v)}
                 disabled={!canEdit}
-                className={inp}
               />
-            </Field>
-            <Toggle
-              label="Require KYC Verification"
-              checked={!!values.require_kyc}
-              onChange={(v) => set("require_kyc", v)}
-              disabled={!canEdit}
+            </Section>
+            <ManagedElsewhere
+              label="Require KYC for withdrawals"
+              href="/admin/settings"
+              linkLabel="Toggles tab"
+              why="There were two switches for this and only the one on the Toggles tab (ui.require_kyc_for_withdrawal) was ever read by the withdrawal gate."
             />
             <Toggle
               label="Instant (auto) KYC verification"
@@ -614,39 +733,54 @@ export function SystemSettingsForm({
                 className={inp}
               />
             </Field>
-            <Toggle
-              label="Two-Factor Authentication"
-              description="Require 2FA for all admin accounts"
-              checked={!!values.require_2fa}
-              onChange={(v) => set("require_2fa", v)}
-              disabled={!canEdit}
+            <Field
+              label="Auto KYC — reject-outright OCR confidence (0–1)"
+              hint="Below this the read is treated as unusable. It still routes to manual review, never an auto-rejection."
+            >
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={Number(values["kyc.ocrRejectBelow"] ?? 0.2)}
+                onChange={(e) =>
+                  set("kyc.ocrRejectBelow", parseFloat(e.target.value) || 0.2)
+                }
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
+            <ManagedElsewhere
+              label="Fraud detection"
+              href="/admin/settings"
+              linkLabel="Limits tab"
+              why="The switches that actually run — accounts per IP, duplicate-proof blocking, VPN ranges, spot-check rate, the ad-block gate — are the antifraud group on the Limits tab."
             />
-            <Toggle
-              label="Require Strong Passwords"
-              checked={!!values.require_strong_passwords}
-              onChange={(v) => set("require_strong_passwords", v)}
-              disabled={!canEdit}
+            <ManagedElsewhere
+              label="Require full profile before withdrawing"
+              href="/admin/settings"
+              linkLabel="Toggles tab"
+              why="Enforced by ui.require_profile_completion on the Toggles tab. The duplicate here was never read."
             />
-            <Toggle
-              label="IP Whitelist (Admin)"
-              checked={!!values.ip_whitelist_enabled}
-              onChange={(v) => set("ip_whitelist_enabled", v)}
-              disabled={!canEdit}
-            />
-            <Toggle
-              label="Fraud Detection"
-              description="Auto-flag suspicious activity"
-              checked={!!values.fraud_detection_enabled}
-              onChange={(v) => set("fraud_detection_enabled", v)}
-              disabled={!canEdit}
-            />
-            <Toggle
-              label="Require 100% Profile Completion for Withdrawals"
-              description="Users must complete every profile field before withdrawing"
-              checked={!!values.require_full_profile_for_withdraw}
-              onChange={(v) => set("require_full_profile_for_withdraw", v)}
-              disabled={!canEdit}
-              tone="purple"
+            <NotWired
+              items={[
+                {
+                  label: "Session timeout",
+                  why: "Session lifetime is fixed in the Auth.js config and applied when the process boots, so it cannot be changed from a settings row without a redeploy.",
+                },
+                {
+                  label: "Max login attempts / lockout",
+                  why: "There is no lockout store yet. Login is rate-limited per IP (10/min) but failures are not counted per account.",
+                },
+                {
+                  label: "Admin IP whitelist",
+                  why: "Nothing checks a source IP against a list. Restrict admin access at the firewall for now.",
+                },
+                {
+                  label: "Force 2FA for admins",
+                  why: "2FA can be enrolled voluntarily (/api/2fa/setup) but nothing requires it at login.",
+                },
+              ]}
             />
           </div>
         )}
@@ -735,43 +869,41 @@ export function SystemSettingsForm({
           <div className="space-y-3">
             <Toggle
               label="Push Notifications"
-              description="Mobile push via OneSignal"
-              checked={!!values.push_notifications_enabled}
+              description="Web push (VAPID). Off here mutes push for everyone, whatever each user has chosen."
+              checked={values.push_notifications_enabled !== false}
               onChange={(v) => set("push_notifications_enabled", v)}
-              disabled={!canEdit}
-            />
-            <Toggle
-              label="SMS Notifications"
-              description="SMS via Twilio"
-              checked={!!values.sms_notifications_enabled}
-              onChange={(v) => set("sms_notifications_enabled", v)}
               disabled={!canEdit}
             />
             <div className="border-t border-slate-800 pt-3 mt-3 space-y-3">
               <p className="text-xs uppercase tracking-wider text-slate-500 font-bold">
                 Auto-notify users on
               </p>
+              <p className="text-xs text-slate-500">
+                Off means the email and push are not sent. The in-app
+                notification is still recorded either way — muting a channel
+                should not erase the record of what happened to a user.
+              </p>
               <Toggle
                 label="New Task Available"
-                checked={!!values.notify_new_task}
+                checked={values.notify_new_task !== false}
                 onChange={(v) => set("notify_new_task", v)}
                 disabled={!canEdit}
               />
               <Toggle
                 label="Withdrawal Status Updates"
-                checked={!!values.notify_withdrawal}
+                checked={values.notify_withdrawal !== false}
                 onChange={(v) => set("notify_withdrawal", v)}
                 disabled={!canEdit}
               />
               <Toggle
                 label="New Referral"
-                checked={!!values.notify_referral}
+                checked={values.notify_referral !== false}
                 onChange={(v) => set("notify_referral", v)}
                 disabled={!canEdit}
               />
               <Toggle
                 label="Level Up"
-                checked={!!values.notify_level_up}
+                checked={values.notify_level_up !== false}
                 onChange={(v) => set("notify_level_up", v)}
                 disabled={!canEdit}
               />
@@ -793,65 +925,84 @@ export function SystemSettingsForm({
                 />
               </Field>
             </Section>
-            <Section title="Payments — Stripe">
-              <Field label="Public Key">
-                <input
-                  value={(values.stripe_public_key as string) || ""}
-                  onChange={(e) => set("stripe_public_key", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                  placeholder="pk_live_…"
-                />
-              </Field>
-              <Field label="Secret Key">
-                <input
-                  type="password"
-                  value={(values.stripe_secret_key as string) || ""}
-                  onChange={(e) => set("stripe_secret_key", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                  placeholder="sk_live_…"
-                />
-              </Field>
+            <Section title="Payment gateway credentials">
+              <p className="text-xs text-slate-500 -mt-1 mb-2">
+                Used by the bKash and SSLCommerz deposit flows. The matching
+                environment variables win when they are set, so these boxes are
+                for deployments that cannot set env vars. Which methods are
+                offered to users is configured under Payment Methods.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="bKash app key">
+                  <input
+                    type="password"
+                    value={(values["bkash.appKey"] as string) || ""}
+                    onChange={(e) => set("bkash.appKey", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field label="bKash app secret">
+                  <input
+                    type="password"
+                    value={(values["bkash.appSecret"] as string) || ""}
+                    onChange={(e) => set("bkash.appSecret", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field label="bKash username">
+                  <input
+                    value={(values["bkash.username"] as string) || ""}
+                    onChange={(e) => set("bkash.username", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field label="bKash password">
+                  <input
+                    type="password"
+                    value={(values["bkash.password"] as string) || ""}
+                    onChange={(e) => set("bkash.password", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field label="SSLCommerz store ID">
+                  <input
+                    value={(values["sslcommerz.storeId"] as string) || ""}
+                    onChange={(e) => set("sslcommerz.storeId", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field label="SSLCommerz store password">
+                  <input
+                    type="password"
+                    value={(values["sslcommerz.storePasswd"] as string) || ""}
+                    onChange={(e) =>
+                      set("sslcommerz.storePasswd", e.target.value)
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+              </div>
             </Section>
-            <Section title="SMS — Twilio">
-              <Field label="Account SID">
-                <input
-                  value={(values.twilio_sid as string) || ""}
-                  onChange={(e) => set("twilio_sid", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="Auth Token">
-                <input
-                  type="password"
-                  value={(values.twilio_token as string) || ""}
-                  onChange={(e) => set("twilio_token", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-            </Section>
-            <Section title="Analytics">
-              <Field label="Google Analytics ID">
-                <input
-                  value={(values.google_analytics_id as string) || ""}
-                  onChange={(e) => set("google_analytics_id", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                  placeholder="G-XXXXXXXX"
-                />
-              </Field>
-              <Field label="Facebook Pixel ID">
-                <input
-                  value={(values.facebook_pixel_id as string) || ""}
-                  onChange={(e) => set("facebook_pixel_id", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-            </Section>
+            <ManagedElsewhere
+              label="Payment gateways"
+              href="/admin/payment-methods"
+              linkLabel="Payment Methods"
+              why="Deposits and payouts run on the payment methods you configure there (bKash, SSLCommerz and the manual methods). There is no Stripe or Twilio integration in the platform, so those key boxes stored text nothing could ever use."
+            />
+            <NotWired
+              items={[
+                {
+                  label: "Google Analytics / Facebook Pixel",
+                  why: "No third-party tracking script is injected. Page and traffic analytics are first-party (/admin/analytics), and adding a tag also has to pass the cookie-consent gate — so it needs building, not just an ID.",
+                },
+              ]}
+            />
             <Section title="Social task verification (bots)">
               <p className="text-xs text-slate-500 -mt-1 mb-2">
                 Powers auto-verified Telegram/Discord JOIN tasks. Create a bot,
@@ -911,22 +1062,21 @@ export function SystemSettingsForm({
 
         {tab === "limits" && (
           <div className="space-y-4">
+            <ManagedElsewhere
+              label="Max tasks per day"
+              href="/admin/packages"
+              linkLabel="Packages"
+              why="The daily task limit is per package (Daily Task Limit), which is what the task list actually enforces. One global number here would override nothing."
+            />
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Max Tasks Per Day">
+              <Field
+                label="Max Withdrawals Per Day"
+                hint="Rolling 24h, per user · 0 = no limit"
+              >
                 <input
                   type="number"
-                  value={Number(values.max_tasks_per_day ?? 50)}
-                  onChange={(e) =>
-                    set("max_tasks_per_day", parseInt(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="Max Withdrawals Per Day">
-                <input
-                  type="number"
-                  value={Number(values.max_withdrawals_per_day ?? 3)}
+                  min={0}
+                  value={Number(values.max_withdrawals_per_day ?? 1)}
                   onChange={(e) =>
                     set("max_withdrawals_per_day", parseInt(e.target.value))
                   }
@@ -934,12 +1084,14 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Max Referrals Per User">
+              <Field
+                label="Max Referrals Per User"
+                hint="Beyond this, signups stop being attributed · 0 = no limit"
+              >
                 <input
                   type="number"
-                  value={Number(values.max_referrals_per_user ?? 1000)}
+                  min={0}
+                  value={Number(values.max_referrals_per_user ?? 0)}
                   onChange={(e) =>
                     set("max_referrals_per_user", parseInt(e.target.value))
                   }
@@ -947,36 +1099,18 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-              <Field label="Max Active Marketplace Listings">
-                <input
-                  type="number"
-                  value={Number(values.max_active_listings ?? 10)}
-                  onChange={(e) =>
-                    set("max_active_listings", parseInt(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="File Upload Max Size (MB)">
+              <Field
+                label="Max Active Marketplace Listings"
+                hint="Live + awaiting review, per seller · 0 = no limit"
+              >
                 <input
                   type="number"
-                  value={Number(values.file_upload_max_mb ?? 5)}
+                  min={0}
+                  value={Number(values.max_active_listings ?? 0)}
                   onChange={(e) =>
-                    set("file_upload_max_mb", parseInt(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="API Rate Limit (per min)">
-                <input
-                  type="number"
-                  value={Number(values.api_rate_limit_per_min ?? 100)}
-                  onChange={(e) =>
-                    set("api_rate_limit_per_min", parseInt(e.target.value))
+                    set("max_active_listings", parseInt(e.target.value))
                   }
                   disabled={!canEdit}
                   className={inp}
@@ -1148,6 +1282,13 @@ export function SystemSettingsForm({
               (within a minute — the values are memoised server-side).
             </p>
             <Toggle
+              label="Page-view analytics"
+              description="Record page visits and foreground time for /admin/analytics. First-party only — nothing is sent to a third party."
+              checked={values.analytics_pageviews_enabled !== false}
+              onChange={(v) => set("analytics_pageviews_enabled", v)}
+              disabled={!canEdit}
+            />
+            <Toggle
               label="Cookie consent popup"
               description="Show the cookie consent banner to visitors"
               checked={values["ui.cookies_popup_enabled"] !== false}
@@ -1235,6 +1376,86 @@ export function SystemSettingsForm({
 
 const inp =
   "w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 disabled:opacity-60";
+
+/**
+ * A control that used to live here and does not any more.
+ *
+ * Several boxes on this form wrote a `SystemSetting` row that **nothing on the
+ * platform ever read** — `task_reward_multiplier`, `referral_l*_pct`,
+ * `max_tasks_per_day`. The real value was always somewhere else (the package
+ * row, the `ReferralLevel` table). An admin who typed a number here and pressed
+ * Save got a success toast and no change in behaviour, which is worse than
+ * having no control at all.
+ *
+ * Rather than delete them silently — an admin looking for "referral %" would
+ * then find nothing — each one is replaced by a pointer to where the value
+ * really lives.
+ */
+function ManagedElsewhere({
+  label,
+  href,
+  linkLabel,
+  why,
+}: {
+  label: string;
+  href: string;
+  linkLabel: string;
+  why: string;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-slate-300">{label}</p>
+        <Link
+          href={href}
+          className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300 hover:bg-blue-500/20"
+        >
+          {linkLabel}
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+      </div>
+      <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{why}</p>
+    </div>
+  );
+}
+
+/**
+ * Controls this screen used to offer that the platform cannot yet honour.
+ *
+ * The honest alternative to a switch that silently does nothing is not to
+ * delete the idea — an owner who goes looking for "force 2FA" and finds no
+ * mention of it assumes they missed it, and may assume it is on. It is to say
+ * plainly that it is not built, and why, so the gap is a known one.
+ *
+ * An entry here is a promise to either build it or drop it, not a permanent
+ * home. `scripts/verify-settings-truth.ts` keeps the list honest from the other
+ * direction: a key that IS wired must not sit here.
+ */
+function NotWired({
+  items,
+}: {
+  items: { label: string; why: string }[];
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-4">
+      <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+        Not built yet
+      </p>
+      <p className="mt-1 text-xs text-slate-500">
+        These used to be switches here that saved successfully and changed
+        nothing. They are listed rather than hidden so the gap is visible.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {items.map((it) => (
+          <li key={it.label} className="text-xs leading-relaxed">
+            <span className="font-medium text-slate-400">{it.label}</span>
+            <span className="text-slate-600"> — {it.why}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function Field({
   label,

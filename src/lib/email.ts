@@ -1,28 +1,18 @@
-import nodemailer from "nodemailer";
+import { sendMail, getMailConfig } from "@/lib/mailer";
+import { getPlatformName } from "@/lib/system-settings";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: parseInt(process.env.SMTP_PORT || "587"),
-  secure: process.env.SMTP_SECURE === "true",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASSWORD,
-  },
-});
-
-const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME || "EarnGPT";
+// Host, port, credentials and the From header now come from `lib/mailer.ts`,
+// which reads the admin **Email settings** first and falls back to the env
+// vars. This file used to build a nodemailer transport at module load from
+// `process.env` alone, which is why every box on that settings tab was dead.
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-// Tolerate the env-name variants for the From address (SMTP_FROM is canonical;
-// EMAIL_FROM is what some deployments set) and fall back to the SMTP user so
-// the header is never `<undefined>`.
-const FROM_ADDRESS =
-  process.env.SMTP_FROM || process.env.EMAIL_FROM || process.env.SMTP_USER || "";
 
 export async function sendVerificationEmail(
   email: string,
   token: string,
   name: string
 ) {
+  const APP_NAME = await getPlatformName();
   const verifyUrl = `${APP_URL}/verify-email?token=${token}`;
   const currentYear = new Date().getFullYear();
 
@@ -80,11 +70,11 @@ export async function sendVerificationEmail(
     </html>
   `;
 
-  await transporter.sendMail({
-    from: `${APP_NAME} <${FROM_ADDRESS}>`,
+  await sendMail({
     to: email,
     subject: `Verify your ${APP_NAME} account`,
     html,
+    transactional: true,
   });
 }
 
@@ -93,6 +83,7 @@ export async function sendPasswordResetEmail(
   token: string,
   name: string
 ) {
+  const APP_NAME = await getPlatformName();
   const resetUrl = `${APP_URL}/reset-password?token=${token}`;
   const currentYear = new Date().getFullYear();
 
@@ -150,15 +141,16 @@ export async function sendPasswordResetEmail(
     </html>
   `;
 
-  await transporter.sendMail({
-    from: `${APP_NAME} <${FROM_ADDRESS}>`,
+  await sendMail({
     to: email,
     subject: `Reset your ${APP_NAME} password`,
     html,
+    transactional: true,
   });
 }
 
 export async function sendWelcomeEmail(email: string, name: string) {
+  const APP_NAME = await getPlatformName();
   const currentYear = new Date().getFullYear();
 
   const html = `
@@ -216,21 +208,23 @@ export async function sendWelcomeEmail(email: string, name: string) {
     </html>
   `;
 
-  await transporter.sendMail({
-    from: `${APP_NAME} <${FROM_ADDRESS}>`,
+  await sendMail({
     to: email,
     subject: `Welcome to ${APP_NAME}! Let's start earning`,
     html,
+    transactional: true,
   });
 }
 
-/** True when SMTP is configured (env). Used to skip email sends gracefully. */
-export function isSmtpConfigured(): boolean {
-  return !!(
-    process.env.SMTP_HOST &&
-    process.env.SMTP_USER &&
-    process.env.SMTP_PASSWORD
-  );
+/**
+ * True when mail can actually be sent — admin **Email settings** first, env
+ * vars as the fallback. Used to skip optional sends gracefully.
+ *
+ * This was env-only and synchronous, which meant an owner who configured SMTP
+ * entirely through the admin screen still had every notification email skipped.
+ */
+export async function isSmtpConfigured(): Promise<boolean> {
+  return (await getMailConfig()).configured;
 }
 
 /**
@@ -243,7 +237,8 @@ export async function sendNotificationEmail(
   message: string,
   link?: string
 ) {
-  if (!isSmtpConfigured()) return;
+  if (!(await isSmtpConfigured())) return;
+  const APP_NAME = await getPlatformName();
   const currentYear = new Date().getFullYear();
   const cta = link
     ? `<div style="text-align:center;margin:28px 0;">
@@ -264,8 +259,7 @@ export async function sendNotificationEmail(
         </td></tr>
       </table>
     </body></html>`;
-  await transporter.sendMail({
-    from: `${APP_NAME} <${FROM_ADDRESS}>`,
+  await sendMail({
     to: email,
     subject: `${title} · ${APP_NAME}`,
     html,

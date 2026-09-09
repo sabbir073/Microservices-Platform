@@ -166,7 +166,7 @@ export async function POST(
       );
     }
 
-    if (!isGeminiConfigured()) {
+    if (!(await isGeminiConfigured())) {
       return NextResponse.json(
         { error: "AI is not configured", mode: "diy", diyPrompt },
         { status: 503 }

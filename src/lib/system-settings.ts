@@ -51,3 +51,19 @@ export async function getSecret(
   const v = await getSetting<string>(settingKey, "");
   return typeof v === "string" ? v : "";
 }
+
+/**
+ * The platform's display name — admin **General settings → Platform Name**,
+ * falling back to `NEXT_PUBLIC_APP_NAME`.
+ *
+ * That settings box wrote a row nothing read. It now names the sender on
+ * outgoing email and the issuer in authenticator apps. The `<title>`/OpenGraph
+ * metadata in `app/layout.tsx` is still a hardcoded literal, because changing
+ * it is a rebrand (canonical URLs, social cards, the PWA manifest), not a
+ * settings toggle.
+ */
+export async function getPlatformName(): Promise<string> {
+  const v = await getSetting<string>("platform_name", "");
+  const s = typeof v === "string" ? v.trim() : "";
+  return s || process.env.NEXT_PUBLIC_APP_NAME || "EarnGPT";
+}

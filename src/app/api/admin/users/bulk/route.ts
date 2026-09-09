@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
       if (!subject || !message) {
         return NextResponse.json({ error: "Subject and message required" }, { status: 400 });
       }
-      if (isSmtpConfigured()) {
+      if (await isSmtpConfigured()) {
         const recipients = await prisma.user.findMany({
           where: {
             id: { in: targetIds },

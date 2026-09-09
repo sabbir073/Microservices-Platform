@@ -3,9 +3,12 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { isGeminiConfigured, generateQuizQuestions } from "@/lib/gemini";
 import { prisma } from "@/lib/prisma";
+import { getSecret } from "@/lib/system-settings";
 import { z } from "zod";
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+// Key resolution lives in lib/gemini.ts (env var, then the admin Integrations
+// setting) — this route had its own module-scope copy of `process.env`, which
+// is a second place the admin's saved key would have been ignored.
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
@@ -32,11 +35,12 @@ async function callGemini(prompt: string): Promise<{
   text?: string;
   error?: string;
 }> {
-  if (!GEMINI_API_KEY) {
+  const key = await getSecret("GEMINI_API_KEY", "gemini_api_key");
+  if (!key) {
     return { success: false, error: "GEMINI_API_KEY not set" };
   }
   try {
-    const res = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+    const res = await fetch(`${GEMINI_API_URL}?key=${key}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -65,7 +69,7 @@ export async function POST(request: NextRequest) {
     if (!(await can(session.user.id, "ai.manage"))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    if (!isGeminiConfigured()) {
+    if (!(await isGeminiConfigured())) {
       return NextResponse.json(
         { error: "Gemini AI not configured" },
         { status: 503 }

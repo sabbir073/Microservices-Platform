@@ -140,7 +140,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Generate questions using AI if not pre-defined
-    if (!isGeminiConfigured()) {
+    if (!(await isGeminiConfigured())) {
       return NextResponse.json(
         { error: "Quiz generation is not available" },
         { status: 503 }
