@@ -172,6 +172,96 @@ async function main() {
     );
   }
 
+  /* ── 4b. A buyer controls their task, but never judges the work ── */
+  console.log("\n4b. Pause is theirs; approval is not");
+  {
+    const api = read("src/app/api/tasks/mine/[id]/pause/route.ts");
+    check(
+      "ownership is in the WHERE clause, not checked afterwards",
+      /where: \{ id, fundedByUserId: userId \}/.test(api),
+      "no request shape may reach a task this buyer did not fund"
+    );
+    check(
+      "it does not borrow an admin permission",
+      !/can\(/.test(api),
+      "a buyer is not an admin; using the admin gate would be the wrong test entirely"
+    );
+    check(
+      "only a live task can be paused, only a paused one resumed",
+      /task\.status !== "ACTIVE"/.test(api) && /task\.status !== "PAUSED"/.test(api)
+    );
+    check(
+      "resuming re-checks the credit, like publishing does",
+      /credit < oneCompletion/.test(api),
+      "resuming into an empty balance puts it live just long enough for someone to work for nothing"
+    );
+    check("both directions are audited", /TASK_PAUSED/.test(api) && /TASK_RESUMED/.test(api));
+
+    // The invariant the owner asked for: a buyer must not be able to refuse
+    // work that was done properly.
+    const rbac = read("src/lib/rbac.ts");
+    check(
+      "the buyer-facing roles carry NO admin permissions at all",
+      /USER: \[\],/.test(rbac) && /AGENCY: \[\],/.test(rbac),
+      "approval is gated on submissions.approve; an empty permission list can never satisfy it"
+    );
+    const approve = read("src/app/api/admin/submissions/[id]/route.ts");
+    check(
+      "approving still requires the admin permission",
+      /can\(session\.user\.id, "submissions\.approve"\)/.test(approve)
+    );
+    const hub = read(VIEW);
+    check(
+      "the hub has no approve or reject control",
+      !/submissions\/\$\{/.test(hub) && !/"approve"/.test(hub)
+    );
+    check(
+      "…and says why, so the buyer is not left guessing",
+      /not asked to approve them/.test(hub)
+    );
+    check(
+      "the buyer CAN stop their own task from the hub",
+      /Pause task/.test(hub) && /Resume task/.test(hub)
+    );
+  }
+
+  /* ── 4c. A stalled task tells its buyer ── */
+  console.log("\n4c. Running out of credit is announced");
+  {
+    const credit = read("src/lib/task-credit.ts");
+    check(
+      "the close reason distinguishes 'out of credit' from 'finished'",
+      /closeReason\?: "NO_CREDIT" \| "DELIVERED"/.test(credit),
+      "telling a buyer 'your task ended' for both leaves the stalled ones dead and unexplained"
+    );
+    check(
+      "out of credit takes precedence when both are true",
+      /outOfCredit\s*\?\s*"NO_CREDIT"/.test(credit)
+    );
+    check(
+      "the message points at the fix",
+      /notifyTaskClosed/.test(credit) && /buy-points/.test(credit)
+    );
+    const paths = [
+      "src/app/api/admin/submissions/[id]/route.ts",
+      "src/app/api/tasks/[id]/submit/route.ts",
+      "src/lib/social-recheck.ts",
+    ];
+    const silent = paths.filter((f) => !/notifyTaskClosed\(/.test(read(f)));
+    check(
+      "every payout path notifies when it closes a task",
+      silent.length === 0,
+      silent.join(", ") || undefined
+    );
+    check(
+      "the admin path notifies AFTER its transaction commits",
+      /if \(closedTask\) void notifyTaskClosed\(closedTask\);/.test(
+        read("src/app/api/admin/submissions/[id]/route.ts")
+      ),
+      "announcing a closure that a rollback then un-did is worse than staying quiet"
+    );
+  }
+
   /* ── 5. Live data agrees with what the hub would render ── */
   console.log("\n5. Live state");
   {

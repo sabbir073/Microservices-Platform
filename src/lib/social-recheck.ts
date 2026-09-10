@@ -15,7 +15,7 @@ import {
 import { normalizeSocialConfig } from "@/lib/social-tasks";
 import { verifyCodeFor, contentHasCode } from "@/lib/task-verify-code";
 import { getPointsPerUsd } from "@/lib/economy";
-import { chargeTaskCompletion } from "@/lib/task-credit";
+import { chargeTaskCompletion, notifyTaskClosed } from "@/lib/task-credit";
 import { getBuyerSettings } from "@/lib/buyer-settings";
 import { isDuplicateLedgerError } from "@/lib/idempotency";
 import { closeTaskIfFull } from "@/lib/task-slots";
@@ -299,6 +299,11 @@ export async function recheckPendingSocialSubmissions(opts?: {
           await prisma.task.update({
             where: { id: sub.taskId },
             data: { status: "COMPLETED" },
+          });
+          void notifyTaskClosed({
+            buyerId: sub.task.fundedByUserId,
+            taskTitle: sub.task.title,
+            reason: charge.closeReason ?? "DELIVERED",
           });
         }
         if (!charge.paid) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Wallet,
@@ -11,8 +12,13 @@ import {
   Sparkles,
   AlertCircle,
   Clock,
+  Pause,
+  Play,
+  Loader2,
+  ShieldCheck,
 } from "lucide-react";
 import { usd, pts, cn } from "@/lib/utils";
+import { toast } from "@/lib/toast";
 import { TASK_CREDIT } from "@/lib/task-credit-theme";
 
 export interface BuyerTaskRow {
@@ -100,7 +106,29 @@ export function BuyerHubView({
   tasks: BuyerTaskRow[];
   invoices: InvoiceRow[];
 }) {
+  const router = useRouter();
   const [tab, setTab] = useState<"tasks" | "invoices">("tasks");
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  /** Pause or resume one of the buyer's own tasks. */
+  const setRunning = async (taskId: string, action: "pause" | "resume") => {
+    setBusyId(taskId);
+    try {
+      const res = await fetch(`/api/tasks/mine/${taskId}/pause`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not update the task");
+      toast.success(action === "pause" ? "Task paused" : "Task is live again");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   const live = tasks.filter((t) => t.status === "ACTIVE").length;
   const awaiting = tasks.filter((t) => t.status === "PENDING_REVIEW").length;
@@ -186,6 +214,17 @@ export function BuyerHubView({
               : "nothing running"
           }
         />
+      </div>
+
+      <div className="flex gap-2 rounded-xl border border-gray-800 bg-gray-950/50 p-3">
+        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+        <p className="text-[11px] leading-relaxed text-gray-500">
+          Submissions are checked automatically and reviewed by our team — you
+          are not asked to approve them. That is deliberate: it means nobody can
+          refuse work that was done properly, and it means you are never the one
+          holding up someone&rsquo;s payment. Something wrong with a submission?
+          Contact support and an admin will look at it.
+        </p>
       </div>
 
       <div className="flex gap-1 border-b border-gray-800">
@@ -323,6 +362,32 @@ export function BuyerHubView({
                         </span>
                       )}
                     </div>
+
+                    {/* Stopping a task is the buyer's own call — it is their
+                        task and their credit. Judging the WORK is not: that
+                        stays with admins and auto-verification. */}
+                    {(t.status === "ACTIVE" || t.status === "PAUSED") && (
+                      <button
+                        type="button"
+                        disabled={busyId === t.id}
+                        onClick={() =>
+                          setRunning(
+                            t.id,
+                            t.status === "ACTIVE" ? "pause" : "resume"
+                          )
+                        }
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:text-white disabled:opacity-50"
+                      >
+                        {busyId === t.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : t.status === "ACTIVE" ? (
+                          <Pause className="h-3.5 w-3.5" />
+                        ) : (
+                          <Play className="h-3.5 w-3.5" />
+                        )}
+                        {t.status === "ACTIVE" ? "Pause task" : "Resume task"}
+                      </button>
+                    )}
                   </>
                 )}
               </div>

@@ -164,6 +164,13 @@ export interface CompletionCharge {
    * promised.
    */
   closeTask: boolean;
+  /**
+   * WHY it should close. The buyer needs to be told the difference: a task
+   * that finished is good news, a task that ran out of credit is something
+   * they have to act on. Telling them "your task ended" for both means the
+   * ones that stalled sit dead and they never find out why.
+   */
+  closeReason?: "NO_CREDIT" | "DELIVERED";
   /** Set when `paid` is false, for the message shown to the worker. */
   reason?: "NO_CREDIT";
 }
@@ -219,6 +226,7 @@ export async function chargeTaskCompletion(
       rewardPoints,
       feePoints,
       closeTask: true,
+      closeReason: "NO_CREDIT",
       reason: "NO_CREDIT",
     };
   }
@@ -300,7 +308,46 @@ export async function chargeTaskCompletion(
     rewardPoints,
     feePoints,
     closeTask: outOfCredit || promiseDone,
+    // Out of credit takes precedence: if both are true the buyer still needs
+    // to know their balance is the binding constraint on the next task.
+    closeReason: outOfCredit
+      ? "NO_CREDIT"
+      : promiseDone
+        ? "DELIVERED"
+        : undefined,
   };
+}
+
+/**
+ * Tell a buyer their task has stopped, and why.
+ *
+ * Fire-and-forget, and deliberately OUTSIDE any transaction: a notification is
+ * not worth failing a payout for, and sending one for a transaction that then
+ * rolled back would be worse than sending none.
+ *
+ * Without this a task that ran out of credit simply stopped appearing. The
+ * buyer's own hub still listed it, nothing said why, and the natural
+ * assumption — "it is still running, nobody is doing it" — is the opposite of
+ * the truth.
+ */
+export async function notifyTaskClosed(args: {
+  buyerId: string;
+  taskTitle: string;
+  reason: "NO_CREDIT" | "DELIVERED";
+}): Promise<void> {
+  const { notifyUser } = await import("@/lib/notify");
+  const { NotificationType } = await import("@/generated/prisma/client");
+
+  const outOfCredit = args.reason === "NO_CREDIT";
+  await notifyUser({
+    userId: args.buyerId,
+    type: NotificationType.SYSTEM,
+    title: outOfCredit ? "Task stopped — out of credit" : "Task finished ✅",
+    message: outOfCredit
+      ? `"${args.taskTitle}" stopped because your credit can no longer cover another completion. Top up and publish it again to keep going.`
+      : `"${args.taskTitle}" has been completed by everyone it was advertised to.`,
+    link: outOfCredit ? "/buy-points" : "/buyer",
+  }).catch(() => {});
 }
 
 /** Current task-credit balance. */

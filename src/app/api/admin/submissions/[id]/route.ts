@@ -8,7 +8,7 @@ import { processReferralCommissions } from "@/lib/referral-commissions";
 import { Prisma } from "@/generated/prisma/client";
 import { normalizeSocialConfig } from "@/lib/social-tasks";
 import { getPointsPerUsd } from "@/lib/economy";
-import { chargeTaskCompletion } from "@/lib/task-credit";
+import { chargeTaskCompletion, notifyTaskClosed } from "@/lib/task-credit";
 import { getBuyerSettings } from "@/lib/buyer-settings";
 import { bumpTrust, TRUST_APPROVE, TRUST_REJECT } from "@/lib/trust";
 import { notifyUser } from "@/lib/notify";
@@ -248,6 +248,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       // two different keys — the constraint never fired and the user was paid
       // TWICE for one submission.
       const ledgerReference = `task_${existingSubmission.taskId}_${existingSubmission.id}`;
+      // Set inside the transaction when a buyer-funded task closes; the
+      // notification is sent AFTER it commits. Notifying from inside would
+      // announce a closure that a rollback then un-did.
+      let closedTask: {
+        buyerId: string;
+        taskTitle: string;
+        reason: "NO_CREDIT" | "DELIVERED";
+      } | null = null;
+
       const submission = await prisma.$transaction(async (tx) => {
         const claim = await tx.taskSubmission.updateMany({
           where: { id, status: "PENDING" },
@@ -307,6 +316,11 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
                 where: { id: task.id },
                 data: { status: "COMPLETED" },
               });
+              closedTask = {
+                buyerId: task.fundedByUserId,
+                taskTitle: task.title,
+                reason: charge.closeReason ?? "DELIVERED",
+              };
             }
           }
           if (credit) {
@@ -360,6 +374,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           { status: 400 }
         );
       }
+
+      if (closedTask) void notifyTaskClosed(closedTask);
 
       // Reputation: approving nudges trust up; an all-rejected social bundle
       // (finalStatus flipped to REJECTED) counts as a fraud strike instead.

@@ -13,7 +13,7 @@ import {
 import { processReferralCommissions } from "@/lib/referral-commissions";
 import { notifyUser } from "@/lib/notify";
 import { getPointsPerUsd } from "@/lib/economy";
-import { chargeTaskCompletion } from "@/lib/task-credit";
+import { chargeTaskCompletion, notifyTaskClosed } from "@/lib/task-credit";
 import { getBuyerSettings } from "@/lib/buyer-settings";
 import {
   compareUniqueKey,
@@ -1191,6 +1191,14 @@ export async function POST(
           await prisma.task.update({
             where: { id: task.id },
             data: { status: "COMPLETED" },
+          });
+          // Outside any transaction, fire-and-forget: the buyer has to learn
+          // their task stopped, but a notification is not worth failing a
+          // payout for.
+          void notifyTaskClosed({
+            buyerId: task.fundedByUserId,
+            taskTitle: task.title,
+            reason: charge.closeReason ?? "DELIVERED",
           });
         }
         if (!charge.paid) {
