@@ -27,6 +27,10 @@ export interface BuyerSettings {
   maxPointsPerTask: number;
   /** Largest number of completions one task may be funded for. */
   maxCompletions: number;
+  /** Smallest task-credit purchase, in points. */
+  minPurchasePoints: number;
+  /** Largest task-credit purchase in one go, in points. */
+  maxPurchasePoints: number;
   /** Task types a buyer may create. Empty → none (same as `enabled: false`). */
   allowedTaskTypes: string[];
   /** Buyer must be KYC-approved before funding anything. */
@@ -45,6 +49,8 @@ const DEFAULTS: BuyerSettings = {
   minPointsPerTask: 1,
   maxPointsPerTask: 100_000,
   maxCompletions: 100_000,
+  minPurchasePoints: 1_000,
+  maxPurchasePoints: 10_000_000,
   allowedTaskTypes: [...BUYER_TASK_TYPES],
   requireKyc: false,
   autoApproveTasks: false,
@@ -64,6 +70,8 @@ export async function getBuyerSettings(): Promise<BuyerSettings> {
     minPoints,
     maxPoints,
     maxCompletions,
+    minPurchase,
+    maxPurchase,
     allowedTypes,
     requireKyc,
     autoApprove,
@@ -74,12 +82,17 @@ export async function getBuyerSettings(): Promise<BuyerSettings> {
     getSetting<number>("buyer.min_points_per_task", DEFAULTS.minPointsPerTask),
     getSetting<number>("buyer.max_points_per_task", DEFAULTS.maxPointsPerTask),
     getSetting<number>("buyer.max_completions", DEFAULTS.maxCompletions),
+    getSetting<number>("buyer.min_purchase_points", DEFAULTS.minPurchasePoints),
+    getSetting<number>("buyer.max_purchase_points", DEFAULTS.maxPurchasePoints),
     getSetting<unknown>("buyer.allowed_task_types", null),
     getSetting<boolean>("buyer.require_kyc", DEFAULTS.requireKyc),
     getSetting<boolean>("buyer.auto_approve_tasks", DEFAULTS.autoApproveTasks),
     getSetting<boolean>("buyer.refund_fee_on_reject", DEFAULTS.refundFeeOnReject),
   ]);
 
+  const minPurchase_ = Math.floor(
+    num(minPurchase, DEFAULTS.minPurchasePoints, 1, 1_000_000_000)
+  );
   const minPointsPerTask = Math.floor(
     num(minPoints, DEFAULTS.minPointsPerTask, 1, 1_000_000)
   );
@@ -106,6 +119,13 @@ export async function getBuyerSettings(): Promise<BuyerSettings> {
     maxPointsPerTask,
     maxCompletions: Math.floor(
       num(maxCompletions, DEFAULTS.maxCompletions, 1, 10_000_000)
+    ),
+    minPurchasePoints: minPurchase_,
+    // A ceiling below the floor would refuse every possible purchase, so the
+    // floor wins — the same rule the reward bounds follow.
+    maxPurchasePoints: Math.max(
+      minPurchase_,
+      Math.floor(num(maxPurchase, DEFAULTS.maxPurchasePoints, 1, 1_000_000_000))
     ),
     allowedTaskTypes: [...new Set(allowed)],
     requireKyc: requireKyc === true,

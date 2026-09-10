@@ -1,5 +1,6 @@
 import { cn, pts, usd } from "@/lib/utils";
-import { Coins, DollarSign, ArrowUpRight, Megaphone, Plus } from "lucide-react";
+import { Coins, DollarSign, ArrowUpRight, Megaphone, Plus, Sparkles } from "lucide-react";
+import { TASK_CREDIT } from "@/lib/task-credit-theme";
 import Link from "next/link";
 
 interface BalanceCardProps {
@@ -7,6 +8,15 @@ interface BalanceCardProps {
   cash: number;
   /** Non-withdrawable ad credit (USD). When set, a third tile + top-up action show. */
   adCredit?: number;
+  /**
+   * Task credit (points bought to fund tasks). When set, a violet tile shows.
+   *
+   * Violet on purpose, and only violet: earned points are amber, cash emerald,
+   * ad credit sky. The balance is separate precisely so a buyer can tell which
+   * pot they are looking at, and two screens tinting it differently would undo
+   * that faster than any wording could fix.
+   */
+  taskCredit?: number;
   packageTier?: string;
   withdrawHref?: string;
   /** Where "Add funds" points (deposits). When set, an Add-funds action shows. */
@@ -25,6 +35,7 @@ export function BalanceCard({
   points,
   cash,
   adCredit,
+  taskCredit,
   packageTier,
   withdrawHref = "/withdrawal",
   addFundsHref,
@@ -35,6 +46,7 @@ export function BalanceCard({
 }: BalanceCardProps) {
   const ptInUsd = points / pointsPerUsd;
   const showAdCredit = adCredit !== undefined;
+  const showTaskCredit = taskCredit !== undefined && taskCredit > 0;
   return (
     <div
       className={cn(
@@ -87,6 +99,34 @@ export function BalanceCard({
           </p>
           <p className="text-[10px] text-gray-500">Withdrawable</p>
         </div>
+
+        {showTaskCredit && (
+          <div className="col-span-2 rounded-xl bg-gray-900/60 border border-gray-800 p-3 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className={cn("flex items-center gap-1.5 mb-1", TASK_CREDIT.text)}>
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-[10px] uppercase tracking-wider font-bold">
+                  {TASK_CREDIT.label}
+                </span>
+              </div>
+              <p className="font-bold text-white tabular-nums leading-tight whitespace-nowrap text-[clamp(0.9rem,4.2vw,1.125rem)]">
+                {pts(taskCredit)}
+              </p>
+              <p className="text-[10px] text-gray-500 truncate">
+                {TASK_CREDIT.blurb}
+              </p>
+            </div>
+            <Link
+              href="/buy-points"
+              className={cn(
+                "shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors",
+                TASK_CREDIT.chip
+              )}
+            >
+              <Plus className="w-3.5 h-3.5" /> Buy
+            </Link>
+          </div>
+        )}
 
         {showAdCredit && (
           <div className="col-span-2 rounded-xl bg-gray-900/60 border border-gray-800 p-3 flex items-center justify-between gap-2">

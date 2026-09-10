@@ -69,6 +69,8 @@ const DEFAULTS: SettingsBag = {
   "buyer.min_points_per_task": 1,
   "buyer.max_points_per_task": 100000,
   "buyer.max_completions": 100000,
+  "buyer.min_purchase_points": 1000,
+  "buyer.max_purchase_points": 10000000,
   "buyer.allowed_task_types": ["SOCIAL", "CUSTOM"],
   "buyer.require_kyc": false,
   "buyer.auto_approve_tasks": false,
@@ -150,6 +152,8 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   "buyer.min_points_per_task": "financial",
   "buyer.max_points_per_task": "financial",
   "buyer.max_completions": "financial",
+  "buyer.min_purchase_points": "financial",
+  "buyer.max_purchase_points": "financial",
   "buyer.allowed_task_types": "financial",
   "buyer.require_kyc": "financial",
   "buyer.auto_approve_tasks": "financial",
@@ -610,6 +614,38 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field
+                  label="Min task-credit purchase"
+                  hint="points, per purchase"
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    value={Number(values["buyer.min_purchase_points"] ?? 1000)}
+                    onChange={(e) =>
+                      set("buyer.min_purchase_points", parseInt(e.target.value))
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field
+                  label="Max task-credit purchase"
+                  hint="points, per purchase"
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    value={Number(values["buyer.max_purchase_points"] ?? 10000000)}
+                    onChange={(e) =>
+                      set("buyer.max_purchase_points", parseInt(e.target.value))
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+              </div>
               <Field
                 label="Task types buyers may create"
                 hint="Unticking both closes buyer task creation as surely as the switch above"

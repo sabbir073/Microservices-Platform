@@ -149,9 +149,14 @@ async function main() {
       "auto-approve decides the task's starting status",
       /buyer\.autoApproveTasks \? "ACTIVE" : "PENDING_REVIEW"/.test(create)
     );
+    // The CALL, not the import — `spendTaskCredit` is imported at the top of
+    // the file, so a bare indexOf finds line 1 and the check passes vacuously.
+    const kycAt = create.indexOf("buyer.requireKyc");
+    const spendAt = create.indexOf("spendTaskCredit(tx");
     check(
-      "the KYC gate runs before the wallet is debited",
-      create.indexOf("buyer.requireKyc") < create.indexOf("cashBalance: { decrement")
+      "the KYC gate runs before anything is spent",
+      kycAt > -1 && spendAt > -1 && kycAt < spendAt,
+      `kyc@${kycAt} spend@${spendAt} — an unverified buyer must be stopped before the money moves`
     );
   }
 
@@ -165,12 +170,26 @@ async function main() {
         /reference: `task_fee_\$\{created\.id\}`/.test(create)
     );
     check(
-      "the budget row carries the reward only, not the total",
-      /amount: -quote\.rewardUsd/.test(create)
+      "the budget row carries the reward pool only, not the total",
+      /points: -budgetPoints/.test(create) &&
+        !/points: -quote\.totalPoints/.test(create),
+      "the fee is its own row; folding it in here would hide the commission"
+    );
+    check(
+      "the budget row moves no USD — no cash left the platform",
+      /kind: "task_fund"/.test(create) &&
+        /amount: 0,\s*\n\s*points: -budgetPoints/.test(create),
+      "recording dollars here would double-count against the credit purchase"
     );
     check(
       "no fee row is written when the fee is zero",
-      /if \(quote\.feeUsd > 0\)/.test(create)
+      /if \(quote\.feePoints > 0\)/.test(create)
+    );
+    check(
+      "the fee row DOES keep its USD value — it is real revenue",
+      /amount: -quote\.feeUsd/.test(create) &&
+        /points: -quote\.feePoints/.test(create),
+      "those points were bought with cash and the platform now owns them"
     );
     const sources = read("src/lib/tx-sources.ts");
     check(
@@ -190,11 +209,20 @@ async function main() {
   console.log("\n4. A rejected task refunds what was paid");
   {
     const review = read(REVIEW);
-    check("the remaining budget is refunded", /budgetRefundUsd/.test(review));
-    check("the platform fee is refunded too", /feeRefundUsd/.test(review));
+    check(
+      "the remaining budget is refunded",
+      /budgetRefundPoints/.test(review)
+    );
+    check("the platform fee is refunded too", /feeRefundPoints/.test(review));
     check(
       "the refund is the SUM of both",
-      /const refundUsd = budgetRefundUsd \+ feeRefundUsd/.test(review)
+      /const refundPoints = budgetRefundPoints \+ feeRefundPoints/.test(review)
+    );
+    check(
+      "the refund goes back as CREDIT, never as cash",
+      /refundTaskCredit\(/.test(review) &&
+        !/cashBalance:\s*\{\s*increment/.test(review),
+      "paying a refund into cash would turn task credit into withdrawable money"
     );
     check(
       "the fee refunded is the fee actually PAID, not today's rate",
@@ -217,10 +245,27 @@ async function main() {
     const view = read(VIEW);
     check("the reward pool is a line item", /Reward pool/.test(view));
     check("the fee is a line item when there is one", /Platform fee \(\{feePercent\}%\)/.test(view));
-    check("the total says it hits the wallet", /Charged to your wallet/.test(view));
+    check(
+      "the total is stated in task credit, which is what actually pays",
+      /Total task credit/.test(view)
+    );
+    check(
+      "the dollar value trails as a reference, not as the headline",
+      /Worth about/.test(view)
+    );
+    check(
+      "the buyer sees their credit before and after",
+      /after`/.test(view) && /taskCredit/.test(view)
+    );
     check(
       "admin bounds are shown before submit, not as a server error",
-      /limitError/.test(view) && /disabled=\{busy \|\| !!limitError\}/.test(view)
+      /limitError/.test(view) &&
+        /disabled=\{busy \|\| !!limitError \|\| shortBy > 0\}/.test(view)
+    );
+    check(
+      "…and so is running out of credit, with a way to top up",
+      /shortBy/.test(view) && /\/buy-points/.test(view),
+      "finding out at submit time that you cannot afford it wastes the whole form"
     );
     check(
       "the type picker only offers types the admin allows",

@@ -8,11 +8,12 @@ import {
   Users,
   Receipt,
   ListChecks,
+  Sparkles,
   AlertCircle,
   Clock,
 } from "lucide-react";
-import { usd } from "@/lib/utils";
-import { cn } from "@/lib/utils";
+import { usd, pts, cn } from "@/lib/utils";
+import { TASK_CREDIT } from "@/lib/task-credit-theme";
 
 export interface BuyerTaskRow {
   id: string;
@@ -82,6 +83,7 @@ const STATUS: Record<string, { label: string; tone: string }> = {
 
 export function BuyerHubView({
   cashBalance,
+  taskCredit,
   pointsPerUsd,
   feePercent,
   canCreate,
@@ -89,6 +91,7 @@ export function BuyerHubView({
   invoices,
 }: {
   cashBalance: number;
+  taskCredit: number;
   pointsPerUsd: number;
   feePercent: number;
   canCreate: boolean;
@@ -117,6 +120,17 @@ export function BuyerHubView({
             Your tasks, what they cost, and who has completed them.
           </p>
         </div>
+        <div className="flex gap-2">
+        <Link
+          href="/buy-points"
+          className={cn(
+            "inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold",
+            TASK_CREDIT.chip
+          )}
+        >
+          <Sparkles className="h-4 w-4" />
+          Buy credit
+        </Link>
         {canCreate && (
           <Link
             href="/create-task"
@@ -126,15 +140,17 @@ export function BuyerHubView({
             New task
           </Link>
         )}
+        </div>
       </div>
 
       {/* Summary */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
-          icon={Wallet}
-          label="Wallet"
-          value={usd(cashBalance)}
-          sub={`${Math.floor(cashBalance * pointsPerUsd).toLocaleString()} pts of budget`}
+          icon={Sparkles}
+          label={TASK_CREDIT.label}
+          value={pts(taskCredit)}
+          sub={`${usd(taskCredit / (pointsPerUsd || 1000))} · wallet ${usd(cashBalance)}`}
+          tone={TASK_CREDIT.text}
         />
         <Stat
           icon={ListChecks}
@@ -351,16 +367,18 @@ function Stat({
   label,
   value,
   sub,
+  tone = "text-indigo-400",
 }: {
   icon: typeof Wallet;
   label: string;
   value: string;
   sub: string;
+  tone?: string;
 }) {
   return (
     <div className="glass rounded-xl p-3">
       <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 text-indigo-400" />
+        <Icon className={cn("h-4 w-4", tone)} />
         <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
           {label}
         </p>

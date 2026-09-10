@@ -145,6 +145,7 @@ const tutorNavigation = [
 // scan. Gated on the `createTasks` capability, not a role.
 const buyerNavigation = [
   { name: "Buyer Hub", href: "/buyer", icon: ShoppingBag },
+  { name: "Buy Task Credit", href: "/buy-points", icon: Sparkles },
 ];
 
 // Extract SidebarContent as a separate component

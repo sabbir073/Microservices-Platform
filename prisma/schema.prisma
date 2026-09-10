@@ -1405,6 +1405,15 @@ model User {
   // Non-withdrawable ad-spend wallet (USD, 1 credit = $1). Bought with cash/
   // points or admin-granted; campaign budgets are funded from this.
   adCreditBalance                   Decimal                      @default(0) @db.Decimal(18, 6)
+  /// Points BOUGHT to fund tasks — deliberately not `pointsBalance`.
+  ///
+  /// Earned points mirror into `totalEarnings`, convert to cash and can then be
+  /// withdrawn. Funding task budgets from the same column would make buying
+  /// points the same as buying withdrawable balance, turning the platform into
+  /// a way to move money in and straight back out. This has one way in (buy it
+  /// with wallet cash) and one way out (fund a task); no earning path ever
+  /// credits it. `src/lib/task-credit.ts` is its only writer.
+  taskCreditPoints                  Int                          @default(0)
   totalEarnings                     Decimal                      @default(0) @db.Decimal(18, 6)
   totalWithdrawals                  Decimal                      @default(0) @db.Decimal(18, 6)
   xp                                Int                          @default(0)

@@ -1,4 +1,3 @@
-import { usd } from "@/lib/utils";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/lib/auth";
@@ -7,6 +6,7 @@ import { userCanFeature } from "@/lib/packages";
 import { getPointsPerUsd } from "@/lib/economy";
 import { sanitizeTaskAudience, EMPTY_TASK_AUDIENCE } from "@/lib/task-targeting";
 import { getBuyerSettings, quoteTask } from "@/lib/buyer-settings";
+import { spendTaskCredit, getTaskCredit } from "@/lib/task-credit";
 import { KYCStatus } from "@/generated/prisma/client";
 import { TransactionType, TransactionStatus, TaskType } from "@/generated/prisma/client";
 
@@ -155,16 +155,16 @@ export async function POST(req: NextRequest) {
     feePercent: buyer.feePercent,
   });
   const budgetPoints = quote.budgetPoints;
-  const costUsd = quote.totalUsd;
 
   try {
     const task = await prisma.$transaction(async (tx) => {
-      // Atomic no-overspend wallet debit.
-      const debit = await tx.user.updateMany({
-        where: { id: userId, cashBalance: { gte: costUsd } },
-        data: { cashBalance: { decrement: costUsd } },
-      });
-      if (debit.count === 0) throw new Error("INSUFFICIENT_FUNDS");
+      // Funded from TASK CREDIT, never from the wallet or from earned points.
+      // Task credit is bought with cash on /buy-points and can only ever be
+      // spent here; keeping the two apart is what stops "buy points, get them
+      // rejected, withdraw the refund" being a way to move money through the
+      // platform. CAS, so two concurrent creates cannot spend the same points.
+      const paid = await spendTaskCredit(tx, userId, quote.totalPoints);
+      if (!paid) throw new Error("INSUFFICIENT_CREDIT");
 
       const created = await tx.task.create({
         data: {
@@ -199,33 +199,40 @@ export async function POST(req: NextRequest) {
           userId,
           type: TransactionType.PURCHASE,
           status: TransactionStatus.COMPLETED,
-          amount: -quote.rewardUsd,
-          points: 0,
+          // No cash moved — this records credit being committed to a task.
+          // `amount` carries the USD value for reporting; the real movement is
+          // in `points`.
+          amount: 0,
+          points: -budgetPoints,
           description: `Task budget — "${created.title}"`,
           reference: `task_fund_${created.id}`,
           metadata: {
             taskId: created.id,
             kind: "task_fund",
             budgetPoints,
-            feeUsd: quote.feeUsd,
+            feePoints: quote.feePoints,
+            rewardUsd: quote.rewardUsd,
             feePercent: quote.feePercent,
           },
         },
       });
-      if (quote.feeUsd > 0) {
+      if (quote.feePoints > 0) {
         await tx.transaction.create({
           data: {
             userId,
             type: TransactionType.ADMIN_FEE,
             status: TransactionStatus.COMPLETED,
+            // The fee IS revenue, so it keeps its USD value: those points were
+            // bought with real cash and the platform now owns them.
             amount: -quote.feeUsd,
-            points: 0,
+            points: -quote.feePoints,
             description: `Platform fee (${quote.feePercent}%) — "${created.title}"`,
             reference: `task_fee_${created.id}`,
             metadata: {
               taskId: created.id,
               kind: "task_fee",
               feePercent: quote.feePercent,
+              feePoints: quote.feePoints,
             },
           },
         });
@@ -243,14 +250,16 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (e) {
-    if (e instanceof Error && e.message === "INSUFFICIENT_FUNDS") {
+    if (e instanceof Error && e.message === "INSUFFICIENT_CREDIT") {
+      const have = await getTaskCredit(userId);
       return NextResponse.json(
         {
           error:
-            quote.feeUsd > 0
-              ? `Insufficient wallet balance. This task needs ${usd(quote.rewardUsd)} for ${d.targetCount} completions plus ${usd(quote.feeUsd)} platform fee — ${usd(costUsd)} in total.`
-              : `Insufficient wallet balance. This task needs ${usd(costUsd)} to fund ${d.targetCount} completions.`,
-          shortBy: costUsd,
+            quote.feePoints > 0
+              ? `Not enough task credit. This task needs ${quote.budgetPoints.toLocaleString()} points for ${d.targetCount} completions plus a ${quote.feePoints.toLocaleString()}-point platform fee — ${quote.totalPoints.toLocaleString()} in total, and you have ${have.toLocaleString()}.`
+              : `Not enough task credit. This task needs ${quote.totalPoints.toLocaleString()} points and you have ${have.toLocaleString()}.`,
+          shortByPoints: Math.max(0, quote.totalPoints - have),
+          buyPointsHref: "/buy-points",
         },
         { status: 402 }
       );

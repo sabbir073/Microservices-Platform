@@ -5,6 +5,7 @@ import { getEffectiveFeatures } from "@/lib/packages";
 import { getPointsPerUsd } from "@/lib/economy";
 import { FeatureLock } from "@/components/user/primitives/feature-lock";
 import { getBuyerSettings } from "@/lib/buyer-settings";
+import { getTaskCredit } from "@/lib/task-credit";
 
 export default async function CreateTaskPage() {
   const session = await auth();
@@ -13,9 +14,10 @@ export default async function CreateTaskPage() {
   const { enabled } = await getEffectiveFeatures(session.user.id);
   if (!enabled.has("createTasks")) return <FeatureLock title="Create Task" />;
 
-  const [pointsPerUsd, buyer] = await Promise.all([
+  const [pointsPerUsd, buyer, taskCredit] = await Promise.all([
     getPointsPerUsd(),
     getBuyerSettings(),
+    getTaskCredit(session.user.id),
   ]);
 
   // The admin master switch closes the form as well as the API. Showing the
@@ -40,6 +42,7 @@ export default async function CreateTaskPage() {
       maxCompletions={buyer.maxCompletions}
       allowedTypes={buyer.allowedTaskTypes}
       needsReview={!buyer.autoApproveTasks}
+      taskCredit={taskCredit}
     />
   );
 }

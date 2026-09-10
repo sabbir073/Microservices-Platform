@@ -4,7 +4,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Send, Share2, Sparkles, Wallet, Target } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { usd } from "@/lib/utils";
+import { usd, pts, cn } from "@/lib/utils";
+import Link from "next/link";
+import { TASK_CREDIT } from "@/lib/task-credit-theme";
 import { quoteTask } from "@/lib/buyer-quote";
 import {
   TaskAudienceTargeting,
@@ -34,6 +36,7 @@ export function CreateTaskView({
   maxCompletions = 100000,
   allowedTypes = ["SOCIAL", "CUSTOM"],
   needsReview = true,
+  taskCredit = 0,
 }: {
   pointsPerUsd?: number;
   /** When true, the user may set audience targeting (admin-granted `targetTasks`). */
@@ -46,6 +49,8 @@ export function CreateTaskView({
   allowedTypes?: string[];
   /** False when the admin publishes buyer tasks without review. */
   needsReview?: boolean;
+  /** The buyer's task-credit balance, in points. This is what funds the task. */
+  taskCredit?: number;
 }) {
   const router = useRouter();
   const [type, setType] = useState<TaskType>(
@@ -77,6 +82,7 @@ export function CreateTaskView({
   const budget = quote.budgetPoints;
 
   // Admin bounds, surfaced before submit rather than as a server rejection.
+  const shortBy = Math.max(0, quote.totalPoints - taskCredit);
   const limitError =
     pointsReward < minPoints
       ? `Minimum reward is ${minPoints.toLocaleString()} points per completion.`
@@ -363,42 +369,73 @@ export function CreateTaskView({
           </div>
         </div>
 
+        {/* Priced in POINTS, because task credit is what actually pays for
+            this. The dollar value trails as a reference so the buyer can still
+            see what it is worth. */}
         <div className="mt-3 space-y-1.5 text-sm">
           <div className="flex justify-between">
-            <span className="text-gray-400">
-              Reward pool ({budget.toLocaleString()} pts)
-            </span>
+            <span className="text-gray-400">Reward pool</span>
             <span className="tabular-nums text-gray-200">
-              {usd(quote.rewardUsd)}
+              {pts(budget)} pts
             </span>
           </div>
           {feePercent > 0 && (
             <div className="flex justify-between">
               <span className="text-gray-400">Platform fee ({feePercent}%)</span>
               <span className="tabular-nums text-gray-200">
-                {usd(quote.feeUsd)}
+                {pts(quote.feePoints)} pts
               </span>
             </div>
           )}
           <div className="flex justify-between border-t border-white/10 pt-1.5 font-bold">
-            <span className="text-white">Charged to your wallet</span>
-            <span className="tabular-nums text-white">
+            <span className="text-white">Total task credit</span>
+            <span className={cn("tabular-nums", TASK_CREDIT.textStrong)}>
+              {pts(quote.totalPoints)} pts
+            </span>
+          </div>
+          <div className="flex justify-between text-[11px]">
+            <span className="text-gray-500">Worth about</span>
+            <span className="tabular-nums text-gray-500">
               {usd(quote.totalUsd)}
             </span>
           </div>
         </div>
 
+        {/* Balance after, so a buyer knows whether they can run this at all
+            before writing the whole thing. */}
+        <div
+          className={cn(
+            "mt-3 flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs",
+            shortBy > 0
+              ? "border-amber-500/30 bg-amber-500/10"
+              : cn(TASK_CREDIT.border, TASK_CREDIT.bg)
+          )}
+        >
+          <span className={shortBy > 0 ? "text-amber-300" : "text-gray-400"}>
+            {shortBy > 0
+              ? `You need ${pts(shortBy)} more task credit`
+              : `Your credit: ${pts(taskCredit)} → ${pts(taskCredit - quote.totalPoints)} after`}
+          </span>
+          {shortBy > 0 && (
+            <Link
+              href="/buy-points"
+              className="shrink-0 rounded-md border border-amber-400/40 bg-amber-400/15 px-2 py-1 font-semibold text-amber-200 hover:bg-amber-400/25"
+            >
+              Buy credit
+            </Link>
+          )}
+        </div>
+
         <div className="mt-3 space-y-1 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-gray-500">
           <p>
-            Each approved completion draws{" "}
-            {pointsReward.toLocaleString()} pts from the pool. Whatever is left
-            when the task ends is returned to your wallet.
+            Each approved completion draws {pts(pointsReward)} pts from the
+            pool. Whatever is left when the task ends comes back as task credit.
           </p>
           <p>
             {needsReview
               ? "An admin reviews the task before it goes live. If it is rejected you get the budget"
               : "The task goes live as soon as it is funded. If it is later rejected you get the budget"}
-            {feePercent > 0 ? " and the fee" : ""} back.
+            {feePercent > 0 ? " and the fee" : ""} back as credit — not as cash.
           </p>
         </div>
       </div>
@@ -411,7 +448,7 @@ export function CreateTaskView({
 
       <button
         onClick={submit}
-        disabled={busy || !!limitError}
+        disabled={busy || !!limitError || shortBy > 0}
         className="w-full py-3 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50"
       >
         {busy ? (

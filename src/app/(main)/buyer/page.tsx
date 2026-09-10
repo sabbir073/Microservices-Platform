@@ -36,7 +36,7 @@ export default async function BuyerHubPage() {
     getPointsPerUsd(),
     prisma.user.findUnique({
       where: { id: userId },
-      select: { cashBalance: true },
+      select: { cashBalance: true, taskCreditPoints: true },
     }),
     prisma.task.findMany({
       where: { fundedByUserId: userId },
@@ -64,6 +64,7 @@ export default async function BuyerHubPage() {
           { reference: { startsWith: "task_fund_" } },
           { reference: { startsWith: "task_fee_" } },
           { reference: { startsWith: "task_refund_" } },
+          { reference: { startsWith: "taskcredit_" } },
         ],
       },
       orderBy: { createdAt: "desc" },
@@ -146,6 +147,7 @@ export default async function BuyerHubPage() {
   return (
     <BuyerHubView
       cashBalance={toNum(me?.cashBalance ?? 0)}
+      taskCredit={me?.taskCreditPoints ?? 0}
       pointsPerUsd={pointsPerUsd}
       feePercent={buyer.feePercent}
       canCreate={buyer.enabled && buyer.allowedTaskTypes.length > 0}

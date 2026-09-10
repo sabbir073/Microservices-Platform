@@ -3,10 +3,9 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
-import { usd } from "@/lib/utils";
 import { notifyUser } from "@/lib/notify";
-import { getPointsPerUsd } from "@/lib/economy";
 import { getBuyerSettings } from "@/lib/buyer-settings";
+import { refundTaskCredit } from "@/lib/task-credit";
 import { toNum } from "@/lib/money";
 import { TransactionType, TransactionStatus, NotificationType } from "@/generated/prisma/client";
 
@@ -79,7 +78,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         type: NotificationType.SYSTEM,
         title: "Task approved ✅",
         message: `Your task "${task.title}" is approved and now live.`,
-        link: "/create-task",
+        link: "/buyer",
       }).catch(() => {});
     }
     await writeAudit({
@@ -100,20 +99,23 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ success: true, status: "ACTIVE" });
   }
 
-  // Reject -> refund the remaining budget to the creator's wallet.
-  const pointsPerUsd = await getPointsPerUsd();
-  const budgetRefundUsd =
-    task.fundedByUserId && task.remainingBudget > 0
-      ? task.remainingBudget / pointsPerUsd
-      : 0;
+  // Reject -> return the unspent budget to the buyer's TASK CREDIT.
+  //
+  // Not to their cash. Refunding to `cashBalance` would make "buy credit, fund
+  // a task, get it rejected" a way to turn task credit back into withdrawable
+  // money, which is the exact hole the separate balance exists to close. It
+  // goes back where it came from.
+  const budgetRefundPoints =
+    task.fundedByUserId && task.remainingBudget > 0 ? task.remainingBudget : 0;
 
   // ...and the platform fee they paid to submit it, unless the admin has
   // chosen to keep it as a review charge. Charging a buyer a commission for a
   // task you then refuse is the fastest way to lose the buyer, so the setting
-  // defaults to refunding. The fee is found on its own ledger row rather than
-  // recomputed from the current fee percent — the rate may have changed since
-  // they paid, and they are owed what they actually paid.
+  // defaults to refunding. The fee comes off its own ledger row rather than
+  // being recomputed from the current fee percent — the rate may have changed
+  // since they paid, and they are owed what they actually paid.
   const buyer = await getBuyerSettings();
+  let feeRefundPoints = 0;
   let feeRefundUsd = 0;
   if (task.fundedByUserId && buyer.refundFeeOnReject) {
     const feeRow = await prisma.transaction.findFirst({
@@ -121,42 +123,27 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
         userId: task.fundedByUserId,
         reference: `task_fee_${task.id}`,
       },
-      select: { amount: true },
+      select: { amount: true, points: true },
     });
-    // The fee was written as a negative charge on the payer.
+    // Both were written as negative charges on the payer.
+    feeRefundPoints = feeRow ? Math.abs(feeRow.points ?? 0) : 0;
     feeRefundUsd = feeRow ? Math.abs(toNum(feeRow.amount)) : 0;
   }
-  const refundUsd = budgetRefundUsd + feeRefundUsd;
+  const refundPoints = budgetRefundPoints + feeRefundPoints;
 
   await prisma.$transaction(async (tx) => {
     await tx.task.update({
       where: { id },
       data: { status: "REJECTED", remainingBudget: 0, rejectionReason: reason },
     });
-    if (task.fundedByUserId && refundUsd > 0) {
-      await tx.user.update({
-        where: { id: task.fundedByUserId },
-        data: { cashBalance: { increment: refundUsd } },
-      });
-      await tx.transaction.create({
-        data: {
-          userId: task.fundedByUserId,
-          type: TransactionType.REFUND,
-          status: TransactionStatus.COMPLETED,
-          amount: refundUsd,
-          points: 0,
-          description: `Task budget refund — "${task.title}"`,
-          reference: `task_refund_${task.id}`,
-          metadata: {
-            taskId: task.id,
-            kind: "task_refund",
-            budgetRefundUsd,
-            feeRefundUsd,
-          },
-        },
+    if (task.fundedByUserId && refundPoints > 0) {
+      await refundTaskCredit(tx, task.fundedByUserId, refundPoints, {
+        taskId: task.id,
+        kind: "task_refund",
       });
       // Reverse the revenue row as well, so the finance console does not keep
-      // reporting a fee the platform gave back as income.
+      // reporting a fee the platform gave back as income. This one carries the
+      // USD value: the fee WAS booked as revenue in dollars.
       if (feeRefundUsd > 0) {
         await tx.transaction.create({
           data: {
@@ -164,10 +151,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
             type: TransactionType.ADMIN_FEE,
             status: TransactionStatus.COMPLETED,
             amount: feeRefundUsd,
-            points: 0,
+            points: feeRefundPoints,
             description: `Platform fee refunded — "${task.title}"`,
             reference: `task_fee_refund_${task.id}`,
-            metadata: { taskId: task.id, kind: "task_fee_refund" },
+            metadata: {
+              taskId: task.id,
+              kind: "task_fee_refund",
+              feeRefundPoints,
+            },
           },
         });
       }
@@ -179,8 +170,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       userId: task.fundedByUserId,
       type: NotificationType.SYSTEM,
       title: "Task rejected",
-      message: `Your task "${task.title}" was rejected${reason ? `: ${reason}` : ""}. ${usd(refundUsd)} was refunded to your wallet${feeRefundUsd > 0 ? " (budget + platform fee)" : ""}.`,
-      link: "/create-task",
+      message: `Your task "${task.title}" was rejected${reason ? `: ${reason}` : ""}. ${refundPoints.toLocaleString()} task credit points were returned${feeRefundPoints > 0 ? " (budget + platform fee)" : ""}.`,
+      link: "/buyer",
     }).catch(() => {});
   }
   await writeAudit({
@@ -189,8 +180,14 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     entity: "Task",
     entityId: id,
     targetUserId: task.fundedByUserId ?? null,
-    summary: `Rejected "${task.title}"${reason ? ` — ${reason}` : ""} · refunded ${usd(refundUsd)}`,
-    meta: { decision: "reject", reason: reason ?? null, refundUsd, title: task.title },
+    summary: `Rejected "${task.title}"${reason ? ` — ${reason}` : ""} · returned ${refundPoints.toLocaleString()} task credit`,
+    meta: {
+      decision: "reject",
+      reason: reason ?? null,
+      refundPoints,
+      feeRefundPoints,
+      title: task.title,
+    },
   });
-  return NextResponse.json({ success: true, status: "REJECTED", refundUsd });
+  return NextResponse.json({ success: true, status: "REJECTED", refundPoints });
 }
