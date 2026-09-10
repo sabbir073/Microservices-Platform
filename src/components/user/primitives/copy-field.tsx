@@ -1,21 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Copy } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Copy, ChevronDown } from "lucide-react";
 import { copyText } from "@/lib/clipboard";
 import { notifyCenter } from "@/lib/notify-center";
 
 /**
  * The copy affordances used by the social "recipe" — the numbered list of things
- * a user copies one by one and pastes into Pinterest / Facebook / X.
+ * a user copies one by one and pastes into Pinterest / ChatGPT / Facebook.
  *
- * Two deliberate behaviours:
- *  - The tick is **persistent**. Users leave the app, post, and come back; a tick
- *    that faded after 1.5s tells them nothing about what they already copied.
- *  - Copying **never locks or advances** anything. Every field stays copyable for
- *    as long as the task is open, because people re-copy after a failed paste.
+ * Two states, not one. The button used to set a single permanent `copied` flag,
+ * which read as a BUG: the second click on a field produced no visible change at
+ * all — same tick, same "Copied" label — so users reported that the buttons
+ * "only work once". The copy itself always fired; nothing told them so.
+ *
+ * Now:
+ *  - `flash` is per-click and fades. Every click gives feedback, every time,
+ *    because re-copying is normal — a paste fails, or ChatGPT is restarted.
+ *  - `everCopied` is permanent and quiet. Users leave the app, post, and come
+ *    back; a marker for "you already took this one" is genuinely useful, which
+ *    is why the old behaviour existed. It just cannot be the ONLY signal.
  */
-
 export function CopyButton({
   value,
   label = "Copy",
@@ -27,7 +32,15 @@ export function CopyButton({
   className?: string;
   tone?: "indigo" | "emerald" | "purple";
 }) {
-  const [copied, setCopied] = useState(false);
+  const [flash, setFlash] = useState(false);
+  const [everCopied, setEverCopied] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // A pending timer must not fire into an unmounted component, and a rapid
+  // second click must restart the flash rather than let the first one end it.
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
 
   const toneClass =
     tone === "emerald"
@@ -38,27 +51,54 @@ export function CopyButton({
 
   async function handle() {
     const ok = await copyText(value);
-    if (ok) {
-      setCopied(true);
+    if (!ok) {
+      notifyCenter.error("Couldn't copy", "Select the text and copy it manually.");
       return;
     }
-    notifyCenter.error(
-      "Couldn't copy",
-      "Select the text and copy it manually."
-    );
+    if (timer.current) clearTimeout(timer.current);
+    setFlash(true);
+    setEverCopied(true);
+    timer.current = setTimeout(() => setFlash(false), 1400);
   }
 
   return (
     <button
       type="button"
       onClick={handle}
-      className={`inline-flex items-center gap-1 text-[10px] font-semibold ${
-        copied ? "text-emerald-400" : toneClass
+      aria-label={everCopied ? `Copy ${label} again` : `Copy ${label}`}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] font-semibold transition-colors ${
+        flash
+          ? "bg-emerald-500/20 text-emerald-300"
+          : everCopied
+            ? "text-emerald-400/70 hover:bg-white/5 hover:text-emerald-300"
+            : `${toneClass} hover:bg-white/5`
       } ${className}`}
     >
-      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-      {copied ? "Copied" : label}
+      {flash || everCopied ? (
+        <Check className="h-3.5 w-3.5" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+      {flash ? "Copied!" : everCopied ? "Copy again" : label}
     </button>
+  );
+}
+
+/**
+ * How much of a value to show before collapsing it.
+ *
+ * The AI image prompt on a Pinterest task is ~4,000 characters of instructions
+ * written FOR ChatGPT, not for the person. Rendering it in full added several
+ * thousand pixels to the page — one task page measured 6,267px tall — and
+ * buried the thing the user actually has to do underneath it. Nobody reads it;
+ * they copy it. So it is collapsed by default, with the full text one tap away.
+ */
+const COLLAPSE_CHARS = 260;
+const COLLAPSE_LINES = 6;
+
+function isLong(value: string): boolean {
+  return (
+    value.length > COLLAPSE_CHARS || value.split("\n").length > COLLAPSE_LINES
   );
 }
 
@@ -82,26 +122,57 @@ export function CopyField({
   /** Rendered under the value — extra actions or a hint. */
   children?: React.ReactNode;
 }) {
+  const long = isLong(value);
+  const [open, setOpen] = useState(false);
+
   return (
-    <div className="rounded-lg bg-gray-950 border border-gray-800 p-3 space-y-1.5">
+    <div className="rounded-lg border border-gray-800 bg-gray-950 p-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
           {index != null && (
-            <span className="shrink-0 w-5 h-5 rounded-full bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 text-[10px] font-bold grid place-items-center">
+            <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full border border-indigo-500/40 bg-indigo-500/15 text-[10px] font-bold text-indigo-300">
               {index}
             </span>
           )}
-          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold truncate">
+          <p className="truncate text-[10px] font-bold uppercase tracking-wider text-gray-500">
             {label}
           </p>
           {badge}
         </div>
+        {/* The copy button always takes the FULL value, collapsed or not —
+            collapsing is about reading, never about what gets copied. */}
         <CopyButton value={value} />
       </div>
-      <p className="text-xs text-gray-200 whitespace-pre-wrap wrap-break-word">
-        {value}
-      </p>
-      {children}
+
+      <div className="relative mt-1.5">
+        <p
+          className={`whitespace-pre-wrap wrap-break-word text-xs text-gray-200 ${
+            long && !open ? "max-h-24 overflow-hidden" : ""
+          }`}
+        >
+          {value}
+        </p>
+        {long && !open && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-linear-to-t from-gray-950 to-transparent" />
+        )}
+      </div>
+
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-gray-400 hover:text-white"
+        >
+          <ChevronDown
+            className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+          />
+          {open
+            ? "Show less"
+            : `Show all (${value.length.toLocaleString()} characters)`}
+        </button>
+      )}
+
+      {children && <div className="mt-1.5">{children}</div>}
     </div>
   );
 }

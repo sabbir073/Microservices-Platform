@@ -68,6 +68,8 @@ export interface WalletDeposit {
 
 export interface WalletViewProps {
   pointsBalance: number;
+  /** Task credit, when this account can create tasks. Omitted otherwise. */
+  taskCreditPoints?: number;
   cashBalance: number;
   /** Non-withdrawable ad credit (USD). */
   adCreditBalance?: number;
@@ -132,6 +134,7 @@ export function WalletView(props: WalletViewProps) {
         points={props.pointsBalance}
         cash={props.cashBalance}
         adCredit={props.adCreditBalance}
+        taskCredit={props.taskCreditPoints}
         packageTier={props.packageTier}
         pointsPerUsd={pointsPerUsd}
       />

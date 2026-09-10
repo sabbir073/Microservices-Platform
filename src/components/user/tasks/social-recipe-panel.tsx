@@ -149,17 +149,12 @@ function DiyPromptBlock({
         Copy this prompt, paste it into ChatGPT or Gemini, and it will write your{" "}
         {platformLabel} post for you. Then copy each line from its answer.
       </p>
-      <div className="rounded bg-gray-950 border border-gray-800 p-2 space-y-1.5">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-[10px] uppercase tracking-wider text-indigo-400 font-bold">
-            Prompt
-          </p>
-          <CopyButton value={prompt} />
-        </div>
-        <p className="text-[11px] text-gray-300 whitespace-pre-wrap wrap-break-word max-h-52 overflow-y-auto">
-          {prompt}
-        </p>
-      </div>
+      {/* The same collapsing treatment as every other long value: this prompt
+          is written FOR ChatGPT, not for the person reading the page. It used
+          to render as a 13rem scroll box nested inside the page's own scroll,
+          which is the worst of both — long AND awkward to scroll past on a
+          phone. `CopyField` shows a few lines and copies the whole thing. */}
+      <CopyField label="Prompt" value={prompt} />
     </div>
   );
 }
