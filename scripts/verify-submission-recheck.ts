@@ -198,37 +198,43 @@ check(
 
 
 
-/* ── 7. A user-funded task pays out of its creator's pool ── */
-console.log("\n7. Funded tasks draw from the budget, never mint");
+/* ── 7. A user-funded task is paid for by its BUYER ── */
+console.log("\n7. Funded tasks charge the buyer, never mint");
 check(
-  "the pool is drawn from BEFORE the worker is credited",
-  lib.indexOf("remainingBudget: { decrement: points }") <
+  "the buyer is charged BEFORE the worker is credited",
+  lib.indexOf("chargeTaskCompletion(") <
     lib.indexOf("pointsBalance: { increment: points }"),
-  "crediting first and drawing after would pay out of a pool that could not cover it"
+  "crediting first and charging after would pay out of a balance that could not cover it"
 );
 check(
-  "the draw is a CAS against the remaining budget",
-  /where: \{ id: sub\.taskId, remainingBudget: \{ gte: points \} \}/.test(lib),
-  "this job races the submit and admin-review writers for the same pool"
+  "it charges through the SHARED helper, not its own arithmetic",
+  /chargeTaskCompletion\(prisma, \{/.test(lib),
+  "three copies of this is how one path ends up paying for work nobody was billed for"
 );
 check(
-  "an exhausted pool pays NOTHING and hands the submission back",
-  /drawn\.count === 0[\s\S]{0,700}status: SubmissionStatus\.PENDING/.test(lib),
-  "the alternative is minting points that no creator paid for"
+  "a buyer who cannot pay results in NO payout, and the submission goes back",
+  /!charge\.paid[\s\S]{0,500}status: SubmissionStatus\.PENDING/.test(lib),
+  "the alternative is minting points that no buyer paid for"
 );
 check(
-  "…and closes the task rather than leaving it advertised",
-  /drawn\.count === 0[\s\S]{0,400}remainingBudget: 0, status: "COMPLETED"/.test(lib)
+  "…and the task closes rather than staying advertised",
+  /charge\.closeTask[\s\S]{0,300}status: "COMPLETED"/.test(lib)
 );
 check(
-  "a task whose pool can no longer cover one more reward is closed",
-  /sub\.task\.remainingBudget - points < sub\.task\.pointsReward/.test(lib),
-  "same rule the other two paths use, so a task retires at the same moment however it was approved"
+  "the close decision comes from the shared helper too",
+  /charge\.closeTask/.test(lib) &&
+    /closeTask/.test(code("src/lib/task-credit.ts")),
+  "so a task retires at the same moment however it was approved"
+);
+check(
+  "the commission is read once for the batch, not per row",
+  /const \{ feePercent \} = await getBuyerSettings\(\)/.test(lib),
+  "a settings lookup inside a loop over hundreds of submissions"
 );
 check(
   "an admin-funded task is unaffected",
   /if \(sub\.task\.fundedByUserId\) \{/.test(lib),
-  "only user-created tasks have a pool to draw from"
+  "only user-created tasks have a buyer to charge"
 );
 
 

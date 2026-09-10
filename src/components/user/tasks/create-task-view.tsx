@@ -82,7 +82,13 @@ export function CreateTaskView({
   const budget = quote.budgetPoints;
 
   // Admin bounds, surfaced before submit rather than as a server rejection.
-  const shortBy = Math.max(0, quote.totalPoints - taskCredit);
+  // What one completion costs — reward plus its share of the fee. This is the
+  // real gate: a task is publishable when the buyer can pay for one, because
+  // credit is charged per completion rather than reserved for all of them.
+  const perCompletion =
+    pointsReward +
+    (feePercent > 0 ? Math.ceil((pointsReward * feePercent) / 100) : 0);
+  const shortBy = Math.max(0, perCompletion - taskCredit);
   const limitError =
     pointsReward < minPoints
       ? `Minimum reward is ${minPoints.toLocaleString()} points per completion.`
@@ -361,7 +367,7 @@ export function CreateTaskView({
             <Wallet className="w-5 h-5 text-indigo-400" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-white">Order summary</p>
+            <p className="text-sm font-semibold text-white">If everyone completes it</p>
             <p className="text-[11px] text-gray-500">
               {pointsReward.toLocaleString()} pts ×{" "}
               {targetCount.toLocaleString()} completions
@@ -388,7 +394,7 @@ export function CreateTaskView({
             </div>
           )}
           <div className="flex justify-between border-t border-white/10 pt-1.5 font-bold">
-            <span className="text-white">Total task credit</span>
+            <span className="text-white">Most it can cost</span>
             <span className={cn("tabular-nums", TASK_CREDIT.textStrong)}>
               {pts(quote.totalPoints)} pts
             </span>
@@ -413,8 +419,14 @@ export function CreateTaskView({
         >
           <span className={shortBy > 0 ? "text-amber-300" : "text-gray-400"}>
             {shortBy > 0
-              ? `You need ${pts(shortBy)} more task credit`
-              : `Your credit: ${pts(taskCredit)} → ${pts(taskCredit - quote.totalPoints)} after`}
+              ? `You need at least ${pts(shortBy)} more credit to publish this`
+              : `Your credit: ${pts(taskCredit)} — enough for ${Math.floor(
+                  taskCredit / Math.max(1, perCompletion)
+                ).toLocaleString()} completion${
+                  Math.floor(taskCredit / Math.max(1, perCompletion)) === 1
+                    ? ""
+                    : "s"
+                }`}
           </span>
           {shortBy > 0 && (
             <Link
@@ -428,14 +440,23 @@ export function CreateTaskView({
 
         <div className="mt-3 space-y-1 border-t border-white/10 pt-2 text-[11px] leading-relaxed text-gray-500">
           <p>
-            Each approved completion draws {pts(pointsReward)} pts from the
-            pool. Whatever is left when the task ends comes back as task credit.
+            <span className="font-semibold text-gray-300">
+              Nothing is charged now.
+            </span>{" "}
+            Credit comes out as people complete the task —{" "}
+            {pts(pointsReward)} pts each
+            {feePercent > 0 ? ` plus ${feePercent}% fee` : ""}. If 10 of{" "}
+            {targetCount.toLocaleString()} complete it, you pay for 10.
+          </p>
+          <p>
+            The task switches itself off as soon as your credit can&rsquo;t
+            cover one more completion, so nobody works for a reward you
+            can&rsquo;t pay.
           </p>
           <p>
             {needsReview
-              ? "An admin reviews the task before it goes live. If it is rejected you get the budget"
-              : "The task goes live as soon as it is funded. If it is later rejected you get the budget"}
-            {feePercent > 0 ? " and the fee" : ""} back as credit — not as cash.
+              ? "An admin reviews it before it goes live. A rejected task costs you nothing."
+              : "It goes live immediately. A task that is later rejected costs you nothing."}
           </p>
         </div>
       </div>
@@ -456,7 +477,7 @@ export function CreateTaskView({
         ) : (
           <Send className="w-4 h-4" />
         )}
-        {needsReview ? "Submit for review" : "Fund and publish"}
+        {needsReview ? "Submit for review" : "Publish task"}
       </button>
     </div>
   );

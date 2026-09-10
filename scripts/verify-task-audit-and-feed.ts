@@ -109,11 +109,12 @@ check(
   /decision: "approve"/.test(rev) && /decision: "reject"/.test(rev)
 );
 check(
-  // Task budgets are funded from task CREDIT now, so the refund is a point
-  // figure. It must still land in the audit row: "how much did we give back"
-  // is the first question asked about a rejection later.
-  "a rejection records the refund",
-  /refundPoints/.test(rev) && /TASK_REVIEWED/.test(rev)
+  // Credit is charged per completion now, so a rejected task was never
+  // charged and there is nothing to give back. The audit row must SAY that
+  // rather than go quiet — "was this buyer left out of pocket" is the first
+  // question asked about a rejection later, and silence reads as "unknown".
+  "a rejection records that nothing was charged",
+  /nothing was charged/.test(rev) && /TASK_REVIEWED/.test(rev)
 );
 
 /* ── the snapshot round-trips ── */

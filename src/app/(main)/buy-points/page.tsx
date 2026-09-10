@@ -23,7 +23,7 @@ export default async function BuyPointsPage() {
 
   const { enabled } = await getEffectiveFeatures(userId);
   if (!enabled.has("createTasks")) {
-    return <FeatureLock title="Task Credit" applyHref="/profile/become-creator" />;
+    return <FeatureLock title="Credit" applyHref="/profile/become-creator" />;
   }
 
   const [buyer, pointsPerUsd, me] = await Promise.all([
@@ -38,8 +38,8 @@ export default async function BuyPointsPage() {
   if (!buyer.enabled) {
     return (
       <FeatureLock
-        title="Task Credit"
-        message="Buyer task creation is turned off at the moment, so there is nothing to spend task credit on yet. Please check back later."
+        title="Credit"
+        message="Buyer task creation is turned off at the moment, so there is nothing to spend credit on yet. Please check back later."
       />
     );
   }

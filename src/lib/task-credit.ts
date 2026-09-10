@@ -20,8 +20,15 @@ import type { LedgerDb } from "@/lib/ledger";
  *
  * So `taskCreditPoints` has exactly one way in and one way out:
  *   IN  — `purchaseTaskCredit`, paid for with wallet cash.
- *   OUT — `spendTaskCredit`, funding a task (plus `refundTaskCredit` when the
- *         admin rejects it).
+ *   OUT — `chargeTaskCompletion`, one approved completion at a time.
+ *
+ * Credit is charged **as it is used**, not reserved when the task is created.
+ * A task advertised to 100 people whose first 10 complete costs the buyer 10
+ * rewards; the other 90 never leave their balance. That is the owner's model
+ * and it is the better one: reserving up front strands money in tasks that
+ * expire half-finished, which then needs a refund path for every way a task
+ * can end (expired, paused, archived, closed early) — and the one that gets
+ * forgotten silently keeps the buyer's points.
  *
  * Nothing that credits earnings may write it, it is never converted to cash,
  * and it is never withdrawn. `scripts/verify-task-credit.ts` asserts all of
@@ -31,7 +38,16 @@ import type { LedgerDb } from "@/lib/ledger";
 
 /** Ledger reference prefixes, so the finance console can tell these apart. */
 export const TASK_CREDIT_PURCHASE_REF = "taskcredit_buy_";
-export const TASK_CREDIT_REFUND_REF = "taskcredit_refund_";
+/**
+ * One row per completion, recording the credit that paid for it.
+ *
+ * There is deliberately no refund function here. Credit is charged per
+ * completion, an approved submission cannot be un-approved (see the admin
+ * review route), and a rejected task was never charged — so nothing in the
+ * system needs to hand credit back. A money function nobody calls is a trap:
+ * the next person wires it up assuming it has been exercised.
+ */
+export const TASK_SPEND_REF = "taskspend_";
 
 export type PurchaseResult =
   | { ok: true; points: number; costUsd: number; newBalance: number }
@@ -114,14 +130,12 @@ export async function purchaseTaskCredit(
 }
 
 /**
- * Spend task credit — the only way points leave this balance.
+ * Spend task credit — a CAS decrement, so two requests firing at once cannot
+ * both pass on the same balance.
  *
- * A CAS decrement, so a buyer cannot fund two tasks with the same points by
- * firing both requests at once. Takes a transaction client because the caller
- * creates the task in the same transaction: the spend and the thing it paid
- * for must commit together or not at all.
- *
- * Returns false when the balance could not cover it; the caller aborts.
+ * Takes a transaction client because the caller writes the thing it paid for in
+ * the same transaction: the spend and its consequence must commit together or
+ * not at all. Returns false when the balance could not cover it.
  */
 export async function spendTaskCredit(
   db: LedgerDb,
@@ -137,41 +151,156 @@ export async function spendTaskCredit(
   return spent.count > 0;
 }
 
-/**
- * Return task credit to the buyer — a rejected task, or an unspent pool.
- *
- * Goes back as CREDIT, never as cash. Refunding to `cashBalance` would let a
- * buyer launder task credit into withdrawable money by funding a task and
- * getting it rejected, which is the exact hole the separate column exists to
- * close.
- */
-export async function refundTaskCredit(
-  db: LedgerDb,
-  userId: string,
-  points: number,
-  reason: { taskId: string; kind: string }
-): Promise<void> {
-  const amount = Math.floor(points);
-  if (amount <= 0) return;
+export interface CompletionCharge {
+  /** False → the buyer could not pay; the worker must NOT be credited. */
+  paid: boolean;
+  /** Reward charged to the buyer, in credit. */
+  rewardPoints: number;
+  /** Platform commission charged on top, in credit. */
+  feePoints: number;
+  /**
+   * True when the task should stop being advertised: either the buyer can no
+   * longer cover one more reward, or the task has delivered everything it
+   * promised.
+   */
+  closeTask: boolean;
+  /** Set when `paid` is false, for the message shown to the worker. */
+  reason?: "NO_CREDIT";
+}
 
-  await db.user.update({
-    where: { id: userId },
-    data: { taskCreditPoints: { increment: amount } },
+/**
+ * Charge a buyer for ONE approved completion, and say whether the task should
+ * now close.
+ *
+ * This is the single place a buyer's credit is spent on work, so every payout
+ * path — admin approval, auto-approve on submit, and the background re-check —
+ * charges identically. Three copies of this arithmetic is how one of them ends
+ * up crediting a worker the platform was never paid for.
+ *
+ * Order matters and is deliberate: **the buyer is charged BEFORE the worker is
+ * credited**. If the charge fails there is no payout, so points are never
+ * minted from a balance that could not cover them.
+ *
+ * `closeTask` is answered on the state AFTER this charge, and it asks whether
+ * ONE MORE reward could be paid — not whether the balance is empty. A task that
+ * stays advertised with too little credit behind it invites work that cannot be
+ * paid for, and the person who did that work is the one who loses.
+ */
+export async function chargeTaskCompletion(
+  db: LedgerDb,
+  args: {
+    taskId: string;
+    buyerId: string;
+    /** What this worker earns. May differ from the task's headline reward. */
+    rewardPoints: number;
+    /** The task's standard reward — what "one more" costs. */
+    standardReward: number;
+    /** Platform commission, percent. */
+    feePercent: number;
+    /** Promise left on the task, before this completion. */
+    remainingBudget: number;
+  }
+): Promise<CompletionCharge> {
+  const rewardPoints = Math.max(0, Math.floor(args.rewardPoints));
+  // Rounded UP, for the same reason the creation quote rounds up: a fee that
+  // rounds to zero on small rewards is a fee a buyer can avoid entirely by
+  // running many tiny tasks instead of one large one.
+  const feePoints =
+    args.feePercent > 0
+      ? Math.ceil((rewardPoints * args.feePercent) / 100)
+      : 0;
+  const total = rewardPoints + feePoints;
+
+  const paid = await spendTaskCredit(db, args.buyerId, total);
+  if (!paid) {
+    // Out of credit. Close the task so nobody else works for nothing.
+    return {
+      paid: false,
+      rewardPoints,
+      feePoints,
+      closeTask: true,
+      reason: "NO_CREDIT",
+    };
+  }
+
+  // Track the promise separately from the money: `remainingBudget` is how many
+  // completions this task still advertises, and it is what tells a buyer "40 of
+  // 100 left". It is not a reserved pool any more — nothing is held.
+  const promiseLeft = Math.max(0, args.remainingBudget - rewardPoints);
+  await db.task.update({
+    where: { id: args.taskId },
+    data: { remainingBudget: promiseLeft },
   });
+
+  // The buyer's record of where their credit went.
+  //
+  // Without this the balance simply drops — and with the fee at 0%, which is
+  // the default, NOTHING was written at all: a buyer watching their credit go
+  // 20,000 → 19,450 had no way to see which task took it. Money that moves
+  // without a row is money nobody can reconcile, and the platform writes a row
+  // for every earning already; a spend deserves the same.
   await db.transaction.create({
     data: {
-      userId,
-      type: TransactionType.REFUND,
+      userId: args.buyerId,
+      type: TransactionType.PURCHASE,
       status: TransactionStatus.COMPLETED,
-      // No USD moved: the credit never left the platform, so recording a dollar
-      // amount here would overstate refunds in the finance console.
+      // No USD moved — the credit was bought earlier, this is it being used.
       amount: 0,
-      points: amount,
-      description: `Task credit returned — ${amount.toLocaleString()} points`,
-      reference: `${TASK_CREDIT_REFUND_REF}${reason.taskId}`,
-      metadata: { kind: reason.kind, taskId: reason.taskId, points: amount },
+      points: -rewardPoints,
+      description: `Task reward paid — 1 completion`,
+      reference: `${TASK_SPEND_REF}${args.taskId}_${Date.now()}`,
+      metadata: {
+        kind: "task_completion",
+        taskId: args.taskId,
+        rewardPoints,
+        feePoints,
+      },
     },
   });
+
+  if (feePoints > 0) {
+    await db.transaction.create({
+      data: {
+        userId: args.buyerId,
+        type: TransactionType.ADMIN_FEE,
+        status: TransactionStatus.COMPLETED,
+        // Revenue: those points were bought with real cash, and the platform
+        // now owns them. The USD figure is what makes it show up as income.
+        amount: 0,
+        points: -feePoints,
+        description: `Platform fee — 1 completion`,
+        reference: `task_fee_${args.taskId}_${Date.now()}`,
+        metadata: {
+          kind: "task_fee",
+          taskId: args.taskId,
+          feePercent: args.feePercent,
+          feePoints,
+        },
+      },
+    });
+  }
+
+  // Can the buyer still cover one more? Read the balance back rather than
+  // assuming — another task of theirs may have drawn on it in between.
+  const after = await db.user.findUnique({
+    where: { id: args.buyerId },
+    select: { taskCreditPoints: true },
+  });
+  const oneMore =
+    args.standardReward +
+    (args.feePercent > 0
+      ? Math.ceil((args.standardReward * args.feePercent) / 100)
+      : 0);
+
+  const outOfCredit = (after?.taskCreditPoints ?? 0) < oneMore;
+  const promiseDone = promiseLeft < args.standardReward;
+
+  return {
+    paid: true,
+    rewardPoints,
+    feePoints,
+    closeTask: outOfCredit || promiseDone,
+  };
 }
 
 /** Current task-credit balance. */

@@ -77,7 +77,7 @@ export function BuyPointsView({
           Buy {TASK_CREDIT.label}
         </h1>
         <p className="mt-0.5 text-sm text-gray-400">
-          Points you spend to run tasks. Separate from the points you earn.
+          What you spend to run tasks. Separate from the points you earn.
         </p>
       </header>
 
@@ -162,8 +162,8 @@ export function BuyPointsView({
             <span className="tabular-nums text-white">{usd(costUsd)}</span>
           </div>
           <p className="pt-1 text-[11px] leading-relaxed text-gray-500">
-            No fee to buy. The platform fee, if any, is charged when you create
-            a task and is shown on that page before you commit.
+            No fee to buy. The platform fee, if any, is charged per completion
+            and is shown on the task page before you publish.
           </p>
         </div>
 
@@ -213,8 +213,10 @@ export function BuyPointsView({
             completing tasks yourself.
           </p>
           <p>
-            If a task is rejected, the unspent credit comes back here — not to
-            your wallet.
+            Credit is charged as your tasks are completed, not when you create
+            them: advertise to 100 people and only 10 finish, and you pay for
+            10. Nothing is held or reserved, so there is never anything stuck
+            in a task waiting to be refunded.
           </p>
         </div>
       </div>

@@ -12,10 +12,21 @@
  * buyer hub all read the same tokens.
  */
 export const TASK_CREDIT = {
-  /** What to call it in front of users. Not "points" on its own — ambiguous. */
-  label: "Task Credit",
+  /**
+   * What to call it in front of users.
+   *
+   * The platform has three currencies and the owner named them: **Points** are
+   * what you EARN from completing tasks, **Credit** is what a buyer BUYS to run
+   * tasks, and **Cash** is real money for the marketplace, courses and
+   * subscriptions. Calling this "points" would collapse the first two, which is
+   * the confusion the separate balance exists to prevent.
+   *
+   * `Ad Credit` keeps its own full name so the two never read as the same
+   * thing; the violet does the rest of the work.
+   */
+  label: "Credit",
   /** One line saying what it is for and what it is not. */
-  blurb: "Funds your tasks · not withdrawable",
+  blurb: "Runs your tasks · not withdrawable",
   text: "text-violet-400",
   textStrong: "text-violet-300",
   bg: "bg-violet-500/10",

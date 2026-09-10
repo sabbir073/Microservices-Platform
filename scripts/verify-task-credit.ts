@@ -21,7 +21,7 @@ import { quoteTask } from "../src/lib/buyer-quote";
  *   - nothing that credits earnings may write task credit
  *   - task credit may never be converted to cash or withdrawn
  *   - task budgets may never be funded from earned points or cash
- *   - a refund goes back as CREDIT, not as money
+ *   - nothing here can ever put money back into a withdrawable balance
  *
  * Run: npx tsx --tsconfig tsconfig.script.json scripts/verify-task-credit.ts
  */
@@ -118,16 +118,20 @@ async function main() {
     );
     const lib = code(CREDIT_LIB);
     check(
-      "a refund returns CREDIT, and does not increment cash",
-      /refundTaskCredit/.test(lib) &&
-        !/refundTaskCredit[\s\S]{0,600}cashBalance:\s*\{\s*increment/.test(lib),
-      "refunding to cash would be the laundering path the split exists to close"
+      // There is no refund path at all now, and that is stronger than having a
+      // correct one: credit is charged per completion, an approved submission
+      // cannot be un-approved, and a rejected task was never charged. Nothing
+      // in this module may ever put money back into a withdrawable balance.
+      "nothing in the credit module can increment cash",
+      !/cashBalance:\s*\{\s*increment/.test(lib),
+      "paying credit out to cash would be the laundering path the split exists to close"
     );
     const review = code("src/app/api/admin/tasks/[id]/review/route.ts");
     check(
-      "a rejected task returns credit, not cash",
-      /refundTaskCredit\(/.test(review) &&
-        !/cashBalance:\s*\{\s*increment/.test(review)
+      "a rejected task charges nothing, so there is nothing to refund",
+      !/cashBalance:\s*\{\s*increment/.test(review) &&
+        !/taskCreditPoints:\s*\{\s*increment/.test(review),
+      "credit is charged per completion; a task that never ran never cost anything"
     );
   }
 
@@ -154,7 +158,20 @@ async function main() {
   console.log("\n4. Task budgets come out of credit");
   {
     const create = code("src/app/api/tasks/create/route.ts");
-    check("funding calls spendTaskCredit", /spendTaskCredit\(/.test(create));
+    check(
+      "creating a task charges NOTHING up front",
+      !/spendTaskCredit\(/.test(create),
+      "reserving the budget strands money in tasks that expire half-finished"
+    );
+    check(
+      "…but it does refuse a buyer who cannot pay for even one completion",
+      /credit < oneCompletion/.test(create),
+      "otherwise an empty balance can publish a task that pays nobody"
+    );
+    check(
+      "the charge itself lives in one shared helper",
+      /chargeTaskCompletion/.test(read("src/lib/task-credit.ts"))
+    );
     check(
       "it no longer debits the wallet",
       !/cashBalance:\s*\{\s*decrement/.test(create),
@@ -171,6 +188,47 @@ async function main() {
     check(
       "the purchase is a CAS too, so two buys cannot spend the same cash",
       /cashBalance:\s*\{\s*gte:/.test(code(CREDIT_LIB))
+    );
+  }
+
+  /* ── 4b. Credit never moves without a record ── */
+  console.log("\n4b. Every movement leaves a row");
+  {
+    const lib = code(CREDIT_LIB);
+    check(
+      "a completion writes a spend row, not just a silent decrement",
+      /TASK_SPEND_REF/.test(lib) && /kind: "task_completion"/.test(lib),
+      "with the fee at 0% — the default — nothing was written at all, so a buyer watching their credit fall had no way to see which task took it"
+    );
+    check(
+      "the spend row carries the reward in points, and no phantom USD",
+      /points: -rewardPoints/.test(lib) && /amount: 0,/.test(lib),
+      "the dollars moved when the credit was BOUGHT; counting them again here would double-count"
+    );
+    check(
+      "buying credit is the one movement that records dollars",
+      /amount: -costUsd/.test(lib)
+    );
+    check(
+      "the fee keeps its own row, separate from the reward",
+      /reference: `task_fee_/.test(lib) && /reference: `\$\{TASK_SPEND_REF\}/.test(lib),
+      "one row meaning two things is a row nobody can reconcile"
+    );
+
+    const hub = code("src/components/user/buyer/buyer-hub-view.tsx");
+    check(
+      "the Buyer Hub counts CREDIT spent, not dollars",
+      /creditSpent/.test(hub) && !/const netSpent/.test(hub),
+      "summing amountUsd reported $0.00 once charging moved to points"
+    );
+    check(
+      "…and does not claim credit is 'held'",
+      /advertised/.test(hub) && !/still held/.test(hub),
+      "nothing is reserved, so held would tell a buyer their credit is committed when it is free"
+    );
+    check(
+      "the page pulls the spend rows it needs to show that",
+      /taskspend_/.test(code("src/app/(main)/buyer/page.tsx"))
     );
   }
 

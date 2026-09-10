@@ -90,8 +90,14 @@ async function main() {
       /Math\.max\(\s*0,/.test(page)
     );
     check(
-      "spend nets refunds off instead of counting them as spend",
-      /-invoices\.reduce/.test(view)
+      // Credit moves in points now, so the figure is a credit total, not a
+      // dollar one — summing `amountUsd` reported $0.00 and looked broken.
+      // Purchases are excluded (buying credit is not spending it) and anything
+      // credited back nets itself off rather than being silently ignored.
+      "spend counts credit, excludes purchases, and nets anything returned",
+      /creditSpent/.test(view) &&
+        /!r\.reference\.startsWith\("taskcredit_buy_"\)/.test(view) &&
+        !/const netSpent/.test(view)
     );
     check(
       "held budget only counts tasks that can still pay out",

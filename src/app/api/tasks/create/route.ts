@@ -6,7 +6,7 @@ import { userCanFeature } from "@/lib/packages";
 import { getPointsPerUsd } from "@/lib/economy";
 import { sanitizeTaskAudience, EMPTY_TASK_AUDIENCE } from "@/lib/task-targeting";
 import { getBuyerSettings, quoteTask } from "@/lib/buyer-settings";
-import { spendTaskCredit, getTaskCredit } from "@/lib/task-credit";
+import { getTaskCredit } from "@/lib/task-credit";
 import { KYCStatus } from "@/generated/prisma/client";
 import { TransactionType, TransactionStatus, TaskType } from "@/generated/prisma/client";
 
@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
     ? sanitizeTaskAudience(d)
     : EMPTY_TASK_AUDIENCE;
 
-  // One quote, used for the charge, the invoice line and the ledger rows. The
+  // One quote, used for the estimate, the invoice line and the ledger rows. The
   // buyer-facing calculator calls the same `quoteTask`, so what they were shown
   // and what they are charged cannot drift apart.
   const pointsPerUsd = await getPointsPerUsd();
@@ -156,15 +156,42 @@ export async function POST(req: NextRequest) {
   });
   const budgetPoints = quote.budgetPoints;
 
+  // A buyer must be able to pay for at least ONE completion before their task
+  // goes live. Requiring the whole budget up front would defeat pay-as-you-go;
+  // requiring nothing would let someone with an empty balance publish a task
+  // that pays nobody, and the person who finds out is the worker who already
+  // did the job.
+  const oneCompletion =
+    d.pointsReward +
+    (buyer.feePercent > 0
+      ? Math.ceil((d.pointsReward * buyer.feePercent) / 100)
+      : 0);
+  const credit = await getTaskCredit(userId);
+  if (credit < oneCompletion) {
+    return NextResponse.json(
+      {
+        error: `You need at least ${oneCompletion.toLocaleString()} credit to publish this task — enough for one completion. You have ${credit.toLocaleString()}.`,
+        shortByPoints: oneCompletion - credit,
+        buyPointsHref: "/buy-points",
+      },
+      { status: 402 }
+    );
+  }
+
   try {
     const task = await prisma.$transaction(async (tx) => {
-      // Funded from TASK CREDIT, never from the wallet or from earned points.
-      // Task credit is bought with cash on /buy-points and can only ever be
-      // spent here; keeping the two apart is what stops "buy points, get them
-      // rejected, withdraw the refund" being a way to move money through the
-      // platform. CAS, so two concurrent creates cannot spend the same points.
-      const paid = await spendTaskCredit(tx, userId, quote.totalPoints);
-      if (!paid) throw new Error("INSUFFICIENT_CREDIT");
+      // NOTHING is charged here. Credit is spent as the task is USED — one
+      // approved completion at a time, through `chargeTaskCompletion`.
+      //
+      // The alternative, reserving the whole budget now, strands a buyer's
+      // money inside tasks that expire half-finished and then needs a refund
+      // path for every way a task can end. Charging on use means a task
+      // advertised to 100 people whose first 10 complete costs 10 rewards, and
+      // there is never a leftover to give back.
+      //
+      // What protects the WORKER is not a reserved pool but the close rule:
+      // the moment the buyer can no longer cover one more reward, the task
+      // stops being advertised. See `chargeTaskCompletion`.
 
       const created = await tx.task.create({
         data: {
@@ -199,12 +226,12 @@ export async function POST(req: NextRequest) {
           userId,
           type: TransactionType.PURCHASE,
           status: TransactionStatus.COMPLETED,
-          // No cash moved — this records credit being committed to a task.
-          // `amount` carries the USD value for reporting; the real movement is
-          // in `points`.
+          // Nothing is charged at creation, so this row records the task's
+          // PROMISE, not a payment: `points` is what it may cost if every
+          // completion lands. The actual spend is one row per completion.
           amount: 0,
-          points: -budgetPoints,
-          description: `Task budget — "${created.title}"`,
+          points: 0,
+          description: `Task published — "${created.title}" (up to ${budgetPoints.toLocaleString()} pts)`,
           reference: `task_fund_${created.id}`,
           metadata: {
             taskId: created.id,
@@ -216,27 +243,6 @@ export async function POST(req: NextRequest) {
           },
         },
       });
-      if (quote.feePoints > 0) {
-        await tx.transaction.create({
-          data: {
-            userId,
-            type: TransactionType.ADMIN_FEE,
-            status: TransactionStatus.COMPLETED,
-            // The fee IS revenue, so it keeps its USD value: those points were
-            // bought with real cash and the platform now owns them.
-            amount: -quote.feeUsd,
-            points: -quote.feePoints,
-            description: `Platform fee (${quote.feePercent}%) — "${created.title}"`,
-            reference: `task_fee_${created.id}`,
-            metadata: {
-              taskId: created.id,
-              kind: "task_fee",
-              feePercent: quote.feePercent,
-              feePoints: quote.feePoints,
-            },
-          },
-        });
-      }
       return created;
     });
 
@@ -250,20 +256,6 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (e) {
-    if (e instanceof Error && e.message === "INSUFFICIENT_CREDIT") {
-      const have = await getTaskCredit(userId);
-      return NextResponse.json(
-        {
-          error:
-            quote.feePoints > 0
-              ? `Not enough task credit. This task needs ${quote.budgetPoints.toLocaleString()} points for ${d.targetCount} completions plus a ${quote.feePoints.toLocaleString()}-point platform fee — ${quote.totalPoints.toLocaleString()} in total, and you have ${have.toLocaleString()}.`
-              : `Not enough task credit. This task needs ${quote.totalPoints.toLocaleString()} points and you have ${have.toLocaleString()}.`,
-          shortByPoints: Math.max(0, quote.totalPoints - have),
-          buyPointsHref: "/buy-points",
-        },
-        { status: 402 }
-      );
-    }
     console.error("Task create failed:", e);
     return NextResponse.json({ error: "Failed to create task" }, { status: 500 });
   }

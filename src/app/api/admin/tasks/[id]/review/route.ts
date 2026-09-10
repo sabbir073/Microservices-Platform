@@ -4,10 +4,7 @@ import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
 import { notifyUser } from "@/lib/notify";
-import { getBuyerSettings } from "@/lib/buyer-settings";
-import { refundTaskCredit } from "@/lib/task-credit";
-import { toNum } from "@/lib/money";
-import { TransactionType, TransactionStatus, NotificationType } from "@/generated/prisma/client";
+import { NotificationType } from "@/generated/prisma/client";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -99,70 +96,22 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ success: true, status: "ACTIVE" });
   }
 
-  // Reject -> return the unspent budget to the buyer's TASK CREDIT.
+  // Reject -> there is nothing to refund, and that is the point.
   //
-  // Not to their cash. Refunding to `cashBalance` would make "buy credit, fund
-  // a task, get it rejected" a way to turn task credit back into withdrawable
-  // money, which is the exact hole the separate balance exists to close. It
-  // goes back where it came from.
-  const budgetRefundPoints =
-    task.fundedByUserId && task.remainingBudget > 0 ? task.remainingBudget : 0;
-
-  // ...and the platform fee they paid to submit it, unless the admin has
-  // chosen to keep it as a review charge. Charging a buyer a commission for a
-  // task you then refuse is the fastest way to lose the buyer, so the setting
-  // defaults to refunding. The fee comes off its own ledger row rather than
-  // being recomputed from the current fee percent — the rate may have changed
-  // since they paid, and they are owed what they actually paid.
-  const buyer = await getBuyerSettings();
-  let feeRefundPoints = 0;
-  let feeRefundUsd = 0;
-  if (task.fundedByUserId && buyer.refundFeeOnReject) {
-    const feeRow = await prisma.transaction.findFirst({
-      where: {
-        userId: task.fundedByUserId,
-        reference: `task_fee_${task.id}`,
-      },
-      select: { amount: true, points: true },
-    });
-    // Both were written as negative charges on the payer.
-    feeRefundPoints = feeRow ? Math.abs(feeRow.points ?? 0) : 0;
-    feeRefundUsd = feeRow ? Math.abs(toNum(feeRow.amount)) : 0;
-  }
-  const refundPoints = budgetRefundPoints + feeRefundPoints;
-
+  // Credit is charged one completion at a time, so a task that never went live
+  // has never cost its buyer anything. Under the old reserve-up-front model
+  // this route had to hand back the pool AND the fee, and every other way a
+  // task can end — expired, paused, archived, closed early — needed the same
+  // refund or it silently kept the buyer's points. Charging on use removes the
+  // whole class of bug rather than adding a fifth place to remember.
+  //
+  // `remainingBudget` is zeroed anyway: it is the task's outstanding PROMISE,
+  // and a rejected task promises nothing.
   await prisma.$transaction(async (tx) => {
     await tx.task.update({
       where: { id },
       data: { status: "REJECTED", remainingBudget: 0, rejectionReason: reason },
     });
-    if (task.fundedByUserId && refundPoints > 0) {
-      await refundTaskCredit(tx, task.fundedByUserId, refundPoints, {
-        taskId: task.id,
-        kind: "task_refund",
-      });
-      // Reverse the revenue row as well, so the finance console does not keep
-      // reporting a fee the platform gave back as income. This one carries the
-      // USD value: the fee WAS booked as revenue in dollars.
-      if (feeRefundUsd > 0) {
-        await tx.transaction.create({
-          data: {
-            userId: task.fundedByUserId,
-            type: TransactionType.ADMIN_FEE,
-            status: TransactionStatus.COMPLETED,
-            amount: feeRefundUsd,
-            points: feeRefundPoints,
-            description: `Platform fee refunded — "${task.title}"`,
-            reference: `task_fee_refund_${task.id}`,
-            metadata: {
-              taskId: task.id,
-              kind: "task_fee_refund",
-              feeRefundPoints,
-            },
-          },
-        });
-      }
-    }
   });
 
   if (task.fundedByUserId) {
@@ -170,7 +119,7 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       userId: task.fundedByUserId,
       type: NotificationType.SYSTEM,
       title: "Task rejected",
-      message: `Your task "${task.title}" was rejected${reason ? `: ${reason}` : ""}. ${refundPoints.toLocaleString()} task credit points were returned${feeRefundPoints > 0 ? " (budget + platform fee)" : ""}.`,
+      message: `Your task "${task.title}" was rejected${reason ? `: ${reason}` : ""}. No credit was charged — you are only ever charged for completions.`,
       link: "/buyer",
     }).catch(() => {});
   }
@@ -180,14 +129,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     entity: "Task",
     entityId: id,
     targetUserId: task.fundedByUserId ?? null,
-    summary: `Rejected "${task.title}"${reason ? ` — ${reason}` : ""} · returned ${refundPoints.toLocaleString()} task credit`,
-    meta: {
-      decision: "reject",
-      reason: reason ?? null,
-      refundPoints,
-      feeRefundPoints,
-      title: task.title,
-    },
+    summary: `Rejected "${task.title}"${reason ? ` — ${reason}` : ""} · nothing was charged`,
+    meta: { decision: "reject", reason: reason ?? null, title: task.title },
   });
-  return NextResponse.json({ success: true, status: "REJECTED", refundPoints });
+  return NextResponse.json({ success: true, status: "REJECTED" });
 }

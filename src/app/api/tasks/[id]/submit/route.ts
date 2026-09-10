@@ -13,6 +13,8 @@ import {
 import { processReferralCommissions } from "@/lib/referral-commissions";
 import { notifyUser } from "@/lib/notify";
 import { getPointsPerUsd } from "@/lib/economy";
+import { chargeTaskCompletion } from "@/lib/task-credit";
+import { getBuyerSettings } from "@/lib/buyer-settings";
 import {
   compareUniqueKey,
   type ArticleConfig,
@@ -1177,26 +1179,27 @@ export async function POST(
       // return without crediting. (Funded tasks are normally manual-review; this
       // guards the auto path against concurrent overspend.)
       if (task.fundedByUserId) {
-        const drawn = await prisma.task.updateMany({
-          where: { id: task.id, remainingBudget: { gte: effectivePoints } },
-          data: { remainingBudget: { decrement: effectivePoints } },
+        const charge = await chargeTaskCompletion(prisma, {
+          taskId: task.id,
+          buyerId: task.fundedByUserId,
+          rewardPoints: effectivePoints,
+          standardReward: task.pointsReward,
+          feePercent: (await getBuyerSettings()).feePercent,
+          remainingBudget: task.remainingBudget,
         });
-        if (drawn.count === 0) {
-          await prisma.task.update({
-            where: { id: task.id },
-            data: { remainingBudget: 0, status: "COMPLETED" },
-          });
-          return NextResponse.json({
-            submission: updatedSubmission,
-            status: "approved",
-            message: "This task's reward budget is exhausted — no reward granted.",
-            rewards: { points: 0, xp: 0 },
-          });
-        }
-        if (task.remainingBudget - effectivePoints < task.pointsReward) {
+        if (charge.closeTask) {
           await prisma.task.update({
             where: { id: task.id },
             data: { status: "COMPLETED" },
+          });
+        }
+        if (!charge.paid) {
+          return NextResponse.json({
+            submission: updatedSubmission,
+            status: "approved",
+            message:
+              "The advertiser has run out of credit for this task — no reward granted.",
+            rewards: { points: 0, xp: 0 },
           });
         }
       }

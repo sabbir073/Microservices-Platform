@@ -149,53 +149,92 @@ async function main() {
       "auto-approve decides the task's starting status",
       /buyer\.autoApproveTasks \? "ACTIVE" : "PENDING_REVIEW"/.test(create)
     );
-    // The CALL, not the import — `spendTaskCredit` is imported at the top of
-    // the file, so a bare indexOf finds line 1 and the check passes vacuously.
+    // Nothing is charged at creation any more, so the thing the gate must
+    // precede is the task being PUBLISHED — an unverified buyer must not get a
+    // live task that will start charging them on its first completion.
     const kycAt = create.indexOf("buyer.requireKyc");
-    const spendAt = create.indexOf("spendTaskCredit(tx");
+    const createAt = create.indexOf("tx.task.create(");
     check(
-      "the KYC gate runs before anything is spent",
-      kycAt > -1 && spendAt > -1 && kycAt < spendAt,
-      `kyc@${kycAt} spend@${spendAt} — an unverified buyer must be stopped before the money moves`
+      "the KYC gate runs before the task is published",
+      kycAt > -1 && createAt > -1 && kycAt < createAt,
+      `kyc@${kycAt} create@${createAt}`
     );
   }
 
-  /* ── 3. The fee is visible revenue, not a hidden markup ── */
-  console.log("\n3. The fee is its own ledger row");
+  /* ── 3. Money moves per completion, and the fee stays visible ── */
+  console.log("\n3. Charged on use, one completion at a time");
   {
     const create = read(CREATE);
+    const credit = read("src/lib/task-credit.ts");
+
     check(
-      "the reward pool and the fee are separate transactions",
+      "publishing writes a row that records the PROMISE, not a payment",
       /reference: `task_fund_\$\{created\.id\}`/.test(create) &&
-        /reference: `task_fee_\$\{created\.id\}`/.test(create)
+        /points: 0,/.test(create),
+      "nothing has been charged yet, so a non-zero figure here would be a lie"
     );
     check(
-      "the budget row carries the reward pool only, not the total",
-      /points: -budgetPoints/.test(create) &&
-        !/points: -quote\.totalPoints/.test(create),
-      "the fee is its own row; folding it in here would hide the commission"
+      "no fee is taken at creation",
+      !/task_fee_\$\{created\.id\}/.test(create),
+      "a fee on 100 completions when only 10 happen charges for 90 that never did"
+    );
+
+    // The property is that a FAILED charge yields no payout. Asserted where it
+    // is actually enforced — the helper returns `paid: false` and every caller
+    // gates crediting on it — rather than by comparing indexOf positions, which
+    // matched the `closeTask` field in the interface declaration above the
+    // function and so proved nothing.
+    check(
+      "a charge that fails returns paid:false before anything else happens",
+      /const paid = await spendTaskCredit\(db, args\.buyerId, total\);[\s\S]{0,200}if \(!paid\) \{[\s\S]{0,300}paid: false/.test(
+        credit
+      )
     );
     check(
-      "the budget row moves no USD — no cash left the platform",
-      /kind: "task_fund"/.test(create) &&
-        /amount: 0,\s*\n\s*points: -budgetPoints/.test(create),
-      "recording dollars here would double-count against the credit purchase"
+      "admin approval credits only when the charge succeeded",
+      /credit = charge\.paid;/.test(
+        read("src/app/api/admin/submissions/[id]/route.ts")
+      )
+    );
+    check(
+      "auto-approve pays nothing when the charge failed",
+      /if \(!charge\.paid\) \{[\s\S]{0,400}rewards: \{ points: 0, xp: 0 \}/.test(
+        read("src/app/api/tasks/[id]/submit/route.ts")
+      )
+    );
+    check(
+      "the re-check hands the submission back instead of paying",
+      /if \(!charge\.paid\) \{[\s\S]{0,400}SubmissionStatus\.PENDING/.test(
+        read("src/lib/social-recheck.ts")
+      )
+    );
+    check(
+      "the charge is a CAS on the buyer's balance",
+      /taskCreditPoints: \{ gte: amount \}/.test(credit),
+      "two completions approved at once must not both spend the same points"
+    );
+    check(
+      "the fee is charged per completion, in credit",
+      /feePoints[\s\S]{0,200}rewardPoints \+ feePoints/.test(credit)
+    );
+    check(
+      "…and rounds UP, so it cannot be avoided by running tiny tasks",
+      /Math\.ceil\(\(rewardPoints \* args\.feePercent\) \/ 100\)/.test(credit)
     );
     check(
       "no fee row is written when the fee is zero",
-      /if \(quote\.feePoints > 0\)/.test(create)
+      /if \(feePoints > 0\)/.test(credit)
     );
     check(
-      "the fee row DOES keep its USD value — it is real revenue",
-      /amount: -quote\.feeUsd/.test(create) &&
-        /points: -quote\.feePoints/.test(create),
-      "those points were bought with cash and the platform now owns them"
+      "the fee row is ADMIN_FEE with a task_fee_ reference",
+      /TransactionType\.ADMIN_FEE/.test(credit) &&
+        /reference: `task_fee_\$\{args\.taskId\}/.test(credit)
     );
+
     const sources = read("src/lib/tx-sources.ts");
     check(
       "task fees are their own revenue source, not lumped into 'admin'",
-      /"taskfee"/.test(sources) &&
-        /task_fee_/.test(sources)
+      /"taskfee"/.test(sources) && /task_fee_/.test(sources)
     );
     check(
       "ADMIN_FEE still counts as platform revenue",
@@ -203,39 +242,63 @@ async function main() {
         read("src/lib/finance/signing.ts")
       )
     );
+
+    // The single most valuable property: three payout paths, one charge.
+    const paths = [
+      "src/app/api/admin/submissions/[id]/route.ts",
+      "src/app/api/tasks/[id]/submit/route.ts",
+      "src/lib/social-recheck.ts",
+    ];
+    const missing = paths.filter((f) => !/chargeTaskCompletion\(/.test(read(f)));
+    check(
+      "all three payout paths charge through the SAME helper",
+      missing.length === 0,
+      missing.join(", ") || undefined
+    );
+    const inlined = paths.filter((f) =>
+      /remainingBudget: \{ decrement:/.test(read(f))
+    );
+    check(
+      "…and none of them still drains a reserved pool by hand",
+      inlined.length === 0,
+      inlined.join(", ") || undefined
+    );
   }
 
-  /* ── 4. Rejection makes the buyer whole ── */
-  console.log("\n4. A rejected task refunds what was paid");
+  /* ── 4. A task that never ran never cost anything ── */
+  console.log("\n4. Rejection costs the buyer nothing");
   {
     const review = read(REVIEW);
     check(
-      "the remaining budget is refunded",
-      /budgetRefundPoints/.test(review)
-    );
-    check("the platform fee is refunded too", /feeRefundPoints/.test(review));
-    check(
-      "the refund is the SUM of both",
-      /const refundPoints = budgetRefundPoints \+ feeRefundPoints/.test(review)
-    );
-    check(
-      "the refund goes back as CREDIT, never as cash",
-      /refundTaskCredit\(/.test(review) &&
+      "no refund path is needed, because nothing was charged",
+      !/refundTaskCredit\(/.test(review) &&
         !/cashBalance:\s*\{\s*increment/.test(review),
-      "paying a refund into cash would turn task credit into withdrawable money"
+      "charging on use removes the whole class of stranded-budget bug"
     );
     check(
-      "the fee refunded is the fee actually PAID, not today's rate",
-      /reference: `task_fee_\$\{task\.id\}`/.test(review) &&
-        !/feePercent \* /.test(review)
+      "the rejected task stops promising anything",
+      /remainingBudget: 0, rejectionReason: reason/.test(review)
     );
     check(
-      "refunding the fee also reverses the revenue row",
-      /task_fee_refund_/.test(review)
+      "the buyer is told they were not charged",
+      /No credit was charged/.test(review)
     );
     check(
-      "the admin can choose to keep the fee instead",
-      /buyer\.refundFeeOnReject/.test(review)
+      "a reason is still required",
+      /action === "reject" && reason\.length < 5/.test(review)
+    );
+
+    // The close rule is what protects the WORKER now that nothing is reserved.
+    const credit = read("src/lib/task-credit.ts");
+    check(
+      "a task closes the moment the buyer cannot cover ONE MORE reward",
+      /outOfCredit \|\| promiseDone/.test(credit),
+      "not when the balance hits zero — by then someone has already worked for nothing"
+    );
+    check(
+      "…and the balance is re-read rather than assumed",
+      /const after = await db\.user\.findUnique/.test(credit),
+      "another task of theirs may have drawn on it in between"
     );
   }
 
@@ -246,16 +309,27 @@ async function main() {
     check("the reward pool is a line item", /Reward pool/.test(view));
     check("the fee is a line item when there is one", /Platform fee \(\{feePercent\}%\)/.test(view));
     check(
-      "the total is stated in task credit, which is what actually pays",
-      /Total task credit/.test(view)
+      "the total is framed as a ceiling, not a charge",
+      /Most it can cost/.test(view) && /If everyone completes it/.test(view),
+      "nothing is taken at creation, so calling it a total would be wrong"
+    );
+    check(
+      "…and it says plainly that nothing is charged yet",
+      /Nothing is charged now/.test(view)
     );
     check(
       "the dollar value trails as a reference, not as the headline",
       /Worth about/.test(view)
     );
     check(
-      "the buyer sees their credit before and after",
-      /after`/.test(view) && /taskCredit/.test(view)
+      "the buyer is told how many completions their credit covers",
+      /enough for \$\{Math\.floor\(/.test(view) && /taskCredit/.test(view),
+      "'you have 20,000' means nothing; 'that is 400 completions' does"
+    );
+    check(
+      "the publish gate is ONE completion, not the whole budget",
+      /perCompletion/.test(view),
+      "requiring the full budget up front would defeat pay-as-you-go"
     );
     check(
       "admin bounds are shown before submit, not as a server error",

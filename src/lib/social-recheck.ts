@@ -15,6 +15,8 @@ import {
 import { normalizeSocialConfig } from "@/lib/social-tasks";
 import { verifyCodeFor, contentHasCode } from "@/lib/task-verify-code";
 import { getPointsPerUsd } from "@/lib/economy";
+import { chargeTaskCompletion } from "@/lib/task-credit";
+import { getBuyerSettings } from "@/lib/buyer-settings";
 import { isDuplicateLedgerError } from "@/lib/idempotency";
 import { closeTaskIfFull } from "@/lib/task-slots";
 
@@ -168,6 +170,10 @@ export async function recheckPendingSocialSubmissions(opts?: {
 
   const candidates = candidatesRaw as unknown as Candidate[];
   const pointsPerUsd = await getPointsPerUsd();
+  // Read once for the whole batch: the commission is the same for every
+  // submission in this run, and re-reading it per row is a settings lookup
+  // inside a loop that can process hundreds.
+  const { feePercent } = await getBuyerSettings();
 
   for (const sub of candidates) {
     if (summary.examined >= limit) break;
@@ -272,38 +278,39 @@ export async function recheckPendingSocialSubmissions(opts?: {
       const points = sub.task.pointsReward;
       const xp = sub.task.xpReward;
 
-      // A user-funded task pays out of its creator's pool, so DRAW FROM THE
-      // POOL FIRST — exactly as the submit and admin-review paths do.
+      // A user-funded task is paid for by its BUYER, so charge the buyer first
+      // — exactly as the submit and admin-review paths do, through the same
+      // `chargeTaskCompletion`.
       //
-      // Without this the re-check credited the worker while the creator's
-      // budget stayed untouched: points minted from nothing, once per approval,
-      // silently. The CAS (`remainingBudget >= points`) is what makes it safe
+      // Without a charge here the re-check credited the worker while the
+      // buyer's balance stayed untouched: points minted from nothing, once per
+      // approval, silently. The CAS inside the charge is what makes it safe
       // against this job racing the other two writers.
       if (sub.task.fundedByUserId) {
-        const drawn = await prisma.task.updateMany({
-          where: { id: sub.taskId, remainingBudget: { gte: points } },
-          data: { remainingBudget: { decrement: points } },
+        const charge = await chargeTaskCompletion(prisma, {
+          taskId: sub.taskId,
+          buyerId: sub.task.fundedByUserId,
+          rewardPoints: points,
+          standardReward: sub.task.pointsReward,
+          feePercent,
+          remainingBudget: sub.task.remainingBudget,
         });
-        if (drawn.count === 0) {
-          // Pool exhausted. Close the task and leave the submission for a human
-          // rather than paying money that does not exist. The status was
-          // already claimed above, so hand it back to PENDING.
+        if (charge.closeTask) {
           await prisma.task.update({
             where: { id: sub.taskId },
-            data: { remainingBudget: 0, status: "COMPLETED" },
+            data: { status: "COMPLETED" },
           });
+        }
+        if (!charge.paid) {
+          // The buyer cannot pay. Leave the submission for a human rather than
+          // paying money that does not exist. The status was already claimed
+          // above, so hand it back to PENDING.
           await prisma.taskSubmission.update({
             where: { id: sub.id },
             data: { status: SubmissionStatus.PENDING, reviewedAt: null },
           });
           summary.nowFailing++;
           continue;
-        }
-        if (sub.task.remainingBudget - points < sub.task.pointsReward) {
-          await prisma.task.update({
-            where: { id: sub.taskId },
-            data: { status: "COMPLETED" },
-          });
         }
       }
 

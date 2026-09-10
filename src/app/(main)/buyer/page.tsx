@@ -61,10 +61,13 @@ export default async function BuyerHubPage() {
       where: {
         userId,
         OR: [
-          { reference: { startsWith: "task_fund_" } },
-          { reference: { startsWith: "task_fee_" } },
-          { reference: { startsWith: "task_refund_" } },
+          // Credit bought, credit spent per completion, the commission on
+          // each, and the "published" marker. Everything that moved a buyer's
+          // credit, in one list.
           { reference: { startsWith: "taskcredit_" } },
+          { reference: { startsWith: "taskspend_" } },
+          { reference: { startsWith: "task_fee_" } },
+          { reference: { startsWith: "task_fund_" } },
         ],
       },
       orderBy: { createdAt: "desc" },
@@ -74,6 +77,7 @@ export default async function BuyerHubPage() {
         reference: true,
         description: true,
         amount: true,
+        points: true,
         createdAt: true,
       },
     }),
@@ -141,6 +145,9 @@ export default async function BuyerHubPage() {
     reference: r.reference ?? "",
     description: r.description ?? "",
     amountUsd: toNum(r.amount),
+    // Credit moves in POINTS; only a credit PURCHASE moves dollars. A row
+    // carries whichever is real for it, and the hub renders that one.
+    points: r.points ?? 0,
     createdAt: new Date(r.createdAt).toISOString(),
   }));
 

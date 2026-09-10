@@ -36,6 +36,8 @@ export interface InvoiceRow {
   description: string;
   /** Negative = charged to the buyer, positive = refunded to them. */
   amountUsd: number;
+  /** Credit moved. Negative = spent, positive = bought. */
+  points: number;
   createdAt: string;
 }
 
@@ -103,11 +105,21 @@ export function BuyerHubView({
   const live = tasks.filter((t) => t.status === "ACTIVE").length;
   const awaiting = tasks.filter((t) => t.status === "PENDING_REVIEW").length;
   const delivered = tasks.reduce((s, t) => s + t.approvedCount, 0);
-  // What has actually left the wallet. Charges are stored negative and refunds
-  // positive, so summing the raw column and flipping the sign nets a refunded
-  // task back out rather than reporting money the buyer got back as spend.
-  const netSpent = -invoices.reduce((s, r) => s + r.amountUsd, 0);
-  const heldPoints = tasks
+  // Credit SPENT on completions — the reward rows and the fee rows, both
+  // stored negative. Deliberately not a dollar figure: nothing is charged in
+  // dollars any more, so summing `amountUsd` reported $0.00 and looked broken.
+  // Sum every non-purchase row and flip the sign: charges are negative, so
+  // this comes out positive, and anything credited BACK nets itself off
+  // instead of being ignored. Purchases are excluded because buying credit is
+  // not spending it — leaving them in would make the figure go negative.
+  const creditSpent = -invoices
+    .filter((r) => !r.reference.startsWith("taskcredit_buy_"))
+    .reduce((s, r) => s + r.points, 0);
+
+  // What the live tasks still advertise. NOT "held" — nothing is reserved
+  // under pay-as-you-go, and calling it held would tell a buyer their credit
+  // is committed when it is free to spend anywhere.
+  const advertised = tasks
     .filter((t) => t.status === "ACTIVE" || t.status === "PENDING_REVIEW")
     .reduce((s, t) => s + t.remainingBudget, 0);
 
@@ -166,12 +178,12 @@ export function BuyerHubView({
         />
         <Stat
           icon={Receipt}
-          label="Spent"
-          value={usd(netSpent)}
+          label="Credit spent"
+          value={pts(creditSpent)}
           sub={
-            heldPoints > 0
-              ? `${heldPoints.toLocaleString()} pts still held`
-              : "nothing held"
+            advertised > 0
+              ? `${pts(advertised)} pts still advertised`
+              : "nothing running"
           }
         />
       </div>
@@ -286,17 +298,21 @@ export function BuyerHubView({
                     </div>
 
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500">
+                      {/* "Still advertised", not "budget left": nothing is
+                          reserved against this task, so calling the remainder
+                          a budget would suggest the credit is already spoken
+                          for when it is free to use anywhere. */}
                       <span>
-                        Budget{" "}
+                        Still advertised{" "}
                         <span className="tabular-nums text-gray-300">
-                          {t.remainingBudget.toLocaleString()}
+                          {pts(t.remainingBudget)}
                         </span>{" "}
-                        of {t.budgetPoints.toLocaleString()} pts left
+                        of {pts(t.budgetPoints)} pts
                       </span>
                       <span>
                         Paid out{" "}
                         <span className="tabular-nums text-gray-300">
-                          {spentPoints.toLocaleString()}
+                          {pts(spentPoints)}
                         </span>{" "}
                         pts
                       </span>
@@ -322,14 +338,17 @@ export function BuyerHubView({
               title="No invoices yet"
               body={
                 feePercent > 0
-                  ? `Every task you fund is billed as two lines — the reward pool, and the ${feePercent}% platform fee.`
-                  : "Every task you fund is billed here, with any refund shown against it."
+                  ? `Credit you buy, and every completion it pays for — the reward and the ${feePercent}% fee on it.`
+                  : "Credit you buy, and every completion it pays for."
               }
             />
           )}
           {invoices.map((r) => {
-            const refunded = r.amountUsd > 0;
+            const isPurchase = r.reference.startsWith("taskcredit_buy_");
             const isFee = r.reference.startsWith("task_fee_");
+            // A credit purchase is the only row where dollars moved; every
+            // other row moved credit.
+            const incoming = isPurchase ? true : r.points > 0;
             return (
               <div
                 key={r.id}
@@ -342,16 +361,33 @@ export function BuyerHubView({
                   <p className="text-[11px] text-gray-500">
                     {new Date(r.createdAt).toLocaleString()}
                     {isFee && " · platform fee"}
+                    {isPurchase && ` · +${pts(r.points)} credit`}
                   </p>
                 </div>
                 <span
                   className={cn(
                     "shrink-0 text-sm font-bold tabular-nums",
-                    refunded ? "text-emerald-400" : "text-gray-200"
+                    incoming
+                      ? "text-emerald-400"
+                      : isFee
+                        ? "text-gray-400"
+                        : TASK_CREDIT.textStrong
                   )}
                 >
-                  {refunded ? "+" : "−"}
-                  {usd(Math.abs(r.amountUsd))}
+                  {isPurchase ? (
+                    <>
+                      −{usd(Math.abs(r.amountUsd))}
+                    </>
+                  ) : r.points === 0 ? (
+                    <span className="text-[11px] font-medium text-gray-600">
+                      no charge
+                    </span>
+                  ) : (
+                    <>
+                      {r.points > 0 ? "+" : "−"}
+                      {pts(Math.abs(r.points))} pts
+                    </>
+                  )}
                 </span>
               </div>
             );
