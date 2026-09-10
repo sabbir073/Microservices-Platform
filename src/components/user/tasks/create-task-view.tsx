@@ -23,6 +23,13 @@ import {
 
 type TaskType = "SOCIAL" | "VIDEO" | "CUSTOM";
 
+export interface BuyerPlatform {
+  key: string;
+  label: string;
+  emoji: string;
+  actions: { key: string; label: string }[];
+}
+
 const EMPTY_AUDIENCE: TaskAudienceValue = {
   countries: [],
   genders: [],
@@ -45,6 +52,8 @@ export function CreateTaskView({
   allowedTypes = ["SOCIAL", "CUSTOM"],
   needsReview = true,
   taskCredit = 0,
+  platforms = [],
+  suspendedNote = "",
 }: {
   pointsPerUsd?: number;
   /** When true, the user may set audience targeting (admin-granted `targetTasks`). */
@@ -59,6 +68,14 @@ export function CreateTaskView({
   needsReview?: boolean;
   /** The buyer's task-credit balance, in points. This is what funds the task. */
   taskCredit?: number;
+  /**
+   * Platforms this buyer may target, already filtered by the admin's global
+   * list and this account's own suspensions. The form never offers anything
+   * the server would refuse.
+   */
+  platforms?: BuyerPlatform[];
+  /** Why something is suspended on this account, if anything is. */
+  suspendedNote?: string;
 }) {
   const router = useRouter();
   const [type, setType] = useState<TaskType>(
@@ -69,6 +86,14 @@ export function CreateTaskView({
   // SOCIAL
   const [socialPlatform, setSocialPlatform] = useState("");
   const [socialAction, setSocialAction] = useState("");
+  // Actions are per-platform, so a platform change must clear the action —
+  // otherwise "Follow" from Instagram survives a switch to Spotify and the
+  // server refuses something the form appeared to accept.
+  const pickPlatform = (key: string) => {
+    setSocialPlatform(key);
+    setSocialAction("");
+  };
+  const platformDef = platforms.find((p) => p.key === socialPlatform);
   const [socialUrl, setSocialUrl] = useState("");
   // VIDEO
   const [videoUrl, setVideoUrl] = useState("");
@@ -206,6 +231,12 @@ export function CreateTaskView({
         </p>
       </div>
 
+      {suspendedNote && (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-300">
+          Some options are suspended on your account: {suspendedNote}
+        </p>
+      )}
+
       {/* Type toggle. Only the types the admin allows buyers to create — an
           option that the API will refuse is worse than no option. */}
       <div className="grid grid-cols-3 gap-2">
@@ -303,28 +334,48 @@ export function CreateTaskView({
           </div>
         ) : type === "SOCIAL" ? (
           <>
+            {/* Real platforms and real actions, from the same catalog the
+                admin builder uses. This was two free-text boxes, which meant a
+                buyer's task matched no known platform — so it got none of the
+                per-platform copy-steps and none of the automatic link
+                verification, and every submission fell to manual review. */}
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1.5">
-                  Platform
+                  Platform *
                 </label>
-                <input
+                <select
                   value={socialPlatform}
-                  onChange={(e) => setSocialPlatform(e.target.value)}
-                  placeholder="e.g. YouTube, Instagram"
-                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500"
-                />
+                  onChange={(e) => pickPlatform(e.target.value)}
+                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="">Choose…</option>
+                  {platforms.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.emoji} {p.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-400 mb-1.5">
                   Action *
                 </label>
-                <input
+                <select
                   value={socialAction}
                   onChange={(e) => setSocialAction(e.target.value)}
-                  placeholder="Follow / Like / Subscribe"
-                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500"
-                />
+                  disabled={!platformDef}
+                  className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-indigo-500 disabled:opacity-50"
+                >
+                  <option value="">
+                    {platformDef ? "Choose…" : "Pick a platform first"}
+                  </option>
+                  {platformDef?.actions.map((a) => (
+                    <option key={a.key} value={a.key}>
+                      {a.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div>

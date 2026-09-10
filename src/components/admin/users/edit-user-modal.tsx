@@ -25,6 +25,7 @@ import { isAdmin, PERMISSION_CATALOG, permissionLabel, permissionDescription, ty
 import { USER_PAGES } from "@/lib/page-visibility";
 import { FEATURES, type PackageFeatureKey } from "@/lib/features";
 import { FEATURE_BUNDLES, missingFor } from "@/lib/feature-bundles";
+import { BuyerSuspensionPanel } from "@/components/admin/users/buyer-suspension-panel";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import { DateField } from "@/components/ui/date-field";
 
@@ -116,6 +117,9 @@ interface UserEditFormProps {
    * admin has just switched Off is.
    */
   packageFeatures?: Partial<Record<PackageFeatureKey, boolean>>;
+  /** This buyer's own suspensions, and the platform catalog to pick from. */
+  buyerBlocks?: { types: string[]; platforms: string[]; note: string };
+  platformList?: { key: string; label: string; emoji: string }[];
   /** Called when admin clicks Cancel or after successful Save. Defaults to router.back(). */
   onDone?: () => void;
 }
@@ -185,6 +189,8 @@ export function UserEditForm({
   plans,
   customRoles = [],
   packageFeatures = {},
+  buyerBlocks,
+  platformList = [],
   onDone,
 }: UserEditFormProps) {
   const router = useRouter();
@@ -1335,6 +1341,19 @@ export function UserEditForm({
 
           {tab === "access" && (
             <div className="space-y-4">
+              {/* Per-buyer suspensions live beside the feature grants because
+                  that is where an admin already goes to decide what this one
+                  account may do. The global lists are in Settings; this is the
+                  exception for one person. */}
+              {buyerBlocks && platformList.length > 0 && (
+                <BuyerSuspensionPanel
+                  userId={user.id}
+                  platforms={platformList}
+                  initialTypes={buyerBlocks.types}
+                  initialPlatforms={buyerBlocks.platforms}
+                  initialNote={buyerBlocks.note}
+                />
+              )}
               <p className="text-xs text-slate-500">
                 Override this user&apos;s feature access. <b>Default</b> follows
                 their plan; <b>On</b>/<b>Off</b> force it regardless of package.

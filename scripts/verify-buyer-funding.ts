@@ -140,7 +140,19 @@ async function main() {
       masterAt > -1 && featureAt > -1 && masterAt < featureAt,
       `master@${masterAt} feature@${featureAt}`
     );
-    check("allowed task types are enforced", /buyer\.allowedTaskTypes\.includes/.test(create));
+    check(
+      // The type gate now runs through `buyer-scope`, which layers the admin's
+      // GLOBAL list with this buyer's own suspensions — so it also covers
+      // "allowed for buyers in general, but switched off for this one".
+      "allowed task types are enforced, per buyer",
+      /typeRefusal\(scope, d\.type\)/.test(create) &&
+        /getBuyerScope\(userId\)/.test(create)
+    );
+    check(
+      "…and the social platform is gated the same way",
+      /platformRefusal\(scope, d\.socialPlatform\)/.test(create),
+      "a buyer suspended from Pinterest must not be able to post one anyway"
+    );
     check("the minimum reward is enforced", /buyer\.minPointsPerTask/.test(create));
     check("the maximum reward is enforced", /buyer\.maxPointsPerTask/.test(create));
     check("the completion cap is enforced", /buyer\.maxCompletions/.test(create));
@@ -346,10 +358,11 @@ async function main() {
       /\.filter\(\(opt\) => allowedTypes\.includes\(opt\.value\)\)/.test(view)
     );
     check(
-      "the page refuses to render the form when buyer funding is off",
-      /!buyer\.enabled \|\| buyer\.allowedTaskTypes\.length === 0/.test(
+      "the page refuses to render the form when there is nothing to create",
+      /!buyer\.enabled \|\| scope\.types\.length === 0/.test(
         read("src/app/(main)/create-task/page.tsx")
-      )
+      ),
+      "covers a buyer suspended from every type, not only the global switch"
     );
   }
 

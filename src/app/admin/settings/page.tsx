@@ -3,6 +3,7 @@ import { can } from "@/lib/permissions";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SystemSettingsForm } from "@/components/admin/settings/system-settings-form";
+import { SOCIAL_PLATFORMS } from "@/lib/social-tasks";
 
 export default async function AdminSettingsPage() {
   const session = await auth();
@@ -36,7 +37,12 @@ export default async function AdminSettingsPage() {
         </p>
       </div>
 
-      <SystemSettingsForm initial={initial} canEdit={canEdit} />
+      <SystemSettingsForm
+        platformList={SOCIAL_PLATFORMS.map((p) => ({
+          key: p.key,
+          label: p.label,
+          emoji: p.emoji,
+        }))} initial={initial} canEdit={canEdit} />
 
       {/* System Info */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">

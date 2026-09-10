@@ -30,6 +30,11 @@ export type SettingsBag = Record<string, unknown>;
 interface SystemSettingsFormProps {
   initial: SettingsBag;
   canEdit: boolean;
+  /**
+   * The social platform catalog, for the buyer allow-list. Passed as data
+   * because `social-tasks.ts` is ~3,000 lines and this is a client component.
+   */
+  platformList?: { key: string; label: string; emoji: string }[];
 }
 
 const TABS = [
@@ -72,7 +77,7 @@ const DEFAULTS: SettingsBag = {
   "buyer.min_purchase_points": 1000,
   "buyer.max_purchase_points": 10000000,
   "buyer.max_active_tasks": 0,
-  "buyer.allowed_task_types": ["SOCIAL", "CUSTOM"],
+  "buyer.allowed_task_types": ["SOCIAL", "VIDEO", "CUSTOM"],
   "buyer.require_kyc": false,
   "buyer.auto_approve_tasks": false,
   "buyer.refund_fee_on_reject": true,
@@ -157,6 +162,7 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   "buyer.max_purchase_points": "financial",
   "buyer.max_active_tasks": "financial",
   "buyer.allowed_task_types": "financial",
+  "buyer.allowed_platforms": "financial",
   "buyer.require_kyc": "financial",
   "buyer.auto_approve_tasks": "financial",
   "buyer.refund_fee_on_reject": "financial",
@@ -210,6 +216,7 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
 export function SystemSettingsForm({
   initial,
   canEdit,
+  platformList = [],
 }: SystemSettingsFormProps) {
   const router = useRouter();
   const [tab, setTab] = useState<TabId>("general");
@@ -697,6 +704,29 @@ export function SystemSettingsForm({
                   })}
                 </div>
               </Field>
+              <Field
+                label="Social platforms buyers may target"
+                hint={(() => {
+                  const list = Array.isArray(values["buyer.allowed_platforms"])
+                    ? (values["buyer.allowed_platforms"] as string[])
+                    : [];
+                  return list.length === 0
+                    ? `all ${platformList.length} · a platform added later is included automatically`
+                    : `${list.length} of ${platformList.length} selected`;
+                })()}
+              >
+                <PlatformAllowList
+                  all={platformList}
+                  value={
+                    Array.isArray(values["buyer.allowed_platforms"])
+                      ? (values["buyer.allowed_platforms"] as string[])
+                      : []
+                  }
+                  onChange={(v) => set("buyer.allowed_platforms", v)}
+                  disabled={!canEdit}
+                />
+              </Field>
+
               <Toggle
                 label="Require KYC before funding"
                 description="Checked when the buyer spends, not when they are paid — an unverified account is stopped before the money moves."
@@ -1506,6 +1536,105 @@ function NotWired({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * Which of the 40 social platforms buyers may target.
+ *
+ * EMPTY MEANS ALL, deliberately. An allow-list that starts empty and means
+ * "none" would silently close buyer social tasks the moment anyone opened this
+ * screen; and if it meant "the ones ticked today", every platform added to the
+ * catalog later would be invisible to buyers until somebody remembered to come
+ * back here. Empty = everything current and future; tick some to narrow it.
+ */
+function PlatformAllowList({
+  all,
+  value,
+  onChange,
+  disabled,
+}: {
+  all: { key: string; label: string; emoji: string }[];
+  value: string[];
+  onChange: (v: string[]) => void;
+  disabled?: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const allowAll = value.length === 0;
+  const shown = q.trim()
+    ? all.filter((p) => p.label.toLowerCase().includes(q.trim().toLowerCase()))
+    : all;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange([])}
+          className={cn(
+            "rounded-lg border px-2.5 py-1 text-xs font-semibold",
+            allowAll
+              ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+              : "border-slate-700 text-slate-400 hover:text-white"
+          )}
+        >
+          All platforms
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(all.map((p) => p.key))}
+          className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-400 hover:text-white"
+        >
+          Select each
+        </button>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search…"
+          className="ml-auto w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-white focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+
+      <div
+        className={cn(
+          "flex max-h-40 flex-wrap gap-1.5 overflow-y-auto",
+          allowAll && "opacity-50"
+        )}
+      >
+        {shown.map((p) => {
+          const on = allowAll || value.includes(p.key);
+          return (
+            <button
+              key={p.key}
+              type="button"
+              disabled={disabled}
+              onClick={() =>
+                onChange(
+                  // Coming out of "all", the first click means "everything
+                  // except this one" — which is what unticking one of a full
+                  // set has to mean.
+                  allowAll
+                    ? all.map((x) => x.key).filter((k) => k !== p.key)
+                    : value.includes(p.key)
+                      ? value.filter((k) => k !== p.key)
+                      : [...value, p.key]
+                )
+              }
+              className={cn(
+                "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+                on
+                  ? "border-blue-500/50 bg-blue-500/15 text-blue-300"
+                  : "border-slate-700 text-slate-500 hover:text-slate-300"
+              )}
+            >
+              {p.emoji} {p.label}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

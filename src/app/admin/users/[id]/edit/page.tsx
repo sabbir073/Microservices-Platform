@@ -10,6 +10,8 @@ import { usd } from "@/lib/utils";
 import { UserEditForm } from "@/components/admin/users/edit-user-modal";
 import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
 import { FEATURE_KEYS, type PackageFeatureKey } from "@/lib/features";
+import { parseBuyerBlocks } from "@/lib/buyer-scope";
+import { SOCIAL_PLATFORMS } from "@/lib/social-tasks";
 import {
   UserDetailActions,
   AdjustBalanceButton,
@@ -51,6 +53,7 @@ export default async function EditUserPage({
         featureOverrides: true,
         permissionOverrides: true,
         pageOverrides: true,
+        buyerBlocks: true,
         kycStatus: true,
         twoFactorEnabled: true,
         tutorProfile: { select: { isSuspended: true } },
@@ -128,6 +131,15 @@ export default async function EditUserPage({
   const packageFeatures = Object.fromEntries(
     FEATURE_KEYS.map((k) => [k, packageHasFeature(effectivePkg, k)])
   ) as Partial<Record<PackageFeatureKey, boolean>>;
+
+  // Per-buyer suspensions, and the catalog to pick from. Only the three
+  // fields the panel needs — the full platform definitions are ~3,000 lines.
+  const buyerBlocks = parseBuyerBlocks(userRaw.buyerBlocks);
+  const platformList = SOCIAL_PLATFORMS.map((p) => ({
+    key: p.key,
+    label: p.label,
+    emoji: p.emoji,
+  }));
 
   const isSuperAdmin = adminRole === "SUPER_ADMIN";
   // `can()` (effective: role table + custom role + per-user overrides) — the
@@ -223,6 +235,8 @@ export default async function EditUserPage({
         plans={plans}
         customRoles={customRolesRaw}
         packageFeatures={packageFeatures}
+        buyerBlocks={buyerBlocks}
+        platformList={platformList}
       />
     </div>
   );

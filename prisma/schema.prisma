@@ -1414,6 +1414,15 @@ model User {
   /// with wallet cash) and one way out (fund a task); no earning path ever
   /// credits it. `src/lib/task-credit.ts` is its only writer.
   taskCreditPoints                  Int                          @default(0)
+  /// Per-buyer suspensions — the task types and social platforms THIS account
+  /// may not use, on top of the global buyer settings.
+  ///
+  /// A BLOCK list, not an allow list: an untouched buyer gets whatever the
+  /// platform currently allows, and a new platform added later is available to
+  /// everyone who has not been specifically stopped from using it.
+  ///
+  /// `{ types: string[], platforms: string[], note: string, at: string }`
+  buyerBlocks                       Json?
   totalEarnings                     Decimal                      @default(0) @db.Decimal(18, 6)
   totalWithdrawals                  Decimal                      @default(0) @db.Decimal(18, 6)
   xp                                Int                          @default(0)

@@ -8,6 +8,12 @@ import { sanitizeTaskAudience, EMPTY_TASK_AUDIENCE } from "@/lib/task-targeting"
 import { getBuyerSettings, quoteTask } from "@/lib/buyer-settings";
 import { getTaskCredit } from "@/lib/task-credit";
 import { detectProvider } from "@/lib/video-tasks";
+import { getPlatform } from "@/lib/social-tasks";
+import {
+  getBuyerScope,
+  typeRefusal,
+  platformRefusal,
+} from "@/lib/buyer-scope";
 import { KYCStatus } from "@/generated/prisma/client";
 import { TransactionType, TransactionStatus, TaskType } from "@/generated/prisma/client";
 
@@ -81,15 +87,21 @@ export async function POST(req: NextRequest) {
   }
   const d = parsed.data;
 
-  if (!buyer.allowedTaskTypes.includes(d.type)) {
-    return NextResponse.json(
-      {
-        error: buyer.allowedTaskTypes.length
-          ? `Buyers can currently create ${buyer.allowedTaskTypes.join(" and ")} tasks only.`
-          : "No task type is open to buyers right now.",
-      },
-      { status: 403 }
-    );
+  // What THIS buyer may run: the admin's global lists, minus anything
+  // suspended on their account. Both are checked here as well as in the form,
+  // because a form only decides what is offered.
+  const scope = await getBuyerScope(userId);
+
+  const typeStop = typeRefusal(scope, d.type);
+  if (typeStop) {
+    return NextResponse.json({ error: typeStop }, { status: 403 });
+  }
+
+  if (d.type === "SOCIAL" && d.socialPlatform) {
+    const platformStop = platformRefusal(scope, d.socialPlatform);
+    if (platformStop) {
+      return NextResponse.json({ error: platformStop }, { status: 403 });
+    }
   }
 
   if (d.pointsReward < buyer.minPointsPerTask) {
@@ -139,6 +151,32 @@ export async function POST(req: NextRequest) {
       { error: "Social tasks need a target URL and an action." },
       { status: 400 }
     );
+  }
+
+  // The platform must be one the catalog knows. It used to be free text, which
+  // meant a buyer's social task matched no platform at all — so it got none of
+  // the per-platform copy-steps and none of the Smart Auto Verification that an
+  // admin-built social task gets, and every submission fell to manual review.
+  if (d.type === "SOCIAL") {
+    if (!d.socialPlatform) {
+      return NextResponse.json(
+        { error: "Pick the platform this task is for." },
+        { status: 400 }
+      );
+    }
+    const def = getPlatform(d.socialPlatform.toUpperCase());
+    if (!def) {
+      return NextResponse.json(
+        { error: `${d.socialPlatform} isn't a platform we support.` },
+        { status: 400 }
+      );
+    }
+    if (!def.actions.some((a) => a.key === d.socialAction)) {
+      return NextResponse.json(
+        { error: `That action isn't available on ${def.label}.` },
+        { status: 400 }
+      );
+    }
   }
 
   // Per-type gate: VIDEO self-serve additionally requires the videoTasks
@@ -269,7 +307,8 @@ export async function POST(req: NextRequest) {
                 },
               }
             : {}),
-          socialPlatform: d.type === "SOCIAL" ? d.socialPlatform || null : null,
+          socialPlatform:
+            d.type === "SOCIAL" ? d.socialPlatform?.toUpperCase() || null : null,
           socialAction: d.type === "SOCIAL" ? d.socialAction || null : null,
           socialUrl: d.type === "SOCIAL" ? d.socialUrl || null : null,
         },

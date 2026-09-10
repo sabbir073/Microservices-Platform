@@ -1,0 +1,18 @@
+-- Per-buyer suspensions: which task types and which social platforms THIS
+-- buyer may not use.
+--
+-- The global settings say what buyers in general may run. This is the
+-- exception list for one account — a buyer who keeps posting rubbish on
+-- Pinterest loses Pinterest, not their whole account, and not everyone else's
+-- Pinterest.
+--
+-- A BLOCK list rather than an allow list, deliberately. An allow list would
+-- have to be written out for every buyer before they could do anything, and
+-- would silently freeze them out of any platform added later. A block list
+-- defaults to "whatever the platform currently allows", which is what an
+-- untouched account should get.
+--
+-- Shape (all optional):
+--   { "types": ["CUSTOM"], "platforms": ["PINTEREST"],
+--     "note": "repeated low-quality submissions", "at": "2026-09-11T..." }
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "buyerBlocks" JSONB;
