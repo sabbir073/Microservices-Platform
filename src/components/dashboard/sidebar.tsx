@@ -32,6 +32,7 @@ import {
   HelpCircle,
   Bell,
   CreditCard,
+  Receipt,
   Handshake,
   Coins,
   Rocket,
@@ -121,6 +122,7 @@ const navigationGroups: { section: string; items: NavItem[] }[] = [
     section: "Account",
     items: [
       { name: "Withdrawal", href: "/withdrawal", icon: ArrowUpRight, feature: "withdrawals" },
+      { name: "Transactions", href: "/transactions", icon: Receipt },
       { name: "Packages", href: "/packages", icon: Package },
       { name: "My Package", href: "/my-package", icon: Package },
       { name: "Notifications", href: "/notifications", icon: Bell },

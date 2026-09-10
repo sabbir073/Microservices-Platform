@@ -20,7 +20,25 @@ function sourceWhere(source: SourceKey): Prisma.TransactionWhereInput | null {
     case "course": return { type: { in: ["COURSE_PURCHASE", "COURSE_TUTOR_EARNING", "COURSE_REFUND"] } };
     case "lottery": return { type: "LOTTERY_WIN" };
     case "adcredit": return { type: "AD_CREDIT_PURCHASE" };
-    case "admin": return { type: { in: ["PENALTY", "ADMIN_FEE"] } };
+    // ADMIN_FEE covers both a penalty-style charge and the buyer commission,
+    // so they are split by reference exactly as `deriveSource` splits them —
+    // otherwise the "Task fees" chip existed in the UI with no server filter
+    // behind it and quietly returned everything.
+    case "admin":
+      return {
+        type: { in: ["PENALTY", "ADMIN_FEE"] },
+        NOT: { reference: { startsWith: "task_fee_" } },
+      };
+    case "taskfee":
+      return { type: "ADMIN_FEE", reference: { startsWith: "task_fee_" } };
+    case "taskcredit":
+      return {
+        type: "PURCHASE",
+        OR: [
+          { reference: { startsWith: "taskcredit_" } },
+          { reference: { startsWith: "taskspend_" } },
+        ],
+      };
     case "refund": return { type: "REFUND" };
     case "bonus": return { type: { in: ["BONUS", "GIFT"] } };
     case "checkin":
@@ -36,7 +54,15 @@ function sourceWhere(source: SourceKey): Prisma.TransactionWhereInput | null {
         ],
       };
     case "purchase":
-      return { type: "PURCHASE" };
+      return {
+        type: "PURCHASE",
+        NOT: {
+          OR: [
+            { reference: { startsWith: "taskcredit_" } },
+            { reference: { startsWith: "taskspend_" } },
+          ],
+        },
+      };
     case "task":
       return {
         type: "EARNING",
@@ -45,6 +71,43 @@ function sourceWhere(source: SourceKey): Prisma.TransactionWhereInput | null {
     default:
       return null; // "other" — no clean server filter
   }
+}
+
+/**
+ * The sources that are MONEY MOVING, as opposed to work being logged.
+ *
+ * A wallet history that lists every completed task alongside every deposit is
+ * a task log with the occasional payment in it: on an active account the
+ * earnings drown everything else, and "when did my withdrawal go out" becomes
+ * unanswerable. Earnings are still available — they are just not the default
+ * on a page whose job is the money record.
+ */
+
+/** `kind=money` → everything that is NOT a per-task earning row. */
+function kindWhere(kind: string | null): Prisma.TransactionWhereInput | null {
+  if (kind === "money") {
+    return {
+      NOT: {
+        OR: [
+          // Per-task and per-post earnings: the work log.
+          {
+            type: "EARNING",
+            NOT: { reference: { startsWith: "daily_" } },
+          },
+          { type: { in: ["CHECKIN", "LOTTERY_WIN"] } },
+        ],
+      },
+    };
+  }
+  if (kind === "earning") {
+    return {
+      OR: [
+        { type: "EARNING" },
+        { type: { in: ["CHECKIN", "LOTTERY_WIN", "REFERRAL", "AFFILIATE_COMMISSION", "BONUS", "GIFT"] } },
+      ],
+    };
+  }
+  return null;
 }
 
 // GET /api/transactions — user transaction history with date + source filters.
@@ -60,6 +123,8 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get("type") as TransactionType | null;
     const status = searchParams.get("status") as TransactionStatus | null;
     const source = searchParams.get("source") as SourceKey | null;
+    // "money" (the transactions page default), "earning", or absent for all.
+    const kind = searchParams.get("kind");
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     const page = Math.max(parseInt(searchParams.get("page") || "1", 10) || 1, 1);
@@ -84,6 +149,9 @@ export async function GET(request: NextRequest) {
       ...(status ? { status } : {}),
       ...(createdAt ? { createdAt } : {}),
       ...(source ? sourceWhere(source) ?? {} : {}),
+      // A source chip is more specific than the kind, so it wins: picking
+      // "Tasks" while on the money view should show tasks, not nothing.
+      ...(!source ? kindWhere(kind) ?? {} : {}),
     };
 
     const [transactions, total] = await Promise.all([

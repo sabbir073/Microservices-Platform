@@ -16,6 +16,8 @@ import {
   Play,
   Loader2,
   ShieldCheck,
+  Eye,
+  ExternalLink,
 } from "lucide-react";
 import { usd, pts, cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
@@ -34,6 +36,15 @@ export interface BuyerTaskRow {
   pendingCount: number;
   rejectionReason: string | null;
   createdAt: string;
+}
+
+interface ProofRow {
+  id: string;
+  status: string;
+  proof: string | null;
+  proofImages: string[];
+  pointsPaid: number;
+  at: string;
 }
 
 export interface InvoiceRow {
@@ -109,6 +120,31 @@ export function BuyerHubView({
   const router = useRouter();
   const [tab, setTab] = useState<"tasks" | "invoices">("tasks");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [proofFor, setProofFor] = useState<string | null>(null);
+  const [proof, setProof] = useState<ProofRow[] | null>(null);
+  const [proofLoading, setProofLoading] = useState(false);
+
+  /** Show a buyer the work they paid for. Read only — see the API note. */
+  const openProof = async (taskId: string) => {
+    if (proofFor === taskId) {
+      setProofFor(null);
+      return;
+    }
+    setProofFor(taskId);
+    setProof(null);
+    setProofLoading(true);
+    try {
+      const res = await fetch(`/api/tasks/mine/${taskId}/submissions`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not load the work");
+      setProof(data.submissions ?? []);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not load the work");
+      setProofFor(null);
+    } finally {
+      setProofLoading(false);
+    }
+  };
 
   /** Pause or resume one of the buyer's own tasks. */
   const setRunning = async (taskId: string, action: "pause" | "resume") => {
@@ -387,6 +423,85 @@ export function BuyerHubView({
                         )}
                         {t.status === "ACTIVE" ? "Pause task" : "Resume task"}
                       </button>
+                    )}
+
+                    {t.approvedCount > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => openProof(t.id)}
+                        className="ml-2 inline-flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:text-white"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        {proofFor === t.id
+                          ? "Hide the work"
+                          : `See the work (${t.approvedCount})`}
+                      </button>
+                    )}
+
+                    {proofFor === t.id && (
+                      <div className="mt-2 space-y-2 rounded-lg border border-gray-800 bg-gray-950/60 p-3">
+                        {proofLoading && (
+                          <p className="inline-flex items-center gap-1.5 text-xs text-gray-500">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            Loading…
+                          </p>
+                        )}
+                        {!proofLoading && proof && proof.length === 0 && (
+                          <p className="text-xs text-gray-500">
+                            Nothing approved yet.
+                          </p>
+                        )}
+                        {!proofLoading &&
+                          proof?.map((r) => (
+                            <div
+                              key={r.id}
+                              className="rounded-md border border-gray-800 bg-gray-900/60 p-2.5"
+                            >
+                              <div className="flex items-center justify-between gap-2 text-[11px] text-gray-500">
+                                <span>{new Date(r.at).toLocaleString()}</span>
+                                <span className={TASK_CREDIT.textStrong}>
+                                  −{pts(r.pointsPaid)} pts
+                                </span>
+                              </div>
+                              {r.proof && (
+                                <p className="mt-1 wrap-break-word text-xs text-gray-300">
+                                  {/^https?:\/\//.test(r.proof.trim()) ? (
+                                    <a
+                                      href={r.proof.trim()}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 text-indigo-400 hover:text-indigo-300"
+                                    >
+                                      {r.proof.trim()}
+                                      <ExternalLink className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  ) : (
+                                    r.proof
+                                  )}
+                                </p>
+                              )}
+                              {r.proofImages.length > 0 && (
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  {r.proofImages.map((src) => (
+                                    <a
+                                      key={src}
+                                      href={src}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[11px] text-indigo-400 hover:text-indigo-300"
+                                    >
+                                      View screenshot
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        <p className="text-[11px] leading-relaxed text-gray-600">
+                          Approved work only, and without names — you are seeing
+                          what was delivered, not who delivered it.
+                        </p>
+                      </div>
                     )}
                   </>
                 )}

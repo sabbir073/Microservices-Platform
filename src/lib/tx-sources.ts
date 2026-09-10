@@ -22,6 +22,9 @@ export type SourceKey =
   // rather than folded into "admin": it is a revenue STREAM the owner needs to
   // read off the finance console, not an occasional administrative charge.
   | "taskfee"
+  // Buying task credit, and spending it on a completion. Its own bucket
+  // because "Purchase" told a buyer nothing about where their credit went.
+  | "taskcredit"
   | "purchase"
   | "refund"
   | "admin"
@@ -65,6 +68,9 @@ export function deriveSource(type: string, reference?: string | null): SourceKey
     case "BONUS":
       return "bonus";
     case "PURCHASE":
+      if (ref.startsWith("taskcredit_") || ref.startsWith("taskspend_")) {
+        return "taskcredit";
+      }
       return isMarketplaceRef ? "marketplace" : "purchase";
     case "EARNING":
       if (ref.startsWith("social_")) return "social";
@@ -104,6 +110,7 @@ export const SOURCE_META: Record<SourceKey, SourceMeta> = {
   checkin: { label: "Check-in", icon: "CalendarCheck", tone: "bg-teal-500/10 text-teal-400", swatch: "bg-teal-500" },
   adcredit: { label: "Ad Credit", icon: "Megaphone", tone: "bg-violet-500/10 text-violet-400", swatch: "bg-violet-500", outflow: true },
   taskfee: { label: "Task fees", icon: "Receipt", tone: "bg-teal-500/10 text-teal-400", swatch: "bg-teal-500" },
+  taskcredit: { label: "Task Credit", icon: "Sparkles", tone: "bg-violet-500/10 text-violet-400", swatch: "bg-violet-500" },
   purchase: { label: "Purchase", icon: "ShoppingCart", tone: "bg-amber-500/10 text-amber-400", swatch: "bg-amber-500", outflow: true },
   refund: { label: "Refund", icon: "Undo2", tone: "bg-green-500/10 text-green-400", swatch: "bg-green-500" },
   admin: { label: "Adjustment", icon: "Shield", tone: "bg-slate-500/10 text-slate-400", swatch: "bg-slate-500" },
@@ -114,5 +121,5 @@ export const SOURCE_META: Record<SourceKey, SourceMeta> = {
 export const SOURCE_ORDER: SourceKey[] = [
   "task", "social", "referral", "affiliate", "course", "marketplace",
   "deposit", "convert", "withdraw", "bonus", "lottery", "checkin",
-  "adcredit", "taskfee", "purchase", "refund", "admin", "other",
+  "adcredit", "taskcredit", "taskfee", "purchase", "refund", "admin", "other",
 ];

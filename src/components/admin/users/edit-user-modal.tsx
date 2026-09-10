@@ -142,6 +142,25 @@ const TABS: Array<{ id: Tab; label: string; superOnly?: boolean }> = [
   { id: "address", label: "Address" },
 ];
 
+/**
+ * Roles whose name suggests something narrower than what they grant.
+ *
+ * Every entry here exists because the label alone could reasonably be read as
+ * a user-side capability when it is in fact admin-panel access.
+ */
+const ROLE_WARNINGS: Record<string, string> = {
+  AD_MANAGER:
+    "Admin role — opens the admin panel and can manage EVERY advertiser's campaigns, not just their own. To let someone run their own ads, leave the role as User and turn on “Run Ads (advertiser)” under Feature Access instead.",
+  AGENCY:
+    "User-side console, not an admin. Automatically grants Run Ads, Agency Mode and Create Tasks. If you only want them to buy tasks, leave the role as User and turn on Create Tasks under Feature Access.",
+  MODERATOR:
+    "Admin role — opens the admin panel with moderation powers over other people's content.",
+  FINANCE_ADMIN:
+    "Admin role — can see and act on platform finances, including other users' balances and payouts.",
+  SUPER_ADMIN:
+    "Full control of the platform, including other admins and every protected setting. Grant this to nobody you would not trust with the database.",
+};
+
 const PROFESSIONS = [
   "Student",
   "Software Engineer",
@@ -622,6 +641,22 @@ export function UserEditForm({
                       )
                     )}
                   </select>
+                  {/*
+                    What this role actually confers, at the moment it is picked.
+
+                    "Ad Manager" reads like "this person can run ads" and it is
+                    not: it is an ADMIN role that opens the admin panel with
+                    `ads.manage` over EVERY advertiser's campaigns. Someone who
+                    just wants to advertise their own thing needs the
+                    `advertiser` FEATURE on the Feature Access tab — a
+                    completely different system. Granting the role by mistake
+                    hands a customer the keys to everyone else's ad account.
+                  */}
+                  {ROLE_WARNINGS[roleValue] && (
+                    <p className="mt-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-300">
+                      {ROLE_WARNINGS[roleValue]}
+                    </p>
+                  )}
                 </Field>
                 <Field label="Status">
                   <select

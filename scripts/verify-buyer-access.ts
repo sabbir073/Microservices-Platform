@@ -180,6 +180,50 @@ async function main() {
     );
   }
 
+  /* ── 4b. Running ads is a FEATURE, not an admin role ── */
+  console.log("\n4b. Ad Manager is not what its name suggests");
+  {
+    const rbac = read("src/lib/rbac.ts");
+    // The trap: "Ad Manager" reads like "this person can run ads". It is an
+    // ADMIN role with ads.manage over EVERY advertiser's campaigns.
+    check(
+      "AD_MANAGER really is an admin role",
+      /ADMIN_ROLES[\s\S]{0,300}"AD_MANAGER"/.test(rbac) &&
+        /AD_MANAGER: \[[\s\S]{0,120}"ads\.manage"/.test(rbac),
+      "so granting it to a customer hands them everyone else's ad account"
+    );
+    check(
+      "…while running your OWN ads is gated on a feature instead",
+      /enabled\.has\("advertiser"\)/.test(
+        read("src/app/(main)/advertiser/page.tsx")
+      ),
+      "two different systems; the safe grant for a buyer is the feature"
+    );
+    const modal = read("src/components/admin/users/edit-user-modal.tsx");
+    check(
+      "the role picker warns at the moment of the decision",
+      /ROLE_WARNINGS/.test(modal) && /AD_MANAGER:/.test(modal)
+    );
+    check(
+      "…and names the safe alternative rather than only saying no",
+      /Feature Access/.test(modal)
+    );
+    // Whitespace-stripped: the map puts each key on its own line above the
+    // string, so a regex spanning the newline is fragile to reformatting.
+    const flat = modal.replace(/\s+/g, "");
+    const unwarned = [
+      "AD_MANAGER",
+      "SUPER_ADMIN",
+      "FINANCE_ADMIN",
+      "AGENCY",
+    ].filter((r) => !flat.includes(`${r}:"`));
+    check(
+      "the most dangerous roles all carry a warning",
+      unwarned.length === 0,
+      unwarned.join(", ") || undefined
+    );
+  }
+
   /* ── 5. A buyer application that is not an agency application ── */
   console.log("\n5. Task Buyer is its own application");
   {

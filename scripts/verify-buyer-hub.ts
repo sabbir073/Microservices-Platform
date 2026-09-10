@@ -225,6 +225,41 @@ async function main() {
     );
   }
 
+  /* ── 4d. A buyer can SEE what they paid for, and only that ── */
+  console.log("\n4d. Seeing the work, without judging it");
+  {
+    const api = read("src/app/api/tasks/mine/[id]/submissions/route.ts");
+    check(
+      "ownership is in the query",
+      /where: \{ id, fundedByUserId: session\.user\.id \}/.test(api)
+    );
+    check(
+      "it is READ ONLY — no approve, reject or any other write",
+      !/prisma\.taskSubmission\.(update|delete|create)/.test(api) &&
+        !/export async function (POST|PATCH|PUT|DELETE)/.test(api),
+      "a buyer who could act on submissions could refuse honest work"
+    );
+    check(
+      "only APPROVED work is shown",
+      /status: \{ in: \["APPROVED", "AUTO_APPROVED"\] \}/.test(api),
+      "showing pending work invites a buyer to lobby about it"
+    );
+    check(
+      "the worker's identity is withheld",
+      !/userId: true/.test(api) && !/user: \{/.test(api),
+      "the buyer bought the proof, not a list of everyone who engaged with them"
+    );
+    const hub = read(VIEW);
+    check(
+      "the hub offers it only where there is something to see",
+      /t\.approvedCount > 0 &&/.test(hub) && /See the work/.test(hub)
+    );
+    check(
+      "…and says what is being withheld, rather than seeming incomplete",
+      /without names/.test(hub)
+    );
+  }
+
   /* ── 4c. A stalled task tells its buyer ── */
   console.log("\n4c. Running out of credit is announced");
   {

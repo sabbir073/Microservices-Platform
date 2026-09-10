@@ -48,9 +48,24 @@ function rangeToParams(preset: RangePreset, day: string): { from?: string; to?: 
   return { from: new Date(now.getTime() - 30 * 86_400_000).toISOString() };
 }
 
-export function TransactionHistory() {
+export function TransactionHistory({
+  /**
+   * "money" shows only movements of money; "earning" only the work log;
+   * absent shows everything. The wallet tab keeps the old all-in-one view;
+   * the Transactions page defaults to money.
+   */
+  defaultKind,
+  /** Render the Money / Earnings / All switch. */
+  showKindToggle = false,
+}: {
+  defaultKind?: "money" | "earning";
+  showKindToggle?: boolean;
+} = {}) {
   const [range, setRange] = useState<RangePreset>("month");
   const [day, setDay] = useState<string>("");
+  const [kind, setKind] = useState<"money" | "earning" | "all">(
+    defaultKind ?? "all"
+  );
   const [source, setSource] = useState<SourceKey | "all">("all");
   const [page, setPage] = useState(1);
   const [items, setItems] = useState<HistoryTx[]>([]);
@@ -66,6 +81,7 @@ export function TransactionHistory() {
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
     if (source !== "all") qs.set("source", source);
+    else if (kind !== "all") qs.set("kind", kind);
     fetch(`/api/transactions?${qs.toString()}`)
       .then((r) => r.json())
       .then((d) => {
@@ -76,7 +92,7 @@ export function TransactionHistory() {
       })
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  }, [range, day, source, page]);
+  }, [range, day, source, kind, page]);
 
   useEffect(() => {
     load();
@@ -138,6 +154,39 @@ export function TransactionHistory() {
           />
         )}
       </div>
+
+      {showKindToggle && (
+        <div className="inline-flex overflow-hidden rounded-lg border border-gray-800">
+          {(
+            [
+              ["money", "Money"],
+              ["earning", "Earnings"],
+              ["all", "Everything"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => {
+                setKind(k);
+                // A source chip is more specific than the kind and would
+                // otherwise pin the list to one source while the switch
+                // appeared to do nothing.
+                setSource("all");
+                setPage(1);
+              }}
+              className={cn(
+                "px-3 py-1.5 text-xs font-semibold transition-colors",
+                kind === k
+                  ? "bg-indigo-500/15 text-indigo-300"
+                  : "text-gray-500 hover:text-white"
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Source filter chips */}
       <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
