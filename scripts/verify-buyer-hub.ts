@@ -297,6 +297,89 @@ async function main() {
     );
   }
 
+  /* ── 4e. Editing, cancelling, limits, runway ── */
+  console.log("\n4e. A buyer can fix and stop their own work");
+  {
+    const api = read("src/app/api/tasks/mine/[id]/route.ts");
+    check(
+      "ownership is in the query on both verbs",
+      (api.match(/fundedByUserId: userId/g) ?? []).length >= 2
+    );
+    check(
+      "the reward is frozen once the task is live",
+      /can't change once a task is live/.test(api),
+      "people pick tasks on the terms shown; changing them mid-flight moves the deal underneath someone"
+    );
+    check(
+      "…and so is the completion count",
+      /number of completions can't change/.test(api)
+    );
+    check(
+      "editing the CONTENT of a live task sends it back for review",
+      /const backToReview = !notYetLive && contentChanged/.test(api),
+      "otherwise a buyer swaps the link after approval and the approval means nothing"
+    );
+    check(
+      "a finished task cannot be edited at all",
+      /EDITABLE\.has\(String\(task\.status\)\)/.test(api)
+    );
+    check(
+      "cancelling ARCHIVES rather than deletes",
+      /status: "ARCHIVED"/.test(api) &&
+        !/prisma\.task\.delete/.test(api),
+      "submissions are the record of work people were PAID for; the FK refuses a delete"
+    );
+    check(
+      "cancelling refunds nothing, and says so",
+      /only charged for the completions it already had/.test(api),
+      "charging per completion means a cancelled task has already cost exactly what it delivered"
+    );
+    check(
+      "both verbs are audited",
+      /TASK_EDITED/.test(api) && /TASK_CANCELLED/.test(api)
+    );
+
+    const hub = read(VIEW);
+    check(
+      "the hub exposes rename and cancel",
+      /Rename/.test(hub) && /cancel\(t\.id, t\.title\)/.test(hub)
+    );
+    check(
+      "cancelling asks first",
+      /confirmDialog/.test(hub)
+    );
+
+    // Runway — warning BEFORE the credit runs out.
+    check(
+      "the hub warns before credit runs out, not at zero",
+      /LOW_RUNWAY/.test(hub) && /runway <= LOW_RUNWAY/.test(hub),
+      "at zero the tasks have already stopped and the damage is done"
+    );
+    check(
+      "'nothing running' and 'nothing left' are not collapsed",
+      /runway === null/.test(hub),
+      "one is fine, the other is urgent"
+    );
+    check(
+      "the runway uses the CHEAPEST live reward",
+      /Math\.min\(\.\.\.liveRewards\)/.test(read(PAGE)),
+      "that is the completion that runs out last, so it is the honest figure"
+    );
+
+    // Per-buyer task cap.
+    const create = read("src/app/api/tasks/create/route.ts");
+    check(
+      "an admin can cap how many tasks one buyer runs at once",
+      /buyer\.maxActiveTasks > 0/.test(create) &&
+        /"buyer.max_active_tasks"/.test(read("src/lib/buyer-settings.ts"))
+    );
+    check(
+      "…and the cap counts paused and awaiting tasks too",
+      /\["ACTIVE", "PENDING_REVIEW", "PAUSED"\]/.test(create),
+      "counting only live ones lets a buyer park fifty in the review queue"
+    );
+  }
+
   /* ── 5. Live data agrees with what the hub would render ── */
   console.log("\n5. Live state");
   {

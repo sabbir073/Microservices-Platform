@@ -31,6 +31,8 @@ export interface BuyerSettings {
   minPurchasePoints: number;
   /** Largest task-credit purchase in one go, in points. */
   maxPurchasePoints: number;
+  /** How many tasks one buyer may have live or awaiting review. 0 = no cap. */
+  maxActiveTasks: number;
   /** Task types a buyer may create. Empty → none (same as `enabled: false`). */
   allowedTaskTypes: string[];
   /** Buyer must be KYC-approved before funding anything. */
@@ -51,6 +53,7 @@ const DEFAULTS: BuyerSettings = {
   maxCompletions: 100_000,
   minPurchasePoints: 1_000,
   maxPurchasePoints: 10_000_000,
+  maxActiveTasks: 0,
   allowedTaskTypes: [...BUYER_TASK_TYPES],
   requireKyc: false,
   autoApproveTasks: false,
@@ -72,6 +75,7 @@ export async function getBuyerSettings(): Promise<BuyerSettings> {
     maxCompletions,
     minPurchase,
     maxPurchase,
+    maxActive,
     allowedTypes,
     requireKyc,
     autoApprove,
@@ -84,6 +88,7 @@ export async function getBuyerSettings(): Promise<BuyerSettings> {
     getSetting<number>("buyer.max_completions", DEFAULTS.maxCompletions),
     getSetting<number>("buyer.min_purchase_points", DEFAULTS.minPurchasePoints),
     getSetting<number>("buyer.max_purchase_points", DEFAULTS.maxPurchasePoints),
+    getSetting<number>("buyer.max_active_tasks", DEFAULTS.maxActiveTasks),
     getSetting<unknown>("buyer.allowed_task_types", null),
     getSetting<boolean>("buyer.require_kyc", DEFAULTS.requireKyc),
     getSetting<boolean>("buyer.auto_approve_tasks", DEFAULTS.autoApproveTasks),
@@ -121,6 +126,7 @@ export async function getBuyerSettings(): Promise<BuyerSettings> {
       num(maxCompletions, DEFAULTS.maxCompletions, 1, 10_000_000)
     ),
     minPurchasePoints: minPurchase_,
+    maxActiveTasks: Math.floor(num(maxActive, DEFAULTS.maxActiveTasks, 0, 10_000)),
     // A ceiling below the floor would refuse every possible purchase, so the
     // floor wins — the same rule the reward bounds follow.
     maxPurchasePoints: Math.max(

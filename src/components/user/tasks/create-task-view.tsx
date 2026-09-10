@@ -2,7 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Send, Share2, Sparkles, Wallet, Target } from "lucide-react";
+import {
+  Loader2,
+  Send,
+  Share2,
+  Sparkles,
+  Wallet,
+  Target,
+  PlayCircle,
+} from "lucide-react";
 import { toast } from "@/lib/toast";
 import { usd, pts, cn } from "@/lib/utils";
 import Link from "next/link";
@@ -13,7 +21,7 @@ import {
   type TaskAudienceValue,
 } from "@/components/admin/tasks/task-audience-targeting";
 
-type TaskType = "SOCIAL" | "CUSTOM";
+type TaskType = "SOCIAL" | "VIDEO" | "CUSTOM";
 
 const EMPTY_AUDIENCE: TaskAudienceValue = {
   countries: [],
@@ -62,6 +70,9 @@ export function CreateTaskView({
   const [socialPlatform, setSocialPlatform] = useState("");
   const [socialAction, setSocialAction] = useState("");
   const [socialUrl, setSocialUrl] = useState("");
+  // VIDEO
+  const [videoUrl, setVideoUrl] = useState("");
+  const [watchSeconds, setWatchSeconds] = useState(30);
   // CUSTOM
   const [instructions, setInstructions] = useState("");
   // Rewards
@@ -107,6 +118,10 @@ export function CreateTaskView({
       toast.error("Reward and target count must be at least 1");
       return;
     }
+    if (type === "VIDEO" && !videoUrl.trim()) {
+      toast.error("Add the link to your video");
+      return;
+    }
     if (type === "SOCIAL" && (!socialUrl.trim() || !socialAction.trim())) {
       toast.error("Social tasks need an action and a target URL");
       return;
@@ -122,6 +137,10 @@ export function CreateTaskView({
         targetCount: Math.floor(targetCount),
         minLevel: Math.max(1, Math.floor(minLevel)),
       };
+      if (type === "VIDEO") {
+        body.videoUrl = videoUrl.trim();
+        body.watchSeconds = Math.max(5, Math.floor(watchSeconds));
+      }
       if (type === "SOCIAL") {
         body.socialPlatform = socialPlatform.trim() || undefined;
         body.socialAction = socialAction.trim();
@@ -189,10 +208,11 @@ export function CreateTaskView({
 
       {/* Type toggle. Only the types the admin allows buyers to create — an
           option that the API will refuse is worse than no option. */}
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         {(
           [
             { value: "SOCIAL", label: "Social", icon: Share2 },
+            { value: "VIDEO", label: "Video", icon: PlayCircle },
             { value: "CUSTOM", label: "Custom", icon: Sparkles },
           ] as const
         )
@@ -245,7 +265,43 @@ export function CreateTaskView({
           />
         </div>
 
-        {type === "SOCIAL" ? (
+        {type === "VIDEO" ? (
+          <div className="space-y-3">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-400">
+                Video link
+              </label>
+              <input
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                placeholder="https://youtube.com/watch?v=…"
+                className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="mt-1 text-[11px] text-gray-500">
+                YouTube, Facebook, Vimeo or a direct video file.
+              </p>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-400">
+                How long must they watch? (seconds)
+              </label>
+              <input
+                type="number"
+                min={5}
+                max={3600}
+                value={watchSeconds}
+                onChange={(e) =>
+                  setWatchSeconds(parseInt(e.target.value) || 30)
+                }
+                className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2.5 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+              <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
+                Watch time is counted on our server while the video is actually
+                playing and in view — it is not something the viewer can claim.
+              </p>
+            </div>
+          </div>
+        ) : type === "SOCIAL" ? (
           <>
             <div className="grid grid-cols-2 gap-2">
               <div>

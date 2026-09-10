@@ -43,6 +43,10 @@ export const FEATURE_BUNDLES: Partial<
     ],
     suggests: [
       {
+        key: "videoTasks",
+        why: "Needed for “watch my video” tasks. Without it that option is refused the same way Social is, with the same unhelpful message.",
+      },
+      {
         key: "targetTasks",
         why: "Lets the buyer choose a country, gender or age range. Without it their audience settings are silently discarded, not rejected.",
       },

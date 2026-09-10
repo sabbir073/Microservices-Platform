@@ -71,6 +71,7 @@ const DEFAULTS: SettingsBag = {
   "buyer.max_completions": 100000,
   "buyer.min_purchase_points": 1000,
   "buyer.max_purchase_points": 10000000,
+  "buyer.max_active_tasks": 0,
   "buyer.allowed_task_types": ["SOCIAL", "CUSTOM"],
   "buyer.require_kyc": false,
   "buyer.auto_approve_tasks": false,
@@ -154,6 +155,7 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   "buyer.max_completions": "financial",
   "buyer.min_purchase_points": "financial",
   "buyer.max_purchase_points": "financial",
+  "buyer.max_active_tasks": "financial",
   "buyer.allowed_task_types": "financial",
   "buyer.require_kyc": "financial",
   "buyer.auto_approve_tasks": "financial",
@@ -599,6 +601,21 @@ export function SystemSettingsForm({
                   />
                 </Field>
               </div>
+              <Field
+                label="Max live tasks per buyer"
+                hint="Live + awaiting review + paused · 0 = no limit"
+              >
+                <input
+                  type="number"
+                  min={0}
+                  value={Number(values["buyer.max_active_tasks"] ?? 0)}
+                  onChange={(e) =>
+                    set("buyer.max_active_tasks", parseInt(e.target.value))
+                  }
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
               <Field
                 label="Max completions per task"
                 hint="Caps how large one buyer-funded task can get"

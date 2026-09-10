@@ -830,6 +830,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     category: "CORE",
   },
   {
+    name: "Buyers",
+    href: "/admin/buyers",
+    icon: "Users",
+    permissions: ["tasks.view"],
+    category: "CORE",
+  },
+  {
     name: "Task Categories",
     href: "/admin/task-categories",
     icon: "LayoutGrid",

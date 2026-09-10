@@ -6,6 +6,32 @@
  * hand-copied second list in the client is how the tick-boxes end up offering a
  * type the server then rejects.
  */
-export const BUYER_TASK_TYPES = ["SOCIAL", "CUSTOM"] as const;
+export const BUYER_TASK_TYPES = ["SOCIAL", "VIDEO", "CUSTOM"] as const;
+
+/**
+ * What each type needs from the buyer, and what a worker will be asked to do.
+ *
+ * Kept beside the list so adding a type forces you to say what it is for —
+ * a type in the tuple with no explanation becomes an option nobody understands
+ * and everybody picks by accident.
+ */
+export const BUYER_TASK_TYPE_META: Record<
+  (typeof BUYER_TASK_TYPES)[number],
+  { label: string; blurb: string }
+> = {
+  SOCIAL: {
+    label: "Social",
+    blurb: "Follow, like, share or post about you on a social platform.",
+  },
+  VIDEO: {
+    label: "Watch a video",
+    blurb:
+      "Watch your video for a set time. Watch time is tracked on the server, not claimed by the viewer.",
+  },
+  CUSTOM: {
+    label: "Custom",
+    blurb: "Anything else — you write the steps and review the proof.",
+  },
+};
 
 export type BuyerTaskType = (typeof BUYER_TASK_TYPES)[number];

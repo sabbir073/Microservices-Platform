@@ -18,9 +18,12 @@ import {
   ShieldCheck,
   Eye,
   ExternalLink,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { usd, pts, cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { confirmDialog, promptDialog } from "@/lib/confirm";
 import { TASK_CREDIT } from "@/lib/task-credit-theme";
 
 export interface BuyerTaskRow {
@@ -65,6 +68,15 @@ export interface InvoiceRow {
  * should do; "Waiting for approval" does. Colour carries the same meaning for
  * anyone scanning the list rather than reading it.
  */
+/**
+ * Completions of runway below which a buyer is warned.
+ *
+ * Not zero: at zero the tasks have already stopped and the damage is done.
+ * Five is roughly "you have a day or two on a task that is moving", which is
+ * enough time to act without nagging anyone who is comfortably funded.
+ */
+const LOW_RUNWAY = 5;
+
 const STATUS: Record<string, { label: string; tone: string }> = {
   PENDING_REVIEW: {
     label: "Waiting for approval",
@@ -103,6 +115,7 @@ const STATUS: Record<string, { label: string; tone: string }> = {
 export function BuyerHubView({
   cashBalance,
   taskCredit,
+  runway,
   pointsPerUsd,
   feePercent,
   canCreate,
@@ -111,6 +124,12 @@ export function BuyerHubView({
 }: {
   cashBalance: number;
   taskCredit: number;
+  /**
+   * How many more completions the credit covers across live tasks, or null
+   * when nothing is live. Null and 0 mean different things and must not be
+   * collapsed: "nothing running" is fine, "0 left" is urgent.
+   */
+  runway: number | null;
   pointsPerUsd: number;
   feePercent: number;
   canCreate: boolean;
@@ -123,6 +142,68 @@ export function BuyerHubView({
   const [proofFor, setProofFor] = useState<string | null>(null);
   const [proof, setProof] = useState<ProofRow[] | null>(null);
   const [proofLoading, setProofLoading] = useState(false);
+
+  /**
+   * Rename a task in place.
+   *
+   * A title typo used to mean building the whole task again, and since a buyer
+   * could not delete either, it meant asking an admin. Editing the CONTENT of a
+   * live task sends it back for review — what an admin approved has to be what
+   * users see — and the API says so when it happens.
+   */
+  const rename = async (taskId: string, current: string) => {
+    const title = await promptDialog({
+      title: "Rename this task",
+      description:
+        "Editing a live task sends it back to the review queue, because what was approved has to be what people see.",
+      defaultValue: current,
+      required: true,
+      confirmLabel: "Save",
+    });
+    if (title === null || title.trim() === current) return;
+    setBusyId(taskId);
+    try {
+      const res = await fetch(`/api/tasks/mine/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not save");
+      toast.success(
+        data.backToReview ? "Saved — back in the review queue" : "Saved"
+      );
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  /** Retire a task for good. Nothing to refund — see the API note. */
+  const cancel = async (taskId: string, title: string) => {
+    const ok = await confirmDialog({
+      title: `Cancel "${title}"?`,
+      description:
+        "It stops being shown and cannot be restarted. You are only ever charged for completions, so a cancelled task costs you nothing more.",
+      tone: "danger",
+      confirmLabel: "Cancel the task",
+    });
+    if (!ok) return;
+    setBusyId(taskId);
+    try {
+      const res = await fetch(`/api/tasks/mine/${taskId}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not cancel");
+      toast.success("Task cancelled");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not cancel");
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   /** Show a buyer the work they paid for. Read only — see the API note. */
   const openProof = async (taskId: string) => {
@@ -225,8 +306,16 @@ export function BuyerHubView({
           icon={Sparkles}
           label={TASK_CREDIT.label}
           value={pts(taskCredit)}
-          sub={`${usd(taskCredit / (pointsPerUsd || 1000))} · wallet ${usd(cashBalance)}`}
-          tone={TASK_CREDIT.text}
+          sub={
+            runway === null
+              ? `${usd(taskCredit / (pointsPerUsd || 1000))} · nothing running`
+              : `about ${runway.toLocaleString()} more completion${runway === 1 ? "" : "s"}`
+          }
+          tone={
+            runway !== null && runway <= LOW_RUNWAY
+              ? "text-amber-400"
+              : TASK_CREDIT.text
+          }
         />
         <Stat
           icon={ListChecks}
@@ -251,6 +340,53 @@ export function BuyerHubView({
           }
         />
       </div>
+
+      {/* Warn BEFORE it runs out. A buyer who finds out at zero has already
+          had tasks stop; this is the window where topping up costs them
+          nothing but a click. */}
+      {runway !== null && runway <= LOW_RUNWAY && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3">
+          <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
+          <p className="flex-1 text-xs leading-relaxed text-amber-200/90">
+            {runway === 0 ? (
+              <>
+                <span className="font-semibold">
+                  Your credit can&rsquo;t cover another completion.
+                </span>{" "}
+                Live tasks stop as soon as they try to pay someone.
+              </>
+            ) : (
+              <>
+                <span className="font-semibold">
+                  About {runway} completion{runway === 1 ? "" : "s"} of credit
+                  left.
+                </span>{" "}
+                Your tasks stop when it runs out.
+              </>
+            )}
+            {/* Whether they can act right now, without a second trip. */}
+            {cashBalance > 0 ? (
+              <>
+                {" "}
+                Your wallet holds {usd(cashBalance)} — enough for{" "}
+                {pts(Math.floor(cashBalance * (pointsPerUsd || 1000)))} more
+                credit.
+              </>
+            ) : (
+              <> Your wallet is empty, so top it up first.</>
+            )}
+          </p>
+          <Link
+            href="/buy-points"
+            className={cn(
+              "shrink-0 rounded-lg border px-3 py-1.5 text-xs font-bold",
+              TASK_CREDIT.chip
+            )}
+          >
+            Top up
+          </Link>
+        </div>
+      )}
 
       <div className="flex gap-2 rounded-xl border border-gray-800 bg-gray-950/50 p-3">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
@@ -423,6 +559,31 @@ export function BuyerHubView({
                         )}
                         {t.status === "ACTIVE" ? "Pause task" : "Resume task"}
                       </button>
+                    )}
+
+                    {["ACTIVE", "PAUSED", "PENDING_REVIEW"].includes(
+                      t.status
+                    ) && (
+                      <>
+                        <button
+                          type="button"
+                          disabled={busyId === t.id}
+                          onClick={() => rename(t.id, t.title)}
+                          className="ml-2 inline-flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:text-white disabled:opacity-50"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          Rename
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyId === t.id}
+                          onClick={() => cancel(t.id, t.title)}
+                          className="ml-2 inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 px-3 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Cancel
+                        </button>
+                      </>
                     )}
 
                     {t.approvedCount > 0 && (

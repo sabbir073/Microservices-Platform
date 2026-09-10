@@ -151,8 +151,29 @@ export default async function BuyerHubPage() {
     createdAt: new Date(r.createdAt).toISOString(),
   }));
 
+  // Runway: how many more completions the credit can cover across the live
+  // tasks, using the CHEAPEST live reward — that is the one that runs out
+  // last, so it is the honest "you have this many left".
+  //
+  // Warning before it runs out rather than after is the whole point. A buyer
+  // who finds out at zero has already had tasks stop; one who sees "about 4
+  // completions left" can top up while everything is still running.
+  const liveRewards = rows
+    .filter((t) => t.status === "ACTIVE")
+    .map((t) => t.pointsReward)
+    .filter((n) => n > 0);
+  const cheapestLive = liveRewards.length ? Math.min(...liveRewards) : 0;
+  const feeOn = (n: number) =>
+    buyer.feePercent > 0 ? Math.ceil((n * buyer.feePercent) / 100) : 0;
+  const perCompletion = cheapestLive + feeOn(cheapestLive);
+  const runway =
+    perCompletion > 0
+      ? Math.floor((me?.taskCreditPoints ?? 0) / perCompletion)
+      : null;
+
   return (
     <BuyerHubView
+      runway={runway}
       cashBalance={toNum(me?.cashBalance ?? 0)}
       taskCredit={me?.taskCreditPoints ?? 0}
       pointsPerUsd={pointsPerUsd}

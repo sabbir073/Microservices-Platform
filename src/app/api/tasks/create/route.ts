@@ -7,13 +7,14 @@ import { getPointsPerUsd } from "@/lib/economy";
 import { sanitizeTaskAudience, EMPTY_TASK_AUDIENCE } from "@/lib/task-targeting";
 import { getBuyerSettings, quoteTask } from "@/lib/buyer-settings";
 import { getTaskCredit } from "@/lib/task-credit";
+import { detectProvider } from "@/lib/video-tasks";
 import { KYCStatus } from "@/generated/prisma/client";
 import { TransactionType, TransactionStatus, TaskType } from "@/generated/prisma/client";
 
 // Task types this endpoint knows how to build. WHICH of them a buyer may
 // actually use is an admin setting (`buyer.allowed_task_types`) checked below —
 // this tuple is only the set the schema can parse.
-const ALLOWED_TYPES = ["SOCIAL", "CUSTOM"] as const;
+const ALLOWED_TYPES = ["SOCIAL", "VIDEO", "CUSTOM"] as const;
 
 const schema = z.object({
   title: z.string().min(3).max(120),
@@ -29,6 +30,9 @@ const schema = z.object({
   socialPlatform: z.string().max(40).optional().nullable(),
   socialAction: z.string().max(40).optional().nullable(),
   socialUrl: z.string().url().optional().nullable(),
+  // VIDEO
+  videoUrl: z.string().url().optional().nullable(),
+  watchSeconds: z.number().int().min(5).max(3600).optional(),
   // CUSTOM
   instructions: z.string().max(4000).optional().nullable(),
   // Audience targeting (only honored when the user has the `targetTasks` feature).
@@ -123,10 +127,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  if (d.type === "VIDEO" && !d.videoUrl) {
+    return NextResponse.json(
+      { error: "A video task needs the link to the video." },
+      { status: 400 }
+    );
+  }
+
   if (d.type === "SOCIAL" && (!d.socialUrl || !d.socialAction)) {
     return NextResponse.json(
       { error: "Social tasks need a target URL and an action." },
       { status: 400 }
+    );
+  }
+
+  // Per-type gate: VIDEO self-serve additionally requires the videoTasks
+  // feature, the same way SOCIAL requires socialTasks — an admin can open
+  // buyer task creation without opening every kind of task.
+  if (d.type === "VIDEO" && !(await userCanFeature(userId, "videoTasks"))) {
+    return NextResponse.json(
+      { error: "Video task creation isn't enabled for your account." },
+      { status: 403 }
     );
   }
 
@@ -161,6 +182,27 @@ export async function POST(req: NextRequest) {
   // requiring nothing would let someone with an empty balance publish a task
   // that pays nobody, and the person who finds out is the worker who already
   // did the job.
+  // How many tasks this buyer already has running. Without a cap one account
+  // can flood the task list, and every one of them competes for the same
+  // credit balance — so the twentieth task quietly dies the moment the first
+  // nineteen drain it.
+  if (buyer.maxActiveTasks > 0) {
+    const running = await prisma.task.count({
+      where: {
+        fundedByUserId: userId,
+        status: { in: ["ACTIVE", "PENDING_REVIEW", "PAUSED"] },
+      },
+    });
+    if (running >= buyer.maxActiveTasks) {
+      return NextResponse.json(
+        {
+          error: `You can have ${buyer.maxActiveTasks} task${buyer.maxActiveTasks === 1 ? "" : "s"} running at a time. Finish or cancel one first.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const oneCompletion =
     d.pointsReward +
     (buyer.feePercent > 0
@@ -211,6 +253,22 @@ export async function POST(req: NextRequest) {
           fundedByUserId: userId,
           budgetPoints,
           remainingBudget: budgetPoints,
+          // Server-side watch tracking needs the config; `contentUrl` and
+          // `duration` are what the older list views read, so both are set.
+          ...(d.type === "VIDEO"
+            ? {
+                contentUrl: d.videoUrl ?? null,
+                duration: Math.ceil((d.watchSeconds ?? 30) / 60),
+                videoConfig: {
+                  videoUrl: d.videoUrl ?? "",
+                  provider: detectProvider(d.videoUrl ?? ""),
+                  watchSeconds: d.watchSeconds ?? 30,
+                  warmupSeconds: 2,
+                  autoSubmit: true,
+                  proofRequirements: { screenshot: false, uniqueKey: false },
+                },
+              }
+            : {}),
           socialPlatform: d.type === "SOCIAL" ? d.socialPlatform || null : null,
           socialAction: d.type === "SOCIAL" ? d.socialAction || null : null,
           socialUrl: d.type === "SOCIAL" ? d.socialUrl || null : null,
