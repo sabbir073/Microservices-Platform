@@ -6,6 +6,11 @@ import { getPointsPerUsd } from "@/lib/economy";
 import { getEffectivePackage } from "@/lib/packages";
 import { getUserDayContext } from "@/lib/user-day";
 import { notifyUser } from "@/lib/notify";
+import {
+  REFERRAL_BONUS_DEFAULTS,
+  normaliseMilestones,
+  type ReferralBonusConfig,
+} from "@/lib/referral-config";
 import { TransactionType, NotificationType } from "@/generated/prisma";
 
 /**
@@ -16,42 +21,33 @@ import { TransactionType, NotificationType } from "@/generated/prisma";
  * own daily mission) and meet a package-tier requirement. All amounts are
  * admin-configurable via SystemSetting `referral_bonus_config`.
  */
-export interface ReferralBonusConfig {
-  enabled: boolean;
-  /** Instant points when a referred user registers. */
-  signupPoints: number;
-  /** Points when a referred user buys any package/subscription. */
-  subscriptionPoints: number;
-  /** Month-end points if the referred user completed daily missions enough days. */
-  monthlyPoints: number;
-  /** Referrer must be on a package with accessLevel ≥ this to earn bonuses. */
-  minReferrerAccessLevel: number;
-  /** Anti-farm: referrer must have completed their own daily mission today. */
-  requireReferrerDailyMission: boolean;
-  /** Distinct mission-days the referred user needs in the month for the monthly bonus. */
-  monthlyMinMissionDays: number;
-}
+// The shape, defaults and milestone normaliser live in `referral-config.ts`,
+// which has no Prisma import — the admin form needs them as runtime values and
+// importing from here would pull the database client into the browser bundle.
+export {
+  REFERRAL_BONUS_DEFAULTS,
+  normaliseMilestones,
+  type ReferralBonusConfig,
+  type ReferralMilestone,
+} from "@/lib/referral-config";
 
 const KEY = "referral_bonus_config";
 
-export const REFERRAL_BONUS_DEFAULTS: ReferralBonusConfig = {
-  enabled: false,
-  signupPoints: 0,
-  subscriptionPoints: 0,
-  monthlyPoints: 0,
-  minReferrerAccessLevel: 0,
-  requireReferrerDailyMission: true,
-  monthlyMinMissionDays: 20,
-};
 
 export async function getReferralBonusConfig(): Promise<ReferralBonusConfig> {
   try {
     const raw = await getSetting<Partial<ReferralBonusConfig> | null>(KEY, null);
-    return { ...REFERRAL_BONUS_DEFAULTS, ...(raw ?? {}) };
+    const cfg = { ...REFERRAL_BONUS_DEFAULTS, ...(raw ?? {}) };
+    // Milestones are admin-entered, so they arrive unsorted, duplicated, or
+    // with junk in them. Normalising on READ means every caller can assume an
+    // ascending, clean ladder instead of each one re-checking.
+    cfg.milestones = normaliseMilestones(cfg.milestones);
+    return cfg;
   } catch {
     return REFERRAL_BONUS_DEFAULTS;
   }
 }
+
 
 /** Did the referrer complete a daily mission today (their local day)? */
 async function referrerActiveToday(referrerId: string): Promise<boolean> {
@@ -86,10 +82,17 @@ async function awardBonus(opts: {
   referredUserId: string;
   points: number;
   reference: string;
-  sourceType: "SIGNUP" | "SUBSCRIPTION" | "MONTHLY_BONUS";
+  sourceType:
+    | "SIGNUP"
+    | "SUBSCRIPTION"
+    | "MONTHLY_BONUS"
+    | "MILESTONE"
+    | "PURCHASE";
   description: string;
   notifyTitle: string;
   notifyMessage: string;
+  /** Extra detail for the ledger row. */
+  meta?: Record<string, unknown>;
 }): Promise<boolean> {
   if (opts.points <= 0) return false;
   try {
@@ -105,6 +108,7 @@ async function awardBonus(opts: {
         metadata: {
           referredUserId: opts.referredUserId,
           referralBonus: opts.sourceType,
+          ...(opts.meta ?? {}),
         },
         pointsPerUsd,
       });
@@ -114,8 +118,13 @@ async function awardBonus(opts: {
           referredUserId: opts.referredUserId,
           level: 1,
           amount: usd,
-          // Enum extended with SIGNUP / MONTHLY_BONUS in the DB.
-          sourceType: opts.sourceType as never,
+          // `ReferralSourceType` has no MILESTONE member and adding one is a
+          // migration on a live enum for a label. MILESTONE is recorded as
+          // SIGNUP — both are "paid for bringing people in" — and the exact
+          // kind is on the ledger row's `referralBonus` metadata either way.
+          sourceType: (opts.sourceType === "MILESTONE"
+            ? "SIGNUP"
+            : opts.sourceType) as never,
         },
       });
     });
@@ -140,7 +149,7 @@ export async function awardReferralSignupBonus(
   referredUserId: string
 ): Promise<void> {
   const cfg = await getReferralBonusConfig();
-  if (!cfg.enabled || cfg.signupPoints <= 0) return;
+  if (!cfg.enabled || !cfg.signupEnabled || cfg.signupPoints <= 0) return;
   const referred = await prisma.user
     .findUnique({
       where: { id: referredUserId },
@@ -161,13 +170,172 @@ export async function awardReferralSignupBonus(
   });
 }
 
+/**
+ * The invitee's half of a two-way referral.
+ *
+ * Pays the NEW USER for having arrived through someone's link. This is the
+ * half that was missing: every "you get 100, your friend gets 100" offer works
+ * because both sides have a reason to act, and paying only the referrer gives
+ * the person actually signing up no reason to use a link at all.
+ *
+ * Deliberately NOT gated on the referrer's activity by default. The invitee did
+ * nothing wrong if their referrer stopped logging in, and withholding it
+ * removes the exact incentive the model exists to create. The admin can turn
+ * that gate on with `inviteeRequiresQualifiedReferrer`.
+ *
+ * Idempotent: one reference per invited user, so a re-run of signup rewards
+ * (verification retried, Google callback repeated) cannot pay twice.
+ */
+export async function awardInviteeSignupBonus(
+  referredUserId: string
+): Promise<void> {
+  const cfg = await getReferralBonusConfig();
+  if (!cfg.enabled || !cfg.inviteeEnabled || cfg.inviteePoints <= 0) return;
+
+  const referred = await prisma.user
+    .findUnique({
+      where: { id: referredUserId },
+      select: { referredById: true },
+    })
+    .catch(() => null);
+  // No referrer means they arrived on their own — there is nothing two-way
+  // about it, and paying would make the bonus universal rather than a referral.
+  if (!referred?.referredById) return;
+
+  if (
+    cfg.inviteeRequiresQualifiedReferrer &&
+    !(await referrerQualifies(referred.referredById, cfg))
+  ) {
+    return;
+  }
+
+  try {
+    const pointsPerUsd = await getPointsPerUsd();
+    await prisma.$transaction(async (tx) => {
+      await creditPoints(tx, {
+        userId: referredUserId,
+        points: cfg.inviteePoints,
+        type: TransactionType.REFERRAL,
+        description: "Welcome bonus for joining through an invite",
+        reference: `refbonus_invitee_${referredUserId}`,
+        metadata: {
+          referrerId: referred.referredById,
+          referralBonus: "INVITEE_SIGNUP",
+        },
+        pointsPerUsd,
+      });
+    });
+    await notifyUser({
+      userId: referredUserId,
+      type: NotificationType.REFERRAL,
+      title: "Welcome bonus!",
+      message: `You got ${cfg.inviteePoints} points for joining through an invite.`,
+      link: "/referrals",
+    }).catch(() => {});
+  } catch (err) {
+    if (isDuplicateLedgerError(err)) return;
+    console.error("invitee signup bonus failed:", err);
+  }
+}
+
+/**
+ * How many of a referrer's invitees count toward a milestone.
+ *
+ * ACTIVE accounts only. Counting raw rows would make the ladder farmable with
+ * addresses that never verify — and the platform already counts ACTIVE
+ * referrals elsewhere for exactly this reason, so the two agree.
+ */
+export async function qualifiedReferralCount(referrerId: string): Promise<number> {
+  return prisma.user.count({
+    where: { referredById: referrerId, status: "ACTIVE" },
+  });
+}
+
+/**
+ * Pay any milestone this referrer has now reached.
+ *
+ * Called after a referral becomes active. Every threshold at or below the
+ * current count is paid, not just the highest — a backfill or an import can
+ * cross several at once, and skipping the ones in between would quietly owe
+ * somebody money. Each is idempotent on its own reference, so re-running pays
+ * nothing twice.
+ */
+export async function awardReferralMilestones(
+  referrerId: string
+): Promise<number> {
+  const cfg = await getReferralBonusConfig();
+  if (!cfg.enabled || !cfg.milestonesEnabled || cfg.milestones.length === 0) {
+    return 0;
+  }
+  if (!(await referrerQualifies(referrerId, cfg))) return 0;
+
+  const count = await qualifiedReferralCount(referrerId);
+  let paid = 0;
+
+  for (const m of cfg.milestones) {
+    if (count < m.referrals) break; // sorted ascending — the rest are further off
+    const ok = await awardBonus({
+      referrerId,
+      // A milestone is about the referrer's own total, not one invitee, so
+      // there is no single referred user to attribute it to.
+      referredUserId: referrerId,
+      points: m.points,
+      reference: `refbonus_milestone_${referrerId}_${m.referrals}`,
+      sourceType: "MILESTONE",
+      description: `Referral milestone — ${m.label}`,
+      notifyTitle: `Milestone reached: ${m.label}`,
+      notifyMessage: `You've invited ${m.referrals} active members and earned ${m.points} points.`,
+    });
+    if (ok) paid++;
+  }
+  return paid;
+}
+
+/**
+ * Bonus on the invitee's first purchase of anything that is not a package.
+ *
+ * Separate from the subscription bonus because "bought a plan" and "spent money
+ * at all" are different signals, and most platforms want to price them
+ * differently. Keyed on the referred user rather than the order, so it pays
+ * once — on the FIRST purchase, which is what the model is for.
+ */
+export async function awardReferralPurchaseBonus(
+  referredUserId: string,
+  sourceRef: string
+): Promise<void> {
+  const cfg = await getReferralBonusConfig();
+  if (!cfg.enabled || !cfg.purchaseEnabled || cfg.purchasePoints <= 0) return;
+  const referred = await prisma.user
+    .findUnique({
+      where: { id: referredUserId },
+      select: { referredById: true },
+    })
+    .catch(() => null);
+  if (!referred?.referredById) return;
+  if (!(await referrerQualifies(referred.referredById, cfg))) return;
+  await awardBonus({
+    referrerId: referred.referredById,
+    referredUserId,
+    points: cfg.purchasePoints,
+    // Per USER, not per order: "first purchase" pays once however many they
+    // go on to make.
+    reference: `refbonus_purchase_${referredUserId}`,
+    sourceType: "PURCHASE",
+    description: "Referral first-purchase bonus",
+    notifyTitle: "Referral bonus!",
+    notifyMessage: `Your invitee made their first purchase — you earned ${cfg.purchasePoints} points.`,
+    meta: { sourceRef },
+  });
+}
+
 /** Bonus when a referred user buys a package/subscription. */
 export async function awardReferralSubscriptionBonus(
   referredUserId: string,
   sourceRef: string
 ): Promise<void> {
   const cfg = await getReferralBonusConfig();
-  if (!cfg.enabled || cfg.subscriptionPoints <= 0) return;
+  if (!cfg.enabled || !cfg.subscriptionEnabled || cfg.subscriptionPoints <= 0)
+    return;
   const referred = await prisma.user
     .findUnique({
       where: { id: referredUserId },

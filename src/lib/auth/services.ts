@@ -284,8 +284,15 @@ export async function completeSignupRewards(
   await awardWelcomeBonus(userId);
 
   try {
-    const { awardReferralSignupBonus } = await import("@/lib/referral-bonus");
+    const {
+      awardReferralSignupBonus,
+      awardInviteeSignupBonus,
+    } = await import("@/lib/referral-bonus");
+    // Both halves of a two-way referral: the referrer's side, and the new
+    // user's own welcome for having arrived through a link. Each is idempotent
+    // on its own reference, so this running twice pays neither twice.
     await awardReferralSignupBonus(userId);
+    await awardInviteeSignupBonus(userId);
   } catch {
     /* never block on the bonus */
   }
@@ -312,6 +319,12 @@ export async function completeSignupRewards(
       // The referrer's `referrals_made` count just went up.
       const { runAchievementCheck } = await import("@/lib/achievements");
       await runAchievementCheck(referrerId);
+
+      // …which may have taken them over a milestone. Checked here rather than
+      // on a schedule so the reward lands while they are still looking at the
+      // thing that earned it.
+      const { awardReferralMilestones } = await import("@/lib/referral-bonus");
+      await awardReferralMilestones(referrerId);
     } catch {
       /* never block on event tracking */
     }
