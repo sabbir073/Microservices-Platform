@@ -5,6 +5,15 @@ import { prisma } from "@/lib/prisma";
 import { getBuyerSettings } from "@/lib/buyer-settings";
 import { getBuyerScope, platformRefusal, typeRefusal } from "@/lib/buyer-scope";
 import { buyerSurveySchema, buildBuyerSurveyConfig } from "@/lib/survey-buyer";
+import {
+  buyerQuizSchema,
+  buildBuyerQuizQuestions,
+  buyerArticleSchema,
+  buildBuyerArticleConfig,
+  buyerAppInstallSchema,
+  buildBuyerAppInstallConfig,
+} from "@/lib/buyer-task-configs";
+import { validateAppInstallConfig } from "@/lib/app-install-tasks";
 import { validateSurveyConfig } from "@/lib/survey-tasks";
 import { sanitizeTaskAudience, EMPTY_TASK_AUDIENCE } from "@/lib/task-targeting";
 import { userCanFeature } from "@/lib/packages";
@@ -51,6 +60,12 @@ const patchSchema = z.object({
   // preserved by the builder, so editing a prompt never orphans the answers
   // already given under that id.
   survey: buyerSurveySchema.optional(),
+  // QUIZ / ARTICLE / APPINSTALL — the SAME schemas the create route parses,
+  // imported rather than restated. A second copy is how an edit ends up
+  // accepting something a create refuses.
+  quiz: buyerQuizSchema.optional(),
+  article: buyerArticleSchema.optional(),
+  appInstall: buyerAppInstallSchema.optional(),
   // Only honoured while the task is still awaiting review — see above.
   pointsReward: z.number().int().min(1).max(10_000_000).optional(),
   targetCount: z.number().int().min(1).max(10_000_000).optional(),
@@ -161,6 +176,45 @@ export async function PATCH(
     }
   }
 
+  // The same rule for the other three payload-carrying types: a config edit is
+  // refused unless the task IS that type and that type is open to this buyer
+  // right now. Written as a loop over a table rather than three copies of the
+  // survey block, so a fourth type cannot be added with the scope check
+  // forgotten.
+  let quizQuestions = null as ReturnType<typeof buildBuyerQuizQuestions> | null;
+  let articleConfig = null as ReturnType<typeof buildBuyerArticleConfig> | null;
+  let appInstallConfig = null as ReturnType<
+    typeof buildBuyerAppInstallConfig
+  > | null;
+  const configEdits: { sent: boolean; type: string; noun: string }[] = [
+    { sent: d.quiz !== undefined, type: "QUIZ", noun: "quiz" },
+    { sent: d.article !== undefined, type: "ARTICLE", noun: "article task" },
+    {
+      sent: d.appInstall !== undefined,
+      type: "APPINSTALL",
+      noun: "install task",
+    },
+  ];
+  for (const edit of configEdits) {
+    if (!edit.sent) continue;
+    if (task.type !== edit.type) {
+      return NextResponse.json(
+        { error: `This task isn't a ${edit.noun} — those settings can't be changed.` },
+        { status: 400 }
+      );
+    }
+    const scope = await getBuyerScope(userId);
+    const stop = typeRefusal(scope, edit.type);
+    if (stop) return NextResponse.json({ error: stop }, { status: 403 });
+  }
+  if (d.quiz) quizQuestions = buildBuyerQuizQuestions(d.quiz);
+  if (d.article) articleConfig = buildBuyerArticleConfig(d.article);
+  if (d.appInstall) {
+    appInstallConfig = buildBuyerAppInstallConfig(d.appInstall);
+    const problem = validateAppInstallConfig(appInstallConfig);
+    if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+  }
+
   // Reward and completion count are frozen once the task has been published.
   if (!notYetLive) {
     if (d.pointsReward != null && d.pointsReward !== task.pointsReward) {
@@ -225,6 +279,9 @@ export async function PATCH(
     d.socialPlatform !== undefined ||
     d.socialAction !== undefined ||
     d.survey !== undefined ||
+    d.quiz !== undefined ||
+    d.article !== undefined ||
+    d.appInstall !== undefined ||
     touchedAudience;
 
   const backToReview = !notYetLive && contentChanged;
@@ -252,6 +309,15 @@ export async function PATCH(
         : {}),
       ...(surveyConfig
         ? { surveyConfig: surveyConfig as unknown as object }
+        : {}),
+      ...(quizQuestions
+        ? { questions: quizQuestions as unknown as object }
+        : {}),
+      ...(articleConfig
+        ? { articleConfig: articleConfig as unknown as object }
+        : {}),
+      ...(appInstallConfig
+        ? { appInstallConfig: appInstallConfig as unknown as object }
         : {}),
       ...audience,
       ...(notYetLive

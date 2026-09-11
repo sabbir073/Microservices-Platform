@@ -21,6 +21,8 @@ import { getAdDensity } from "@/lib/ad-density";
 import { getSetting } from "@/lib/system-settings";
 import type { Prisma } from "@/generated/prisma/client";
 import { recordUserAction } from "@/lib/goal-progress";
+import { publicAudienceEpochMs } from "@/lib/public-post";
+import { postAudience } from "@/lib/public-post-gate";
 import {
   FEED_AUTHOR_SELECT,
   FEED_POST_SELECT,
@@ -49,7 +51,11 @@ type FeedPostRow = Prisma.PostGetPayload<{ select: typeof FEED_POST_SELECT }>;
  * on every feed request and every 30s poll. Cached for a minute.
  */
 const cachedMainFeedCount = unstable_cache(
-  async () => prisma.post.count({ where: { isPublic: true, isHidden: false } }),
+  // No `isPublic` filter: since the audience picker shipped, `isPublic` is the
+  // internet-audience choice, not in-platform visibility. A "Members only" post
+  // is a normal feed post — filtering it out here would make the option mean
+  // "nobody but me". See src/lib/public-post-gate.ts.
+  async () => prisma.post.count({ where: { isHidden: false } }),
   ["feed-main-total"],
   { revalidate: 60 }
 );
@@ -66,11 +72,17 @@ export async function GET(request: NextRequest) {
     const tag = searchParams.get("tag"); // Hashtag feed (without leading '#')
     const search = searchParams.get("search"); // Free-text content search
     const seed = searchParams.get("seed"); // Per-session jitter seed (reshuffle)
+    // Read once per request, not per post: the badge on every card is derived
+    // from it, and it is a cached SystemSetting read.
+    const feedAudienceEpochMs = await publicAudienceEpochMs();
     const skip = (page - 1) * limit;
 
     // Build query
+    // `isPublic` is NOT a filter here. It is the author's internet-audience
+    // choice (Public vs Members only), and both belong in the signed-in feed —
+    // that is what "Members only" means. Logged-out reach is decided by
+    // `isPubliclyVisible` on the /post/[id] surface, nowhere else.
     const where: Record<string, unknown> = {
-      isPublic: true,
       isHidden: false, // agency-moderator soft-hidden posts never surface
     };
 
@@ -376,6 +388,7 @@ export async function GET(request: NextRequest) {
       votes: userVoteMap,
       following: followingSet,
       users: userMap as Map<string, unknown>,
+      audienceEpochMs: feedAudienceEpochMs,
     };
     const formatPost = (post: FormattablePost) =>
       formatFeedPost(post, viewerCtx);
@@ -598,7 +611,12 @@ export async function POST(request: NextRequest) {
         content: content.trim(),
         images: images || [],
         backgroundStyle: resolvedBackground,
-        isPublic: isPublic !== false,
+        // EXPLICIT opt-in. This used to be `isPublic !== false`, i.e. a body
+        // that said nothing published to the whole internet. `isPublic` is now
+        // the audience the author picked, and the only way to get Public is to
+        // ask for it. A post inside a group is never public, whatever the body
+        // says — group posts are for the group.
+        isPublic: isPublic === true && !groupId,
         pollOptions: formattedPoll ?? undefined,
         pollEndsAt: pollEndsAt ? new Date(pollEndsAt) : null,
         donationGoal:
@@ -620,7 +638,10 @@ export async function POST(request: NextRequest) {
       // Event progress. This is the weakest action type to build an event on —
       // a user can always make more posts — so admins should set a daily cap on
       // FEED_POST events; the admin form says so.
-      post.isPublic
+      // Was `post.isPublic`, back when that was always true. It is now the
+      // audience choice, and a Members-only post is still a post — the event
+      // counts feed activity, not reach. Group posts stay excluded.
+      !post.groupId
         ? recordUserAction({
             userId: session.user.id,
             action: "feed_post",
@@ -702,6 +723,7 @@ export async function POST(request: NextRequest) {
         images: post.images,
         backgroundStyle: post.backgroundStyle,
         isPublic: post.isPublic,
+        audience: postAudience(post, await publicAudienceEpochMs()),
         isPinned: post.isPinned,
         isAnnouncement: post.isAnnouncement,
         isPromoted: post.isPromoted,

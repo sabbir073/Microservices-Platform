@@ -24,29 +24,46 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        "flex flex-col items-center justify-center text-center py-12 px-6",
+        "flex flex-col items-center justify-center text-center py-14 px-6",
         className
       )}
     >
-      <div className="w-16 h-16 rounded-full bg-gray-800/50 flex items-center justify-center mb-4">
-        <Icon className="w-8 h-8 text-gray-500" />
+      {/* A single flat circle reads as "something failed to load". Two
+          concentric rings plus a tinted plate read as a deliberate state — the
+          difference between a blank screen and a finished one. */}
+      <div className="relative mb-5 flex items-center justify-center">
+        <span
+          aria-hidden
+          className="absolute w-24 h-24 rounded-full border border-gray-800"
+        />
+        <span
+          aria-hidden
+          className="absolute w-[4.5rem] h-[4.5rem] rounded-full border border-gray-800/70"
+        />
+        <span className="relative w-14 h-14 rounded-2xl bg-gray-800 border border-gray-700 flex items-center justify-center">
+          <Icon className="w-7 h-7 text-gray-400" />
+        </span>
       </div>
-      <h3 className="text-base font-semibold text-white mb-1">{title}</h3>
+      <h3 className="text-[0.9375rem] font-semibold text-white tracking-tight mb-1.5">
+        {title}
+      </h3>
       {description && (
-        <p className="text-sm text-gray-500 max-w-xs mb-4">{description}</p>
+        <p className="text-sm leading-relaxed text-gray-500 max-w-[28ch] mb-5">
+          {description}
+        </p>
       )}
       {action &&
         (action.href ? (
           <a
             href={action.href}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors"
+            className="press inline-flex items-center justify-center gap-1.5 min-h-11 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors"
           >
             {action.label}
           </a>
         ) : (
           <button
             onClick={action.onClick}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium transition-colors"
+            className="press inline-flex items-center justify-center gap-1.5 min-h-11 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold transition-colors"
           >
             {action.label}
           </button>

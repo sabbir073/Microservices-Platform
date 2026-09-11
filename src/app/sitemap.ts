@@ -1,6 +1,9 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/prisma";
-import { publicSharingEnabled } from "@/lib/public-post";
+import {
+  publicAudienceEpochMs,
+  publicSharingEnabled,
+} from "@/lib/public-post";
 
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.app";
 
@@ -10,6 +13,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Static marketing + feature pages.
   const staticPaths = [
     "",
+    "/microtask",
+    "/advertise",
+    // Not in the public menu (by request) — which makes listing it here the
+    // only way a crawler ever finds it.
+    "/referral",
     "/features/marketplace",
     "/features/courses",
     "/features/affiliate",
@@ -56,12 +64,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     // null for every post while sharing is off, so listing them here would hand
     // Google five thousand 404s and advertise the addresses of posts nobody
     // agreed to publish.
-    publicSharingEnabled().then((on) =>
-      on
+    Promise.all([publicSharingEnabled(), publicAudienceEpochMs()]).then(
+      ([on, epochMs]) =>
+        on && epochMs !== null
         ? prisma.post
             .findMany({
               where: {
                 isPublic: true,
+                // The epoch, restated as a WHERE. `isPublic` DEFAULTS to true,
+                // so without this every pre-picker post — none of whose authors
+                // were ever offered a choice — would be handed to Google.
+                createdAt: { gte: new Date(epochMs) },
                 isHidden: false,
                 groupId: null,
                 user: { status: "ACTIVE" },

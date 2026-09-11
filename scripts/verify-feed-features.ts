@@ -13,7 +13,11 @@ import {
   FEED_AUTHOR_SELECT,
   FEED_POST_SELECT,
 } from "../src/lib/feed-post-shape";
-import { isPubliclyVisible } from "../src/lib/public-post-gate";
+import {
+  isPubliclyVisible,
+  parseAudienceEpoch,
+  postAudience,
+} from "../src/lib/public-post-gate";
 import {
   FEED_WIDGETS,
   RAIL_GROUPS,
@@ -540,8 +544,16 @@ async function main() {
       isPublic: true,
       isHidden: true,
       groupId: true,
+      createdAt: true,
       user: { select: { status: true } },
     } as const;
+
+    // The epoch these checks run against. The fixture rows were made moments
+    // ago, so an epoch an hour in the past makes them "post-picker" and one an
+    // hour in the future makes them "pre-picker" — which is the whole point of
+    // the two blocks below.
+    const EPOCH = Date.now() - 3_600_000;
+    const FUTURE_EPOCH = Date.now() + 3_600_000;
 
     const [pub, priv, hidden, inGroup, banned] = await Promise.all(
       rows.map((r) =>
@@ -549,45 +561,135 @@ async function main() {
       )
     );
 
-    check("a genuinely public post IS publicly readable", isPubliclyVisible(pub));
+    check("a genuinely public post IS publicly readable", isPubliclyVisible(pub, EPOCH));
     check(
       "isPublic:false is NOT publicly readable",
-      isPubliclyVisible(priv) === false
+      isPubliclyVisible(priv, EPOCH) === false
     );
     check(
       "a moderator-hidden post is NOT publicly readable",
-      isPubliclyVisible(hidden) === false
+      isPubliclyVisible(hidden, EPOCH) === false
     );
     // This is the one that catches people out: `Post.isPublic` DEFAULTS to true,
     // so a group post is `isPublic: true` and only the groupId check stops it.
     check(
       "a group post is NOT publicly readable even though isPublic is true",
-      inGroup?.isPublic === true && isPubliclyVisible(inGroup) === false
+      inGroup?.isPublic === true && isPubliclyVisible(inGroup, EPOCH) === false
     );
     check(
       "a banned author's post is NOT publicly readable",
-      isPubliclyVisible(banned) === false
+      isPubliclyVisible(banned, EPOCH) === false
     );
-    check("a missing post is NOT publicly readable", isPubliclyVisible(null) === false);
+    check("a missing post is NOT publicly readable", isPubliclyVisible(null, EPOCH) === false);
 
     // And the gate cannot be satisfied by a partially-populated row.
     check(
       "a row with no author is NOT publicly readable",
-      isPubliclyVisible({
-        isPublic: true,
-        isHidden: false,
-        groupId: null,
-        user: null,
-      }) === false
+      isPubliclyVisible(
+        {
+          isPublic: true,
+          isHidden: false,
+          groupId: null,
+          createdAt: new Date(),
+          user: null,
+        },
+        EPOCH
+      ) === false
     );
     check(
       "a SUSPENDED author is NOT publicly readable",
-      isPubliclyVisible({
-        isPublic: true,
-        isHidden: false,
-        groupId: null,
-        user: { status: "SUSPENDED" },
-      }) === false
+      isPubliclyVisible(
+        {
+          isPublic: true,
+          isHidden: false,
+          groupId: null,
+          createdAt: new Date(),
+          user: { status: "SUSPENDED" },
+        },
+        EPOCH
+      ) === false
+    );
+
+    // ── The audience picker, and the retroactive-publication rule ───────────
+    //
+    // `Post.isPublic` defaults to true and the old composer hardcoded it, so
+    // `true` alone is not consent. These are the checks that stop a future edit
+    // from quietly publishing every post ever written here.
+    const preEpochRow = {
+      isPublic: true,
+      isHidden: false,
+      groupId: null,
+      createdAt: new Date(),
+      user: { status: "ACTIVE" },
+    };
+    check(
+      "a post made BEFORE the picker shipped is NOT publicly readable, isPublic:true or not",
+      preEpochRow.isPublic === true &&
+        isPubliclyVisible(preEpochRow, FUTURE_EPOCH) === false
+    );
+    check(
+      "with NO epoch set, nothing at all is publicly readable (fail-closed)",
+      isPubliclyVisible(pub, null) === false &&
+        isPubliclyVisible(preEpochRow, null) === false
+    );
+    check(
+      "a missing or corrupt epoch setting parses to null, not to zero",
+      parseAudienceEpoch(null) === null &&
+        parseAudienceEpoch("") === null &&
+        parseAudienceEpoch("not a date") === null &&
+        parseAudienceEpoch(0) === null
+    );
+    check(
+      "the badge an author sees is the same rule as the gate",
+      postAudience(preEpochRow, FUTURE_EPOCH) === "MEMBERS" &&
+        postAudience(preEpochRow, EPOCH) === "PUBLIC" &&
+        postAudience({ isPublic: false, createdAt: new Date() }, EPOCH) ===
+          "MEMBERS"
+    );
+
+    // The composer must offer the choice, and must not pre-tick "Public".
+    const composer = code("src/components/user/feed/create-post-composer.tsx");
+    check(
+      "the composer has an audience picker",
+      /name="post-audience"/.test(composer) &&
+        /Members only/.test(composer) &&
+        /Public/.test(composer)
+    );
+    check(
+      "the default is Members only",
+      /useState<"MEMBERS" \| "PUBLIC">\("MEMBERS"\)/.test(composer)
+    );
+    check(
+      "the Public option states the consequence in words",
+      /[Aa]nyone on the internet can read this/.test(composer)
+    );
+    check(
+      "the composer no longer hardcodes isPublic: true",
+      !/isPublic: true/.test(composer) &&
+        /isPublic: audience === "PUBLIC"/.test(composer)
+    );
+
+    // The create route must require an explicit true. `isPublic !== false` is
+    // the bug that made an absent field mean "publish to the internet".
+    const feedRoute = code("src/app/api/feed/route.ts");
+    check(
+      "POST /api/feed publishes only on an explicit true",
+      /isPublic: isPublic === true && !groupId/.test(feedRoute) &&
+        !/isPublic: isPublic !== false/.test(feedRoute)
+    );
+    check(
+      "the signed-in feed no longer filters on isPublic",
+      !/isPublic: true,\s+isHidden: false/.test(feedRoute)
+    );
+    check(
+      "the sitemap applies the epoch too",
+      /createdAt: \{ gte: new Date\(epochMs\) \}/.test(
+        code("src/app/sitemap.ts")
+      )
+    );
+    check(
+      "the edit route refuses to make a pre-picker post public",
+      /authorChosePublic\(/.test(code("src/app/api/feed/[id]/route.ts"))
     );
 
     const page = code("src/app/post/[id]/page.tsx");

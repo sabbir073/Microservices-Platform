@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { publicAudienceEpochMs } from "@/lib/public-post";
+import { authorChosePublic, postAudience } from "@/lib/public-post-gate";
 
 // GET /api/feed/:id - Get single post with details
 export async function GET(
@@ -22,10 +24,12 @@ export async function GET(
 
     const isOwner = post.userId === session?.user?.id;
 
-    // Check if post is private and user doesn't own it
-    if (!post.isPublic && !isOwner) {
-      return NextResponse.json({ error: "Post not found" }, { status: 404 });
-    }
+    // NO `isPublic` check. It used to 404 a non-owner on `isPublic: false`,
+    // back when nothing ever wrote false. `isPublic` is now the author's
+    // internet-audience choice, and "Members only" means exactly this route,
+    // for a signed-in member — refusing it here would turn the option into
+    // "only me". Logged-out reach is /post/[id]'s business, and that surface
+    // goes through `isPubliclyVisible` alone.
 
     // Moderator-hidden content must not be readable at its permalink either.
     // Every other surface filters `isHidden: false` — the feed list, the pulse
@@ -138,7 +142,11 @@ export async function PUT(
 
     const { id } = await params;
     const body = await request.json();
-    const { content, images, isPublic } = body;
+    const { content, images, isPublic } = body as {
+      content?: string;
+      images?: string[];
+      isPublic?: boolean;
+    };
 
     // Get post and verify ownership
     const post = await prisma.post.findUnique({
@@ -161,18 +169,45 @@ export async function PUT(
       );
     }
 
+    // The audience is editable, with one refusal: a post written BEFORE the
+    // picker existed cannot be switched to Public.
+    //
+    // The reason is that there is nowhere to record the consent. `isPublic` on
+    // an old row is a column default, and the gate distinguishes a default from
+    // a choice purely by `createdAt >= epoch` — a pre-epoch row that flips the
+    // boolean is indistinguishable from the thousands that never chose
+    // anything, so honouring it would mean weakening the rule for all of them.
+    // (`updatedAt` cannot stand in: it is `@updatedAt` and every like and view
+    // counter bumps it.) Told plainly rather than silently ignored.
+    const epochMs = await publicAudienceEpochMs();
+    if (isPublic === true && !authorChosePublic({ isPublic: true, createdAt: post.createdAt }, epochMs)) {
+      return NextResponse.json(
+        {
+          error:
+            "Posts written before the audience picker existed stay Members only. Post it again to share it publicly.",
+        },
+        { status: 400 }
+      );
+    }
+
     // Update post
     const updatedPost = await prisma.post.update({
       where: { id },
       data: {
         ...(content !== undefined && { content: content.trim() }),
         ...(images !== undefined && { images }),
-        ...(isPublic !== undefined && { isPublic }),
+        // Booleans only, and never public inside a group.
+        ...(typeof isPublic === "boolean" && {
+          isPublic: isPublic && !post.groupId,
+        }),
       },
     });
 
     return NextResponse.json({
-      post: updatedPost,
+      post: {
+        ...updatedPost,
+        audience: postAudience(updatedPost, epochMs),
+      },
       message: "Post updated successfully",
     });
   } catch (error) {

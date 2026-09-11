@@ -16,6 +16,8 @@ import {
   Bookmark,
   Flag,
   X,
+  Globe,
+  Users,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "@/lib/toast";
@@ -529,10 +531,30 @@ export const FeedPostCard = memo(function FeedPostCard({
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-gray-500">
+            <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
               {formatDistanceToNow(new Date(post.createdAt), {
                 addSuffix: true,
               })}
+              {/* The author's own posts say who they went out to. An author who
+                  cannot see what they published cannot correct it. */}
+              {post.isOwner && post.audience && (
+                <span
+                  className="inline-flex items-center gap-1 text-gray-400"
+                  title={
+                    post.audience === "PUBLIC"
+                      ? "Anyone on the internet can read this post."
+                      : "Only signed-in EarnGPT members can read this post."
+                  }
+                >
+                  <span aria-hidden>·</span>
+                  {post.audience === "PUBLIC" ? (
+                    <Globe className="w-3 h-3" />
+                  ) : (
+                    <Users className="w-3 h-3" />
+                  )}
+                  {post.audience === "PUBLIC" ? "Public" : "Members only"}
+                </span>
+              )}
             </p>
           </div>
           {!post.isOwner && post.user && (

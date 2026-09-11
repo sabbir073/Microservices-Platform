@@ -239,6 +239,8 @@ export const DEFAULT_LANDING_CONTENT: LandingContent = {
   navbar: {
     nav_links: [
       { label: "Features", href: "#features" },
+      { label: "MicroTask", href: "/microtask" },
+      { label: "Advertise", href: "/advertise" },
       { label: "Marketplace", href: "/features/marketplace" },
       { label: "Courses", href: "/features/courses" },
       { label: "Affiliate", href: "/features/affiliate" },
@@ -280,6 +282,7 @@ export const DEFAULT_LANDING_CONTENT: LandingContent = {
         description:
           "Watch videos, take surveys, test apps, read articles, and complete social actions. Hundreds of quick tasks refreshed daily.",
         gradient: "from-blue-500 to-indigo-600",
+        href: "/microtask",
       },
       {
         iconKey: "ShoppingBag",
@@ -311,6 +314,7 @@ export const DEFAULT_LANDING_CONTENT: LandingContent = {
         description:
           "Invite friends, build a 3-level team, and earn passive commission on their activity — build it once, earn forever.",
         gradient: "from-purple-500 to-violet-600",
+        href: "/referral",
       },
       {
         iconKey: "MessageSquare",
@@ -318,6 +322,7 @@ export const DEFAULT_LANDING_CONTENT: LandingContent = {
         description:
           "Post like on a social network and get paid for it. Earn from the likes, comments, and engagement your content receives.",
         gradient: "from-sky-500 to-blue-600",
+        href: "/microtask#feed",
       },
       {
         iconKey: "Gamepad2",
@@ -325,6 +330,7 @@ export const DEFAULT_LANDING_CONTENT: LandingContent = {
         description:
           "Play HTML5 games, enter quiz competitions and tournaments, and win from prize pools, lotteries, and daily draws.",
         gradient: "from-rose-500 to-red-600",
+        href: "/microtask#more-ways",
       },
       {
         iconKey: "Megaphone",
@@ -332,6 +338,7 @@ export const DEFAULT_LANDING_CONTENT: LandingContent = {
         description:
           "Run your own ads and campaigns across the platform, or create paid tasks to reach a global, engaged audience.",
         gradient: "from-cyan-500 to-sky-600",
+        href: "/advertise",
       },
       {
         iconKey: "Wallet",
@@ -339,6 +346,7 @@ export const DEFAULT_LANDING_CONTENT: LandingContent = {
         description:
           "Cash out to PayPal, bank, Wise, Payoneer, crypto, and more — fast, secure, and available across 180+ countries.",
         gradient: "from-indigo-500 to-blue-600",
+        href: "/microtask#payout",
       },
     ],
   },
@@ -718,4 +726,72 @@ export const LANDING_SETTING_KEY_PREFIX = "lp_";
 
 export function settingKeyFor(section: SectionKey): string {
   return `${LANDING_SETTING_KEY_PREFIX}${section}`;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Reconciliation with the marketing routes that actually exist
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The problem these two functions solve.
+ *
+ * `getLandingContent()` merges stored SystemSetting rows over the defaults
+ * SHALLOWLY, by section. So the moment anybody saves the navbar section in the
+ * landing editor, the stored `nav_links` array replaces this file's array
+ * wholesale — and a link added to the defaults in a later release never
+ * appears, on a site whose menu looks perfectly fine in the code. The same is
+ * true of `features.items`, which is why several earn cards could point
+ * nowhere while this file said they had an `href`.
+ *
+ * These reconcile the stored content with the marketing pages that exist:
+ * anything missing is added back, anything the admin has customised is left
+ * exactly as they set it.
+ */
+
+/** Marketing pages that must be reachable from the public menu. */
+export const REQUIRED_NAV_LINKS: readonly NavLink[] = [
+  { label: "MicroTask", href: "/microtask" },
+  { label: "Advertise", href: "/advertise" },
+] as const;
+
+/**
+ * Where each earn card goes, keyed by its title.
+ *
+ * Referral is deliberately here and deliberately NOT in `REQUIRED_NAV_LINKS`:
+ * the page is reached from its card and from the other marketing pages, not
+ * from the menu.
+ */
+export const EARN_CARD_LINKS: Readonly<Record<string, string>> = {
+  "Micro Tasks": "/microtask",
+  "Digital Marketplace": "/features/marketplace",
+  "Online Courses": "/features/courses",
+  "Affiliate Commissions": "/features/affiliate",
+  "Team & Referrals": "/referral",
+  "Social Feed": "/microtask#feed",
+  "Games & Tournaments": "/microtask#more-ways",
+  "Advertiser Slots": "/advertise",
+  "Instant Withdrawals": "/microtask#payout",
+};
+
+/** Adds back any required marketing link a stored navbar dropped. */
+export function withRequiredNavLinks(navbar: NavbarContent): NavbarContent {
+  const have = new Set(navbar.nav_links.map((l) => l.href));
+  const missing = REQUIRED_NAV_LINKS.filter((l) => !have.has(l.href));
+  if (missing.length === 0) return navbar;
+  // Before "Pricing" if there is one, so the product pages stay grouped and the
+  // commercial links stay at the end. Otherwise append.
+  const at = navbar.nav_links.findIndex((l) => l.href === "#pricing");
+  const links = [...navbar.nav_links];
+  links.splice(at === -1 ? links.length : at, 0, ...missing);
+  return { ...navbar, nav_links: links };
+}
+
+/** Gives every known earn card its destination, without overriding a custom one. */
+export function withEarnCardLinks(features: FeaturesContent): FeaturesContent {
+  return {
+    ...features,
+    items: features.items.map((it) =>
+      it.href?.trim() ? it : { ...it, href: EARN_CARD_LINKS[it.title] }
+    ),
+  };
 }

@@ -1396,6 +1396,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     category: "SYSTEM",
   },
   {
+    name: "Scheduler",
+    href: "/admin/scheduler",
+    icon: "Timer",
+    permissions: ["settings.view"],
+    category: "SYSTEM",
+  },
+  {
     name: "Admin Control",
     href: "/admin/access",
     icon: "Shield",

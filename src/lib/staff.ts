@@ -1,3 +1,4 @@
+import { UserRole as PrismaUserRole } from "@/generated/prisma/enums";
 import { ADMIN_ROLES, type UserRole } from "@/lib/rbac";
 
 /**
@@ -39,14 +40,42 @@ export function isStaffRole(role: string | null | undefined): boolean {
 }
 
 /**
- * Drop-in `where` fragment for any query that feeds a public ranking.
+ * Drop-in `where` fragments for any query that feeds a public ranking, narrowed
+ * to the roles the GENERATED Prisma client actually knows about.
  *
- * Spread it into the query rather than filtering in JS after the fact: a
+ * Spread them into the query rather than filtering in JS after the fact: a
  * `take: 5` that pulls five rows and then removes the staff among them returns
  * three names, not five.
+ *
+ * `STAFF_ROLES` comes from `ADMIN_ROLES`, a hand-written list. Prisma validates
+ * every value in a `notIn` against its own enum and throws
+ * `PrismaClientValidationError` on anything it does not recognise — which takes
+ * down the whole page, not just the widget.
+ *
+ * The two lists fall out of step more easily than they should: adding a role in
+ * `rbac.ts` before the migration runs, or running a migration while `next dev`
+ * is up so the server keeps a client generated before the enum gained the value.
+ * That is exactly how `MANAGER` crashed `/social`.
+ *
+ * Intersecting here means a mismatch DEGRADES — one staff account may briefly
+ * appear on a board — instead of 500-ing the page. The board being slightly
+ * wrong for a minute is recoverable; the feed being down is not.
  */
+const KNOWN_ROLES = new Set<string>(Object.values(PrismaUserRole));
+const QUERYABLE_STAFF_ROLES = STAFF_ROLES.filter((r) => KNOWN_ROLES.has(r));
+
+/* c8 ignore next 6 */
+if (QUERYABLE_STAFF_ROLES.length !== STAFF_ROLES.length) {
+  const missing = STAFF_ROLES.filter((r) => !KNOWN_ROLES.has(r));
+  console.warn(
+    `[staff] Prisma client does not know role(s) ${missing.join(", ")} — ` +
+      `they cannot be filtered out of public rankings. Run \`npm run prisma:generate\` ` +
+      `and restart the dev server.`
+  );
+}
+
 export const NON_STAFF_WHERE = {
-  role: { notIn: STAFF_ROLES },
+  role: { notIn: QUERYABLE_STAFF_ROLES },
 } as const;
 
 // ───────────────────────── Employees vs clients ───────────────────────────────
@@ -94,7 +123,11 @@ export const ACCOUNT_TYPE_BADGE: Record<
   },
 };
 
-/** The mirror of `NON_STAFF_WHERE` — for admin views that want employees only. */
+/**
+ * The mirror of `NON_STAFF_WHERE` — for admin views that want employees only.
+ * Narrowed the same way and for the same reason: an unknown role here would
+ * throw rather than simply miss somebody.
+ */
 export const STAFF_WHERE = {
-  role: { in: STAFF_ROLES },
+  role: { in: QUERYABLE_STAFF_ROLES },
 } as const;

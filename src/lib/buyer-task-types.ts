@@ -6,7 +6,15 @@
  * hand-copied second list in the client is how the tick-boxes end up offering a
  * type the server then rejects.
  */
-export const BUYER_TASK_TYPES = ["SOCIAL", "VIDEO", "CUSTOM", "SURVEY"] as const;
+export const BUYER_TASK_TYPES = [
+  "SOCIAL",
+  "VIDEO",
+  "CUSTOM",
+  "SURVEY",
+  "QUIZ",
+  "ARTICLE",
+  "APPINSTALL",
+] as const;
 
 /**
  * What each type needs from the buyer, and what a worker will be asked to do.
@@ -36,6 +44,21 @@ export const BUYER_TASK_TYPE_META: Record<
     label: "Survey",
     blurb:
       "Ask a set of questions and read the answers. You see every answer and never who gave it — respondents are told that before they start.",
+  },
+  QUIZ: {
+    label: "Quiz",
+    blurb:
+      "Write questions with a right answer. Workers never receive the answer key — the browser only gets the options, and scoring happens on our server.",
+  },
+  ARTICLE: {
+    label: "Write an article",
+    blurb:
+      "Commission writing. Every submission is checked against the other submissions on the same task for duplicates and padding — not against the web.",
+  },
+  APPINSTALL: {
+    label: "Install an app",
+    blurb:
+      "Get your app installed and used. You choose what counts as proof — a level reached or days opened is far harder to fake than one screenshot.",
   },
 };
 

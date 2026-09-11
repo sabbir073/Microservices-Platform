@@ -4495,3 +4495,48 @@ model LeaderboardGiftAward {
   @@index([cycleId])
   @@index([fulfilledById])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scheduler: one row per (job, due window).
+//
+// This IS the lock. `@@unique([job, windowKey])` means the first tick to
+// `create` a row owns that window; everyone else's create fails with P2002 and
+// becomes a no-op. There is no read-then-write anywhere in the claim path.
+//
+// `leaseUntil` is what makes a half-dead tick recoverable. Serverless can kill
+// work started after the response, so a row can be left `running` forever. A
+// later tick may take the window over with a conditional update that requires
+// the lease to have expired AND the state not to be `completed` — a CAS, whose
+// `count === 1` is the proof it won. Re-running is safe because every job
+// registered here is independently idempotent (the leaderboard payout freezes
+// its winner list with a create and gives every credit a unique ledger
+// reference), so a takeover resumes rather than pays twice.
+// ─────────────────────────────────────────────────────────────────────────────
+model ScheduledJobRun {
+  id         String    @id @default(cuid())
+  /// Registry name, e.g. "leaderboard-reset".
+  job        String
+  /// The due window this row owns. Scheduled windows are the interval bucket;
+  /// a hand-run from the admin screen uses its own "manual-<ms>" key so it can
+  /// never seal a scheduled window it did not actually settle.
+  windowKey  String
+  /// running | completed | failed
+  state      String    @default("running")
+  /// How many ticks have owned this window (a takeover increments it).
+  attempts   Int       @default(1)
+  /// traffic | http | manual
+  source     String    @default("traffic")
+  claimedAt  DateTime  @default(now())
+  /// Past this instant the window may be taken over by another tick.
+  leaseUntil DateTime
+  finishedAt DateTime?
+  durationMs Int?
+  /// One human line for the admin screen.
+  summary    String?
+  error      String?
+  result     Json?
+
+  @@unique([job, windowKey])
+  @@index([job, claimedAt])
+  @@index([state])
+}

@@ -10,6 +10,7 @@ import { ProfileCompletionBanner } from "@/components/user/primitives/profile-co
 import { getKycPromptState } from "@/lib/kyc-prompt-server";
 import { KycPromptBanner } from "@/components/user/primitives/kyc-prompt-banner";
 import { getSetting } from "@/lib/system-settings";
+import { getHiddenPaths } from "@/lib/page-visibility-server";
 import { isGroupsEnabled } from "@/lib/groups-gate";
 import {
   DEFAULT_WIDGET_CONFIG,
@@ -142,6 +143,9 @@ export default async function SocialPage() {
   // Admin switch `ui.groups_enabled` — default off. The server blocks the
   // Groups API regardless; this is what stops the tab being offered.
   const groupsEnabled = await isGroupsEnabled();
+  // The toolbar shortcuts are filtered against the same per-user page grants the
+  // sidebar uses, so a hidden page is never offered as a shortcut to it.
+  const hiddenPaths = await getHiddenPaths(session.user.id);
 
   // The session doesn't carry the avatar — fetch it so the composer shows the
   // user's real picture (kept fresh; PhotoModal calls router.refresh on upload).
@@ -241,6 +245,7 @@ export default async function SocialPage() {
       underPostBanner={adDensity.underPostBanner}
       underPostInterval={adDensity.underPostInterval}
       groupsEnabled={groupsEnabled}
+      hiddenPaths={new Set(hiddenPaths)}
       tickerConfig={
         tickerPayload
           ? {

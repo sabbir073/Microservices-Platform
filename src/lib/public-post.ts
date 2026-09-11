@@ -1,12 +1,34 @@
 import { prisma } from "@/lib/prisma";
 import { privacyLevelFor } from "@/lib/profile-privacy";
-import { isPubliclyVisible } from "@/lib/public-post-gate";
+import {
+  isPubliclyVisible,
+  parseAudienceEpoch,
+  PUBLIC_AUDIENCE_EPOCH_KEY,
+} from "@/lib/public-post-gate";
 import { getSetting } from "@/lib/system-settings";
 
 // The gate itself lives in `public-post-gate.ts` — no imports, so the
 // verification script can exercise the real rule rather than a copy of it.
-export { isPubliclyVisible } from "@/lib/public-post-gate";
-export type { PublicPostGateRow } from "@/lib/public-post-gate";
+export {
+  isPubliclyVisible,
+  authorChosePublic,
+  postAudience,
+  PUBLIC_AUDIENCE_EPOCH_KEY,
+} from "@/lib/public-post-gate";
+export type { PublicPostGateRow, PostAudience } from "@/lib/public-post-gate";
+
+/**
+ * The instant the audience picker went live, in ms — or null if it never did.
+ *
+ * Null is the fail-closed answer: `authorChosePublic` refuses every post when
+ * there is no epoch, so a missing or corrupt setting publishes nothing rather
+ * than publishing everything.
+ */
+export async function publicAudienceEpochMs(): Promise<number | null> {
+  return parseAudienceEpoch(
+    await getSetting<string | null>(PUBLIC_AUDIENCE_EPOCH_KEY, null)
+  );
+}
 
 export interface PublicPost {
   id: string;
@@ -50,15 +72,16 @@ export interface PublicPost {
  * Is logged-out post sharing switched on at all?
  *
  * OFF until the owner turns it on, and that is not caution for its own sake.
- * `Post.isPublic` DEFAULTS to true and the composer hardcodes `isPublic: true`
- * — there is no audience picker, so nobody who has ever posted here chose to be
- * readable by the whole internet. Every one of the existing posts would become
- * crawlable the moment this route went live, retroactively, on behalf of people
- * who were never asked.
+ * `Post.isPublic` DEFAULTS to true and the old composer hardcoded
+ * `isPublic: true`, so nobody who posted before the audience picker shipped
+ * chose to be readable by the whole internet. Every one of those posts would
+ * have become crawlable the moment this route went live, retroactively, on
+ * behalf of people who were never asked.
  *
- * So the machinery ships complete and inert. Turning it on is a decision with a
- * date on it, made once the composer can offer the choice — not a side effect
- * of a deploy.
+ * That is now handled by `feed.public_audience_epoch` (see public-post-gate.ts):
+ * a post counts as public only if it was created at or after the picker went
+ * live. This switch is the second lock — the whole logged-out surface (page,
+ * metadata, OG image, sitemap) is inert while it is off.
  */
 export async function publicSharingEnabled(): Promise<boolean> {
   return getSetting<boolean>("feed.public_post_sharing", false);
@@ -70,6 +93,8 @@ export async function getPublicPost(id: string): Promise<PublicPost | null> {
   // surface goes through — page, metadata, OG image and sitemap. A switch on the
   // page would leave the unfurler and the sitemap still answering.
   if (!(await publicSharingEnabled())) return null;
+  const epochMs = await publicAudienceEpochMs();
+  if (epochMs === null) return null;
 
   const row = await prisma.post
     .findUnique({
@@ -102,7 +127,7 @@ export async function getPublicPost(id: string): Promise<PublicPost | null> {
     })
     .catch(() => null);
 
-  if (!isPubliclyVisible(row)) return null;
+  if (!isPubliclyVisible(row, epochMs)) return null;
   // `isPubliclyVisible` already proved both of these; the checks are here so
   // TypeScript narrows without a cast.
   if (!row || !row.user) return null;

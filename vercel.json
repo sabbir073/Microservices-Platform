@@ -2,15 +2,5 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run prisma:generate && next build",
   "installCommand": "npm install",
-  "framework": "nextjs",
-  "crons": [
-    {
-      "path": "/api/cron/recheck-submissions",
-      "schedule": "*/2 * * * *"
-    },
-    {
-      "path": "/api/cron/leaderboard-reset",
-      "schedule": "0 * * * *"
-    }
-  ]
+  "framework": "nextjs"
 }

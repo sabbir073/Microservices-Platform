@@ -11,6 +11,9 @@ import {
   Target,
   PlayCircle,
   ClipboardList,
+  HelpCircle,
+  PenLine,
+  Smartphone,
   Users,
   Clock,
   AlertCircle,
@@ -30,8 +33,29 @@ import {
   surveyDraftProblem,
   type SurveyDraft,
 } from "@/components/user/tasks/survey-builder";
+import {
+  QuizBuilder,
+  emptyQuizDraft,
+  quizDraftProblem,
+  type QuizDraft,
+  ArticleBuilder,
+  emptyArticleDraft,
+  articleDraftProblem,
+  type ArticleDraft,
+  AppInstallBuilder,
+  emptyAppInstallDraft,
+  appInstallDraftProblem,
+  type AppInstallDraft,
+} from "@/components/user/tasks/buyer-type-builders";
 
-type TaskType = "SOCIAL" | "VIDEO" | "CUSTOM" | "SURVEY";
+type TaskType =
+  | "SOCIAL"
+  | "VIDEO"
+  | "CUSTOM"
+  | "SURVEY"
+  | "QUIZ"
+  | "ARTICLE"
+  | "APPINSTALL";
 
 export interface BuyerPlatform {
   key: string;
@@ -112,6 +136,10 @@ export function CreateTaskView({
   const [instructions, setInstructions] = useState("");
   // SURVEY
   const [survey, setSurvey] = useState<SurveyDraft>(emptySurveyDraft);
+  const [quiz, setQuiz] = useState<QuizDraft>(emptyQuizDraft);
+  const [article, setArticle] = useState<ArticleDraft>(emptyArticleDraft);
+  const [appInstall, setAppInstall] =
+    useState<AppInstallDraft>(emptyAppInstallDraft);
   // Rewards
   const [pointsReward, setPointsReward] = useState(50);
   const [targetCount, setTargetCount] = useState(10);
@@ -215,12 +243,21 @@ export function CreateTaskView({
       toast.error("Social tasks need an action and a target URL");
       return;
     }
-    if (type === "SURVEY") {
-      const problem = surveyDraftProblem(survey);
-      if (problem) {
-        toast.error(problem);
-        return;
-      }
+    // Every payload-carrying type checks the SAME rules the server will, so a
+    // buyer is told what is wrong before they submit, not after.
+    const problem =
+      type === "SURVEY"
+        ? surveyDraftProblem(survey)
+        : type === "QUIZ"
+          ? quizDraftProblem(quiz)
+          : type === "ARTICLE"
+            ? articleDraftProblem(article)
+            : type === "APPINSTALL"
+              ? appInstallDraftProblem(appInstall)
+              : null;
+    if (problem) {
+      toast.error(problem);
+      return;
     }
 
     setBusy(true);
@@ -244,6 +281,40 @@ export function CreateTaskView({
           thankYouMessage: survey.thankYouMessage.trim() || undefined,
           randomizeQuestions: survey.randomizeQuestions,
           shuffleOptions: survey.shuffleOptions,
+        };
+      }
+      if (type === "QUIZ") {
+        body.quiz = {
+          questions: quiz.questions.map((q) => ({
+            question: q.question.trim(),
+            options: q.options.map((o) => o.trim()),
+            correctIndex: q.correctIndex,
+            explanation: q.explanation.trim() || undefined,
+          })),
+        };
+      }
+      if (type === "ARTICLE") {
+        body.article = {
+          brief: article.brief.trim(),
+          minWords: Math.floor(article.minWords),
+          requireUrl: article.requireUrl,
+          requireScreenshot: article.requireScreenshot,
+        };
+      }
+      if (type === "APPINSTALL") {
+        body.appInstall = {
+          appName: appInstall.appName.trim(),
+          appKind: appInstall.appKind,
+          description: appInstall.description.trim() || undefined,
+          playStoreUrl: appInstall.playStoreUrl.trim() || undefined,
+          appStoreUrl: appInstall.appStoreUrl.trim() || undefined,
+          proofItems: appInstall.proofItems.map((p) => ({
+            kind: p.kind,
+            label: p.label.trim() || undefined,
+            target: p.target > 0 ? p.target : undefined,
+            screenshot: p.screenshot,
+            valueLabel: p.valueLabel.trim() || undefined,
+          })),
         };
       }
       if (type === "SOCIAL") {
@@ -326,6 +397,9 @@ export function CreateTaskView({
             { value: "VIDEO", label: "Video", icon: PlayCircle },
             { value: "CUSTOM", label: "Custom", icon: Sparkles },
             { value: "SURVEY", label: "Survey", icon: ClipboardList },
+            { value: "QUIZ", label: "Quiz", icon: HelpCircle },
+            { value: "ARTICLE", label: "Article", icon: PenLine },
+            { value: "APPINSTALL", label: "App install", icon: Smartphone },
           ] as const
         )
           .filter((opt) => allowedTypes.includes(opt.value))
@@ -473,6 +547,12 @@ export function CreateTaskView({
           </>
         ) : type === "SURVEY" ? (
           <SurveyBuilder value={survey} onChange={setSurvey} />
+        ) : type === "QUIZ" ? (
+          <QuizBuilder value={quiz} onChange={setQuiz} />
+        ) : type === "ARTICLE" ? (
+          <ArticleBuilder value={article} onChange={setArticle} />
+        ) : type === "APPINSTALL" ? (
+          <AppInstallBuilder value={appInstall} onChange={setAppInstall} />
         ) : (
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5">

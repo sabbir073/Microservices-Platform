@@ -12,6 +12,18 @@ import { getPlatform } from "@/lib/social-tasks";
 import { validateSurveyConfig, type SurveyConfig } from "@/lib/survey-tasks";
 import { buyerSurveySchema, buildBuyerSurveyConfig } from "@/lib/survey-buyer";
 import {
+  buyerQuizSchema,
+  buildBuyerQuizQuestions,
+  buyerArticleSchema,
+  buildBuyerArticleConfig,
+  buyerAppInstallSchema,
+  buildBuyerAppInstallConfig,
+} from "@/lib/buyer-task-configs";
+import { validateAppInstallConfig } from "@/lib/app-install-tasks";
+import type { ArticleConfig } from "@/lib/article-tasks";
+import type { AppInstallConfig } from "@/lib/app-install-tasks";
+import type { QuizQuestionShape } from "@/lib/quiz-shape";
+import {
   getBuyerScope,
   typeRefusal,
   platformRefusal,
@@ -22,7 +34,15 @@ import { TransactionType, TransactionStatus, TaskType } from "@/generated/prisma
 // Task types this endpoint knows how to build. WHICH of them a buyer may
 // actually use is an admin setting (`buyer.allowed_task_types`) checked below —
 // this tuple is only the set the schema can parse.
-const ALLOWED_TYPES = ["SOCIAL", "VIDEO", "CUSTOM", "SURVEY"] as const;
+const ALLOWED_TYPES = [
+  "SOCIAL",
+  "VIDEO",
+  "CUSTOM",
+  "SURVEY",
+  "QUIZ",
+  "ARTICLE",
+  "APPINSTALL",
+] as const;
 
 const schema = z.object({
   title: z.string().min(3).max(120),
@@ -45,6 +65,11 @@ const schema = z.object({
   instructions: z.string().max(4000).optional().nullable(),
   // SURVEY
   survey: buyerSurveySchema.optional(),
+  // QUIZ / ARTICLE / APPINSTALL — one schema each, shared with the edit route.
+  // See src/lib/buyer-task-configs.ts for the hazard each one answers.
+  quiz: buyerQuizSchema.optional(),
+  article: buyerArticleSchema.optional(),
+  appInstall: buyerAppInstallSchema.optional(),
   // Audience targeting (only honored when the user has the `targetTasks` feature).
   countries: z.array(z.string().max(8)).max(50).optional(),
   genders: z.array(z.string().max(10)).max(5).optional(),
@@ -169,6 +194,53 @@ export async function POST(req: NextRequest) {
         { error: check.error ?? "That survey isn't valid." },
         { status: 400 }
       );
+    }
+  }
+
+  // ── QUIZ ─────────────────────────────────────────────────────────────────
+  // Questions are REQUIRED, not optional. A QUIZ task with no usable questions
+  // makes /api/tasks/quiz fall through to Gemini generation and write the
+  // result back to the task row — which would let a buyer commission unmetered
+  // AI spend by leaving the builder empty. The answer key goes into
+  // `Task.questions` and is never sent to a player: the runner strips it.
+  let quizQuestions: QuizQuestionShape[] | null = null;
+  if (d.type === "QUIZ") {
+    if (!d.quiz || d.quiz.questions.length === 0) {
+      return NextResponse.json(
+        { error: "A quiz task needs at least one question with a correct answer." },
+        { status: 400 }
+      );
+    }
+    quizQuestions = buildBuyerQuizQuestions(d.quiz);
+  }
+
+  // ── ARTICLE (buyer writing task) ─────────────────────────────────────────
+  let articleConfig: ArticleConfig | null = null;
+  if (d.type === "ARTICLE") {
+    if (!d.article) {
+      return NextResponse.json(
+        { error: "An article task needs a brief and a minimum word count." },
+        { status: 400 }
+      );
+    }
+    articleConfig = buildBuyerArticleConfig(d.article);
+  }
+
+  // ── APPINSTALL ───────────────────────────────────────────────────────────
+  let appInstallConfig: AppInstallConfig | null = null;
+  if (d.type === "APPINSTALL") {
+    if (!d.appInstall) {
+      return NextResponse.json(
+        { error: "An install task needs the store link and what counts as proof." },
+        { status: 400 }
+      );
+    }
+    appInstallConfig = buildBuyerAppInstallConfig(d.appInstall);
+    // The same validator the admin builder is checked with, so a buyer install
+    // task and an admin one cannot drift into two dialects of the same JSON.
+    const problem = validateAppInstallConfig(appInstallConfig);
+    if (problem) {
+      return NextResponse.json({ error: problem }, { status: 400 });
     }
   }
 
@@ -343,6 +415,17 @@ export async function POST(req: NextRequest) {
           // /api/tasks/[id]/start, also regardless of who funded it.
           ...(d.type === "SURVEY" && surveyConfig
             ? { surveyConfig: surveyConfig as unknown as object }
+            : {}),
+          // Exactly the columns the ADMIN builder writes, so every one of these
+          // is run, reviewed and graded by code that never asks who built it.
+          ...(d.type === "QUIZ" && quizQuestions
+            ? { questions: quizQuestions as unknown as object }
+            : {}),
+          ...(d.type === "ARTICLE" && articleConfig
+            ? { articleConfig: articleConfig as unknown as object }
+            : {}),
+          ...(d.type === "APPINSTALL" && appInstallConfig
+            ? { appInstallConfig: appInstallConfig as unknown as object }
             : {}),
         },
       });

@@ -14,13 +14,19 @@ export const maxDuration = 60;
  * Running this a minute or two later picks up the ones that have since become
  * readable and approves them. It NEVER rejects — see `lib/social-recheck`.
  *
+ * NOTHING DEPENDS ON THIS BEING CALLED. The sweep is registered as a job in
+ * `lib/scheduler/jobs` and runs off the platform's own traffic, with no cron
+ * entry and no `CRON_SECRET`. This endpoint is kept for anyone who does want to
+ * point an external pinger at it; it calls the same
+ * `recheckPendingSocialSubmissions`, so there is one implementation.
+ *
  * Two ways in, because this has to work whatever hosting is in front of it:
- *  - a scheduler, with `CRON_SECRET` as a bearer token or `?key=`
+ *  - an external pinger, with `CRON_SECRET` as a bearer token or `?key=`
  *  - an admin, from the submissions screen, with `submissions.review`
  *
- * With no `CRON_SECRET` set the scheduled route is refused rather than left
- * open — an unauthenticated endpoint that pays people is not something to
- * default to on.
+ * With no `CRON_SECRET` set the unauthenticated route is refused rather than
+ * left open — an unauthenticated endpoint that pays people is not something to
+ * default to on, and the scheduler no longer needs the endpoint at all.
  */
 async function authorise(req: NextRequest): Promise<boolean> {
   const secret = process.env.CRON_SECRET;

@@ -22,6 +22,8 @@ import {
   Smile,
   Palette,
   Lock,
+  Globe,
+  Users,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -87,6 +89,11 @@ export function CreatePostComposer({
   const [donationGoal, setDonationGoal] = useState<number>(1000);
   const [busy, setBusy] = useState(false);
   const [postAsAnnouncement, setPostAsAnnouncement] = useState(false);
+  // Who this post is for. MEMBERS is the default, and it is a deliberate one:
+  // the previous composer hardcoded `isPublic: true`, so "everyone on the
+  // internet" was a setting nobody had ever chosen. A default that publishes is
+  // not a default anyone picked.
+  const [audience, setAudience] = useState<"MEMBERS" | "PUBLIC">("MEMBERS");
   // Facebook-style link preview: auto-fetched for the first URL, dismissable.
   const [linkPreview, setLinkPreview] = useState<LinkPreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -307,7 +314,7 @@ export function CreatePostComposer({
         body: JSON.stringify({
           content: content.trim(),
           images,
-          isPublic: true,
+          isPublic: audience === "PUBLIC",
           backgroundStyle:
             mode === "text" && images.length === 0 && bg ? bg : null,
           disableLinkPreview: previewDismissed,
@@ -536,6 +543,14 @@ export function CreatePostComposer({
             )}
             <textarea
               ref={textareaRef}
+              // Focused the moment the composer opens. Tapping the prompt used
+              // to expand the box and leave the caret nowhere, so writing a post
+              // took two taps: one to open it and one to actually get into it.
+              // On a phone the second tap is also what raises the keyboard, so
+              // the gap was the difference between "I can type" and "nothing
+              // happened". The collapsed state is a separate early return, so
+              // this textarea mounts fresh each time and autoFocus fires.
+              autoFocus
               value={content}
               onChange={(e) => setContent(e.target.value)}
               // `onSelect` fires for mouse drags, double-clicks, shift-arrows
@@ -776,6 +791,75 @@ export function CreatePostComposer({
           </span>
         </label>
       )}
+
+      {/* Who can read this. Shown before posting, never behind a menu, and the
+          consequence is written into the option itself rather than implied by a
+          globe icon. Members only is pre-selected. */}
+      <fieldset className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-2.5">
+        <legend className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          Who can read this
+        </legend>
+        <div className="mt-1 space-y-1.5">
+          {(
+            [
+              {
+                key: "MEMBERS" as const,
+                Icon: Users,
+                title: "Members only",
+                detail: "Signed-in EarnGPT members. Not readable without an account.",
+              },
+              {
+                key: "PUBLIC" as const,
+                Icon: Globe,
+                title: "Public",
+                detail:
+                  "Anyone on the internet can read this — no account needed. It gets a shareable link and can be found by search engines.",
+              },
+            ]
+          ).map(({ key, Icon, title, detail }) => {
+            const on = audience === key;
+            return (
+              <label
+                key={key}
+                className={cn(
+                  "flex cursor-pointer items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors",
+                  on
+                    ? "border-indigo-500/60 bg-indigo-500/10"
+                    : "border-transparent hover:bg-gray-800/50"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="post-audience"
+                  checked={on}
+                  onChange={() => setAudience(key)}
+                  disabled={busy}
+                  className="mt-0.5 border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500"
+                />
+                <Icon
+                  className={cn(
+                    "mt-0.5 h-3.5 w-3.5 shrink-0",
+                    on ? "text-indigo-300" : "text-gray-500"
+                  )}
+                />
+                <span className="min-w-0">
+                  <span
+                    className={cn(
+                      "block text-xs font-semibold",
+                      on ? "text-indigo-100" : "text-gray-300"
+                    )}
+                  >
+                    {title}
+                  </span>
+                  <span className="block text-[11px] leading-snug text-gray-400">
+                    {detail}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <div className="flex items-center justify-between pt-2 border-t border-gray-800">
         <span className="text-[11px] text-gray-500 tabular-nums">

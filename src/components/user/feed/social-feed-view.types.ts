@@ -38,6 +38,13 @@ export interface FeedPost {
   content: string;
   images: string[];
   backgroundStyle?: string | null;
+  /**
+   * Who the author published to, decided on the SERVER by the same rule the
+   * logged-out /post/[id] gate uses. Never derived on the client from
+   * `isPublic`: that column defaults to true, so on any post written before the
+   * audience picker shipped it says "public" about a choice nobody made.
+   */
+  audience?: "PUBLIC" | "MEMBERS";
   isPinned: boolean;
   isAnnouncement?: boolean;
   isPromoted?: boolean;
@@ -129,6 +136,12 @@ export interface Props {
    * pass it hides the feature rather than exposing one the server is blocking.
    */
   groupsEnabled?: boolean;
+  /**
+   * Paths this user may not open, from the per-user page-visibility grants.
+   * Passed down so the toolbar shortcuts never offer a destination that would
+   * bounce them — a dead shortcut reads as a broken platform, not a setting.
+   */
+  hiddenPaths?: Set<string>;
 }
 
 export type ViewTab = "feed" | "groups";

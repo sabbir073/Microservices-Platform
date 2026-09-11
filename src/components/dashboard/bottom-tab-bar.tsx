@@ -113,10 +113,20 @@ export function BottomTabBar({
                 // min-h-14 (56px) rather than whatever the content happened to
                 // add up to — a tab bar row is the most-tapped target in the
                 // app and it must not depend on the label's line height.
-                "relative flex flex-col items-center justify-center gap-0.5 min-h-14 py-2 text-[10px] font-medium transition-transform active:scale-95",
+                "relative flex flex-col items-center justify-center gap-0.5 min-h-14 py-2 text-[10px] font-medium transition-[transform,color] duration-150 active:scale-95",
                 activeTab ? "text-indigo-400" : "text-gray-400"
               )}
             >
+              {/* Which tab you are on was carried by colour alone (indigo
+                  text) — a 1px hue change on a 10px label, at the bottom of
+                  the screen, in a hurry. A bar above the tab is what a native
+                  tab bar uses and what people actually see. */}
+              {activeTab && !primary && (
+                <span
+                  aria-hidden
+                  className="absolute top-0 h-0.5 w-8 rounded-full bg-linear-to-r from-indigo-500 to-violet-500"
+                />
+              )}
               {primary ? (
                 // Center Home: bigger icon inside a subtle rounded highlight.
                 <span

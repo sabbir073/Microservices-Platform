@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import type { FaqContent } from "@/lib/landing-content";
 import { DEFAULT_LANDING_CONTENT } from "@/lib/landing-content";
+import { SectionHeading } from "./section-heading";
 
 type Props = Partial<FaqContent>;
 
@@ -12,20 +13,14 @@ export function FAQ(props: Props) {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
 
   return (
-    <section id="faq" className="py-20 sm:py-28 bg-(--mk-band)">
+    <section id="faq" className="mk-section bg-(--mk-band)">
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-12">
-          <span className="inline-block px-3 py-1 rounded-full bg-sky-500/10 border border-sky-500/20 text-sky-600 text-xs font-semibold uppercase tracking-wider mb-4">
-            {v.badge}
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-(--mk-text) tracking-tight mb-4">
-            {v.heading_line1}{" "}
-            <span className="bg-linear-to-r from-sky-600 to-indigo-600 bg-clip-text text-transparent">
-              {v.heading_line2}
-            </span>
-          </h2>
-          <p className="text-(--mk-muted) text-lg">{v.subheading}</p>
-        </div>
+        <SectionHeading
+          eyebrow={v.badge}
+          line1={v.heading_line1}
+          line2={v.heading_line2}
+          sub={v.subheading}
+        />
 
         <div className="space-y-3">
           {v.items.map((faq, i) => {

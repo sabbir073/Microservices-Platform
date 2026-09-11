@@ -7,6 +7,7 @@ import {
   formatFeedPost,
   type FeedViewerContext,
 } from "@/lib/feed-post-shape";
+import { publicAudienceEpochMs } from "@/lib/public-post";
 
 /**
  * The viewer's saved posts, newest-saved first.
@@ -88,6 +89,7 @@ export async function GET(request: NextRequest) {
 
   const ctx: FeedViewerContext = {
     viewerId: userId,
+    audienceEpochMs: await publicAudienceEpochMs(),
     liked: new Set(likes.map((l) => l.postId)),
     myReactions: new Map(likes.map((l) => [l.postId, l.type])),
     reactionCounts,

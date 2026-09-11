@@ -18,7 +18,8 @@ export async function GET() {
 
   const agg = await prisma.post.aggregate({
     where: {
-      isPublic: true,
+      // No `isPublic`: it is the internet-audience choice now, not in-platform
+      // visibility, and this pulse tracks the signed-in feed.
       isHidden: false,
       isAnnouncement: false,
       isPromoted: false,

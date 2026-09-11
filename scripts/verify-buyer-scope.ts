@@ -9,7 +9,20 @@ import {
   allPlatformKeys,
   type BuyerScope,
 } from "../src/lib/buyer-scope";
-import { BUYER_TASK_TYPES } from "../src/lib/buyer-task-types";
+import {
+  BUYER_TASK_TYPES,
+  BUYER_TASK_TYPE_META,
+} from "../src/lib/buyer-task-types";
+import {
+  buyerQuizSchema,
+  buildBuyerQuizQuestions,
+  buyerAppInstallSchema,
+  buildBuyerAppInstallConfig,
+} from "../src/lib/buyer-task-configs";
+import {
+  assessArticleOriginality,
+  articleRepetition,
+} from "../src/lib/article-originality";
 
 /**
  * Which platforms and which task types a buyer may use — globally, and one
@@ -375,6 +388,178 @@ async function main() {
       "no buyer social task carries a platform the catalog cannot match",
       unknown.length === 0,
       unknown.map((t) => `${t.id}=${t.socialPlatform}`).join(", ") || undefined
+    );
+  }
+
+  // -- QUIZ / ARTICLE / APPINSTALL as buyer types ---------------------------
+  //
+  // Three types, three hazards. Each check below is one of those hazards, not a
+  // tick-box: a regression here is an answer key in a network tab, a buyer
+  // paying twice for the same paragraph, or the easiest fraud on the platform
+  // shipping with a one-screenshot default.
+  console.log("\n5. QUIZ / ARTICLE / APPINSTALL for buyers");
+  {
+    for (const t of ["QUIZ", "ARTICLE", "APPINSTALL"] as const) {
+      check(
+        `${t} is a buyer task type`,
+        (BUYER_TASK_TYPES as readonly string[]).includes(t)
+      );
+      check(`${t} has a blurb saying what it is`, !!BUYER_TASK_TYPE_META[t]?.blurb);
+    }
+
+    const createRoute = read("src/app/api/tasks/create/route.ts");
+    const editRoute = read("src/app/api/tasks/mine/[id]/route.ts");
+    for (const schema of [
+      "buyerQuizSchema",
+      "buyerArticleSchema",
+      "buyerAppInstallSchema",
+    ]) {
+      check(
+        `${schema} is imported by BOTH the create and the edit route`,
+        createRoute.includes(schema) && editRoute.includes(schema)
+      );
+    }
+    check(
+      "the edit route scope-checks the new types, not only SURVEY",
+      /configEdits/.test(editRoute) &&
+        /typeRefusal\(scope, edit\.type\)/.test(editRoute)
+    );
+    check(
+      "neither route invents a second money path",
+      // Mentioned in a comment on purpose; what matters is that neither route
+      // IMPORTS it. Charging still happens once, per approved completion, in
+      // the one place it always has.
+      !/from "@\/lib\/task-charge/.test(createRoute) &&
+        !/from "@\/lib\/task-charge/.test(editRoute) &&
+        !/import[^;]*chargeTaskCompletion/.test(createRoute) &&
+        !/import[^;]*chargeTaskCompletion/.test(editRoute)
+    );
+
+    // QUIZ -- the answer key must not reach the browser.
+    const quizRoute = read("src/app/api/tasks/quiz/route.ts");
+    const player = quizRoute.slice(
+      quizRoute.indexOf("function toPlayerQuestions"),
+      quizRoute.indexOf("// GET /api/tasks/quiz")
+    );
+    check(
+      "the quiz player payload is built from question + options only",
+      /question: q\.question/.test(player) &&
+        /options: q\.options/.test(player) &&
+        !/correctAnswer/.test(player) &&
+        !/correctIndex/.test(player)
+    );
+    check(
+      "grading reads the key from the task row, never from the request body",
+      /coerceQuizQuestions\(task\.questions\)/.test(quizRoute) &&
+        /key\[i\]\.correctAnswer/.test(quizRoute)
+    );
+    check(
+      "a buyer cannot create a quiz with no questions (that would trigger AI generation)",
+      /A quiz task needs at least one question/.test(createRoute)
+    );
+    const built = buildBuyerQuizQuestions({
+      questions: [
+        {
+          question: " Capital? ",
+          options: [" Dhaka ", "Delhi"],
+          correctIndex: 0,
+        },
+      ],
+    });
+    check(
+      "the builder writes correctAnswer (the canonical key name) and trims",
+      built[0].correctAnswer === 0 &&
+        built[0].options[0] === "Dhaka" &&
+        built[0].question === "Capital?"
+    );
+    check(
+      "a correctIndex past the end of the options is refused",
+      !buyerQuizSchema.safeParse({
+        questions: [{ question: "Q?", options: ["a", "b"], correctIndex: 3 }],
+      }).success
+    );
+
+    // ARTICLE -- duplicate detection, and honesty about its limits.
+    const submitRoute = read("src/app/api/tasks/[id]/submit/route.ts");
+    check(
+      "the submit route enforces the buyer's minimum word count",
+      /articleWordCount\(/.test(submitRoute) &&
+        /cfg\.writing\.minWords/.test(submitRoute)
+    );
+    check(
+      "it scores originality against this task's other submissions",
+      /assessArticleOriginality\(/.test(submitRoute)
+    );
+    check(
+      "the comparison set is bounded, not the whole table",
+      /take: 200/.test(submitRoute)
+    );
+    const dup = assessArticleOriginality("The quick brown fox jumps over it", [
+      "the QUICK... brown  fox, jumps over IT!",
+    ]);
+    check(
+      "the same text retyped with different punctuation is caught",
+      dup.exactDuplicate && dup.maxSimilarity === 100
+    );
+    const fresh = assessArticleOriginality(
+      "Completely different words about another subject entirely today",
+      ["The quick brown fox jumps over it"]
+    );
+    check("unrelated writing is not flagged", fresh.maxSimilarity < 60);
+    check(
+      "padding -- one sentence repeated -- is measured",
+      articleRepetition("buy this app now buy this app now buy this app now") >=
+        35
+    );
+    check(
+      "the note tells the reviewer the web was NOT checked",
+      /Not checked against the web/.test(dup.note)
+    );
+
+    // APPINSTALL -- no weak default, no buyer auto-approve.
+    check(
+      "a buyer install task with no proof requirements is refused",
+      !buyerAppInstallSchema.safeParse({
+        appName: "App",
+        appKind: "app",
+        playStoreUrl: "https://play.google.com/store/apps/details?id=x",
+        proofItems: [],
+      }).success
+    );
+    const appCfg = buildBuyerAppInstallConfig({
+      appName: "App",
+      appKind: "game",
+      playStoreUrl: "https://play.google.com/store/apps/details?id=x",
+      proofItems: [
+        { kind: "LEVEL", target: 5, screenshot: true },
+        { kind: "DAYS", target: 3, screenshot: true },
+      ],
+    });
+    check(
+      "a buyer can never auto-approve their own install task",
+      appCfg.autoApprove === false
+    );
+    check(
+      "proof item ids are re-derived, so a hostile body cannot collapse them",
+      appCfg.proofItems?.[0]?.id === "pi_1" &&
+        appCfg.proofItems?.[1]?.id === "pi_2"
+    );
+    check(
+      "a requirement that asks for neither a screenshot nor a value is refused",
+      !buyerAppInstallSchema.safeParse({
+        appName: "App",
+        appKind: "app",
+        playStoreUrl: "https://play.google.com/store/apps/details?id=x",
+        proofItems: [{ kind: "INSTALL", screenshot: false }],
+      }).success
+    );
+    check(
+      "a store link is required",
+      !buyerAppInstallSchema.safeParse({
+        appName: "App",
+        appKind: "app",
+        proofItems: [{ kind: "INSTALL", screenshot: true }],
+      }).success
     );
   }
 

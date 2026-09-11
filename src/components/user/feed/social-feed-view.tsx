@@ -28,6 +28,7 @@ import { MobileEarnBlock } from "@/components/user/feed/mobile-earn-block";
 import { ActiveEventsCard } from "@/components/user/feed/active-events-card";
 import { FeedRightRail } from "@/components/user/feed/feed-right-rail";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
+import { FeedQuickLinks } from "@/components/user/feed/feed-quick-links";
 import { CreatePostComposer } from "./create-post-composer";
 import { FeedPostCard } from "./feed-post-card";
 import { GroupsTab } from "./groups-tab";
@@ -61,6 +62,7 @@ export function SocialFeedView({
   underPostBanner = false,
   underPostInterval = 3,
   groupsEnabled = false,
+  hiddenPaths,
 }: Props) {
   const [tab, setTab] = useState<ViewTab>("feed");
   const [sort, setSort] = useState<Sort>("recent");
@@ -174,9 +176,13 @@ export function SocialFeedView({
             })}
           </nav>
           )}
-          {/* The nav carried `flex-1`. With it gone the sort control and the
-              handle would collapse to the left edge of an otherwise empty bar. */}
-          {tabs.length <= 1 && <div className="flex-1" />}
+          {/* Where the tab list used to sit. With one tab the bar was left
+              carrying nothing but a sort control and a handle, which is a lot of
+              always-on-screen space doing no work — so the six destinations
+              people actually open live here instead. When Groups IS on, the
+              tabs take this space back and the shortcuts step aside rather than
+              competing with them for a phone-width row. */}
+          {tabs.length <= 1 && <FeedQuickLinks hidden={hiddenPaths} />}
 
           {/* Sort — Feed tab only, because it sorts posts and the Groups tab has
               none. It used to render on both and do nothing on one of them. */}

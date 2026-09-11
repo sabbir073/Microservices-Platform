@@ -41,7 +41,9 @@ export function Navbar(props: Props) {
             </span>
           </Link>
 
-          <nav className="hidden lg:flex items-center gap-8">
+          {/* gap-4 until xl: the bar carries eight links now, and at exactly
+              1024px the old gap-8 pushed the last one under the sign-up CTA. */}
+          <nav className="hidden lg:flex items-center gap-4 xl:gap-8">
             {v.nav_links.map((link, i) => (
               <MarketingNavLink
                 key={`${link.href}-${i}`}
@@ -63,7 +65,7 @@ export function Navbar(props: Props) {
             </Link>
             <Link
               href={v.cta_signup_href}
-              className="px-5 py-2.5 bg-linear-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold rounded-xl shadow-sm shadow-indigo-600/20 hover:from-indigo-500 hover:to-violet-500 transition-colors"
+              className="mk-press px-5 py-2.5 bg-linear-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold rounded-xl shadow-sm shadow-indigo-600/20 hover:from-indigo-500 hover:to-violet-500"
             >
               {v.cta_signup_label}
             </Link>
@@ -104,7 +106,7 @@ export function Navbar(props: Props) {
                 key={`${link.href}-${i}`}
                 href={link.href}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center min-h-11 px-2 -mx-2 rounded-xl font-medium text-(--mk-text) hover:bg-(--mk-surface-2) hover:text-indigo-600 transition-colors"
+                className="mk-press flex items-center min-h-11 px-2 -mx-2 rounded-xl font-medium text-(--mk-text) hover:bg-(--mk-surface-2) hover:text-indigo-600"
               >
                 {link.label}
               </MarketingNavLink>
@@ -113,14 +115,14 @@ export function Navbar(props: Props) {
               <Link
                 href={v.cta_signin_href}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center justify-center w-full min-h-12 text-center text-(--mk-text) border border-(--mk-border-strong) rounded-xl hover:bg-(--mk-surface-2) transition-colors"
+                className="mk-press flex items-center justify-center w-full min-h-12 text-center text-(--mk-text) border border-(--mk-border-strong) rounded-xl hover:bg-(--mk-surface-2)"
               >
                 {v.cta_signin_label}
               </Link>
               <Link
                 href={v.cta_signup_href}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="flex items-center justify-center w-full min-h-12 text-center bg-linear-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-xl hover:from-indigo-500 hover:to-violet-500 transition-colors"
+                className="mk-press flex items-center justify-center w-full min-h-12 text-center bg-linear-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-xl hover:from-indigo-500 hover:to-violet-500"
               >
                 {v.cta_signup_label}
               </Link>

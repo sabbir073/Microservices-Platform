@@ -129,15 +129,28 @@ check(
 
 /* ── 5. It is actually scheduled ── */
 console.log("\n5. Scheduling");
-const vercel = JSON.parse(raw("vercel.json")) as {
-  crons?: { path: string; schedule: string }[];
-};
-const cron = vercel.crons?.find((c) => c.path === "/api/cron/recheck-submissions");
-check("the job is registered", !!cron);
+// This used to read `vercel.json`. The platform no longer depends on a cron
+// being configured: it schedules itself off its own traffic, so the registry in
+// `lib/scheduler/jobs.ts` is where a job is declared and therefore where the
+// cadence must be asserted. The HTTP endpoint still exists and still works; it
+// is simply no longer what makes this run.
+const jobs = raw("src/lib/scheduler/jobs.ts");
+check("the job is registered with the scheduler", /name: "recheck-submissions"/.test(jobs));
 check(
   "…on a couple of minutes, matching what was asked for",
-  cron?.schedule === "*/2 * * * *",
+  /name: "recheck-submissions"[\s\S]{0,600}intervalMs: 2 \* MINUTE/.test(jobs),
   "the ask was that a submitted link resolves within a minute or two"
+);
+check(
+  "…and nothing in the scheduler needs CRON_SECRET to be set",
+  !/CRON_SECRET/.test(raw("src/lib/scheduler/run.ts")) &&
+    !/CRON_SECRET/.test(jobs),
+  "the owner will not configure one, so a job that depends on it never runs"
+);
+check(
+  "vercel.json no longer declares crons at all",
+  !("crons" in (JSON.parse(raw("vercel.json")) as Record<string, unknown>)),
+  "a leftover cron entry would run the job twice"
 );
 
 

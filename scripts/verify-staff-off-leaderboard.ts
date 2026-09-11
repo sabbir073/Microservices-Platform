@@ -32,6 +32,14 @@ import {
 } from "../src/lib/rbac";
 import { isStaffRole, accountTypeOf } from "../src/lib/staff";
 import { FEATURES } from "../src/lib/features";
+// `scheduler/claim` is deliberately dependency-free, so the exactly-once and
+// half-dead-tick rules can be exercised here for real rather than by regex.
+import {
+  claimWindow,
+  finishWindow,
+  type ClaimState,
+  type ClaimStore,
+} from "../src/lib/scheduler/claim";
 
 const root = path.resolve(__dirname, "..");
 const read = (p: string) => fs.readFileSync(path.join(root, p), "utf8");
@@ -59,7 +67,16 @@ const social = read("src/app/(main)/social/page.tsx");
 // wrapper, and asserting against a wrapper proves nothing.
 const reset = read("src/lib/leaderboard-reset.ts");
 const resetRoute = read("src/app/api/admin/leaderboard/reset/route.ts");
-const cron = read("src/app/api/cron/leaderboard-reset/route.ts");
+// The payout is no longer driven by a cron entry: the platform schedules
+// itself off its own traffic. The hourly job body moved to a library that BOTH
+// the in-process scheduler and the (still authenticated, now optional) HTTP
+// endpoint call, so that library is what the idempotency checks interrogate.
+const cron = read("src/lib/leaderboard-auto-reset.ts");
+const cronRoute = read("src/app/api/cron/leaderboard-reset/route.ts");
+const schedClaim = read("src/lib/scheduler/claim.ts");
+const schedRun = read("src/lib/scheduler/run.ts");
+const schedJobs = read("src/lib/scheduler/jobs.ts");
+const schedStore = read("src/lib/scheduler/prisma-store.ts");
 const gate = read("src/lib/leaderboard-gate.ts");
 
 console.log("\n--- one definition of staff ---");
@@ -85,7 +102,22 @@ check(
 );
 check(
   "the filter is a where fragment, so it applies before `take`",
-  /NON_STAFF_WHERE\s*=\s*\{\s*role:\s*\{\s*notIn:\s*STAFF_ROLES/.test(staff)
+  /NON_STAFF_WHERE\s*=\s*\{\s*role:\s*\{\s*notIn:/.test(staff)
+);
+// The list handed to Prisma is intersected with the roles the GENERATED client
+// knows. `notIn` throws PrismaClientValidationError on an unrecognised value and
+// takes the whole page down with it — which is what `MANAGER` did to /social
+// when a migration ran while `next dev` held an older client. Degrading (one
+// staff row briefly visible) beats the feed being unreachable.
+check(
+  "the roles handed to Prisma are intersected with the generated enum",
+  /QUERYABLE_STAFF_ROLES\s*=\s*STAFF_ROLES\.filter/.test(staff) &&
+    /notIn: QUERYABLE_STAFF_ROLES/.test(staff),
+  "an unknown role in notIn is a 500 on every page that ranks users"
+);
+check(
+  "…and the mirror used by admin views is narrowed the same way",
+  /in: QUERYABLE_STAFF_ROLES/.test(staff)
 );
 check(
   "TUTOR and AGENCY are not treated as staff — they are customers",
@@ -277,10 +309,11 @@ check(
 console.log("\n--- the scheduled payout is idempotent ---");
 
 const cronCode = strip(cron);
+const cronRouteCode = strip(cronRoute);
 const resetRouteCode = strip(resetRoute);
 
 check(
-  "the cron reuses the admin payout instead of growing a second one",
+  "the scheduler reuses the admin payout instead of growing a second one",
   /runLeaderboardReset\(/.test(cronCode) &&
     /runLeaderboardReset\(/.test(resetRouteCode) &&
     // The route must be a wrapper: no ranking, no ledger write of its own.
@@ -288,15 +321,29 @@ check(
   "two payout implementations drift, and the one that drifts is the one paying money"
 );
 check(
-  "it is scheduled by Vercel cron, like the existing job",
-  /"path": "\/api\/cron\/leaderboard-reset"/.test(read("vercel.json"))
+  "nothing schedules it by cron any more — vercel.json declares no crons",
+  !/"crons"/.test(read("vercel.json")),
+  "the owner asked for a scheduler he does not have to configure; a cron entry is configuration"
 );
 check(
-  "the cron endpoint is authenticated the way the existing one is",
-  /CRON_SECRET/.test(cronCode) &&
-    /Bearer \$\{secret\}/.test(cronCode) &&
-    /leaderboards\.manage/.test(cronCode),
+  "…and the payout is registered with the traffic-driven scheduler instead",
+  /"leaderboard-reset"/.test(schedJobs) &&
+    /runLeaderboardAutoReset/.test(schedJobs),
+  "a job nobody registered is a job nobody runs"
+);
+check(
+  "the HTTP endpoint still works, and is still authenticated",
+  /CRON_SECRET/.test(cronRouteCode) &&
+    /Bearer \$\{secret\}/.test(cronRouteCode) &&
+    /leaderboards\.manage/.test(cronRouteCode),
   "an unauthenticated endpoint that pays real balance is not something to default to on"
+);
+check(
+  "…but it is a wrapper — the endpoint owns no payout logic of its own",
+  /runLeaderboardAutoReset\(/.test(cronRouteCode) &&
+    !/prisma\./.test(cronRouteCode) &&
+    !/lb_history_/.test(cronRouteCode),
+  "two copies of a payout is exactly how a platform pays twice"
 );
 check(
   "nothing runs unless lb_auto_reset is ON, and an absent setting means OFF",
@@ -615,5 +662,303 @@ check(
   "granting AD_MANAGER to a buyer hands them every advertiser's campaigns — the page must say so on both sides"
 );
 
-console.log(`\n${passed} passed, ${failed} failed\n`);
-process.exit(failed === 0 ? 0 : 1);
+/* ────────────────────────────────────────────────────────────────
+   The scheduler — the thing that now decides WHEN the payout runs
+   ──────────────────────────────────────────────────────────────── */
+console.log("\n--- the scheduler needs no configuration ---");
+
+const schedClaimCode = strip(schedClaim);
+const schedRunCode = strip(schedRun);
+const schedJobsCode = strip(schedJobs);
+const schedStoreCode = strip(schedStore);
+const layoutCode = strip(read("src/app/layout.tsx"));
+
+check(
+  "site traffic is what triggers it — the root layout kicks the scheduler",
+  /kickScheduler\(\)/.test(layoutCode) &&
+    /scheduler\/run/.test(layoutCode) &&
+    /export function kickScheduler/.test(schedRunCode),
+  "the owner will not set an env var or a dashboard entry; the platform has to drive itself"
+);
+check(
+  "…and it is never on the visitor's critical path: the work is queued with after()",
+  /from "next\/server"/.test(schedRunCode) &&
+    /after\(async \(\) => \{/.test(schedRunCode) &&
+    !/await kickScheduler/.test(layoutCode),
+  "a visitor must not wait for a prize payout to finish before seeing the page"
+);
+check(
+  "a job blowing up is invisible to whoever happened to trigger it",
+  /after\(async \(\) => \{\s*try \{[\s\S]{0,200}catch \{/.test(schedRunCode) &&
+    /\}\);\s*\} catch \{/.test(schedRunCode),
+  "the tick swallows its own failures — the page render must not see them"
+);
+check(
+  "nothing in the scheduler reads CRON_SECRET",
+  !/CRON_SECRET/.test(schedRunCode) &&
+    !/CRON_SECRET/.test(schedJobsCode) &&
+    !/CRON_SECRET/.test(schedClaimCode),
+  "a secret the owner refuses to set is a scheduler that never runs"
+);
+check(
+  "work per tick is bounded",
+  /MAX_JOBS_PER_TICK/.test(schedRunCode) && /KICK_COOLDOWN_MS/.test(schedRunCode),
+  "one page view must not turn into an unbounded chain of background work"
+);
+check(
+  "a production BUILD never ticks",
+  /phase-production-build/.test(schedRunCode),
+  "next build renders the root layout; that must not start paying prize money"
+);
+check(
+  "the jobs registry holds no logic of its own — every job is a thin call",
+  !/prisma\./.test(schedJobsCode) &&
+    /recheckPendingSocialSubmissions/.test(schedJobsCode) &&
+    /runLeaderboardAutoReset/.test(schedJobsCode),
+  "logic that lives in the registry is a second copy of the payout"
+);
+check(
+  "every job that used to be a cron entry is registered",
+  /"recheck-submissions"/.test(schedJobsCode) &&
+    /"leaderboard-reset"/.test(schedJobsCode)
+);
+check(
+  "the claim is a create against a unique constraint, not a read-then-write",
+  /scheduledJobRun\.create\(/.test(schedStoreCode) &&
+    /model ScheduledJobRun[\s\S]*?@@unique\(\[job, windowKey\]\)/.test(
+      read("prisma/schema.prisma")
+    ),
+  "read-then-write loses races; the database has to pick the winner"
+);
+check(
+  "taking a dead window over is a CAS: the expected state is in the where, and count is checked",
+  /updateMany\(\{[\s\S]{0,400}state: \{ not: "completed" \}[\s\S]{0,200}leaseUntil: \{ lt: now \}/.test(
+    schedStoreCode
+  ) &&
+    /return res\.count;/.test(schedStoreCode) &&
+    /changed === 1/.test(schedClaimCode),
+  "without the expected value in the where, two ticks both believe they own the window"
+);
+check(
+  "the leaderboard's lease is well inside its window, so a dead payout is resumed, not skipped",
+  /intervalMs: HOUR,[\s\S]{0,400}leaseMs: 5 \* MINUTE/.test(schedJobsCode)
+);
+check(
+  "an admin can see and hand-run the jobs",
+  fs.existsSync(path.join(root, "src/app/admin/scheduler/page.tsx")) &&
+    fs.existsSync(path.join(root, "src/app/api/admin/scheduler/route.ts")) &&
+    /href: "\/admin\/scheduler"/.test(rbac),
+  "a schedule nobody can inspect is a schedule nobody trusts"
+);
+check(
+  "a hand-run claims a window of its own and never seals a scheduled one",
+  /`manual-\$\{now\.getTime\(\)\}`/.test(schedRunCode),
+  "sealing this hour's window from a button would skip the payout that window owed"
+);
+
+/* The three behaviours that must never regress, exercised for real against the
+   claim algorithm with an in-memory store that enforces the same unique
+   constraint the database does. */
+type MemRow = {
+  job: string;
+  windowKey: string;
+  state: ClaimState;
+  attempts: number;
+  leaseUntil: Date;
+};
+
+function memStore(): { rows: Map<string, MemRow>; store: ClaimStore } {
+  const rows = new Map<string, MemRow>();
+  const k = (j: string, w: string) => `${j}|${w}`;
+  const store: ClaimStore = {
+    async get(job, windowKey) {
+      const r = rows.get(k(job, windowKey));
+      return r ? { ...r } : null;
+    },
+    async insert(row) {
+      // This IS `@@unique([job, windowKey])`.
+      if (rows.has(k(row.job, row.windowKey))) return false;
+      rows.set(k(row.job, row.windowKey), {
+        job: row.job,
+        windowKey: row.windowKey,
+        state: "running",
+        attempts: 1,
+        leaseUntil: row.leaseUntil,
+      });
+      return true;
+    },
+    async takeOver(job, windowKey, now, leaseUntil) {
+      const r = rows.get(k(job, windowKey));
+      if (!r) return 0;
+      if (r.state === "completed") return 0;
+      if (r.leaseUntil.getTime() >= now.getTime()) return 0;
+      r.state = "running";
+      r.leaseUntil = leaseUntil;
+      r.attempts += 1;
+      return 1;
+    },
+    async finish(job, windowKey, patch) {
+      const r = rows.get(k(job, windowKey));
+      if (!r) return;
+      r.state = patch.ok ? "completed" : "failed";
+      r.leaseUntil = patch.ok ? new Date(0) : patch.retryAt;
+    },
+  };
+  return { rows, store };
+}
+
+const LEASE = 5 * 60_000;
+
+async function behaviouralChecks() {
+  console.log("\n--- one due window runs exactly once ---");
+
+  /* 1. Twenty visitors land in the same second. */
+  {
+    const { store } = memStore();
+    const t0 = new Date("2026-09-11T10:00:00.000Z");
+    const results = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        claimWindow(store, "leaderboard-reset", "2026-09-11T10:00:00.000Z", {
+          now: t0,
+          leaseMs: LEASE,
+          source: "traffic",
+        })
+      )
+    );
+    const winners = results.filter((r) => r.claimed);
+    check(
+      "20 concurrent triggers on one window produce exactly 1 runner",
+      winners.length === 1,
+      `${winners.length} ticks believed they owned the window`
+    );
+    check(
+      "…and the 19 losers are cheap no-ops, not retries",
+      results.filter((r) => !r.claimed).length === 19
+    );
+
+    // It ran and sealed. Everyone who arrives later reads one row and leaves.
+    await finishWindow(store, "leaderboard-reset", "2026-09-11T10:00:00.000Z", {
+      ok: true,
+      durationMs: 12,
+      summary: "paid",
+      retryAt: new Date(t0.getTime() + 60_000),
+    });
+    const later = await claimWindow(
+      store,
+      "leaderboard-reset",
+      "2026-09-11T10:00:00.000Z",
+      { now: new Date(t0.getTime() + 3_600_000), leaseMs: LEASE, source: "traffic" }
+    );
+    check(
+      "a settled window is never re-run, even an hour later with the lease long gone",
+      !later.claimed && later.reason === "completed",
+      "a completed window reopening is a second payout"
+    );
+  }
+
+  console.log("\n--- a tick that dies halfway loses nothing and pays nothing twice ---");
+
+  /* 2. A tick claims, then the serverless instance is killed. */
+  {
+    const { store } = memStore();
+    const t0 = new Date("2026-09-11T11:00:00.000Z");
+    const first = await claimWindow(store, "leaderboard-reset", "W", {
+      now: t0,
+      leaseMs: LEASE,
+      source: "traffic",
+    });
+    check("the first tick claims the window", first.claimed);
+    // ...and is killed here. `finish` is never called.
+
+    const during = await claimWindow(store, "leaderboard-reset", "W", {
+      now: new Date(t0.getTime() + 60_000),
+      leaseMs: LEASE,
+      source: "traffic",
+    });
+    check(
+      "while the lease holds, nobody else may run the same window",
+      !during.claimed && during.reason === "held",
+      "two live runners on one window is the double-pay scenario"
+    );
+
+    const after = await claimWindow(store, "leaderboard-reset", "W", {
+      now: new Date(t0.getTime() + LEASE + 1_000),
+      leaseMs: LEASE,
+      source: "traffic",
+    });
+    check(
+      "once the lease expires the window IS picked back up — the payout is not lost",
+      after.claimed && after.takeover === true && after.attempt === 2,
+      "a dead tick that pins its window forever silently skips a prize payout"
+    );
+
+    await finishWindow(store, "leaderboard-reset", "W", {
+      ok: true,
+      durationMs: 9,
+      summary: "resumed and paid",
+      retryAt: new Date(),
+    });
+    const afterSeal = await claimWindow(store, "leaderboard-reset", "W", {
+      now: new Date(t0.getTime() + 86_400_000),
+      leaseMs: LEASE,
+      source: "traffic",
+    });
+    check(
+      "and once it seals, the takeover path can never reopen it",
+      !afterSeal.claimed && afterSeal.reason === "completed",
+      "an expired lease on a COMPLETED row must still refuse — this is the double-pay guard"
+    );
+  }
+
+  /* 3. A failure hands the window back after a backoff rather than pinning it. */
+  {
+    const { store } = memStore();
+    const t0 = new Date("2026-09-11T12:00:00.000Z");
+    await claimWindow(store, "recheck-submissions", "W", {
+      now: t0,
+      leaseMs: LEASE,
+      source: "traffic",
+    });
+    await finishWindow(store, "recheck-submissions", "W", {
+      ok: false,
+      durationMs: 3,
+      error: "boom",
+      retryAt: new Date(t0.getTime() + 60_000),
+    });
+    const tooSoon = await claimWindow(store, "recheck-submissions", "W", {
+      now: new Date(t0.getTime() + 30_000),
+      leaseMs: LEASE,
+      source: "traffic",
+    });
+    const afterBackoff = await claimWindow(store, "recheck-submissions", "W", {
+      now: new Date(t0.getTime() + 61_000),
+      leaseMs: LEASE,
+      source: "traffic",
+    });
+    check(
+      "a failed run retries after its backoff, and not before",
+      !tooSoon.claimed && afterBackoff.claimed,
+      "either it hot-loops on a broken job, or a transient failure skips the window"
+    );
+  }
+
+  console.log("\n--- the first ever run seals instead of paying ---");
+  check(
+    "the first run records the moment it went live and seals already-closed windows unpaid",
+    /lb_auto_reset_live_since/.test(cronCode) &&
+      /sealedWithoutPayout/.test(cronCode) &&
+      /completed: true,/.test(cronCode),
+    "without this, switching the scheduler on is a retroactive payout nobody authorised"
+  );
+  check(
+    "…and a quiet platform catches up on the CURRENT bucket rather than replaying history",
+    /Math\.floor\(now\.getTime\(\) \/ job\.intervalMs\)/.test(schedJobsCode) &&
+      /lastClosedWindowAnchor/.test(cronCode),
+    "replaying 48 skipped hourly buckets would ask the payout to settle windows it already sealed"
+  );
+
+  console.log(`\n${passed} passed, ${failed} failed\n`);
+  process.exit(failed === 0 ? 0 : 1);
+}
+
+void behaviouralChecks();

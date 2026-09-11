@@ -1,5 +1,11 @@
 import { cn } from "@/lib/utils";
 
+// `animate-pulse` fades a block in and out where it stands, which reads as a
+// broken element rather than as loading. `.skeleton` (globals.css) is a sweep
+// across the block — the shape people recognise as "arriving" — and it stops
+// under prefers-reduced-motion. Every loading screen in the app uses this
+// primitive, so they all change together.
+
 interface SkeletonProps {
   className?: string;
 }
@@ -7,7 +13,7 @@ interface SkeletonProps {
 export function Skeleton({ className }: SkeletonProps) {
   return (
     <div
-      className={cn("animate-pulse rounded-md bg-gray-800/60", className)}
+      className={cn("skeleton rounded-md", className)}
     />
   );
 }

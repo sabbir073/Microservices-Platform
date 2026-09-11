@@ -929,9 +929,13 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
                         Pinned
                       </span>
                     )}
+                    {/* `isPublic` is the author's audience choice, not a
+                        privacy flag — a Members-only post is fully visible to
+                        every signed-in member, and to this panel. Labelled
+                        "Private" it read as if the post were hidden. */}
                     {!p.isPublic && (
                       <span className="inline-flex items-center gap-1 ml-2 text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">
-                        Private
+                        Members only
                       </span>
                     )}
                     {p.content && (

@@ -12,6 +12,14 @@ interface Props {
 interface ArticleMetadata {
   articleUniqueKeyMismatch?: boolean;
   articleSubmittedUniqueKey?: string | null;
+  /** Buyer WRITING tasks only — see src/lib/article-originality.ts. */
+  articleOriginality?: {
+    wordCount: number;
+    maxSimilarity: number;
+    exactDuplicate: boolean;
+    repetition: number;
+    note: string;
+  };
 }
 
 export function ArticleProofPanel({ submission, task }: Props) {
@@ -20,9 +28,41 @@ export function ArticleProofPanel({ submission, task }: Props) {
   const requiredSec = task.duration ?? 0;
   const requiresKey = !!cfg?.proofRequirements?.uniqueKey;
   const keyMismatch = !!meta?.articleUniqueKeyMismatch;
+  const orig = meta?.articleOriginality ?? null;
+  const flagged = !!orig && (orig.exactDuplicate || orig.maxSimilarity >= 60);
 
   return (
     <div className="space-y-3">
+      {/* Buyer writing task: what the duplicate check found, and what it does
+          not cover. Stated on the panel rather than assumed, so nobody reads a
+          clean score as "this was not plagiarised". */}
+      {orig && (
+        <div
+          className={`rounded-lg border px-3 py-2 ${
+            flagged
+              ? "border-amber-500/40 bg-amber-500/10"
+              : "border-gray-700 bg-gray-900/50"
+          }`}
+        >
+          <p className="flex items-center gap-1.5 text-xs font-semibold text-gray-200">
+            {flagged && <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />}
+            Originality check
+          </p>
+          <p className="mt-1 text-[11px] leading-snug text-gray-400">
+            {orig.note}
+          </p>
+        </div>
+      )}
+      {cfg?.writing && (
+        <div>
+          <p className="text-xs text-gray-500 mb-1">
+            Brief (minimum {cfg.writing.minWords} words):
+          </p>
+          <p className="whitespace-pre-wrap rounded-lg border border-gray-700 bg-gray-900/50 px-3 py-2 text-xs text-gray-300">
+            {cfg.writing.brief}
+          </p>
+        </div>
+      )}
       {cfg?.links && cfg.links.length > 0 && (
         <div>
           <p className="text-xs text-gray-500 mb-1.5">Required article links:</p>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { getSetting } from "@/lib/system-settings";
 import { recordPageEvent, visitorHashFrom } from "@/lib/page-analytics";
+import { kickScheduler } from "@/lib/scheduler/run";
 
 // Cheap bot filter — skip obvious crawlers so traffic reflects real visitors.
 const BOT_RE = /bot|crawl|spider|slurp|bing|baidu|yandex|duckduck|facebookexternalhit|embedly|preview|lighthouse|headless|monitor|pingdom|uptime/i;
@@ -12,6 +13,12 @@ const BOT_RE = /bot|crawl|spider|slurp|bing|baidu|yandex|duckduck|facebookextern
 // (auth cookie, else hashed ip+ua) and never blocks navigation on failure.
 export async function POST(request: NextRequest) {
   try {
+    // Second trigger for the traffic-driven scheduler. The root layout covers
+    // rendered pages; this beacon fires on EVERY page view including ones
+    // served straight from the CDN, where no server render happens at all. It
+    // queues work for after this response and cannot slow the beacon down.
+    kickScheduler();
+
     const enabled = await getSetting<boolean>("analytics_pageviews_enabled", true);
     if (enabled === false) return new NextResponse(null, { status: 204 });
 

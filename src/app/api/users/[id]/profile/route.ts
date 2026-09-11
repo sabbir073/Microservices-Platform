@@ -193,7 +193,8 @@ export async function GET(
   const show = (key: string): boolean => visibleTo(u, key, viewerCtx);
 
   const postsCount = await prisma.post.count({
-    where: { userId: u.id, isPublic: true },
+    // Counts every post the timeline shows; `isPublic` is the audience choice.
+    where: { userId: u.id },
   });
   // Course authorship is not a User relation, so it needs its own count.
   const coursesCreated = await prisma.course.count({
