@@ -22,7 +22,7 @@ import {
 } from "@/components/user/profile/verified-badge";
 import { userDisplayId } from "@/lib/display-id";
 import { useCountries } from "@/lib/use-countries";
-import { isAdmin, PERMISSION_CATALOG, permissionLabel, permissionDescription, type UserRole } from "@/lib/rbac";
+import { PERMISSION_CATALOG, permissionLabel, permissionDescription, canAdministerStaffAccount, canAssignStaffRole, ROLE_CONFIG, roleDescription, type UserRole } from "@/lib/rbac";
 import { USER_PAGES } from "@/lib/page-visibility";
 import { FEATURES, type PackageFeatureKey } from "@/lib/features";
 import { FEATURE_BUNDLES, missingFor } from "@/lib/feature-bundles";
@@ -107,6 +107,13 @@ export interface EditUserData {
 interface UserEditFormProps {
   user: EditUserData;
   isSuperAdmin: boolean;
+  /**
+   * The signed-in admin's role. Drives the role picker through the SAME
+   * functions the API uses, so the dropdown offers exactly what the server
+   * will accept — a Manager sees the staff roles it may assign and does not
+   * see Finance Admin, Manager or Super Admin at all.
+   */
+  actorRole?: UserRole;
   /** All active plans, used to populate the plan picker. */
   plans: Array<{ id: string; slug: string; name: string }>;
   /** Active super-admin-defined custom roles, for the role dropdown. */
@@ -187,6 +194,7 @@ const PROFESSIONS = [
 export function UserEditForm({
   user,
   isSuperAdmin,
+  actorRole,
   plans,
   customRoles = [],
   packageFeatures = {},
@@ -308,8 +316,31 @@ export function UserEditForm({
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
 
-  // Non-super admins may not change a user who already holds an admin role.
-  const roleLocked = !isSuperAdmin && isAdmin(user.role as UserRole);
+  // Locked when the hierarchy says this admin may not administer this account
+  // at all. Same function as the API — the form and the server cannot disagree
+  // about who is editable, which is how a UI that offers an action the server
+  // then 403s gets built.
+  const effectiveActor: UserRole | undefined =
+    actorRole ?? (isSuperAdmin ? "SUPER_ADMIN" : undefined);
+  const roleLocked = !canAdministerStaffAccount(
+    effectiveActor,
+    user.role as UserRole
+  ).ok;
+  // The roles this admin may actually hand out, in display order.
+  const assignableRoles = (
+    [
+      "ADMIN",
+      "MANAGER",
+      "MODERATOR",
+      "SUPPORT_ADMIN",
+      "CONTENT_ADMIN",
+      "MARKETING_ADMIN",
+      "FINANCE_ADMIN",
+      "AD_MANAGER",
+      "AGENCY",
+      "SUPER_ADMIN",
+    ] as UserRole[]
+  ).filter((r) => canAssignStaffRole(effectiveActor, r).ok);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -606,9 +637,11 @@ export function UserEditForm({
               </Field>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Role">
-                  {/* Admin roles are SUPER_ADMIN-only (feature #8) — non-super
-                      admins can only set USER/TUTOR and can't touch a user who
-                      already holds an admin role. Server enforces this too. */}
+                  {/* Which staff roles are offered comes from the same
+                      canAssignStaffRole() the API enforces with: a super admin
+                      sees all of them, a manager sees the staff it administers
+                      (no Finance Admin, no Manager, no Super Admin), everyone
+                      else sees only USER/TUTOR. */}
                   <select
                     value={roleValue}
                     onChange={(e) => setRoleValue(e.target.value)}
@@ -617,18 +650,14 @@ export function UserEditForm({
                   >
                     <option value="USER">User</option>
                     <option value="TUTOR">Tutor</option>
-                    {isSuperAdmin ? (
+                    {assignableRoles.length > 0 ? (
                       <>
-                        <option value="ADMIN">Admin</option>
-                        <option value="MODERATOR">Moderator</option>
-                        <option value="SUPPORT_ADMIN">Support Admin</option>
-                        <option value="CONTENT_ADMIN">Content Admin</option>
-                        <option value="MARKETING_ADMIN">Marketing Admin</option>
-                        <option value="FINANCE_ADMIN">Finance Admin</option>
-                        <option value="AD_MANAGER">Ad Manager</option>
-                        <option value="AGENCY">Agency</option>
-                        <option value="SUPER_ADMIN">Super Admin</option>
-                        {customRoles.length > 0 && (
+                        {assignableRoles.map((r) => (
+                          <option key={r} value={r} title={roleDescription(r)}>
+                            {ROLE_CONFIG[r].label}
+                          </option>
+                        ))}
+                        {isSuperAdmin && customRoles.length > 0 && (
                           <optgroup label="Custom roles">
                             {customRoles.map((cr) => (
                               <option key={cr.id} value={`custom:${cr.id}`}>

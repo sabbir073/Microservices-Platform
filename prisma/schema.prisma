@@ -16,6 +16,10 @@ enum UserRole {
   USER
   TUTOR
   SUPER_ADMIN
+  // Staff manager — one tier below super-admin. Its job is administering the
+  // OTHER admins (create, suspend, re-role, tune permissions). It is walled off
+  // from finance entirely: see `canAdministerStaffAccount` in src/lib/rbac.ts.
+  MANAGER
   // Generic admin below super-admin; super-admin grants it powers. Also the
   // baseline enum role carried by users assigned a CustomRole.
   ADMIN

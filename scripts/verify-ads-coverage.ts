@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
+import { CATEGORY_FOR_KEY } from "../src/lib/admin-settings-catalog";
 import {
   AD_PLACEMENTS,
   PLACEMENT_SPEC,
@@ -371,9 +372,12 @@ async function main() {
     // Both ends. A settings control whose key is missing from CATEGORY_FOR_KEY
     // renders, accepts input, says "saved" and writes nothing -- which is how 44
     // of 104 controls were once dead.
+    // Read from the catalog, which is now where the map is built from, instead
+    // of the literal the form used to carry. Same guarantee: a key missing here
+    // is a control that renders, says "saved" and writes nothing.
     check(
       "the global CPC key is actually saved (present in CATEGORY_FOR_KEY)",
-      /"ads\.cpcUsd": "financial"/.test(settingsSrc)
+      CATEGORY_FOR_KEY["ads.cpcUsd"] === "financial"
     );
     const priced = await prisma.adPlacement.count({
       where: { cpcUsd: { not: null } },

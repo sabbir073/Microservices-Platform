@@ -13,14 +13,26 @@ import {
   Key,
   Check,
   Minus,
+  BookOpen,
+  ExternalLink,
+  UserCircle2,
 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow, format } from "date-fns";
-import { isSuperAdmin, type UserRole, ADMIN_ROLES, ROLE_CONFIG, ROLE_PERMISSIONS, PERMISSION_CATALOG, FINANCE_PERMISSIONS, SUPERADMIN_ONLY_PERMISSIONS } from "@/lib/rbac";
+import { isSuperAdmin, type UserRole, ADMIN_ROLES, ROLE_CONFIG, ROLE_PERMISSIONS, PERMISSION_CATALOG, FINANCE_PERMISSIONS, SUPERADMIN_ONLY_PERMISSIONS, ROLE_META, permissionLabel, permissionDescription } from "@/lib/rbac";
+import { FEATURES } from "@/lib/features";
+import { AccessCatalog } from "@/components/admin/access/access-catalog";
 import { getRolePermissionConfig, can } from "@/lib/permissions";
 import { AdminTable } from "@/components/admin/ui/admin-table";
 import { RolePermissionEditor } from "@/components/admin/access/role-permission-editor";
 import { CustomRolesManager } from "@/components/admin/access/custom-roles-manager";
+
+// Group labels for the user-facing feature bands in the catalog tab.
+const FEATURE_GROUP_LABELS: Record<string, string> = {
+  section: "App sections a customer can open",
+  creator: "Money-making capabilities you grant a customer",
+  task: "Task types a customer may publish",
+};
 
 interface PageProps {
   searchParams: Promise<{
@@ -31,12 +43,13 @@ interface PageProps {
   }>;
 }
 
-type ViewId = "admins" | "activity" | "roles";
+type ViewId = "admins" | "activity" | "roles" | "catalog";
 
 const VIEW_TABS: Array<{ id: ViewId; label: string; icon: typeof Shield }> = [
   { id: "admins", label: "Admin Accounts", icon: Users },
-  { id: "activity", label: "Activity Log", icon: Activity },
   { id: "roles", label: "Roles & Permissions", icon: Key },
+  { id: "catalog", label: "What Everything Does", icon: BookOpen },
+  { id: "activity", label: "Activity Log", icon: Activity },
 ];
 
 export default async function AdminAccessPage({ searchParams }: PageProps) {
@@ -194,20 +207,42 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">Admin Access Control</h1>
+          <h1 className="text-2xl font-bold text-white">Access Control</h1>
           <p className="text-slate-400 text-sm mt-1">
-            Manage admin accounts, roles, and audit history
+            One place for staff roles, admin permissions, customer features and
+            the reports on who changed what.
           </p>
         </div>
-        {canManage && view === "admins" && (
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* The two reports that already exist, reachable from here rather
+              than only from the sidebar — the owner asked for both to be
+              findable from the access page. */}
           <Link
-            href="/admin/access/invite"
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            href="/admin/admin-activity"
+            className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-700 text-slate-300 rounded-lg hover:text-white hover:border-slate-600 transition-colors text-sm"
           >
-            <UserPlus className="w-4 h-4" />
-            Invite Admin
+            <Shield className="w-4 h-4" />
+            Admin report
+            <ExternalLink className="w-3 h-3 opacity-60" />
           </Link>
-        )}
+          <Link
+            href="/admin/user-activity"
+            className="inline-flex items-center gap-1.5 px-3 py-2 border border-slate-700 text-slate-300 rounded-lg hover:text-white hover:border-slate-600 transition-colors text-sm"
+          >
+            <UserCircle2 className="w-4 h-4" />
+            User report
+            <ExternalLink className="w-3 h-3 opacity-60" />
+          </Link>
+          {canManage && view === "admins" && (
+            <Link
+              href="/admin/access/invite"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <UserPlus className="w-4 h-4" />
+              Invite Admin
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* 4 Stats per spec */}
@@ -354,6 +389,33 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
         </div>
       )}
 
+      {/* WHAT EVERYTHING DOES — the searchable, plain-language reference across
+          BOTH access systems. It explains; it does not edit. Editing staff
+          access happens on the Roles tab and on each staff account; editing a
+          customer's capabilities happens on that customer's user record. The
+          two enforcement paths stay separate — only the explanation is
+          unified, which is what the owner actually asked for. */}
+      {view === "catalog" && (
+        <AccessCatalog
+          permissions={PERMISSION_CATALOG.flatMap((c) =>
+            c.permissions.map((p) => ({
+              key: p,
+              label: permissionLabel(p),
+              description:
+                permissionDescription(p) ??
+                "No description yet — add one in PERMISSION_META (src/lib/rbac.ts).",
+              group: c.label,
+            }))
+          )}
+          features={FEATURES.map((f) => ({
+            key: f.key,
+            label: f.label,
+            description: f.description,
+            group: FEATURE_GROUP_LABELS[f.group] ?? f.group,
+          }))}
+        />
+      )}
+
       {/* ROLES & PERMISSIONS TAB — super-admin editable (module toggles + advanced) */}
       {view === "roles" &&
         (() => {
@@ -389,6 +451,54 @@ export default async function AdminAccessPage({ searchParams }: PageProps) {
           );
           return (
             <div className="space-y-6">
+              {/* Every role, in one list, with a line saying what it does.
+                  Employees first, then customers — the owner's line between
+                  "people who work here" and "people who use it". */}
+              <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                <header className="px-4 py-3 border-b border-slate-800">
+                  <h3 className="text-sm font-semibold text-white">
+                    Every role, and what it actually does
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    The violet block is staff — platform employees. The grey
+                    block is clients — the customers who use the platform.
+                  </p>
+                </header>
+                {(["staff", "client"] as const).map((kind) => (
+                  <div key={kind} className="px-4 py-3 border-b border-slate-800 last:border-b-0">
+                    <p className="text-[11px] uppercase tracking-wide font-medium mb-2 flex items-center gap-1.5 text-slate-400">
+                      {kind === "staff" ? (
+                        <>
+                          <Shield className="w-3.5 h-3.5 text-violet-300" />
+                          Platform employees
+                        </>
+                      ) : (
+                        <>
+                          <UserCircle2 className="w-3.5 h-3.5 text-slate-400" />
+                          Platform clients
+                        </>
+                      )}
+                    </p>
+                    <ul className="space-y-2">
+                      {(Object.keys(ROLE_META) as UserRole[])
+                        .filter((r) => ROLE_META[r].kind === kind)
+                        .map((r) => (
+                          <li key={r} className="flex flex-col sm:flex-row sm:gap-4">
+                            <span
+                              className={`shrink-0 sm:w-40 self-start px-2 py-0.5 rounded-md text-xs font-medium ${ROLE_CONFIG[r].bgColor} ${ROLE_CONFIG[r].color}`}
+                            >
+                              {ROLE_CONFIG[r].label}
+                            </span>
+                            <p className="text-sm text-slate-400 flex-1 mt-1 sm:mt-0">
+                              {ROLE_META[r].description}
+                            </p>
+                          </li>
+                        ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
               <RolePermissionEditor
                 editableRoles={editableRoles}
                 categories={editorCategories}

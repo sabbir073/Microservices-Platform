@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
-import { type UserRole } from "@/lib/rbac";
+import { canAdministerStaffAccount, type UserRole } from "@/lib/rbac";
 import { z } from "zod";
 
 const banSchema = z.object({
@@ -49,12 +49,16 @@ export async function POST(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Prevent banning admins unless you're super admin
-    if (user.role !== "USER" && adminRole !== "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Only super admin can ban admin accounts" },
-        { status: 403 }
-      );
+    // Suspending an account is controlling it, so it runs the same hierarchy
+    // check as editing or deleting it: a super admin may ban anyone below them,
+    // a manager may ban the staff it administers (never a finance admin, never
+    // another manager), and everyone else is limited to customers.
+    const banCheck = canAdministerStaffAccount(
+      adminRole,
+      user.role as UserRole
+    );
+    if (!banCheck.ok) {
+      return NextResponse.json({ error: banCheck.reason }, { status: 403 });
     }
 
     // Prevent banning super admins

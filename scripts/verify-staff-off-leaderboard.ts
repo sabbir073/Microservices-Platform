@@ -16,6 +16,23 @@ import path from "path";
  * this suite fail, which is the whole point.
  */
 
+import {
+  ROLE_PERMISSIONS,
+  ALL_PERMISSIONS,
+  FINANCE_PERMISSIONS,
+  MANAGER_FORBIDDEN_ROLES,
+  PERMISSION_META,
+  ROLE_META,
+  ADMIN_ROLES,
+  stripProtectedForRole,
+  canAssignStaffRole,
+  canAdministerStaffAccount,
+  type Permission,
+  type UserRole,
+} from "../src/lib/rbac";
+import { isStaffRole, accountTypeOf } from "../src/lib/staff";
+import { FEATURES } from "../src/lib/features";
+
 const root = path.resolve(__dirname, "..");
 const read = (p: string) => fs.readFileSync(path.join(root, p), "utf8");
 
@@ -47,6 +64,7 @@ check(
   "…and ADMIN_ROLES still covers every admin-panel role",
   [
     "SUPER_ADMIN",
+    "MANAGER",
     "ADMIN",
     "FINANCE_ADMIN",
     "CONTENT_ADMIN",
@@ -210,6 +228,187 @@ check(
   "the PRIZE-PAYING reset uses the same function as the board",
   /metric === "POINTS_EARNED"[\s\S]{0,900}topTaskEarners\(POOL\)/.test(resetCode),
   "a board that ranks one way and pays another is worse than either"
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// RBAC: the Manager tier, and the one definition of "staff"
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// Unlike the ranking checks above, these are BEHAVIOURAL — the functions are
+// pure and client-safe, so they are called for real rather than grepped. A
+// regex can be satisfied by a comment; `canAssignStaffRole("MANAGER",
+// "SUPER_ADMIN")` returning ok cannot.
+//
+// The three that must never go green-to-red:
+//   1. a Manager cannot reach finance
+//   2. a Manager cannot escalate to super admin
+//   3. staff/client classification has exactly one definition
+
+console.log("\n--- the Manager cannot reach finance ---");
+
+const managerPerms = new Set(ROLE_PERMISSIONS.MANAGER);
+check(
+  "MANAGER's default set contains no finance permission",
+  FINANCE_PERMISSIONS.every((p) => !managerPerms.has(p)),
+  FINANCE_PERMISSIONS.filter((p) => managerPerms.has(p)).join(", ")
+);
+check(
+  "MANAGER is broad otherwise (it is a real tier, not a stub)",
+  managerPerms.size === ALL_PERMISSIONS.length - FINANCE_PERMISSIONS.length,
+  `${managerPerms.size} of ${ALL_PERMISSIONS.length}`
+);
+check(
+  "MANAGER keeps admins.manage — administering staff IS the role",
+  managerPerms.has("admins.manage") && managerPerms.has("admin.activity")
+);
+
+// The attack: a manager grants themselves finance via the role config or a
+// per-user override. The write may land; the resolve must not honour it.
+for (const perm of FINANCE_PERMISSIONS) {
+  const smuggled = new Set<Permission>([perm, "users.view"]);
+  stripProtectedForRole(smuggled, "MANAGER");
+  check(
+    `a MANAGER granted "${perm}" still resolves without it`,
+    !smuggled.has(perm) && smuggled.has("users.view"),
+    "stripProtectedForRole runs last in getEffectivePermissions — if this fails, a manager can self-grant finance"
+  );
+}
+check(
+  "…and FINANCE_ADMIN still keeps finance (the strip is not a blanket ban)",
+  stripProtectedForRole(new Set<Permission>(["finance.view"]), "FINANCE_ADMIN").has(
+    "finance.view"
+  )
+);
+check(
+  "…and SUPER_ADMIN still keeps finance",
+  stripProtectedForRole(new Set<Permission>(["finance.view"]), "SUPER_ADMIN").has(
+    "finance.view"
+  )
+);
+
+check(
+  "a MANAGER cannot promote anyone to FINANCE_ADMIN",
+  !canAssignStaffRole("MANAGER", "FINANCE_ADMIN").ok
+);
+check(
+  "a MANAGER cannot edit a FINANCE_ADMIN account (role, password or anything else)",
+  !canAdministerStaffAccount("MANAGER", "FINANCE_ADMIN").ok
+);
+check(
+  "a MANAGER cannot remove a FINANCE_ADMIN",
+  !canAdministerStaffAccount("MANAGER", "FINANCE_ADMIN").ok,
+  "delete runs the same check as edit — see the DELETE handler"
+);
+
+console.log("\n--- the Manager cannot escalate ---");
+
+check(
+  "a MANAGER cannot promote anyone (including themselves) to SUPER_ADMIN",
+  !canAssignStaffRole("MANAGER", "SUPER_ADMIN").ok
+);
+check(
+  "a MANAGER cannot edit a SUPER_ADMIN account",
+  !canAdministerStaffAccount("MANAGER", "SUPER_ADMIN").ok
+);
+check(
+  "a MANAGER cannot mint another MANAGER",
+  !canAssignStaffRole("MANAGER", "MANAGER").ok
+);
+check(
+  "a MANAGER cannot edit another MANAGER",
+  !canAdministerStaffAccount("MANAGER", "MANAGER").ok
+);
+check(
+  "MANAGER_FORBIDDEN_ROLES covers exactly super/finance/manager",
+  ["SUPER_ADMIN", "FINANCE_ADMIN", "MANAGER"].every((r) =>
+    MANAGER_FORBIDDEN_ROLES.includes(r as UserRole)
+  ) && MANAGER_FORBIDDEN_ROLES.length === 3
+);
+check(
+  "…but a MANAGER CAN still administer the staff it is meant to (it is not inert)",
+  ["ADMIN", "MODERATOR", "SUPPORT_ADMIN", "CONTENT_ADMIN", "MARKETING_ADMIN", "AD_MANAGER"].every(
+    (r) =>
+      canAdministerStaffAccount("MANAGER", r as UserRole).ok &&
+      canAssignStaffRole("MANAGER", r as UserRole).ok
+  )
+);
+// The hole this closed: role changes were gated to super admin, but password
+// and email were not, on every admin account below super.
+check(
+  "a non-manager admin cannot touch ANY staff account, not just a super admin",
+  ["FINANCE_ADMIN", "MODERATOR", "ADMIN", "MANAGER"].every(
+    (r) => !canAdministerStaffAccount("SUPPORT_ADMIN", r as UserRole).ok
+  ),
+  "a SUPPORT_ADMIN who can reset the finance admin's password does not need to escalate their own role"
+);
+check(
+  "…but any users.edit admin can still edit ordinary customers",
+  canAdministerStaffAccount("SUPPORT_ADMIN", "USER").ok &&
+    canAdministerStaffAccount("SUPPORT_ADMIN", "TUTOR").ok &&
+    canAdministerStaffAccount("SUPPORT_ADMIN", "AGENCY").ok
+);
+check(
+  "a SUPER_ADMIN is still unrestricted",
+  canAdministerStaffAccount("SUPER_ADMIN", "FINANCE_ADMIN").ok &&
+    canAssignStaffRole("SUPER_ADMIN", "SUPER_ADMIN").ok
+);
+
+console.log("\n--- exactly ONE definition of staff vs client ---");
+
+check(
+  "MANAGER is in ADMIN_ROLES, so it is staff without anyone saying so twice",
+  isStaffRole("MANAGER") && ADMIN_ROLES.includes("MANAGER")
+);
+check(
+  "accountTypeOf agrees with isStaffRole on every role in the enum",
+  (Object.keys(ROLE_PERMISSIONS) as UserRole[]).every(
+    (r) => (accountTypeOf(r) === "staff") === isStaffRole(r)
+  )
+);
+check(
+  "every admin-panel role classifies as staff; TUTOR/AGENCY/USER as client",
+  ADMIN_ROLES.every((r) => accountTypeOf(r) === "staff") &&
+    ["USER", "TUTOR", "AGENCY"].every((r) => accountTypeOf(r) === "client")
+);
+check(
+  "no denormalised isStaff column on User — a second definition would drift",
+  !/\n\s+isStaff\s+Boolean/.test(read("prisma/schema.prisma")),
+  "staff-ness is derived from the role, which is already on every row we load"
+);
+check(
+  "the badge surfaces call accountTypeOf() instead of re-listing the roles",
+  ["src/components/admin/users-table-client.tsx", "src/app/admin/users/[id]/page.tsx"].every(
+    (f) =>
+      /accountTypeOf\(/.test(read(f)) &&
+      !/"SUPER_ADMIN"[\s\S]{0,200}"FINANCE_ADMIN"/.test(read(f))
+  )
+);
+
+console.log("\n--- every permission and feature is explained ---");
+
+check(
+  "every permission has a one-line plain-language description",
+  ALL_PERMISSIONS.every((p) => !!PERMISSION_META[p]?.description),
+  ALL_PERMISSIONS.filter((p) => !PERMISSION_META[p]?.description).join(", ")
+);
+check(
+  "every user-facing feature has one too",
+  FEATURES.every((f) => !!f.description),
+  FEATURES.filter((f) => !f.description).map((f) => f.key).join(", ")
+);
+check(
+  "every role has one",
+  (Object.keys(ROLE_PERMISSIONS) as UserRole[]).every(
+    (r) => !!ROLE_META[r]?.description
+  )
+);
+check(
+  "the advertiser FEATURE and the AD_MANAGER ROLE are explicitly distinguished",
+  /advertiser/i.test(ROLE_META.AD_MANAGER.description) &&
+    /Ad Manager/i.test(
+      FEATURES.find((f) => f.key === "advertiser")?.description ?? ""
+    ),
+  "granting AD_MANAGER to a buyer hands them every advertiser's campaigns — the page must say so on both sides"
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

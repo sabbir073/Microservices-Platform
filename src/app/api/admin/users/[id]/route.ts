@@ -3,7 +3,15 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
-import { ADMIN_ROLES, parsePermissionOverrides, type UserRole } from "@/lib/rbac";
+import {
+  parsePermissionOverrides,
+  canAdministerStaffAccount,
+  canAssignStaffRole,
+  isFinancePermission,
+  SUPERADMIN_ONLY_PERMISSIONS,
+  type Permission,
+  type UserRole,
+} from "@/lib/rbac";
 import { TransactionType } from "@/generated/prisma/client";
 import { parseFeatureOverrides } from "@/lib/packages";
 import { recordTransaction } from "@/lib/ledger";
@@ -96,6 +104,7 @@ const updateUserSchema = z.object({
     "USER",
     "TUTOR",
     "SUPER_ADMIN",
+    "MANAGER",
     "ADMIN",
     "FINANCE_ADMIN",
     "CONTENT_ADMIN",
@@ -196,13 +205,23 @@ export async function PATCH(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Hard invariant: only a super admin may modify a super admin account
-    // (any field — status, password, balance, role, etc.).
-    if (existingUser.role === "SUPER_ADMIN" && adminRole !== "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Only a super admin can modify a super admin account" },
-        { status: 403 }
-      );
+    // ── Staff-account invariant (target side) ──
+    // Who may touch THIS account at all — any field: status, password, email,
+    // balance, role, overrides. Not just the role field.
+    //
+    // The hole this replaces: the old check only refused SUPER_ADMIN targets.
+    // Role changes were separately gated to super admin, so it LOOKED closed —
+    // but `password` (line ~308) and `email` were still writable on any other
+    // admin. A SUPPORT_ADMIN with `users.edit` could reset the FINANCE_ADMIN's
+    // password and sign in as them, reaching every finance permission without
+    // ever changing their own role. Gating the role field alone is not a
+    // hierarchy; gating the whole account is.
+    const targetCheck = canAdministerStaffAccount(
+      adminRole,
+      existingUser.role as UserRole
+    );
+    if (!targetCheck.ok) {
+      return NextResponse.json({ error: targetCheck.reason }, { status: 403 });
     }
 
     // Assigning or clearing a custom role is an admin-role change → super-admin
@@ -235,28 +254,22 @@ export async function PATCH(
       }
     }
 
-    // Admin-role changes are SUPER_ADMIN-only. Role management was consolidated
-    // here from the standalone /admin/access editor (feature #8); preserve that
-    // page's stricter guard so a non-super `users.edit` admin can't grant or
-    // revoke ANY admin role (not just SUPER_ADMIN).
-    if (
-      data.role !== undefined &&
-      data.role !== existingUser.role &&
-      (ADMIN_ROLES.includes(data.role) || ADMIN_ROLES.includes(existingUser.role)) &&
-      adminRole !== "SUPER_ADMIN"
-    ) {
-      return NextResponse.json(
-        { error: "Only a super admin can change admin roles" },
-        { status: 403 }
-      );
-    }
-
-    // Check if changing role to super admin (only super admin can do this)
-    if (data.role === "SUPER_ADMIN" && adminRole !== "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Only super admin can assign super admin role" },
-        { status: 403 }
-      );
+    // ── Staff-role invariant (assignment side) ──
+    // A role change has two sides and both must pass. The target check above
+    // already refused editing a finance admin at all; this one refuses
+    // PROMOTING anybody INTO finance admin, manager or super admin.
+    //
+    // Concretely, for a MANAGER actor this is what blocks:
+    //   - promoting themselves or anyone else to FINANCE_ADMIN
+    //   - promoting themselves or anyone else to SUPER_ADMIN (escalation above
+    //     their own tier — the classic hole)
+    //   - minting a second MANAGER
+    // Every other admin role remains assignable, which is the Manager's job.
+    if (data.role !== undefined && data.role !== existingUser.role) {
+      const assignCheck = canAssignStaffRole(adminRole, data.role as UserRole);
+      if (!assignCheck.ok) {
+        return NextResponse.json({ error: assignCheck.reason }, { status: 403 });
+      }
     }
 
     // Check email uniqueness if changing email
@@ -342,19 +355,38 @@ export async function PATCH(
         }
       }
     }
-    // Per-user RBAC permission overrides — SUPER_ADMIN only (same gate as admin
-    // role changes). Deny/grant individual admin permissions on top of the role.
+    // Per-user RBAC permission overrides — SUPER_ADMIN, or a MANAGER acting on
+    // an account it is allowed to administer (checked above). Deny/grant
+    // individual admin permissions on top of the role.
     if (data.permissionOverrides !== undefined) {
-      if (adminRole !== "SUPER_ADMIN") {
+      if (adminRole !== "SUPER_ADMIN" && adminRole !== "MANAGER") {
         return NextResponse.json(
-          { error: "Only a super admin can edit permissions" },
+          { error: "Only a super admin or manager can edit permissions" },
           { status: 403 }
         );
       }
-      const po =
+      let po =
         data.permissionOverrides === null
           ? {}
           : parsePermissionOverrides(data.permissionOverrides);
+      // A manager may not hand out money permissions — not to someone else and
+      // (since a manager can be the target of their own edit) not to themselves.
+      // Dropped rather than rejected: the manager sees the other grants apply
+      // and the finance ones simply are not there, which is the truth.
+      //
+      // This is belt-and-braces. Even if it were bypassed, a granted finance
+      // permission dies in `stripProtectedForRole` at resolve time for every
+      // role except SUPER_ADMIN and FINANCE_ADMIN — and a manager can never
+      // make anyone a FINANCE_ADMIN (see the assignment check above).
+      if (adminRole === "MANAGER") {
+        po = Object.fromEntries(
+          Object.entries(po).filter(
+            ([perm]) =>
+              !isFinancePermission(perm as Permission) &&
+              !SUPERADMIN_ONLY_PERMISSIONS.includes(perm as Permission)
+          )
+        );
+      }
       updateData.permissionOverrides = Object.keys(po).length ? po : null;
     }
     if (data.pageOverrides !== undefined) {
@@ -554,7 +586,7 @@ export async function DELETE(
     }
 
     const adminRole = session.user.role as UserRole | undefined;
-    if (adminRole !== "SUPER_ADMIN") {
+    if (adminRole !== "SUPER_ADMIN" && adminRole !== "MANAGER") {
       return NextResponse.json({ error: "Only super admin can delete users" }, { status: 403 });
     }
 
@@ -569,12 +601,13 @@ export async function DELETE(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Prevent deleting super admins
-    if (user.role === "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Cannot delete super admin accounts" },
-        { status: 400 }
-      );
+    // Removal is the fourth way to control an account, so it runs the same
+    // hierarchy check as editing it. A manager removing a finance admin would
+    // be "a manager cannot reach finance" defeated by a different verb — the
+    // check refuses it, and refuses removing a super admin or another manager.
+    const delCheck = canAdministerStaffAccount(adminRole, user.role as UserRole);
+    if (!delCheck.ok) {
+      return NextResponse.json({ error: delCheck.reason }, { status: 403 });
     }
 
     // Soft delete by setting status to BANNED and anonymizing data

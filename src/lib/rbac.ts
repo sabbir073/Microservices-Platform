@@ -7,6 +7,8 @@ export type UserRole =
   | "USER"
   | "TUTOR"
   | "SUPER_ADMIN"
+  // Staff manager — one tier below super-admin, whose job is the other admins.
+  | "MANAGER"
   // Generic admin below super-admin; also the baseline role of custom-role users.
   | "ADMIN"
   | "FINANCE_ADMIN"
@@ -23,6 +25,7 @@ export type UserRole =
 // AGENCY is intentionally excluded — it is a user-side advertiser console.
 export const ADMIN_ROLES: UserRole[] = [
   "SUPER_ADMIN",
+  "MANAGER",
   "ADMIN",
   "FINANCE_ADMIN",
   "CONTENT_ADMIN",
@@ -35,6 +38,7 @@ export const ADMIN_ROLES: UserRole[] = [
 // String array version for client components
 export const ADMIN_ROLE_STRINGS = [
   "SUPER_ADMIN",
+  "MANAGER",
   "ADMIN",
   "FINANCE_ADMIN",
   "CONTENT_ADMIN",
@@ -379,6 +383,29 @@ export const ALL_PERMISSIONS: Permission[] = PERMISSION_CATALOG.flatMap(
   (c) => c.permissions
 );
 
+// ── Protected capabilities (defined here, ABOVE the matrix, because MANAGER's
+// default set is derived by subtracting them rather than hand-listed) ──
+// FINANCE is grantable ONLY to SUPER_ADMIN + the built-in FINANCE_ADMIN role.
+// `stripProtectedForRole` (below) is the hard backstop applied in the
+// effective-permission resolver so a mis-saved config/override can never leak
+// these to a lower admin, a MANAGER, or a custom role.
+export const FINANCE_PERMISSIONS: Permission[] = [
+  "finance.view",
+  "withdrawals.view", "withdrawals.process", "withdrawals.approve", "withdrawals.reject",
+  "payment_methods.view", "payment_methods.manage",
+  "packages.view", "packages.edit",
+  "referrals.view", "referrals.configure",
+];
+
+// admins.manage (editing roles / custom roles / per-user overrides) and
+// admin.activity are held by SUPER_ADMIN and MANAGER only — administering the
+// other staff is precisely the MANAGER's job, so it is not "super-only" any
+// more; it is "super + manager". Every other role still loses both.
+export const SUPERADMIN_ONLY_PERMISSIONS: Permission[] = ["admins.manage", "admin.activity"];
+
+const FINANCE_SET = new Set<Permission>(FINANCE_PERMISSIONS);
+const SUPERADMIN_ONLY_SET = new Set<Permission>(SUPERADMIN_ONLY_PERMISSIONS);
+
 // Permission matrix based on admin_oo.md / PROTOTYPE_ADMIN.md
 export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   USER: [], // No admin permissions
@@ -395,6 +422,23 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   // Full access to EVERYTHING — derived from the catalog so it can never fall
   // out of sync as new permissions are added.
   SUPER_ADMIN: [...ALL_PERMISSIONS],
+
+  /**
+   * Staff manager — one tier below super-admin. Its job is the OTHER admins:
+   * create them, suspend them, change their roles, tune their permissions,
+   * and read the admin activity log to see what they did.
+   *
+   * Derived as "everything except money" rather than hand-listed, so a new
+   * permission added to the catalog reaches the Manager automatically — the
+   * Manager is defined by what it CANNOT touch, not by a list that rots.
+   *
+   * The subtraction is the whole point: a Manager has no finance permission
+   * here, `stripProtectedForRole` removes any that a mis-saved role config or
+   * per-user override tries to add back, and `canAdministerStaffAccount`
+   * refuses to let a Manager near a FINANCE_ADMIN account. Three layers,
+   * because only the last one is visible in the UI.
+   */
+  MANAGER: ALL_PERMISSIONS.filter((p) => !FINANCE_PERMISSIONS.includes(p)),
 
   // Generic admin — broad by default, but NEVER finance and NEVER admins.manage
   // (super admin tunes it down further via the editor; the resolver also strips
@@ -522,23 +566,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
 };
 
-// ── Protected capabilities (super-admin-only, enforced everywhere) ──
-// FINANCE is grantable ONLY to SUPER_ADMIN + the built-in FINANCE_ADMIN role.
-// admins.manage (editing roles / custom roles / per-user overrides) is
-// SUPER_ADMIN-only. `stripProtectedForRole` is the hard backstop applied in the
-// effective-permission resolver so a mis-saved config/override can never leak
-// these to a lower admin or custom role.
-export const FINANCE_PERMISSIONS: Permission[] = [
-  "finance.view",
-  "withdrawals.view", "withdrawals.process", "withdrawals.approve", "withdrawals.reject",
-  "payment_methods.view", "payment_methods.manage",
-  "packages.view", "packages.edit",
-  "referrals.view", "referrals.configure",
-];
-export const SUPERADMIN_ONLY_PERMISSIONS: Permission[] = ["admins.manage", "admin.activity"];
-
-const FINANCE_SET = new Set<Permission>(FINANCE_PERMISSIONS);
-const SUPERADMIN_ONLY_SET = new Set<Permission>(SUPERADMIN_ONLY_PERMISSIONS);
+// (FINANCE_PERMISSIONS / SUPERADMIN_ONLY_PERMISSIONS are declared above the
+// matrix — MANAGER's default set is ALL_PERMISSIONS minus the finance list.)
 
 /** True if a permission is finance-scoped (only SUPER_ADMIN + FINANCE_ADMIN). */
 export function isFinancePermission(p: Permission): boolean {
@@ -546,20 +575,196 @@ export function isFinancePermission(p: Permission): boolean {
 }
 
 /**
- * Remove protected capabilities a role may never hold. SUPER_ADMIN keeps
- * everything; FINANCE_ADMIN keeps finance; everyone else loses finance +
- * admins.manage. Mutates and returns the given set.
+ * Remove protected capabilities a role may never hold. Mutates and returns the
+ * given set. This runs at the END of `getEffectivePermissions`, i.e. AFTER the
+ * runtime role config and after the per-user grant/deny overrides, which is the
+ * only position where it is actually a backstop rather than a suggestion.
+ *
+ *   SUPER_ADMIN    — keeps everything.
+ *   MANAGER        — keeps staff administration (admins.manage, admin.activity),
+ *                    loses finance unconditionally.
+ *   FINANCE_ADMIN  — keeps finance, loses staff administration.
+ *   everyone else  — loses both.
+ *
+ * ── The attack this is written against ──
+ * A Manager must not be able to grant THEMSELVES finance access. They hold
+ * `admins.manage`, so they can open the role editor and the per-user override
+ * panel and tick `finance.view` / `withdrawals.approve` on their own account.
+ * That write may even succeed. It changes nothing: the permission is stripped
+ * here on every single resolve, so the effective set a `can()` call sees never
+ * contains it. There is no ordering, no cache, and no override shape that gets
+ * a finance permission into a MANAGER's effective set — the deletion is
+ * unconditional and last.
+ *
+ * The three sibling attacks (a Manager promoting someone to FINANCE_ADMIN,
+ * editing a finance admin's roles, or deleting/suspending a finance admin) are
+ * about a DIFFERENT account, so they cannot be answered here — this function
+ * only sees the actor. They are enforced by `canAdministerStaffAccount` /
+ * `canAssignStaffRole` below, which every staff-mutating route calls.
  */
 export function stripProtectedForRole(
   perms: Set<Permission>,
   role: UserRole | undefined
 ): Set<Permission> {
   if (role === "SUPER_ADMIN") return perms;
-  for (const p of SUPERADMIN_ONLY_SET) perms.delete(p);
+  // Staff administration: super admin and manager only.
+  if (role !== "MANAGER") {
+    for (const p of SUPERADMIN_ONLY_SET) perms.delete(p);
+  }
+  // Money: super admin and the built-in finance admin only. MANAGER is
+  // deliberately NOT an exception here — that is its defining limit.
   if (role !== "FINANCE_ADMIN") {
     for (const p of FINANCE_SET) perms.delete(p);
   }
   return perms;
+}
+
+// ───────────────────────── Staff administration hierarchy ─────────────────────
+// Who may administer whose account. This is the target-side half of the rules
+// (`stripProtectedForRole` is the actor-side half). Both API routes that mutate
+// a staff account call these; nothing here is UI-only.
+
+/**
+ * Roles a MANAGER may administer and assign.
+ *
+ * Written as an explicit allow-list, not "everything except X". A deny-list
+ * would silently admit any role added to the enum later — which is exactly how
+ * a finance-adjacent role would end up manageable by a Manager six months from
+ * now with nobody noticing.
+ */
+export const MANAGER_MANAGEABLE_ROLES: UserRole[] = [
+  "USER",
+  "TUTOR",
+  "AGENCY",
+  "ADMIN",
+  "CONTENT_ADMIN",
+  "SUPPORT_ADMIN",
+  "MARKETING_ADMIN",
+  "MODERATOR",
+  "AD_MANAGER",
+];
+
+const MANAGER_MANAGEABLE_SET = new Set<UserRole>(MANAGER_MANAGEABLE_ROLES);
+
+/**
+ * Roles NO Manager may touch, in either direction (as a target, or as the role
+ * being assigned). Kept next to the allow-list so the reason is readable:
+ *
+ *   SUPER_ADMIN   — a Manager promoting someone to super admin, or editing a
+ *                   super admin, is a straight privilege escalation: the
+ *                   Manager would then control an account that outranks it.
+ *   FINANCE_ADMIN — the owner's explicit rule. A Manager must not be able to
+ *                   promote someone to finance admin, edit a finance admin's
+ *                   roles, or remove a finance admin, because any of the three
+ *                   is a way to end up controlling the money without ever
+ *                   holding a finance permission themselves.
+ *   MANAGER       — peer editing. Two Managers who can re-role each other can
+ *                   demote each other, and a Manager who can create Managers
+ *                   can build a majority. Only a super admin makes a Manager.
+ */
+export const MANAGER_FORBIDDEN_ROLES: UserRole[] = [
+  "SUPER_ADMIN",
+  "FINANCE_ADMIN",
+  "MANAGER",
+];
+
+export type StaffActionCheck = { ok: true } | { ok: false; reason: string };
+
+/**
+ * May `actorRole` modify an account that currently holds `targetRole`?
+ *
+ * "Modify" is deliberately broad — role, status, password, email, balance,
+ * permission overrides, deletion. Restricting only the ROLE field is the
+ * classic mistake: leaving password and email writable on a higher-privileged
+ * account means the attacker does not need to escalate their own role at all,
+ * they just reset the finance admin's password and sign in as them.
+ */
+export function canAdministerStaffAccount(
+  actorRole: UserRole | undefined,
+  targetRole: UserRole | undefined
+): StaffActionCheck {
+  if (actorRole === "SUPER_ADMIN") return { ok: true };
+
+  const target = (targetRole ?? "USER") as UserRole;
+
+  if (actorRole === "MANAGER") {
+    if (target === "FINANCE_ADMIN") {
+      return {
+        ok: false,
+        reason:
+          "A manager cannot modify a finance admin account. Only a super admin can.",
+      };
+    }
+    if (target === "SUPER_ADMIN") {
+      return { ok: false, reason: "Only a super admin can modify a super admin account" };
+    }
+    if (target === "MANAGER") {
+      return {
+        ok: false,
+        reason: "Only a super admin can modify another manager account.",
+      };
+    }
+    return MANAGER_MANAGEABLE_SET.has(target)
+      ? { ok: true }
+      : { ok: false, reason: `A manager cannot modify a ${target} account.` };
+  }
+
+  // Every other role: may not touch ANY staff account, only customers.
+  if (isStaffRoleName(target)) {
+    return {
+      ok: false,
+      reason: "Only a super admin or manager can modify a staff account",
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * May `actorRole` set someone's role TO `nextRole`?
+ *
+ * Separate from the check above because a role change has two sides and both
+ * have to pass: a Manager demoting a finance admin fails the target check, and
+ * a Manager promoting a plain user to finance admin fails this one.
+ */
+export function canAssignStaffRole(
+  actorRole: UserRole | undefined,
+  nextRole: UserRole | undefined
+): StaffActionCheck {
+  if (actorRole === "SUPER_ADMIN") return { ok: true };
+  if (!nextRole) return { ok: true };
+
+  if (actorRole === "MANAGER") {
+    if (MANAGER_FORBIDDEN_ROLES.includes(nextRole)) {
+      return {
+        ok: false,
+        reason:
+          nextRole === "FINANCE_ADMIN"
+            ? "A manager cannot promote anyone to finance admin. Only a super admin can."
+            : `A manager cannot assign the ${nextRole} role. Only a super admin can.`,
+      };
+    }
+    return MANAGER_MANAGEABLE_SET.has(nextRole)
+      ? { ok: true }
+      : { ok: false, reason: `A manager cannot assign the ${nextRole} role.` };
+  }
+
+  if (isStaffRoleName(nextRole)) {
+    return { ok: false, reason: "Only a super admin can change admin roles" };
+  }
+  return { ok: true };
+}
+
+/**
+ * Local copy of the staff test, used only by the two functions above.
+ *
+ * `src/lib/staff.ts` is the AUTHORITATIVE definition and derives from
+ * `ADMIN_ROLES` — but it imports from this file, so calling it here would be a
+ * cycle. This reads the same `ADMIN_ROLES` array that `STAFF_ROLES` is spread
+ * from, so the two cannot disagree: there is still exactly one list.
+ * `scripts/verify-staff-off-leaderboard.ts` asserts that.
+ */
+function isStaffRoleName(role: UserRole | undefined): boolean {
+  return !!role && ADMIN_ROLES.includes(role);
 }
 
 // `ALL_PERMISSIONS` is defined above (derived from PERMISSION_CATALOG — the
@@ -1263,6 +1468,7 @@ export const ROLE_CONFIG: Record<UserRole, { label: string; color: string; bgCol
   USER: { label: "User", color: "text-gray-400", bgColor: "bg-gray-500/10" },
   TUTOR: { label: "Tutor", color: "text-teal-300", bgColor: "bg-teal-500/10" },
   SUPER_ADMIN: { label: "Super Admin", color: "text-purple-400", bgColor: "bg-purple-500/10" },
+  MANAGER: { label: "Manager", color: "text-violet-300", bgColor: "bg-violet-500/10" },
   ADMIN: { label: "Admin", color: "text-indigo-300", bgColor: "bg-indigo-500/10" },
   FINANCE_ADMIN: { label: "Finance Admin", color: "text-emerald-400", bgColor: "bg-emerald-500/10" },
   CONTENT_ADMIN: { label: "Content Admin", color: "text-blue-400", bgColor: "bg-blue-500/10" },
@@ -1272,3 +1478,81 @@ export const ROLE_CONFIG: Record<UserRole, { label: string; color: string; bgCol
   AGENCY: { label: "Agency", color: "text-orange-300", bgColor: "bg-orange-500/10" },
   AD_MANAGER: { label: "Ad Manager", color: "text-yellow-300", bgColor: "bg-yellow-500/10" },
 };
+
+/**
+ * One plain-language line per role, for the unified access page.
+ *
+ * The owner's ask was literally "a short description on each one saying what it
+ * actually does". These say what the holder can DO, and — for the two roles
+ * that are constantly confused with each other — what they cannot.
+ */
+export const ROLE_META: Record<
+  UserRole,
+  { description: string; kind: "staff" | "client" }
+> = {
+  SUPER_ADMIN: {
+    kind: "staff",
+    description:
+      "The owner account. Can do everything, including money, and is the only role that can create a Manager or a Finance Admin.",
+  },
+  MANAGER: {
+    kind: "staff",
+    description:
+      "Runs the other staff: creates admins, suspends them, changes their roles and tunes their permissions. Cannot see or touch money, and cannot reach a Finance Admin, another Manager, or a Super Admin.",
+  },
+  ADMIN: {
+    kind: "staff",
+    description:
+      "General day-to-day admin — users, tasks, submissions, content. Never money, and cannot administer other staff.",
+  },
+  FINANCE_ADMIN: {
+    kind: "staff",
+    description:
+      "The only role besides Super Admin that can see the books: withdrawals, payment methods, packages and referral payouts. Cannot administer staff.",
+  },
+  CONTENT_ADMIN: {
+    kind: "staff",
+    description:
+      "Reviews and edits what appears on the platform — tasks, courses, posts, media and the feed.",
+  },
+  SUPPORT_ADMIN: {
+    kind: "staff",
+    description:
+      "Handles users and their problems: tickets, KYC, account questions and submission disputes.",
+  },
+  MARKETING_ADMIN: {
+    kind: "staff",
+    description:
+      "Runs campaigns, announcements, push notifications, SEO and promotional content.",
+  },
+  MODERATOR: {
+    kind: "staff",
+    description:
+      "Front-line moderation: approves or rejects submissions and removes reported posts.",
+  },
+  AD_MANAGER: {
+    kind: "staff",
+    description:
+      "Staff role for the Ads Manager. Holds ads.manage over EVERY advertiser's campaigns — it is not the role for a customer who wants to run their own ads. For that, grant the 'Run Ads (advertiser)' feature instead.",
+  },
+  AGENCY: {
+    kind: "client",
+    description:
+      "A customer running an advertiser/agency console on the user side. Not an admin-panel role and never appears in the admin panel.",
+  },
+  TUTOR: {
+    kind: "client",
+    description:
+      "A customer who sells courses. Gets a tutor dashboard for their OWN courses only.",
+  },
+  USER: {
+    kind: "client",
+    description:
+      "A normal customer. Earns from tasks, and can be given extra capabilities one at a time with the user features below.",
+  },
+};
+
+/** One-line description of a role, for UI. */
+export function roleDescription(role: string): string {
+  return ROLE_META[role as UserRole]?.description ?? "";
+}

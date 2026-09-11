@@ -78,35 +78,42 @@ export const FEATURES: {
   key: PackageFeatureKey;
   label: string;
   group: "section" | "task" | "creator";
+  /**
+   * One plain-language line saying what this lets the USER do — the owner's
+   * explicit ask for the unified access page. It lives here, beside the key,
+   * so it cannot drift away from the list the way a separate copy deck would.
+   * Describe the capability, not the column name.
+   */
+  description: string;
 }[] = [
-  { key: "tasks", label: "Tasks", group: "section" },
-  { key: "socialFeed", label: "Social Feed", group: "section" },
-  { key: "referrals", label: "Referrals", group: "section" },
-  { key: "withdrawals", label: "Withdrawals", group: "section" },
-  { key: "marketplace", label: "Marketplace", group: "section" },
-  { key: "dailyMission", label: "Daily Mission", group: "section" },
-  { key: "lottery", label: "Lottery", group: "section" },
-  { key: "courses", label: "Courses", group: "section" },
-  { key: "games", label: "HTML5 Games", group: "section" },
+  { key: "tasks", label: "Tasks", group: "section" , description: "Open the Tasks section and earn from tasks at all. Turning this off hides earning entirely." },
+  { key: "socialFeed", label: "Social Feed", group: "section" , description: "See and post in the social feed." },
+  { key: "referrals", label: "Referrals", group: "section" , description: "Use the referral programme — get a referral link and earn from invites." },
+  { key: "withdrawals", label: "Withdrawals", group: "section" , description: "Request a payout of their cash balance. Off means they can earn but not cash out." },
+  { key: "marketplace", label: "Marketplace", group: "section" , description: "Browse and buy digital products in the marketplace." },
+  { key: "dailyMission", label: "Daily Mission", group: "section" , description: "Take part in daily missions and claim the streak rewards." },
+  { key: "lottery", label: "Lottery", group: "section" , description: "Buy tickets and take part in the lottery draws." },
+  { key: "courses", label: "Courses", group: "section" , description: "Browse and enrol in courses." },
+  { key: "games", label: "HTML5 Games", group: "section" , description: "Play the HTML5 games and earn from them." },
   // Creator/monetization capabilities (admin-grantable per user)
-  { key: "advertiser", label: "Run Ads (advertiser)", group: "creator" },
-  { key: "boost", label: "Boost Posts", group: "creator" },
-  { key: "createTasks", label: "Create Tasks", group: "creator" },
-  { key: "sellCourses", label: "Sell Courses / Tutor", group: "creator" },
-  { key: "sellMarketplace", label: "Sell on Marketplace", group: "creator" },
-  { key: "agencyMode", label: "Agency / Moderator Mode", group: "creator" },
-  { key: "shareLinks", label: "Share Links in Posts", group: "creator" },
-  { key: "shareYouTube", label: "Share YouTube / Video Links", group: "creator" },
-  { key: "targetTasks", label: "Target Tasks (audience)", group: "creator" },
-  { key: "donations", label: "Ask for Donations in Posts", group: "creator" },
-  { key: "socialTasks", label: "Social Tasks", group: "task" },
-  { key: "proxyTasks", label: "Proxy Tasks", group: "task" },
-  { key: "articleTasks", label: "Article Tasks", group: "task" },
-  { key: "videoTasks", label: "Video Tasks", group: "task" },
-  { key: "quizTasks", label: "Quiz Tasks", group: "task" },
-  { key: "surveyTasks", label: "Survey Tasks", group: "task" },
-  { key: "offerwallTasks", label: "Offerwall Tasks", group: "task" },
-  { key: "appInstall", label: "App Install Tasks", group: "task" },
+  { key: "advertiser", label: "Run Ads (advertiser)", group: "creator" , description: "Run their OWN ad campaigns: create ads, fund them and see their own stats. This is the grant for a customer who wants to advertise — NOT the Ad Manager staff role, which controls everyone's campaigns." },
+  { key: "boost", label: "Boost Posts", group: "creator" , description: "Pay to boost their own posts so more people see them." },
+  { key: "createTasks", label: "Create Tasks", group: "creator" , description: "Publish tasks other users complete for money, and fund them from their buyer balance." },
+  { key: "sellCourses", label: "Sell Courses / Tutor", group: "creator" , description: "Create and sell courses. Granting this to a plain user also promotes them to Tutor." },
+  { key: "sellMarketplace", label: "Sell on Marketplace", group: "creator" , description: "List and sell digital products in the marketplace." },
+  { key: "agencyMode", label: "Agency / Moderator Mode", group: "creator" , description: "Run an agency console — manage campaigns and tasks on behalf of several clients." },
+  { key: "shareLinks", label: "Share Links in Posts", group: "creator" , description: "Post clickable external links in the feed. Off by default because it is the main spam vector." },
+  { key: "shareYouTube", label: "Share YouTube / Video Links", group: "creator" , description: "Post YouTube and other video links that render as an inline player." },
+  { key: "targetTasks", label: "Target Tasks (audience)", group: "creator" , description: "Restrict who sees their tasks by country, division, district, gender and age." },
+  { key: "donations", label: "Ask for Donations in Posts", group: "creator" , description: "Add a donation request to their posts and receive money from other users." },
+  { key: "socialTasks", label: "Social Tasks", group: "task" , description: "Create SOCIAL tasks (follow, like, share, join). Needed on top of Create Tasks — the API gates this type separately." },
+  { key: "proxyTasks", label: "Proxy Tasks", group: "task" , description: "Create PROXY tasks." },
+  { key: "articleTasks", label: "Article Tasks", group: "task" , description: "Create ARTICLE reading tasks." },
+  { key: "videoTasks", label: "Video Tasks", group: "task" , description: "Create VIDEO watch tasks." },
+  { key: "quizTasks", label: "Quiz Tasks", group: "task" , description: "Create QUIZ tasks." },
+  { key: "surveyTasks", label: "Survey Tasks", group: "task" , description: "Create SURVEY tasks." },
+  { key: "offerwallTasks", label: "Offerwall Tasks", group: "task" , description: "Create OFFERWALL tasks." },
+  { key: "appInstall", label: "App Install Tasks", group: "task" , description: "Create APP INSTALL tasks with screenshot proof steps." },
 ];
 
 /**

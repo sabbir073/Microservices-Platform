@@ -3,6 +3,14 @@ import * as fs from "fs";
 import * as path from "path";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
+import {
+  CATEGORY_FOR_KEY,
+  SETTINGS_CATALOG,
+  SETTINGS_ELSEWHERE,
+  SETTING_GROUPS,
+  searchSettings,
+  settingEntry,
+} from "../src/lib/admin-settings-catalog";
 
 /**
  * Every control on the settings screens must do something.
@@ -318,13 +326,122 @@ async function main() {
     );
     check(
       "…and files it under the financial group",
-      /"marketplace\.fee_percent":\s*"financial"/.test(form)
+      CATEGORY_FOR_KEY["marketplace.fee_percent"] === "financial"
     );
     check(
       "the fee is clamped to a percentage",
       /"marketplace\.fee_percent":\s*\{[\s\S]{0,120}min:\s*0,[\s\S]{0,60}max:\s*100/.test(
         code("src/lib/setting-guards.ts")
       )
+    );
+  }
+
+  /* ── 7. One catalog describes every setting, and search can find it ──── */
+  console.log("\n7. Every setting has a name, a description, and is findable");
+  {
+    const keys = [...new Set([...form.matchAll(/set\("([^"]+)"/g)].map((m) => m[1]))];
+
+    // 7a. The form describes nothing itself — it names a key and the catalog
+    //     supplies the label and the description. That is what keeps the label
+    //     an admin reads and the key the code reads from drifting apart.
+    const uncatalogued = keys.filter((k) => !settingEntry(k));
+    check(
+      "every key the form writes has a catalog entry",
+      uncatalogued.length === 0,
+      uncatalogued.length ? `missing: ${uncatalogued.join(", ")}` : undefined
+    );
+    const unbound = keys.filter((k) => !form.includes(`settingKey="${k}"`));
+    check(
+      "every control is bound to its key with settingKey",
+      unbound.length === 0,
+      unbound.length ? `not bound: ${unbound.join(", ")}` : undefined
+    );
+    check(
+      "the form no longer keeps its own copy of the key → tab map",
+      !/const CATEGORY_FOR_KEY[^=]*=\s*\{/.test(form) &&
+        form.includes('from "@/lib/admin-settings-catalog"'),
+      "two copies of that map is how a control saves into the void"
+    );
+
+    // 7b. A control with no description is the next dead control: nobody can
+    //     tell whether it does what they hope it does.
+    const undescribed = SETTINGS_CATALOG.filter(
+      (e) => !e.label.trim() || e.description.trim().length < 20
+    ).map((e) => e.key);
+    check(
+      "every catalogued setting has a name and a real description",
+      undescribed.length === 0,
+      undescribed.length ? `thin: ${undescribed.join(", ")}` : undefined
+    );
+    const elsewhereThin = SETTINGS_ELSEWHERE.filter(
+      (e) => !e.label.trim() || e.description.trim().length < 20 || !e.href
+    ).map((e) => e.label);
+    check(
+      "every setting that lives on another screen says where and why",
+      elsewhereThin.length === 0,
+      elsewhereThin.join(", ")
+    );
+
+    // 7c. The search box is the whole point: an admin who remembers one word
+    //     must land on the control. Every key must be findable BY ITS KEY, by
+    //     its own label, and the group it belongs to must be a real group.
+    const unfindable = SETTINGS_CATALOG.filter((e) => {
+      const byKey = searchSettings(e.key).some((h) => h.key === e.key);
+      const byLabel = searchSettings(e.label).some((h) => h.key === e.key);
+      return !byKey || !byLabel;
+    }).map((e) => e.key);
+    check(
+      "the search index covers every key, by key and by name",
+      unfindable.length === 0,
+      unfindable.length ? `unfindable: ${unfindable.join(", ")}` : undefined
+    );
+    check(
+      "searching a word an owner would actually type finds the right control",
+      searchSettings("withdrawal").some(
+        (h) => h.key === "withdrawal_fee_percent"
+      ) && searchSettings("commission").length > 0
+    );
+
+    // 7d. Ordering is declared, not accidental.
+    const orders = SETTING_GROUPS.map((g) => g.order);
+    check(
+      "every group is ordered deliberately, with a blurb and no ties",
+      new Set(orders).size === orders.length &&
+        SETTING_GROUPS.every((g) => g.blurb.trim().length > 20),
+      "insertion order is not an order"
+    );
+    const strayGroup = SETTINGS_CATALOG.filter(
+      (e) => !SETTING_GROUPS.some((g) => g.id === e.group)
+    ).map((e) => e.key);
+    check(
+      "no setting is filed under a group that does not exist",
+      strayGroup.length === 0,
+      strayGroup.join(", ")
+    );
+
+    // 7e. The reverse of the dead-control bug: a key the code reads with no
+    //     control at all. `social.ai_regenerate_limit` sat in DEFAULTS and in
+    //     the category map — enough to look edited-able, editable nowhere.
+    check(
+      "social.ai_regenerate_limit is editable, not just defaulted",
+      form.includes('settingKey="social.ai_regenerate_limit"') &&
+        read("src/app/api/tasks/[id]/ai-recipe/route.ts").includes(
+          '"social.ai_regenerate_limit"'
+        )
+    );
+
+    // 7f. A settings screen nobody can reach is a settings screen that does
+    //     not exist. /admin/marketplace/settings had no inbound link at all.
+    const linksToMarketplaceSettings = files.some(
+      (f) =>
+        f !== "src/app/admin/marketplace/settings/page.tsx" &&
+        !f.startsWith("scripts/") &&
+        /href="\/admin\/marketplace\/settings"/.test(bodies.get(f)!)
+    );
+    check(
+      "/admin/marketplace/settings is reachable from the admin UI",
+      linksToMarketplaceSettings,
+      "it was reachable only by typing the URL"
     );
   }
 

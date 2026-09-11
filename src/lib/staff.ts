@@ -48,3 +48,53 @@ export function isStaffRole(role: string | null | undefined): boolean {
 export const NON_STAFF_WHERE = {
   role: { notIn: STAFF_ROLES },
 } as const;
+
+// ───────────────────────── Employees vs clients ───────────────────────────────
+
+/**
+ * The owner's line: "super admin, manager, admin, finance admin, moderator —
+ * these are platform employees. Everyone else is a platform client."
+ *
+ * There is exactly ONE definition of that line and it is right here, derived
+ * from `ADMIN_ROLES`. Deliberately NOT a denormalised `isStaff` column on User:
+ * a column is a second definition, and a second definition drifts. The first
+ * time somebody changes a role with a raw SQL update, or adds a role to the
+ * enum and forgets the backfill, the column and `ADMIN_ROLES` disagree — and
+ * then "is this person staff?" has two answers depending on which one you ask.
+ * The role column is already on every row we load, so deriving costs nothing.
+ *
+ * `scripts/verify-staff-off-leaderboard.ts` asserts that no second list exists.
+ */
+export type AccountType = "staff" | "client";
+
+/** Employee or customer, from the role alone. The one place that decides. */
+export function accountTypeOf(role: string | null | undefined): AccountType {
+  return isStaffRole(role) ? "staff" : "client";
+}
+
+/** True when this account belongs to a paying/earning customer, not an employee. */
+export function isClientRole(role: string | null | undefined): boolean {
+  return !isStaffRole(role);
+}
+
+/** Label + colours for the staff/client badge, so every surface renders it the same. */
+export const ACCOUNT_TYPE_BADGE: Record<
+  AccountType,
+  { label: string; title: string; className: string }
+> = {
+  staff: {
+    label: "Staff",
+    title: "Platform employee — works on the platform. Hidden from public leaderboards.",
+    className: "bg-violet-500/10 text-violet-300 border-violet-500/30",
+  },
+  client: {
+    label: "Client",
+    title: "Platform customer — earns, buys or advertises here.",
+    className: "bg-slate-500/10 text-slate-400 border-slate-600/40",
+  },
+};
+
+/** The mirror of `NON_STAFF_WHERE` — for admin views that want employees only. */
+export const STAFF_WHERE = {
+  role: { in: STAFF_ROLES },
+} as const;

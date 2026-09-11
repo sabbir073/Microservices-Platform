@@ -33,7 +33,9 @@ import {
 import Link from "next/link";
 import { format, formatDistanceToNow } from "date-fns";
 import { profileHref } from "@/lib/user-href";
-import { ROLE_CONFIG, type UserRole } from "@/lib/rbac";
+import { ROLE_CONFIG, roleDescription, type UserRole } from "@/lib/rbac";
+// One definition of "is this an employee or a customer" — src/lib/staff.ts.
+import { accountTypeOf, ACCOUNT_TYPE_BADGE } from "@/lib/staff";
 import { UserDetailActions, AdjustBalanceButton } from "@/components/admin/user-detail-actions";
 import { DisplayBoostPanel } from "@/components/admin/users/display-boost-panel";
 import {
@@ -490,11 +492,25 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
               {user.status.replace(/_/g, " ")}
             </span>
             <span
+              title={roleDescription(user.role)}
               className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider border border-current/30 ${roleConfig.bgColor} ${roleConfig.color}`}
             >
               {roleConfig.label}
             </span>
+            <span
+              title={ACCOUNT_TYPE_BADGE[accountTypeOf(user.role)].title}
+              className={`inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider border ${ACCOUNT_TYPE_BADGE[accountTypeOf(user.role)].className}`}
+            >
+              {ACCOUNT_TYPE_BADGE[accountTypeOf(user.role)].label}
+            </span>
           </div>
+
+          {/* What this role actually means, in one line — so an admin looking at
+              an account does not have to go find the permission matrix to know
+              whether they are looking at an employee or a customer. */}
+          <p className="text-xs text-gray-500 mt-2 max-w-2xl">
+            {roleDescription(user.role)}
+          </p>
 
           {user.bio && (
             <p className="text-sm text-gray-300 mt-3 whitespace-pre-wrap leading-relaxed">

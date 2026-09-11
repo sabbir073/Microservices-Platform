@@ -4,6 +4,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { SystemSettingsForm } from "@/components/admin/settings/system-settings-form";
 import { SOCIAL_PLATFORMS } from "@/lib/social-tasks";
+import { SETTINGS_ELSEWHERE } from "@/lib/admin-settings-catalog";
+import Link from "next/link";
 
 export default async function AdminSettingsPage() {
   const session = await auth();
@@ -43,6 +45,51 @@ export default async function AdminSettingsPage() {
           label: p.label,
           emoji: p.emoji,
         }))} initial={initial} canEdit={canEdit} />
+
+      {/*
+        Settings that are real but live on another screen.
+
+        Listed rather than left to be discovered: an admin who cannot find
+        "referral commission" here concludes it does not exist, and the last
+        time that happened the answer was found by reading the source. The
+        search box above indexes these too.
+      */}
+      <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">
+        <h2 className="text-sm font-semibold text-white">
+          Settings that live on other screens
+        </h2>
+        <p className="mt-1 text-xs text-slate-500">
+          Not everything belongs on one form — these are configured where the
+          thing they configure lives. The search box above finds them too.
+        </p>
+        <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+          {SETTINGS_ELSEWHERE.map((s) => (
+            <li key={`${s.href}:${s.label}`}>
+              <Link
+                href={s.href}
+                className="block rounded-lg border border-slate-800 bg-slate-950/40 p-3 hover:border-slate-700"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-slate-200">
+                    {s.label}
+                  </span>
+                  <span className="rounded border border-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">
+                    {s.where}
+                  </span>
+                  {s.status === "not-active" && (
+                    <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                      Not active yet
+                    </span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                  {s.description}
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {/* System Info */}
       <div className="bg-slate-900 rounded-xl border border-slate-800 p-6">

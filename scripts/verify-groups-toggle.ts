@@ -3,6 +3,11 @@ import * as fs from "fs";
 import * as path from "path";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
+import {
+  CATEGORY_FOR_KEY,
+  SETTING_GROUPS,
+  settingEntry,
+} from "../src/lib/admin-settings-catalog";
 
 /**
  * Groups behind an admin switch, shipped off.
@@ -180,9 +185,18 @@ async function main() {
   {
     const f = code("src/components/admin/settings/system-settings-form.tsx");
     check('the key is in DEFAULTS as false', /"ui\.groups_enabled": false/.test(f));
+    // Asserted against the real map rather than the literal that used to be
+    // hand-written in the form. The mapping moved into the settings catalog and
+    // is derived from it now; what matters is that Save still files this key
+    // under a category, because a key missing from the map renders, accepts
+    // input, says "saved" and writes nothing.
     check(
       "the key is mapped to the ui_toggles category so it saves",
-      /"ui\.groups_enabled": "ui_toggles"/.test(f)
+      CATEGORY_FOR_KEY["ui.groups_enabled"] === "ui_toggles"
+    );
+    check(
+      "…and it carries a label and a description an admin can act on",
+      (settingEntry("ui.groups_enabled")?.description?.length ?? 0) > 20
     );
     // `!== false` is the default-ON form and would show an unset value as on.
     check(
@@ -194,9 +208,15 @@ async function main() {
       /onChange=\{\(v\) => set\("ui\.groups_enabled", v\)\}/.test(f)
     );
     // A feature switch filed under a tab labelled "Popups" is one nobody finds.
+    // The point was never the word "Toggles" — it was that a feature switch
+    // must not be filed under a tab called "Popups", which is where nobody
+    // looks for it. Assert the property, not the wording.
     check(
-      "the tab is no longer labelled Popups",
-      /\{ id: "ui_toggles", label: "Toggles"/.test(f)
+      "the tab is not labelled Popups",
+      (() => {
+        const g = SETTING_GROUPS.find((x) => x.id === "ui_toggles");
+        return !!g && !/popup/i.test(g.label);
+      })()
     );
     // The dead CATEGORY_CONFIG surface is gone entirely. It was a second,
     // unreachable settings UI (nothing linked to `/admin/settings/<category>`)

@@ -232,6 +232,7 @@ export default async function EditUserPage({
       <UserEditForm
         user={user}
         isSuperAdmin={isSuperAdmin}
+        actorRole={adminRole}
         plans={plans}
         customRoles={customRolesRaw}
         packageFeatures={packageFeatures}

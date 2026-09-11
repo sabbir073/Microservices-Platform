@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
-import { type UserRole } from "@/lib/rbac";
+import { canAssignStaffRole, type UserRole } from "@/lib/rbac";
 import { z } from "zod";
 import { validatePassword } from "@/lib/password-policy";
 import bcrypt from "bcryptjs";
@@ -34,6 +34,7 @@ const createUserSchema = z.object({
     .enum([
       "USER",
       "SUPER_ADMIN",
+      "MANAGER",
       "ADMIN",
       "FINANCE_ADMIN",
       "CONTENT_ADMIN",
@@ -113,12 +114,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: pwError }, { status: 400 });
     }
 
-    // Only super admin can create admin accounts
-    if (data.role !== "USER" && adminRole !== "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Only super admin can create admin accounts" },
-        { status: 403 }
-      );
+    // Creating an admin is assigning a role, so it runs the same assignment
+    // check as changing one. A manager may create the staff it administers and
+    // cannot create a finance admin, another manager, or a super admin —
+    // otherwise "a manager cannot promote anyone to finance admin" would be
+    // trivially bypassed by creating a fresh finance admin instead.
+    if (data.role !== "USER") {
+      const createCheck = canAssignStaffRole(adminRole, data.role as UserRole);
+      if (!createCheck.ok) {
+        return NextResponse.json({ error: createCheck.reason }, { status: 403 });
+      }
     }
 
     // Build a sensible display name if admin didn't supply one
