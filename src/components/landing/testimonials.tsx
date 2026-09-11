@@ -35,7 +35,7 @@ export function Testimonials(props: Props) {
           {v.items.slice(0, 6).map((t, i) => (
             <div
               key={i}
-              className="mk-zoom relative p-6 rounded-2xl bg-(--mk-surface) border border-(--mk-border) shadow-sm hover:border-(--mk-border-strong)"
+              className="mk-zoom relative p-6 rounded-2xl mk-card hover:border-(--mk-border-strong)"
             >
               <Quote className="absolute top-4 right-4 w-8 h-8 text-(--mk-quote)" />
 

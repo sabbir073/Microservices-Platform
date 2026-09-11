@@ -78,7 +78,8 @@ export default async function MainLayout({
       />
 
       {/* Main Content */}
-      <div className="lg:pl-72">
+      {/* Rail width at each tier: 0 (phone) → 256px (md) → 288px (lg). */}
+      <div className="md:pl-64 lg:pl-72">
         {/* Header */}
         <Header user={session.user} avatar={avatar} />
 
@@ -106,7 +107,7 @@ export default async function MainLayout({
             Nothing below ~1400px moves: at 1280px the region is already 928px,
             well under the cap, so the feed's right rail and every mobile and
             tablet layout are untouched. */}
-        <main className="mx-auto w-full max-w-7xl py-6 px-4 sm:px-6 lg:px-8 pb-[calc(6rem+var(--anchor-ad-h,0px))] lg:pb-[calc(2rem+var(--anchor-ad-h,0px))] scroll-mt-[calc(4rem+env(safe-area-inset-top))]">
+        <main className="mx-auto w-full max-w-7xl py-6 px-4 sm:px-6 lg:px-8 pb-[calc(6rem+var(--anchor-ad-h,0px))] md:pb-[calc(2rem+var(--anchor-ad-h,0px))] scroll-mt-[calc(4rem+env(safe-area-inset-top))]">
           <AppRefreshShell>{children}</AppRefreshShell>
         </main>
       </div>

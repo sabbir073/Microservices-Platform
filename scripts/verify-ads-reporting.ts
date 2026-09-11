@@ -462,9 +462,17 @@ async function main() {
       "the served-impression counter is given a country",
       /bufferImpression\([\s\S]{0,200}resolveEventCountry/.test(serve)
     );
+    // Was: "the beacon impression path is given a country".
+    //
+    // That assertion described a world with TWO impression bases. The beacon was
+    // the only server-side counter for IN_FEED, so it had to tag a country —
+    // while the other 24 spaces counted at delivery. Counting on one basis
+    // (delivery, in `serveAd`/`serveFeedAds`) is the fix; the beacon now writes
+    // only the deduped `AdEngagement` row, so the thing to assert is that it
+    // does NOT count, or every feed ad would be counted twice.
     check(
-      "the beacon impression path is given a country",
-      /bufferImpression\(adId, await resolveEventCountry/.test(events)
+      "the beacon no longer counts — one impression basis, at delivery",
+      !/bufferImpression\(/.test(events)
     );
     check(
       "recordClick resolves the country ONCE, above every branch",
@@ -598,6 +606,83 @@ async function main() {
       );
     } else {
       check("the country rollup table is readable", false, String(code2 ?? e));
+    }
+  }
+
+  /* -- One impression basis, one canonical impression counter -------------- */
+  //
+  // Two defects lived here, both of them "the number is wrong but plausible":
+  //
+  //  1. IN_FEED counted on a different basis from every other space -- nothing
+  //     server-side, only a client beacon deduped per (ad, viewer, minute),
+  //     while the other 24 count at delivery with no dedup. In the same report
+  //     table the feed therefore looked about an order of magnitude weaker for
+  //     a reason that has nothing to do with performance.
+  //  2. `Ad.impressions` (advertiser dashboard) and `AdDailyStat` (admin) had
+  //     drifted 72 apart across 5 ads, in both directions.
+  {
+    const serve = code("lib/ad-serve.ts");
+    const feedBlock = serve.slice(
+      serve.indexOf("export async function serveFeedAds")
+    );
+    check(
+      "serveFeedAds counts impressions server-side, like every other space",
+      /bufferImpression\(/.test(feedBlock)
+    );
+    check(
+      "serveFeedAds records fill data, like every other placement",
+      /bufferServeOutcome\(/.test(feedBlock)
+    );
+    // If the beacon still incremented the counter, every feed ad would now be
+    // counted twice -- once at delivery and once on render.
+    check(
+      "the client view beacon no longer increments the impression counter",
+      !/bufferImpression\(/.test(code("lib/ad-events.ts"))
+    );
+  }
+  {
+    // `AdDailyStat` is canonical. Both surfaces must read it, or they go back to
+    // quoting different impression totals for the same ad.
+    for (const f of [
+      "app/api/advertiser/campaigns/route.ts",
+      "app/api/advertiser/campaigns/[id]/route.ts",
+    ]) {
+      const c = code(f);
+      const short = f.split("/").slice(-2).join("/");
+      check(
+        `${short} reads impressions from AdDailyStat`,
+        /lifetimeImpressionsByAd\(/.test(c)
+      );
+      check(
+        `${short} no longer sums Ad.impressions`,
+        !/\ba\.impressions\b|\bad\.impressions\b/.test(c)
+      );
+    }
+  }
+  {
+    // The historic drift is REPORTED, not asserted away. It pre-dates the
+    // buffered counter that now writes both in one transaction, and correcting a
+    // billing-adjacent counter to make a number look tidy is how history stops
+    // being history. If this ever starts growing, the two writes have come apart.
+    try {
+      const perAd = (await prisma.adDailyStat.groupBy({
+        by: ["adId"],
+        _sum: { impressions: true },
+      })) as unknown as { adId: string; _sum: { impressions: number | null } }[];
+      const allAds = (await prisma.ad.findMany({
+        select: { id: true, impressions: true },
+      })) as unknown as { id: string; impressions: number }[];
+      const daily = new Map(perAd.map((r) => [r.adId, r._sum.impressions ?? 0]));
+      const drifted = allAds
+        .map((a) => ({ ad: a.impressions, day: daily.get(a.id) ?? 0 }))
+        .filter((r) => r.ad !== r.day);
+      const drift = drifted.reduce((t, r) => t + Math.abs(r.ad - r.day), 0);
+      console.log(
+        `   historic Ad.impressions vs AdDailyStat drift: ${drift} across ` +
+          `${drifted.length} ad(s) - inert, nothing user-facing reads Ad.impressions`
+      );
+    } catch {
+      console.log("   (drift check skipped - stats unreadable)");
     }
   }
 

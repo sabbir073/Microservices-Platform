@@ -6,6 +6,7 @@ import { z } from "zod";
 import { userCanFeature } from "@/lib/packages";
 import { deductAdCreditTx } from "@/lib/ad-credits";
 import { add, sub, toNum } from "@/lib/money";
+import { lifetimeImpressionsByAd } from "@/lib/ad-stats";
 
 export async function GET() {
   const session = await auth();
@@ -23,11 +24,20 @@ export async function GET() {
   const ads = await prisma.ad.findMany({
     where: { campaignId: { in: campaignIds } },
     select: {
+      id: true,
       campaignId: true,
-      impressions: true,
       clicks: true,
     },
   });
+
+  // Impressions come from `AdDailyStat`, NOT from `Ad.impressions`.
+  //
+  // The two disagree by 72 across 5 ads, in both directions, from before the
+  // buffered counter wrote them together — so the advertiser dashboard and the
+  // admin report were quoting different numbers for the same ad. `AdDailyStat`
+  // is canonical (see `lifetimeImpressionsByAd`); this surface reads it too, so
+  // there is one impression figure on the platform.
+  const impressionsByAd = await lifetimeImpressionsByAd(ads.map((a) => a.id));
 
   const metricsByCampaign = new Map<
     string,
@@ -38,7 +48,7 @@ export async function GET() {
       impressions: 0,
       clicks: 0,
     };
-    cur.impressions += ad.impressions;
+    cur.impressions += impressionsByAd.get(ad.id) ?? 0;
     cur.clicks += ad.clicks;
     metricsByCampaign.set(ad.campaignId, cur);
   }

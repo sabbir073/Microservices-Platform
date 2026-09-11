@@ -11,6 +11,7 @@ import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { useAppRefresh } from "@/hooks/use-app-refresh";
 import { Avatar } from "@/components/user/primitives/avatar";
 import { ThemeSwitch } from "@/components/dashboard/theme-switch";
+import { GlobalSearch } from "@/components/user/primitives/global-search";
 
 interface HeaderProps {
   user: {
@@ -51,6 +52,8 @@ export function Header({ user, avatar }: HeaderProps) {
     "/earn",
   ]);
   const showBack = !!pathname && !ROOT_PATHS.has(pathname);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [shortcutHint, setShortcutHint] = useState("Ctrl K");
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -105,6 +108,24 @@ export function Header({ user, avatar }: HeaderProps) {
   // Pull-to-refresh anywhere in the app instantly re-pulls balance + notifications.
   useAppRefresh(fetchData);
 
+  // ⌘K / Ctrl-K from anywhere in the app. The hint label is set on the client
+  // because the platform is unknown during SSR and a mismatched <kbd> would
+  // hydrate-error.
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setShortcutHint("⌘ K");
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const handleSignOut = () => {
     signOut({ callbackUrl: "/login" });
   };
@@ -136,15 +157,15 @@ export function Header({ user, avatar }: HeaderProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 glass-strong border-0 border-b border-gray-800/60 rounded-none safe-t">
+      <header className="app-chrome sticky top-0 z-30 border-0 border-b border-(--shell-border) rounded-none safe-t">
         <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
           {/* Left: Mobile Back + Menu Button & Logo (mobile only) */}
-          <div className="flex items-center gap-2 lg:hidden">
+          <div className="flex items-center gap-1 md:hidden">
             {showBack && (
               <button
                 onClick={() => router.back()}
                 aria-label="Go back"
-                className="p-2 -ml-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 active:scale-95 transition-transform"
+                className="inline-flex items-center justify-center w-11 h-11 -ml-2 rounded-xl text-gray-400 hover:text-white hover:bg-(--shell-hover) active:scale-95 transition-transform"
               >
                 <ChevronLeft className="w-6 h-6" />
               </button>
@@ -153,7 +174,7 @@ export function Header({ user, avatar }: HeaderProps) {
               onClick={() => setIsMobileMenuOpen(true)}
               aria-label="Open menu"
               className={cn(
-                "p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800",
+                "inline-flex items-center justify-center w-11 h-11 rounded-xl text-gray-400 hover:text-white hover:bg-(--shell-hover)",
                 !showBack && "-ml-2"
               )}
             >
@@ -166,27 +187,50 @@ export function Header({ user, avatar }: HeaderProps) {
             </Link>
           </div>
 
-          {/* Center/Left: Search (desktop) */}
-          <div className="hidden lg:flex flex-1 max-w-md">
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <input
-                type="search"
-                placeholder="Search tasks, users..."
-                className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
+          {/* Center/Left: Search.
+              This was a bare <input> with no onChange, no form and no action —
+              typing in it and pressing Enter did nothing, on every page, for
+              every user. Meanwhile a complete search UI (GlobalSearch, backed by
+              /api/search over tasks, users, courses and listings) existed and was
+              mounted on exactly one page, /earn. The box is now the trigger for
+              that same component: one search, reachable from the whole shell. */}
+          <div className="hidden md:flex flex-1 max-w-md">
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              className="group w-full flex items-center gap-3 min-h-10 pl-3 pr-2 py-2 bg-gray-900 border border-(--shell-border) rounded-xl text-left hover:border-gray-700 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-colors"
+            >
+              <Search className="w-5 h-5 shrink-0 text-gray-500 group-hover:text-gray-400" />
+              <span className="flex-1 min-w-0 truncate text-sm text-gray-500">
+                Search tasks, people, courses…
+              </span>
+              <kbd className="hidden xl:inline-block shrink-0 px-1.5 py-0.5 rounded border border-(--shell-border) bg-gray-950 text-[10px] font-medium text-gray-500">
+                {shortcutHint}
+              </kbd>
+            </button>
           </div>
 
           {/* Right: Actions */}
-          <div className="flex items-center gap-2 sm:gap-4">
+          <div className="flex items-center gap-1 sm:gap-2">
+            {/* Search on phones. It had no entry point at all below 1024px —
+                the box was `hidden lg:flex`, so the platform's search simply
+                did not exist on a phone. */}
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              aria-label="Search"
+              className="md:hidden inline-flex items-center justify-center w-11 h-11 rounded-xl text-gray-400 hover:text-white hover:bg-(--shell-hover)"
+            >
+              <Search className="w-5 h-5" />
+            </button>
+
             {/* Light/dark, in reach on every screen — it was only in Settings. */}
             <ThemeSwitch />
 
             {/* View Reports Button (desktop) */}
             <Link
               href="/wallet"
-              className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+              className="hidden xl:flex items-center gap-2 min-h-10 px-3 py-1.5 rounded-xl text-gray-400 hover:text-white hover:bg-(--shell-hover) transition-colors"
             >
               <FileText className="w-4 h-4" />
               <span className="text-sm">Reports</span>
@@ -195,7 +239,7 @@ export function Header({ user, avatar }: HeaderProps) {
             {/* Wallet Balance */}
             <Link
               href="/wallet"
-              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 hover:border-gray-700 transition-colors"
+              className="hidden sm:flex items-center gap-2 min-h-10 px-3 py-1.5 rounded-xl bg-gray-900 border border-(--shell-border) hover:border-gray-700 transition-colors"
             >
               <Wallet className="w-4 h-4 text-indigo-400" />
               <span className="text-sm font-medium text-white">
@@ -212,7 +256,8 @@ export function Header({ user, avatar }: HeaderProps) {
                   if (opening) void loadNotifications();
                   setIsProfileOpen(false);
                 }}
-                className="relative p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
+                aria-label="Notifications"
+                className="relative inline-flex items-center justify-center w-11 h-11 rounded-xl text-gray-400 hover:text-white hover:bg-(--shell-hover)"
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
@@ -302,7 +347,8 @@ export function Header({ user, avatar }: HeaderProps) {
                   setIsProfileOpen(!isProfileOpen);
                   setIsNotificationOpen(false);
                 }}
-                className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+                aria-label="Account menu"
+                className="flex items-center gap-2 min-h-11 p-1.5 rounded-xl hover:bg-(--shell-hover) transition-colors"
               >
                 <Avatar
                   src={avatar}
@@ -370,6 +416,9 @@ export function Header({ user, avatar }: HeaderProps) {
           </div>
         </div>
       </header>
+
+      {/* One shared search surface for the whole shell. */}
+      <GlobalSearch open={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
     </>
   );
 }

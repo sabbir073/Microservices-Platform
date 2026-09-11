@@ -31,6 +31,7 @@ import { BrandIcon } from "@/components/ui/brand-icon";
 import { BecomeTutorCard } from "@/components/user/profile/become-tutor-card";
 import type { ProfileResponse, EditTab, SocialAccount } from "./profile-view.types";
 import { COUNTRIES, LANGUAGES, PLATFORM_META } from "./profile-view.constants";
+import { useCountries } from "@/lib/use-countries";
 import { Card, InfoRow, DataLine, VerifTile, CompletionRing } from "./profile-ui";
 import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 import {
@@ -68,6 +69,8 @@ export function ProfileTabBody({
   onConnectSocial: (p: SocialAccount["platform"]) => void;
   onDisconnectSocial: (id: string) => void;
 }) {
+  // Canonical country list (Country table); COUNTRIES is the offline fallback.
+  const countryList = useCountries(COUNTRIES.map((c) => ({ ...c, flag: null })));
   const { profile, address, stats, verification, preferences, socialAccounts, completion } = data;
 
   return (
@@ -99,7 +102,7 @@ export function ProfileTabBody({
               {profile.country && (
                 <InfoRow
                   icon={<MapPin className="w-3.5 h-3.5" />}
-                  label={COUNTRIES.find((c) => c.code === profile.country)?.name ?? profile.country}
+                  label={countryList.find((c) => c.code === profile.country)?.name ?? profile.country}
                   sub="From"
                 />
               )}

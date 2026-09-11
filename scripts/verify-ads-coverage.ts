@@ -317,6 +317,107 @@ async function main() {
     );
   }
 
+  /* -- Junk placements and stranded ads ----------------------------------- */
+  //
+  // A placement name is the key `<AdRenderer placement="...">` mounts with, so a
+  // name outside the canonical list renders on no page at all. The DB carried
+  // one (`QW`) holding two ads that were ACTIVE, approved and funded and could
+  // never serve once, with nothing on any screen saying so.
+  {
+    check(
+      "an unknown placement name cannot be created",
+      /isCanonicalPlacement\(name\)/.test(
+        code("app/api/admin/ads/placements/route.ts")
+      )
+    );
+    check(
+      "stranded ads can be reassigned to a real space",
+      /isCanonicalPlacement\(to\.name\)/.test(
+        code("app/api/admin/ads/placements/[id]/route.ts")
+      )
+    );
+    check(
+      "the ad manager surfaces stranded ads",
+      /stranded here/.test(code("components/admin/ads/ad-manager-view.tsx"))
+    );
+    // The stranded rows themselves are REPORTED, never deleted: they are an
+    // admin's ads and the fix is a reassignment someone has to choose.
+    const canonicalNames = new Set<string>(AD_PLACEMENTS.map((x) => x.name));
+    const placementRows = (await prisma.adPlacement.findMany({
+      select: { name: true, _count: { select: { ads: true } } },
+    })) as unknown as { name: string; _count: { ads: number } }[];
+    const junk = placementRows.filter((r) => !canonicalNames.has(r.name));
+    if (junk.length === 0) {
+      console.log("   no non-canonical placements in the database");
+    } else {
+      for (const j of junk) {
+        console.log(
+          `   non-canonical placement "${j.name}" holds ${j._count.ads} ad(s)` +
+            (j._count.ads > 0
+              ? " - STRANDED, reassign them in Ad Manager -> Spaces"
+              : " - empty, safe to delete")
+        );
+      }
+    }
+  }
+
+  /* -- The rate card is priced by hand, but it must be reachable ---------- */
+  {
+    const settingsSrc = code("components/admin/settings/system-settings-form.tsx");
+    check(
+      "the global CPC default is editable in system settings",
+      /"ads\.cpcUsd"/.test(settingsSrc)
+    );
+    // Both ends. A settings control whose key is missing from CATEGORY_FOR_KEY
+    // renders, accepts input, says "saved" and writes nothing -- which is how 44
+    // of 104 controls were once dead.
+    check(
+      "the global CPC key is actually saved (present in CATEGORY_FOR_KEY)",
+      /"ads\.cpcUsd": "financial"/.test(settingsSrc)
+    );
+    const priced = await prisma.adPlacement.count({
+      where: { cpcUsd: { not: null } },
+    });
+    const totalSpaces = await prisma.adPlacement.count();
+    console.log(
+      `   ${priced}/${totalSpaces} spaces have their own click price; the rest use the global default`
+    );
+  }
+
+  /* -- Country handling is international, not three rows ------------------ */
+  {
+    const countryCount = await prisma.country.count({ where: { isActive: true } });
+    check(
+      "the canonical country list is the whole world, not a shortlist",
+      countryCount >= 190,
+      `${countryCount} active countries`
+    );
+    const withCountry = (await prisma.user.findMany({
+      where: { country: { not: null } },
+      select: { country: true },
+    })) as unknown as { country: string | null }[];
+    const bad = withCountry.filter(
+      (u) => !/^[A-Z]{2}$/.test((u.country ?? "").trim())
+    );
+    // Reported, not failed: rewriting live rows is the owner's call, and
+    // `scripts/normalize-user-country.ts` is the dry-run-by-default tool for it.
+    console.log(
+      bad.length === 0
+        ? `   all ${withCountry.length} stored countries are ISO2`
+        : `   ${bad.length}/${withCountry.length} stored countries are NOT ISO2 ` +
+            `(${[...new Set(bad.map((b) => b.country))].join(", ")}) - run ` +
+            `scripts/normalize-user-country.ts`
+    );
+    check(
+      "ad targeting resolves a non-ISO2 profile country instead of dropping the user",
+      /normalizeViewerCountry\(/.test(code("lib/ad-serve.ts"))
+    );
+    check(
+      "the admin country breakdown labels codes from the Country table",
+      /countryDetailMap\(/.test(code("app/api/admin/ads/report/route.ts"))
+    );
+  }
+
   console.log(
     `\n${passed} passed, ${failures.length} failed` +
       (failures.length ? `\n\n${failures.map((f) => `  - ${f}`).join("\n")}\n` : "\n")

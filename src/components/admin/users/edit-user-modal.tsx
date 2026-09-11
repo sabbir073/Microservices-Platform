@@ -21,6 +21,7 @@ import {
   type VerifiedBadgeStyle,
 } from "@/components/user/profile/verified-badge";
 import { userDisplayId } from "@/lib/display-id";
+import { useCountries } from "@/lib/use-countries";
 import { isAdmin, PERMISSION_CATALOG, permissionLabel, permissionDescription, type UserRole } from "@/lib/rbac";
 import { USER_PAGES } from "@/lib/page-visibility";
 import { FEATURES, type PackageFeatureKey } from "@/lib/features";
@@ -207,6 +208,8 @@ export function UserEditForm({
   const [tab, setTab] = useState<Tab>("account");
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // The canonical 196-row country list, from the `Country` table.
+  const countries = useCountries();
 
   // Form state — initialized from user, all fields strings (or "" / undefined)
   const [form, setForm] = useState({
@@ -1258,13 +1261,37 @@ export function UserEditForm({
           {tab === "address" && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Country is a CODE, not an address line.
+                    This was a free-text box with the placeholder "Bangladesh",
+                    and three live accounts duly hold the literal string
+                    "Bangladesh" — which matches no ad targeting rule, no
+                    audience segment and no report bucket. The list is the
+                    canonical `Country` table (all 196 rows, ISO2 values), the
+                    same one every other country dropdown on the platform now
+                    reads. */}
                 <Field label="Country">
-                  <input
+                  <select
                     value={form.country}
                     onChange={(e) => set("country", e.target.value)}
                     className={fieldCls}
-                    placeholder="Bangladesh"
-                  />
+                  >
+                    <option value="">— Not set —</option>
+                    {countries.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag ? `${c.flag} ` : ""}
+                        {c.name} ({c.code})
+                      </option>
+                    ))}
+                    {/* A row whose stored value is not in the list (an old
+                        free-text value) must still be visible and editable —
+                        silently blanking it on open would destroy data. */}
+                    {form.country &&
+                      !countries.some((c) => c.code === form.country) && (
+                        <option value={form.country}>
+                          {form.country} — not a known country code
+                        </option>
+                      )}
+                  </select>
                 </Field>
                 <Field label="Region">
                   <input

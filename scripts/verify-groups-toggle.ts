@@ -140,9 +140,15 @@ async function main() {
       "the tab only exists when the flag is on",
       /groupsEnabled\s*\?\s*\[\{ key: "groups"/.test(v)
     );
+    // Matched on the GUARD, not on the whole JSX line. The original pinned the
+    // exact string `&& <GroupsTab />}`, so wrapping the tab in a fragment to add
+    // a banner broke the test while the guard itself was untouched — a test that
+    // fails for a reason it does not care about teaches people to edit the test.
     check(
       "GroupsTab cannot mount with the flag off",
-      /\{groupsEnabled && activeTab === "groups" && <GroupsTab \/>\}/.test(v)
+      /\{groupsEnabled && activeTab === "groups" &&/.test(v) &&
+        // …and there is no OTHER mount that skips the guard.
+        (v.match(/<GroupsTab\s*\/>/g) ?? []).length === 1
     );
     // With one tab left, a tab strip is worse than none — that strip is exactly
     // what the owner screenshotted.

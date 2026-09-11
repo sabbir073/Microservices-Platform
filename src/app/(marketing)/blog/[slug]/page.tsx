@@ -64,7 +64,7 @@ export default async function BlogArticlePage({
         ))}
       </article>
 
-      <div className="mt-10 rounded-2xl bg-(--mk-surface) border border-(--mk-border) p-6 text-center">
+      <div className="mt-10 rounded-2xl mk-card p-6 text-center">
         <h3 className="text-lg font-bold text-(--mk-text)">Start earning today</h3>
         <p className="mt-1 text-sm text-(--mk-muted)">Create a free account and put this into practice.</p>
         <div className="mt-4 flex justify-center"><PrimaryButton href="/register">Get started free</PrimaryButton></div>
@@ -74,7 +74,7 @@ export default async function BlogArticlePage({
         <h3 className="text-sm font-bold uppercase tracking-wider text-(--mk-subtle) mb-3">More articles</h3>
         <div className="grid gap-3 sm:grid-cols-3">
           {more.map((p) => (
-            <Link key={p.slug} href={`/blog/${p.slug}`} className="rounded-xl bg-(--mk-surface) border border-(--mk-border) p-4 hover:border-blue-500/30 transition-all">
+            <Link key={p.slug} href={`/blog/${p.slug}`} className="rounded-xl mk-card p-4 hover:border-blue-500/30 transition-all">
               <div className="text-3xl">{p.emoji}</div>
               <p className="mt-2 text-sm font-semibold text-(--mk-text) leading-snug">{p.title}</p>
             </Link>

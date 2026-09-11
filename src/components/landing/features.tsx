@@ -81,7 +81,7 @@ export function Features(props: Props) {
             const Icon = ICONS[feature.iconKey] ?? Sparkles;
             const href = feature.href?.trim();
             const cardClass =
-              "mk-zoom group relative flex flex-col h-full p-6 rounded-2xl bg-(--mk-surface) border border-(--mk-border) shadow-sm hover:border-(--mk-border-strong)";
+              "mk-zoom group relative flex flex-col h-full p-6 rounded-2xl mk-card hover:border-(--mk-border-strong)";
             const inner = (
               <>
                 <div

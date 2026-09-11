@@ -57,6 +57,10 @@ const DEFAULTS: SettingsBag = {
   maintenance_message: "",
   // Financial
   currency: "USD",
+  // The global click price every ad space falls back to. Not a new default —
+  // 0.05 is the value `getAdClickCost()` has always used when the row is absent;
+  // it is stated here so the form shows what is actually in force.
+  "ads.cpcUsd": 0.05,
   min_withdrawal: 5,
   max_withdrawal: 10000,
   withdrawal_fee_percent: 5,
@@ -168,6 +172,10 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   "buyer.require_kyc": "financial",
   "buyer.auto_approve_tasks": "financial",
   "buyer.refund_fee_on_reject": "financial",
+  // Advertising. `saveCategory` plucks ONLY keys listed here — a control whose
+  // key is missing from this map renders, accepts input, says "saved", and
+  // writes nothing. That is how 44 of 104 controls were dead once. Both ends.
+  "ads.cpcUsd": "financial",
   // Security
   password_min_length: "security", require_strong_passwords: "security",
   "kyc.autoEnabled": "security", "kyc.faceMinSimilarity": "security",
@@ -561,6 +569,35 @@ export function SystemSettingsForm({
                 />
               </Field>
             )}
+            <Section title="Advertising">
+              <p className="-mt-1 mb-2 text-xs leading-relaxed text-slate-500">
+                The default price an advertiser pays for one click, used by any
+                ad space that has no price of its own. Today that is every space:
+                none of the 29 has a per-space rate set, so this one number
+                prices a click on the withdrawal page — the longest-dwell screen
+                on the platform — exactly the same as a click on a banner nobody
+                scrolls to. Per-space prices live in{" "}
+                <Link href="/admin/ads" className="text-blue-400 hover:underline">
+                  Ad Manager &rarr; Spaces
+                </Link>
+                , and anything set there overrides this.
+              </p>
+              <Field
+                label="Default cost per click ($)"
+                hint="Charged to the advertiser&rsquo;s campaign budget when a click is billed. Existing spend is never re-priced — every click snapshots the rate in force when it happened."
+              >
+                <input
+                  type="number"
+                  min={0.001}
+                  max={100}
+                  step={0.01}
+                  value={Number(values["ads.cpcUsd"] ?? 0.05)}
+                  onChange={(e) => set("ads.cpcUsd", parseFloat(e.target.value))}
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+            </Section>
             <Section title="Buyer & task funding">
               <p className="-mt-1 mb-2 text-xs leading-relaxed text-slate-500">
                 A buyer funds a task from bought task credit: nothing is taken

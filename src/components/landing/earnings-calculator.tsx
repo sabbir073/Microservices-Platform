@@ -491,7 +491,7 @@ export function EarningsCalculator(props: Props) {
 
                   {/* Stat cards */}
                   <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-5">
-                    <div className="min-w-0 rounded-xl bg-(--mk-surface) border border-(--mk-border) shadow-sm p-2.5 sm:p-3 text-center">
+                    <div className="min-w-0 rounded-xl mk-card p-2.5 sm:p-3 text-center">
                       <ListChecks className="w-4 h-4 text-indigo-600 mx-auto mb-1" />
                       <p className="text-[9px] sm:text-[10px] uppercase font-bold text-(--mk-subtle) tracking-wider">
                         From Tasks
@@ -501,7 +501,7 @@ export function EarningsCalculator(props: Props) {
                       </p>
                       <p className="text-[9px] text-(--mk-subtle) mt-0.5">/mo</p>
                     </div>
-                    <div className="min-w-0 rounded-xl bg-(--mk-surface) border border-(--mk-border) shadow-sm p-2.5 sm:p-3 text-center">
+                    <div className="min-w-0 rounded-xl mk-card p-2.5 sm:p-3 text-center">
                       <Users className="w-4 h-4 text-violet-600 mx-auto mb-1" />
                       <p className="text-[9px] sm:text-[10px] uppercase font-bold text-(--mk-subtle) tracking-wider">
                         From Team
@@ -511,7 +511,7 @@ export function EarningsCalculator(props: Props) {
                       </p>
                       <p className="text-[9px] text-(--mk-subtle) mt-0.5">/mo</p>
                     </div>
-                    <div className="min-w-0 rounded-xl bg-(--mk-surface) border border-(--mk-border) shadow-sm p-2.5 sm:p-3 text-center">
+                    <div className="min-w-0 rounded-xl mk-card p-2.5 sm:p-3 text-center">
                       <Coins className="w-4 h-4 text-amber-500 mx-auto mb-1" />
                       <p className="text-[9px] sm:text-[10px] uppercase font-bold text-(--mk-subtle) tracking-wider">
                         Daily

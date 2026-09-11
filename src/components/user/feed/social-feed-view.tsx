@@ -9,12 +9,14 @@ import {
   Users,
   Compass,
   ArrowUp,
+  PanelRight,
 } from "lucide-react";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { useAppRefresh } from "@/hooks/use-app-refresh";
 import { cn } from "@/lib/utils";
 import {
   BannerSlider,
+  type BannerSlide,
 } from "@/components/user/primitives/banner-slider";
 import {
   WithdrawalTicker,
@@ -25,6 +27,7 @@ import { EmptyState } from "@/components/user/primitives/empty-state";
 import { MobileEarnBlock } from "@/components/user/feed/mobile-earn-block";
 import { ActiveEventsCard } from "@/components/user/feed/active-events-card";
 import { FeedRightRail } from "@/components/user/feed/feed-right-rail";
+import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
 import { CreatePostComposer } from "./create-post-composer";
 import { FeedPostCard } from "./feed-post-card";
 import { GroupsTab } from "./groups-tab";
@@ -61,6 +64,11 @@ export function SocialFeedView({
 }: Props) {
   const [tab, setTab] = useState<ViewTab>("feed");
   const [sort, setSort] = useState<Sort>("recent");
+  // The rail's contents, reachable below `xl` where the rail itself does not
+  // fit. Before this, Top Earners, Who to Follow, Trending Hashtags, Refer &
+  // Earn, the Daily Mission and every admin custom widget simply did not render
+  // on a phone or a tablet — they were desktop-only, with no way to reach them.
+  const [railOpen, setRailOpen] = useState(false);
 
   // Groups is behind an admin switch (`ui.groups_enabled`, default off) and the
   // flag arrives from the server — see src/lib/groups-gate.ts. `activeTab`
@@ -75,6 +83,24 @@ export function SocialFeedView({
   ] as const satisfies readonly { key: ViewTab; label: string; icon: typeof Compass }[];
   const activeTab: ViewTab = tabs.some((t) => t.key === tab) ? tab : "feed";
 
+  // The rail, rendered twice from one definition: in the aside at `xl`, and
+  // inside the sheet below it. Both get the same widgets in the same admin
+  // order, so "it is on desktop but not on my phone" cannot come back.
+  const railContent = (
+    <>
+      <ActiveEventsCard />
+      <FeedRightRail
+        bestEarners={bestEarners}
+        whoToFollow={whoToFollow}
+        trendingHashtags={trendingHashtags}
+        promo={promo}
+        widgetConfig={widgetConfig}
+        quickEarn={quickEarn}
+        customWidgets={customWidgets}
+      />
+    </>
+  );
+
   return (
     // The right rail appears at `xl`, not `lg`, and the mobile strips below hold
     // on until the same point.
@@ -86,6 +112,12 @@ export function SocialFeedView({
     // laptop in the 1024–1279px band rendered the feed at ~328px: narrower than
     // a phone, with a full-width rail beside it. 1280px is the first width where
     // both fit, which is why the rail starts at `xl`.
+    //
+    // The three columns, then: the app's own nav (`lg:pl-72`) is the left rail,
+    // this is the centre, the aside is the right. One column on a phone, two
+    // from `lg` where the nav appears, three from `xl`. Below `xl` the aside's
+    // contents are one tap away in the sheet rather than absent — which is what
+    // they used to be.
     //
     // The widths above `xl` are measured, not guessed. At 1920 the feed used to
     // begin 352px right of the nav with 180px of dead space on either side of
@@ -104,20 +136,24 @@ export function SocialFeedView({
     <div className="mx-auto w-full max-w-5xl xl:max-w-6xl flex justify-center gap-6">
       {/* Center feed column (FB/Twitter-width) */}
       <div className="w-full max-w-xl xl:max-w-[42rem] min-w-0 space-y-4">
-        {/* Banner — above the tabs, visible on both Feed and Groups */}
-        {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
+        {/* ONE toolbar for everything that steers the feed.
+            It replaces a tab strip at the top of the column and a sort toggle
+            floating on its own line further down — two rows, in two places, each
+            holding one decision, with the composer wedged between them. Putting
+            them together gives the column a single place to look for "what am I
+            seeing, and in what order", and hands a whole row back to the posts.
 
-        {/* Earn strip — Daily Bonus + Quick Earn. Shown until the rail appears at xl. */}
-        <MobileEarnBlock quickEarn={quickEarn} className="xl:hidden" />
-
-        {/* Active-events strip, below the banner. Shown until the rail appears at xl. */}
-        <ActiveEventsCard className="xl:hidden" />
-
-        {/* Top tabs — only rendered when there is a choice to make. With Groups
-            switched off there is one tab, and a tab strip holding a single
-            "Feed" button is worse than no strip at all. */}
-        {tabs.length > 1 && (
-          <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
+            It sticks under the app header (h-16 plus the safe-area inset) at
+            z-20 — below the header's z-30 — so the controls stay reachable while
+            reading without ever covering the header's own menus. */}
+        <div className="sticky top-[calc(4rem+env(safe-area-inset-top))] z-20 flex items-center gap-2 rounded-xl border border-gray-800 bg-gray-950/90 px-1.5 py-1.5 backdrop-blur">
+          {/* The BAR stays when Groups is off — it carries the sort control and
+              the panel handle, which are worth a row on their own. The TABS do
+              not: one tab is not a choice, it is a button that reports where you
+              already are, and that lone "Feed" chip is the thing the owner
+              screenshotted. So the bar survives and the tab list disappears. */}
+          {tabs.length > 1 && (
+          <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto scrollbar-none">
             {tabs.map((t) => {
               const isActive = t.key === activeTab;
               return (
@@ -125,28 +161,75 @@ export function SocialFeedView({
                   key={t.key}
                   onClick={() => setTab(t.key)}
                   className={cn(
-                    "inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors",
+                    "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors",
                     isActive
-                      ? "text-white border-indigo-500"
-                      : "text-gray-500 border-transparent hover:text-white"
+                      ? "bg-indigo-500/15 text-indigo-300"
+                      : "text-gray-400 hover:text-white"
                   )}
                 >
-                  <t.icon className="w-4 h-4" />
+                  <t.icon className="h-4 w-4" />
                   {t.label}
                 </button>
               );
             })}
           </nav>
-        )}
+          )}
+          {/* The nav carried `flex-1`. With it gone the sort control and the
+              handle would collapse to the left edge of an otherwise empty bar. */}
+          {tabs.length <= 1 && <div className="flex-1" />}
+
+          {/* Sort — Feed tab only, because it sorts posts and the Groups tab has
+              none. It used to render on both and do nothing on one of them. */}
+          {activeTab === "feed" && (
+            <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-gray-800">
+              {(["recent", "trending"] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setSort(s)}
+                  aria-pressed={sort === s}
+                  className={cn(
+                    "inline-flex h-10 items-center gap-1 px-3 text-xs font-semibold",
+                    sort === s
+                      ? "bg-indigo-500 text-white"
+                      : "bg-gray-900 text-gray-400 hover:text-white"
+                  )}
+                >
+                  {s === "recent" ? (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  ) : (
+                    <Flame className="h-3.5 w-3.5" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {s === "recent" ? "For You" : "Trending"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* The sheet handle. `xl:hidden` because above that width the same
+              content is already sitting in the aside. */}
+          <button
+            type="button"
+            onClick={() => setRailOpen(true)}
+            aria-label="Open earnings and discovery panel"
+            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-800 bg-gray-900 text-gray-300 hover:text-white xl:hidden"
+          >
+            <PanelRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Earn strip — balance + Quick Earn. Shown until the rail appears at xl. */}
+        <MobileEarnBlock quickEarn={quickEarn} className="xl:hidden" />
 
         {activeTab === "feed" && (
           <FeedTab
             user={user}
+            initialBanners={initialBanners}
             initialFeedAd={initialFeedAd}
             initialTicker={initialTicker}
             tickerConfig={tickerConfig}
             sort={sort}
-            onSortChange={setSort}
             canBoost={canBoost}
             canShareLinks={canShareLinks}
             canShareYouTube={canShareYouTube}
@@ -157,7 +240,12 @@ export function SocialFeedView({
           />
         )}
 
-        {groupsEnabled && activeTab === "groups" && <GroupsTab />}
+        {groupsEnabled && activeTab === "groups" && (
+          <>
+            {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
+            <GroupsTab />
+          </>
+        )}
       </div>
 
       {/* Right rail — only where both columns actually fit (xl+). See above.
@@ -172,7 +260,9 @@ export function SocialFeedView({
             no height bound and no overflow, so the column had no scrollbar of its
             own. It stacks Active Events, best earners, who-to-follow, trending
             hashtags, a promo, quick-earn tiles and any custom widgets, which
-            clears a laptop screen easily.
+            clears a laptop screen easily. They are banded under collapsible
+            headings now (see FeedRightRail) so the column can be shortened to
+            what the viewer actually wants, but the worst case is unchanged.
 
             6rem = the `top-20` offset plus a little breathing room at the bottom.
             `--anchor-ad-h` is published on the document by AnchorAdBar and is 0px
@@ -188,19 +278,24 @@ export function SocialFeedView({
 
             `overscroll-contain` stops a flick at the end of the rail carrying on
             into the page behind it. */}
-        <div className="sticky top-20 space-y-4 max-h-[calc(100vh-6rem-var(--anchor-ad-h,0px))] overflow-y-auto overscroll-contain pr-2">
-          <ActiveEventsCard />
-          <FeedRightRail
-            bestEarners={bestEarners}
-            whoToFollow={whoToFollow}
-            trendingHashtags={trendingHashtags}
-            promo={promo}
-            widgetConfig={widgetConfig}
-            quickEarn={quickEarn}
-            customWidgets={customWidgets}
-          />
+        <div className="sticky top-20 space-y-3 max-h-[calc(100vh-6rem-var(--anchor-ad-h,0px))] overflow-y-auto overscroll-contain pr-2">
+          {railContent}
         </div>
       </aside>
+
+      {/* The same widgets, one tap away, below xl.
+          The contents mount only while the sheet is open: FeedRightRail fetches
+          /api/feed/rail-widgets on mount, and a permanently-mounted second copy
+          would put an extra request on every feed load on every phone for a
+          panel nobody had opened. */}
+      <BottomSheet
+        open={railOpen}
+        onOpenChange={setRailOpen}
+        title="Earnings & discovery"
+        description="Your balance, daily mission, referrals and who to follow."
+      >
+        {railOpen && <div className="space-y-3 pb-2">{railContent}</div>}
+      </BottomSheet>
     </div>
   );
 }
@@ -211,11 +306,11 @@ export function SocialFeedView({
 
 function FeedTab({
   user,
+  initialBanners,
   initialFeedAd,
   initialTicker,
   tickerConfig,
   sort,
-  onSortChange,
   canBoost,
   canShareLinks,
   canShareYouTube,
@@ -225,11 +320,11 @@ function FeedTab({
   underPostInterval,
 }: {
   user: SessionUser;
+  initialBanners: BannerSlide[];
   initialFeedAd?: FeedAd | null;
   initialTicker: WithdrawalTickerItem[];
   tickerConfig?: TickerConfig;
   sort: Sort;
-  onSortChange: (s: Sort) => void;
   canBoost?: boolean;
   canShareLinks?: boolean;
   canShareYouTube?: boolean;
@@ -498,6 +593,23 @@ function FeedTab({
           </button>
         </div>
       )}
+      {/* Write first. The composer is the one thing on this column the viewer
+          can only do here, so it goes above the promotional furniture rather
+          than below a banner, a ticker and two strips of widgets — which is the
+          order it used to arrive in, three screens down on a phone. */}
+      <CreatePostComposer
+        user={user}
+        onCreated={handlePostCreated}
+        canShareLinks={canShareLinks}
+        canShareYouTube={canShareYouTube}
+        canDonate={canDonate}
+      />
+
+      {/* Banner and ticker are both ambient — nothing here is a decision the
+          viewer has to make — so they sit between the composer and the posts
+          instead of in front of them. */}
+      {initialBanners.length > 0 && <BannerSlider slides={initialBanners} />}
+
       {initialTicker.length > 0 && (
         <WithdrawalTicker
           items={initialTicker}
@@ -507,39 +619,6 @@ function FeedTab({
           speedSec={tickerConfig?.speedSec}
         />
       )}
-
-      <CreatePostComposer
-        user={user}
-        onCreated={handlePostCreated}
-        canShareLinks={canShareLinks}
-        canShareYouTube={canShareYouTube}
-        canDonate={canDonate}
-      />
-
-      {/* Sort toggle */}
-      <div className="flex items-center justify-end">
-        <div className="inline-flex rounded-lg border border-gray-800 overflow-hidden text-xs">
-          {(["recent", "trending"] as const).map((s) => (
-            <button
-              key={s}
-              onClick={() => onSortChange(s)}
-              className={cn(
-                "px-3 py-1.5 inline-flex items-center gap-1",
-                sort === s
-                  ? "bg-indigo-500 text-white"
-                  : "bg-gray-900 text-gray-400 hover:text-white"
-              )}
-            >
-              {s === "recent" ? (
-                <Sparkles className="w-3 h-3" />
-              ) : (
-                <Flame className="w-3 h-3" />
-              )}
-              {s === "recent" ? "For You" : "Trending"}
-            </button>
-          ))}
-        </div>
-      </div>
 
       {loading && <ListSkeleton rows={3} />}
 

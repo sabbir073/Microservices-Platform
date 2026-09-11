@@ -49,7 +49,7 @@ export default function StatusPage() {
 
       <div className="mt-6 space-y-3">
         {COMPONENTS.map((c) => (
-          <div key={c.name} className="rounded-2xl bg-(--mk-surface) border border-(--mk-border) p-5">
+          <div key={c.name} className="rounded-2xl mk-card p-5">
             <div className="flex items-center justify-between">
               <p className="font-semibold text-(--mk-text)">{c.name}</p>
               <span className="inline-flex items-center gap-1.5 text-sm text-emerald-600">
@@ -68,7 +68,7 @@ export default function StatusPage() {
 
       <div className="mt-8">
         <h2 className="text-sm font-bold uppercase tracking-wider text-(--mk-subtle) mb-3">Incident history</h2>
-        <div className="rounded-2xl bg-(--mk-surface) border border-(--mk-border) p-6 text-center text-sm text-(--mk-muted)">
+        <div className="rounded-2xl mk-card p-6 text-center text-sm text-(--mk-muted)">
           No incidents reported in the last 90 days.
         </div>
       </div>

@@ -1,7 +1,11 @@
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
 import { parseTargeting } from "@/lib/ad-targeting";
-import { audienceWhere, type AudienceCriteria } from "@/lib/audience";
+import {
+  audienceWhere,
+  audienceWhereResolved,
+  type AudienceCriteria,
+} from "@/lib/audience";
 
 /**
  * Ad targeting → Prisma `User.where`, for counting how many real users an
@@ -21,12 +25,23 @@ export function targetingToUserWhere(raw: unknown): Prisma.UserWhereInput {
   return audienceWhere(parseTargeting(raw) as AudienceCriteria);
 }
 
+/**
+ * Same, but with the country list widened to the spellings `User.country`
+ * actually holds (see `audienceWhereResolved`). Async, so the two callers that
+ * can await use this one; `targetingToUserWhere` stays for sync contexts.
+ */
+export async function targetingToUserWhereResolved(
+  raw: unknown
+): Promise<Prisma.UserWhereInput> {
+  return audienceWhereResolved(parseTargeting(raw) as AudienceCriteria);
+}
+
 /** Reach estimate for a targeting object: matching users out of the active base. */
 export async function estimateAudience(
   raw: unknown
 ): Promise<{ count: number; total: number }> {
   const [count, total] = await Promise.all([
-    prisma.user.count({ where: targetingToUserWhere(raw) }),
+    prisma.user.count({ where: await targetingToUserWhereResolved(raw) }),
     prisma.user.count({ where: { status: "ACTIVE" } }),
   ]);
   return { count, total };

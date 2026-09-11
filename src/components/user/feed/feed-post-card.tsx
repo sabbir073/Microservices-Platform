@@ -893,7 +893,12 @@ export const FeedPostCard = memo(function FeedPostCard({
       <ShareModal
         open={shareOpen}
         onOpenChange={setShareOpen}
-        url={`${typeof window !== "undefined" ? window.location.origin : ""}/social/${post.id}`}
+        /* `/post/:id` is the PUBLIC page — it renders without a session, which
+           is the whole point of a share link, and it carries the og:/twitter:
+           tags that make it unfurl. The old value was `/social/:id`, a route
+           that does not exist: every link this button has ever produced landed
+           on a 404. */
+        url={`${typeof window !== "undefined" ? window.location.origin : ""}/post/${post.id}`}
         title={post.user?.name ? `Post by ${post.user.name}` : "EarnGPT post"}
         text={post.content.slice(0, 200)}
         onShare={async (channel) => {

@@ -13,6 +13,7 @@ const KEYS = {
   widgets: "feed.sidebar_widgets",
   quickEarn: "feed.quick_earn_tiles",
   custom: "feed.custom_widgets",
+  publicSharing: "feed.public_post_sharing",
 } as const;
 
 const schema = z.object({
@@ -27,6 +28,9 @@ const schema = z.object({
       enabled: z.boolean(),
     })
   ),
+  // Optional so an older client that does not send it cannot silently switch
+  // public sharing OFF — or, far worse, default it ON.
+  publicSharing: z.boolean().optional(),
   customWidgets: z.array(
     z.object({
       id: z.string(),
@@ -95,6 +99,11 @@ export async function POST(req: NextRequest) {
     [KEYS.quickEarn, quickEarn],
     [KEYS.custom, customWidgets],
   ];
+  // Only written when the client actually sent it, so a partial payload leaves
+  // the switch exactly as the owner set it.
+  if (typeof v.data.publicSharing === "boolean") {
+    writes.push([KEYS.publicSharing, v.data.publicSharing]);
+  }
   await Promise.all(
     writes.map(([key, value]) =>
       prisma.systemSetting.upsert({
@@ -110,7 +119,18 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       action: "FEED_WIDGETS_CONFIG_UPDATED",
       entity: "SystemSetting",
-      newData: JSON.parse(JSON.stringify({ widgets, quickEarn, customWidgets })),
+      // The sharing switch is the one setting here with a privacy consequence,
+      // so who flipped it and when has to be on the record.
+      newData: JSON.parse(
+        JSON.stringify({
+          widgets,
+          quickEarn,
+          customWidgets,
+          ...(typeof v.data.publicSharing === "boolean"
+            ? { publicPostSharing: v.data.publicSharing }
+            : {}),
+        })
+      ),
     },
   });
 

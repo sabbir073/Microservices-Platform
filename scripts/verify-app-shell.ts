@@ -201,6 +201,171 @@ function main() {
     );
   }
 
+  /* ── 3. One navigation model per width ── */
+  console.log("\n3. One navigation model at every width");
+  {
+    const sb = code("src/components/dashboard/sidebar.tsx");
+    const bar = code("src/components/dashboard/bottom-tab-bar.tsx");
+    const hdr = code("src/components/dashboard/header.tsx");
+    const layout = code("src/app/(main)/layout.tsx");
+
+    // The rail, the drawer, the hamburger and the tab bar must all switch at
+    // the SAME breakpoint. When the rail started at `lg` and nothing else did,
+    // a 768–1023px tablet got the phone shell — hamburger, drawer and bottom
+    // bar — with 250px of dead gutter on either side of the content.
+    check(
+      "the persistent rail starts at md",
+      /md:fixed[^"]*md:flex/.test(sb),
+      "the rail must be on screen for tablets, not only laptops"
+    );
+    check("the phone drawer is md:hidden", /md:hidden/.test(sb) && !/lg:hidden/.test(sb), sb.match(/lg:hidden/)?.[0]);
+    check("the bottom tab bar is md:hidden", /md:hidden fixed bottom-0/.test(bar));
+    check(
+      "the header hamburger hides at the same breakpoint",
+      /items-center gap-1 md:hidden/.test(hdr)
+    );
+    // A bar that is `md:hidden` but polls on `max-width: 1023px` runs a 60s
+    // fetch loop for every tablet and desktop user to feed a badge they cannot
+    // see. The media query and the class have to name the same edge.
+    check(
+      "the tab bar's poll gate matches the breakpoint it renders at",
+      /max-width: 767px/.test(bar),
+      bar.match(/max-width: \d+px/)?.[0]
+    );
+
+    // Rail width and content offset are two numbers that must agree at BOTH
+    // tiers; if either drifts the content sits under the rail or leaves a gap.
+    check(
+      "content is offset by the rail width at md and at lg",
+      /md:w-64 lg:w-72/.test(sb) && /md:pl-64 lg:pl-72/.test(layout),
+      layout.match(/md:pl-\d+ lg:pl-\d+/)?.[0]
+    );
+    check(
+      "the page's bottom reserve drops where the tab bar does",
+      /md:pb-\[calc\(2rem/.test(layout),
+      "otherwise every tablet page keeps 96px of padding for a bar that is not there"
+    );
+
+    /* Search. It was an <input> with no handler, no form and no action — it
+       looked like search and did nothing, on every page. */
+    check(
+      "the header search opens the real search surface",
+      /GlobalSearch/.test(hdr) && /setIsSearchOpen\(true\)/.test(hdr),
+      "a search box that is not wired to /api/search is decoration"
+    );
+    check(
+      "search has an entry point on phones",
+      /md:hidden[^"]*"\s*>\s*<Search/.test(hdr) ||
+        /aria-label="Search"/.test(hdr),
+      "the box was hidden below lg, so phones had no search at all"
+    );
+    check(
+      "the rail can be filtered",
+      /aria-label="Filter navigation"/.test(sb),
+      "32 destinations need a way to jump, not only a way to scan"
+    );
+
+    /* Every destination that was reachable stays reachable. */
+    const NAV_MUST_KEEP = [
+      "/social", "/dashboard", "/wallet", "/saved", "/leaderboard",
+      "/daily-mission", "/missions", "/tasks", "/board-tasks", "/watch-ads",
+      "/quizzes", "/games", "/events", "/lottery",
+      "/courses", "/my-learning", "/marketplace",
+      "/referrals", "/affiliate", "/milestones", "/achievements",
+      "/advertiser", "/create-task",
+      "/deposit", "/withdrawal", "/transactions", "/packages", "/my-package",
+      "/notifications", "/chat", "/support", "/settings",
+    ];
+    const missing = NAV_MUST_KEEP.filter(
+      (h) => !new RegExp(`href: "${h}"`).test(sb)
+    );
+    check(
+      `all ${NAV_MUST_KEEP.length} nav destinations survive the regrouping`,
+      missing.length === 0,
+      missing.join(", ")
+    );
+
+    /* Touch targets. 44px is the floor for anything a thumb hits. */
+    check(
+      "nav rows are at least 44px tall",
+      (sb.match(/min-h-11/g) ?? []).length >= 3,
+      "at py-2 these rows were 36px"
+    );
+    check("tab bar rows are at least 56px tall", (bar.match(/min-h-14/g) ?? []).length >= 2);
+    check(
+      "header icon buttons are 44px",
+      (hdr.match(/w-11 h-11/g) ?? []).length >= 4,
+      "p-2 around a 24px icon is a 40px target"
+    );
+
+    /* Safe areas — the bar and the rail both meet a device edge. */
+    check("the tab bar pads for the home indicator", /safe-area-inset-bottom/.test(bar));
+    check("…and for landscape notches", /safe-area-inset-left/.test(bar));
+    check("the drawer clears the status bar", /safe-area-inset-top/.test(sb));
+  }
+
+  /* ── 4. Theme tokens are defined for both themes ── */
+  console.log("\n4. Every shell/marketing colour exists in both themes");
+  {
+    const css = read("src/app/globals.css");
+    const block = (sel: string) => {
+      const i = css.indexOf(sel);
+      if (i < 0) return "";
+      const open = css.indexOf("{", i);
+      // Token blocks here are flat (no nesting), so the first `}` closes them.
+      return css.slice(open, css.indexOf("}", open));
+    };
+    const varsIn = (s: string) =>
+      new Set((s.match(/--(?:shell|mk)-[a-z0-9-]+(?=\s*:)/g) ?? []));
+
+    // The shell tokens live in :root (dark) and are re-declared in the light
+    // block. A colour defined in only one of them is a colour that vanishes —
+    // or glares — the moment the user flips the switch.
+    // `block()` keys off the first `{` after a selector, which a leading
+    // comment inside the rule would skip past — so slice this one directly.
+    const shellStart = css.indexOf("/* ── App chrome (sidebar");
+    const darkShell = varsIn(
+      shellStart < 0 ? "" : css.slice(shellStart, css.indexOf("}", shellStart))
+    );
+    const lightShell = varsIn(block('html[data-theme="light"] {\n  /* Text ramp'));
+    const shellOnlyDark = [...darkShell].filter(
+      (v) => v.startsWith("--shell") && !lightShell.has(v)
+    );
+    check(
+      "every --shell-* token is declared in both themes",
+      darkShell.size > 0 && shellOnlyDark.length === 0,
+      shellOnlyDark.join(", ")
+    );
+
+    const mkLight = varsIn(block('[data-mk-theme="light"]'));
+    const mkDark = varsIn(block('[data-mk-theme="dark"]'));
+    const mkMismatch = [
+      ...[...mkLight].filter((v) => !mkDark.has(v)).map((v) => `${v} (light only)`),
+      ...[...mkDark].filter((v) => !mkLight.has(v)).map((v) => `${v} (dark only)`),
+    ];
+    check(
+      `every --mk-* token is declared in both themes (${mkLight.size})`,
+      mkLight.size > 0 && mkMismatch.length === 0,
+      mkMismatch.join(", ")
+    );
+
+    // A pure-white page behind pure-white cards has no depth at all; that was
+    // the landing page's whole problem in light mode.
+    const mkBg = block('[data-mk-theme="light"]').match(/--mk-bg:\s*(#[0-9a-f]{6})/i)?.[1] ?? "";
+    const mkSurface = block('[data-mk-theme="light"]').match(/--mk-surface:\s*(#[0-9a-f]{6})/i)?.[1] ?? "";
+    check(
+      "the light marketing page is not the same colour as its cards",
+      mkBg.length === 7 && mkBg.toLowerCase() !== mkSurface.toLowerCase(),
+      `${mkBg} vs ${mkSurface}`
+    );
+
+    check(
+      "the shell surface class is layered so utilities still win over it",
+      /@layer components \{[\s\S]{0,400}\.app-chrome/.test(css),
+      "an unlayered .app-chrome would override any bg-* class put on the header"
+    );
+  }
+
   console.log(
     `\n${passed} passed, ${failures.length} failed` +
       (failures.length ? `\n\n${failures.map((f) => `  - ${f}`).join("\n")}\n` : "\n")

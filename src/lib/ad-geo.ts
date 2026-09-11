@@ -119,7 +119,7 @@ export async function resolveEventCountry(opts: {
   if (fromEdge) return fromEdge;
 
   if (opts.profileCountry !== undefined) {
-    return normalizeCountry(opts.profileCountry);
+    return await profileCountryCode(opts.profileCountry);
   }
 
   if (!opts.userId) return UNKNOWN_COUNTRY;
@@ -131,7 +131,37 @@ export async function resolveEventCountry(opts: {
       // about never, and this sits in front of a click bill.
       cacheStrategy: { ttl: 60, swr: 300 },
     });
-    return normalizeCountry(u?.country);
+    return await profileCountryCode(u?.country);
+  } catch {
+    return UNKNOWN_COUNTRY;
+  }
+}
+
+/**
+ * A profile country, coerced to a storable code — tolerantly.
+ *
+ * `normalizeCountry()` alone rejects anything that is not two letters, which is
+ * right for an edge header (a header is machine-written; a three-letter value
+ * there is garbage) but wrong for a profile field, which is human-written and
+ * historically accepted free text. Three accounts hold "Bangladesh": under the
+ * strict rule their every impression landed in the `ZZ` unknown bucket, which
+ * is not "we could not tell" — we could tell perfectly well.
+ *
+ * So a non-ISO2 profile value gets one more chance through the canonical
+ * `Country` table (full name, ISO3) before it becomes unknown. The result still
+ * passes through `normalizeCountry`, so the non-country codes (`T1`, `XX`, …)
+ * stay excluded and the stored value is always a real two-letter code or `ZZ`.
+ */
+async function profileCountryCode(
+  raw: string | null | undefined
+): Promise<string> {
+  const strict = normalizeCountry(raw);
+  if (strict !== UNKNOWN_COUNTRY) return strict;
+  const v = (raw ?? "").trim();
+  if (!v) return UNKNOWN_COUNTRY;
+  try {
+    const { resolveCountryCode } = await import("@/lib/country-codes");
+    return normalizeCountry(await resolveCountryCode(v));
   } catch {
     return UNKNOWN_COUNTRY;
   }

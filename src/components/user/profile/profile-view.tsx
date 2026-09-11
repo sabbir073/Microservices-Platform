@@ -43,6 +43,7 @@ import type {
   EditTab,
 } from "./profile-view.types";
 import { COUNTRIES, TAG_OPTIONS } from "./profile-view.constants";
+import { useCountries } from "@/lib/use-countries";
 import { ProfileTabBody } from "./profile-tab-body";
 import { PostsListTab } from "./posts-list-tab";
 import { UserListTab } from "./user-list-tab";
@@ -53,6 +54,9 @@ import { ConnectSocialModal } from "./connect-social-modal";
 import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 export function ProfileView() {
+  // Canonical 196-row country list; the 15-row constant is only the first-paint
+  // fallback. A country the platform can be set to must be a country it can name.
+  const countryList = useCountries(COUNTRIES.map((c) => ({ ...c, flag: null })));
   const [data, setData] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [primaryTab, setPrimaryTab] = useState<PrimaryTab>("profile");
@@ -231,7 +235,7 @@ export function ProfileView() {
           <Globe className="w-4 h-4 text-indigo-400 shrink-0" />
           <p className="text-sm text-indigo-200 flex-1">
             We detected you&apos;re in{" "}
-            <strong>{COUNTRIES.find((c) => c.code === autoCountry.country)?.name ?? autoCountry.country}</strong>.
+            <strong>{countryList.find((c) => c.code === autoCountry.country)?.name ?? autoCountry.country}</strong>.
             Auto-fill your profile?
           </p>
           <button
@@ -343,7 +347,7 @@ export function ProfileView() {
             {profile.country && (
               <span className="inline-flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-rose-400" />
-                {COUNTRIES.find((c) => c.code === profile.country)?.name ?? profile.country}
+                {countryList.find((c) => c.code === profile.country)?.name ?? profile.country}
               </span>
             )}
             {profile.profession && (

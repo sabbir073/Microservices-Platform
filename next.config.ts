@@ -56,6 +56,18 @@ const nextConfig: NextConfig = {
       { source: "/api/earn/:id/claim", destination: "/api/ads/:id/reward" },
     ];
   },
+  // The share sheet used to hand out `/social/<postId>`, and no such route has
+  // ever existed — `(main)/social` is the feed itself and takes no parameter, so
+  // every shared link 404'd for the person who received it. The public post page
+  // is `/post/<id>`; this keeps links already in the wild working. It is a
+  // 307, not a 308: `/social/:id` is a path someone could still want for a
+  // logged-in view later, and a permanent redirect is cached in browsers
+  // forever.
+  async redirects() {
+    return [
+      { source: "/social/:id", destination: "/post/:id", permanent: false },
+    ];
+  },
   // Always revalidate the service worker + manifest so a new deploy propagates to
   // installed PWAs instead of a CDN/browser pinning a stale worker.
   async headers() {

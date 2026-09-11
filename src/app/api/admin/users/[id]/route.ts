@@ -9,6 +9,7 @@ import { parseFeatureOverrides } from "@/lib/packages";
 import { recordTransaction } from "@/lib/ledger";
 import { getPointsPerUsd } from "@/lib/economy";
 import { toNum } from "@/lib/money";
+import { resolveCountryCode } from "@/lib/country-codes";
 import { z } from "zod";
 import { USERNAME_REGEX, USERNAME_RULE_MESSAGE } from "@/lib/username";
 
@@ -406,7 +407,28 @@ export async function PATCH(
     if (data.coverPhoto !== undefined) updateData.coverPhoto = data.coverPhoto;
 
     // Address
-    if (data.country !== undefined) updateData.country = data.country;
+    //
+    // `country` is stored as ISO-3166-1 alpha-2 and nothing else. This box used
+    // to be free text with the placeholder "Bangladesh", which is exactly what
+    // three live accounts ended up holding — and a country NAME matches no ad
+    // targeting rule, no audience segment and no report bucket, silently.
+    // Anything the canonical `Country` table can recognise (ISO2, ISO3, the
+    // full name) is accepted and stored as the code; anything else is refused
+    // rather than written half-valid.
+    if (data.country !== undefined) {
+      if (data.country === null || data.country === "") {
+        updateData.country = null;
+      } else {
+        const iso2 = await resolveCountryCode(data.country);
+        if (!iso2) {
+          return NextResponse.json(
+            { error: `Unknown country "${data.country}" — use its ISO code` },
+            { status: 400 }
+          );
+        }
+        updateData.country = iso2;
+      }
+    }
     if (data.region !== undefined) updateData.region = data.region;
     if (data.division !== undefined) updateData.division = data.division;
     if (data.subDivision !== undefined) updateData.subDivision = data.subDivision;
@@ -469,8 +491,8 @@ export async function PATCH(
           amountUsd: cashDelta,
           description: `Admin balance ${pointsDelta + cashDelta >= 0 ? "credit" : "debit"}`,
           // Per-occurrence by design. An admin may apply the same balance
-          // adjustment to one user more than once.
-          // A deterministic key would make `Transaction @@unique([userId, reference])`
+          // adjustment to one user more than once.
+          // A deterministic key would make `Transaction @@unique([userId, reference])`
           // reject the second one, so this stays keyed on the instant it happened.
           reference: `admin_edit_${id}_${Date.now()}`,
           metadata: { adminId: session.user.id, via: "edit-user" },

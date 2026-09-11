@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hasPermission, type UserRole } from "@/lib/rbac";
 import { userCanFeature } from "@/lib/packages";
-import { targetingToUserWhere } from "@/lib/ad-audience";
+import { targetingToUserWhereResolved } from "@/lib/ad-audience";
 
 // Distinct country codes + package slugs present among ACTIVE users, WITH counts,
 // so the audience builder dropdowns auto-populate from real data. Cached briefly.
@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
   }
 
   const body = await request.json().catch(() => ({}));
-  const where = targetingToUserWhere(body.targeting ?? {});
+  const where = await targetingToUserWhereResolved(body.targeting ?? {});
 
   const [count, total, options] = await Promise.all([
     prisma.user.count({ where }),

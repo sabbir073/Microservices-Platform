@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { prisma } from "@/lib/prisma";
+import { publicSharingEnabled } from "@/lib/public-post";
 
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.app";
 
@@ -30,7 +31,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Dynamic: published courses + active listings. Best-effort — a DB blip must
   // not break the sitemap.
-  const [courses, listings] = await Promise.all([
+  const [courses, listings, posts] = await Promise.all([
     prisma.course
       .findMany({
         where: { status: "PUBLISHED", slug: { not: null } },
@@ -45,6 +46,33 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         take: 5000,
       })
       .catch(() => [] as { id: string; updatedAt: Date }[]),
+    // Public feed posts. The WHERE clause here is the same rule as
+    // `isPubliclyVisible` in src/lib/public-post-gate.ts, and it has to stay
+    // that way: listing a post in the sitemap that /post/[id] then refuses
+    // hands Google a page of 404s, and listing one it should have refused would
+    // invite a crawler to a post that is not public. `isPublic` DEFAULTS to
+    // true, so `groupId: null` is doing as much work here as the flag is.
+    // …and the same master switch, for the same reason. `/post/[id]` returns
+    // null for every post while sharing is off, so listing them here would hand
+    // Google five thousand 404s and advertise the addresses of posts nobody
+    // agreed to publish.
+    publicSharingEnabled().then((on) =>
+      on
+        ? prisma.post
+            .findMany({
+              where: {
+                isPublic: true,
+                isHidden: false,
+                groupId: null,
+                user: { status: "ACTIVE" },
+              },
+              select: { id: true, updatedAt: true },
+              orderBy: { createdAt: "desc" },
+              take: 5000,
+            })
+            .catch(() => [] as { id: string; updatedAt: Date }[])
+        : ([] as { id: string; updatedAt: Date }[])
+    ),
   ]);
 
   const courseEntries: MetadataRoute.Sitemap = courses
@@ -62,5 +90,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.5,
   }));
 
-  return [...staticEntries, ...courseEntries, ...listingEntries];
+  const postEntries: MetadataRoute.Sitemap = posts.map((p) => ({
+    url: `${SITE_URL}/post/${p.id}`,
+    lastModified: p.updatedAt,
+    changeFrequency: "daily",
+    priority: 0.4,
+  }));
+
+  return [...staticEntries, ...courseEntries, ...listingEntries, ...postEntries];
 }

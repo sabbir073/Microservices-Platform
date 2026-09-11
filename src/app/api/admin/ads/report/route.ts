@@ -3,7 +3,8 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
-import { UNKNOWN_COUNTRY, countryLabel } from "@/lib/ad-geo";
+import { UNKNOWN_COUNTRY, countryLabel, countryFlag } from "@/lib/ad-geo";
+import { countryDetailMap, type CountryDetail } from "@/lib/country-codes";
 
 // GET /api/admin/ads/report?days=N — per-ad / per-placement / per-campaign
 // breakdown from AdDailyStat over the last N days (impressions, clicks, CTR,
@@ -32,6 +33,8 @@ const isNetworkType = (t: string) => t === "ADSENSE" || t === "GAM";
 export interface CountryRow {
   code: string;
   label: string;
+  /** Emoji flag from the `Country` table; "" for the unknown bucket. */
+  flag: string;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -72,7 +75,18 @@ function buildPerCountry<
   // describing a different slice of traffic than the table beside it.
   adMap: Map<string, A>,
   inFilter: (a: A | undefined) => boolean,
-  sort: "impressions" | "clicks" | "ctr" | "spend"
+  sort: "impressions" | "clicks" | "ctr" | "spend",
+  /**
+   * The canonical `Country` table, keyed by ISO2 — the SAME 196 rows every
+   * dropdown on the platform offers.
+   *
+   * A bare "BD" in a revenue table is a code the owner has to decode; worse, it
+   * cannot be told apart from a code that is not a country at all. Labelling
+   * from the platform's own list (rather than only `Intl.DisplayNames`) means
+   * the report names a country exactly as the admin named it when they targeted
+   * it. `Intl` stays as the fallback for a code the table does not carry.
+   */
+  detail: Map<string, CountryDetail>
 ): {
   perCountry: CountryRow[];
   countrySort: string;
@@ -104,7 +118,8 @@ function buildPerCountry<
   const totalImpr = [...agg.values()].reduce((s, v) => s + v.impressions, 0);
   const perCountry: CountryRow[] = [...agg.entries()].map(([code, v]) => ({
     code,
-    label: countryLabel(code),
+    label: detail.get(code)?.name ?? countryLabel(code),
+    flag: detail.get(code)?.flag ?? countryFlag(code) ?? "",
     impressions: v.impressions,
     clicks: v.clicks,
     ctr: v.impressions > 0 ? (v.clicks / v.impressions) * 100 : 0,
@@ -210,7 +225,14 @@ export async function GET(req: NextRequest) {
   // rows still has to return a well-formed (empty) country section, or the UI
   // renders a panel that looks broken rather than a panel that says "nothing
   // here yet".
-  const perCountry = buildPerCountry(countryStats, adMap, inFilter, countrySort);
+  const countryNames = await countryDetailMap();
+  const perCountry = buildPerCountry(
+    countryStats,
+    adMap,
+    inFilter,
+    countrySort,
+    countryNames
+  );
 
   if (stats.length === 0) {
     return NextResponse.json({

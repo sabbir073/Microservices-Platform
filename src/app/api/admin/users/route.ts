@@ -9,6 +9,7 @@ import { validatePassword } from "@/lib/password-policy";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import { USERNAME_REGEX, USERNAME_RULE_MESSAGE } from "@/lib/username";
+import { resolveCountryCode } from "@/lib/country-codes";
 
 // Helper for optional, possibly-empty string fields
 const optStr = z.string().max(200).optional().nullable();
@@ -164,6 +165,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const rawCountry = n(data.country);
+    const countryIso2 = rawCountry ? await resolveCountryCode(rawCountry) : null;
+    if (rawCountry && !countryIso2) {
+      return NextResponse.json(
+        { error: `Unknown country "${rawCountry}" — use its ISO code` },
+        { status: 400 }
+      );
+    }
+
     const user = await prisma.user.create({
       data: {
         // Core
@@ -189,8 +199,10 @@ export async function POST(request: NextRequest) {
         secondaryEmail: n(data.secondaryEmail),
         secondaryPhone: n(data.secondaryPhone),
         bio: n(data.bio),
-        // Address
-        country: n(data.country),
+        // Address. `country` is ISO2 only — see the note on the same field in
+        // `[id]/route.ts`. Resolved, not trusted: the create form shares the
+        // same LocationSelector, but an API caller can send anything.
+        country: countryIso2,
         region: n(data.region),
         division: n(data.division),
         subDivision: n(data.subDivision),

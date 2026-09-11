@@ -2,7 +2,6 @@ import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { clicksAreBillable, getPlacementClickCost } from "@/lib/ad-rate-card";
 import { bumpAdDailyStat } from "@/lib/ad-stats";
-import { bufferImpression } from "@/lib/ad-counters";
 import { resolveEventCountry } from "@/lib/ad-geo";
 // `ad-serve` does not import this module, so there is no cycle.
 import { servableCampaignWhere } from "@/lib/ad-serve";
@@ -91,16 +90,20 @@ export async function recordImpression(
   });
   if (!slot) return { counted: false };
 
-  // Buffered (src/lib/ad-counters.ts) — the AdEngagement row above is already
-  // the durable, deduped record of this view; the counters are a rollup and do
-  // not need to be written synchronously on a hot row.
+  // NOTE: this deliberately does NOT touch the impression counters any more.
   //
-  // The country is resolved HERE, on the request, and not at flush time: by the
-  // time the buffer drains, the request that carried `x-vercel-ip-country` is
-  // long gone, and a later flush could even happen on a different invocation.
-  // This is also the ONLY server-side counting path for IN_FEED ads, which
-  // `serveFeedAds` deliberately does not count.
-  bufferImpression(adId, await resolveEventCountry({ userId: opts.userId }));
+  // Impressions are counted on exactly one basis platform-wide — server-side, at
+  // delivery, in `serveAd` and `serveFeedAds` (see the long note at the foot of
+  // `serveFeedAds` for why that ruler and not this one). This path used to be
+  // the sole counter for IN_FEED, on a *different* basis (deduped per ad, per
+  // viewer, per minute), which is precisely what made the feed look ~10x weaker
+  // than every other space in the same report table.
+  //
+  // Now that `serveFeedAds` counts at delivery, incrementing here as well would
+  // double-count every feed ad. What this function still does is the part only
+  // it can do: write the durable, deduped, user-attributed `AdEngagement` row —
+  // the record that says a specific viewer actually rendered this creative, and
+  // the rate-limited fraud guard on views. That row is untouched.
   return { counted: true };
 }
 

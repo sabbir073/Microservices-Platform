@@ -10,6 +10,7 @@ import { matchesTargeting, type TargetableUser } from "@/lib/ad-targeting";
 import { getSetting } from "@/lib/system-settings";
 import { bufferImpression, bufferServeOutcome } from "@/lib/ad-counters";
 import { resolveEventCountry } from "@/lib/ad-geo";
+import { resolveCountryCode } from "@/lib/country-codes";
 import { creativeUrl, isFirstPartyAdType } from "@/lib/ad-proxy";
 import {
   getNetworkGlobals,
@@ -77,6 +78,28 @@ const SUPPRESSED: ServeResult = {
 
 /** Viewer attributes targeting can filter on — must cover every AdTargeting geo
  *  dimension or a rule silently matches nobody. */
+/**
+ * The viewer's country, as the ISO2 code the targeting matcher compares against.
+ *
+ * `matchesTargeting()` lowercases `user.country` and looks for it in the
+ * campaign's list of ISO2 codes. That is an exact string comparison, so an
+ * account holding the display name "Bangladesh" — three of them do, from a
+ * free-text admin field since fixed — matches NO Bangladesh campaign and is
+ * silently dropped from every geo-targeted buy. Nobody sees an error; the
+ * advertiser just reaches fewer people than they paid for.
+ *
+ * Resolving here, once per serve, rather than inside the matcher, is deliberate:
+ * the matcher runs per AD per serve and must stay synchronous and allocation-free.
+ * Unresolvable values are left as they are rather than blanked — an unknown
+ * country should fail to match a targeted ad, not become "everyone".
+ */
+async function normalizeViewerCountry(
+  raw: string | null | undefined
+): Promise<string | null | undefined> {
+  if (!raw) return raw;
+  return (await resolveCountryCode(raw)) ?? raw;
+}
+
 const VIEWER_SELECT = {
   country: true,
   region: true,
@@ -181,6 +204,7 @@ async function serveAdInner(opts: {
     if (pkg?.adFree && !interstitial) return SUPPRESSED; // Watch & Earn is unaffected
     houseOnly = !!pkg?.adFree;
     viewer = { ...(u ?? {}), packageSlug: pkg?.slug ?? null };
+    viewer.country = await normalizeViewerCountry(u?.country);
   }
 
   // Full-screen frequency cap. Checked before the placement lookup so a capped
@@ -435,12 +459,15 @@ export async function serveFeedAds(opts: {
     ]);
     if (pkg?.adFree) return [];
     viewer = { ...(u ?? {}), packageSlug: pkg?.slug ?? null };
+    viewer.country = await normalizeViewerCountry(u?.country);
   }
 
   const placement = await prisma.adPlacement.findFirst({
     where: { name: "IN_FEED", isActive: true },
     select: { id: true },
   });
+  // No row to attribute the request to — a configuration problem, not a fill
+  // problem, exactly as `recordServeOutcome` treats it for the other spaces.
   if (!placement) return [];
 
   // IN_FEED has its own rate on the card, like every other space.
@@ -499,7 +526,7 @@ export async function serveFeedAds(opts: {
     : [];
   const postMap = new Map(posts.map((p) => [p.id, p]));
 
-  return picked
+  const out = picked
     .map((a): FeedAd | null => {
       if (a.promotedPostId) {
         const p = postMap.get(a.promotedPostId);
@@ -544,4 +571,43 @@ export async function serveFeedAds(opts: {
       };
     })
     .filter((x): x is FeedAd => x !== null);
+
+  // ── Counting: the same basis as the other 24 spaces ──────────────────────
+  //
+  // IN_FEED used to count NOTHING here. Its entire impression figure came from
+  // the client `kind:"view"` beacon, which is deduped per (ad, viewer, minute),
+  // while every other space counts server-side at delivery with no dedup at all
+  // — a banner on a 12-second rotation books five impressions a minute for one
+  // viewer sitting still. Put side by side in the same report table, IN_FEED
+  // therefore looked roughly an order of magnitude weaker than spaces it may
+  // well outperform, for a reason that has nothing to do with performance. A
+  // report that ranks the owner's inventory has to rank it on one ruler.
+  //
+  // The ruler chosen is DELIVERY, server-side, no dedup: it is what 24 of the 25
+  // spaces already record (so the existing history stays comparable), it costs
+  // no extra write on the hot path, and it does not depend on a client beacon
+  // that an ad blocker can strip — which matters on an ad stack built
+  // specifically to survive blockers.
+  //
+  // Stated plainly, because it is the cost of that choice: the feed client
+  // prefetches a POOL and spaces it through the scroll, so a session abandoned
+  // early leaves some delivered creatives unseen and counted. The banner path
+  // has the mirror-image flaw (a rotation counts whether or not the viewer
+  // looked). Neither is a viewability metric and neither is sold as one.
+  //
+  // The `kind:"view"` beacon no longer increments any counter (see
+  // `recordImpression` in ad-events.ts), so this does not double-count.
+  if (out.length > 0) {
+    const country = await resolveEventCountry({
+      userId,
+      profileCountry: viewer.country,
+    });
+    for (const a of out) bufferImpression(a.adId, country);
+  }
+  // Fill data, like every other placement. Without it a feed with no eligible
+  // demand and a feed nobody opened were indistinguishable in the fill report —
+  // IN_FEED was the one space in the list with no denominator at all.
+  bufferServeOutcome(placement.id, out.length > 0);
+
+  return out;
 }

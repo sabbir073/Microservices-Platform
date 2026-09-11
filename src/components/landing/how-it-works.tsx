@@ -58,7 +58,7 @@ export function HowItWorks(props: Props) {
               return (
                 <div
                   key={i}
-                  className="mk-zoom relative p-6 pt-8 rounded-2xl bg-(--mk-surface) border border-(--mk-border) shadow-sm text-center"
+                  className="mk-zoom relative p-6 pt-8 rounded-2xl mk-card text-center"
                 >
                   <div className="absolute -top-4 left-1/2 -translate-x-1/2">
                     <span

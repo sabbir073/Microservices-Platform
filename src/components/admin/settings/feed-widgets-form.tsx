@@ -39,6 +39,7 @@ interface Props {
     widgets: FeedWidgetConfig;
     quickEarn: QuickEarnTile[];
     customWidgets: CustomWidget[];
+    publicSharing: boolean;
   };
   canEdit: boolean;
 }
@@ -336,6 +337,7 @@ export function FeedWidgetsForm({ initial, canEdit }: Props) {
     initial.quickEarn.length ? initial.quickEarn : DEFAULT_QUICK_EARN
   );
   const [custom, setCustom] = useState<CustomWidget[]>(initial.customWidgets);
+  const [publicSharing, setPublicSharing] = useState(initial.publicSharing);
   const [busy, setBusy] = useState(false);
 
   const labelFor = (id: string) =>
@@ -381,7 +383,12 @@ export function FeedWidgetsForm({ initial, canEdit }: Props) {
       const res = await fetch("/api/admin/settings/feed-widgets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ widgets, quickEarn: tiles, customWidgets: custom }),
+        body: JSON.stringify({
+          widgets,
+          quickEarn: tiles,
+          customWidgets: custom,
+          publicSharing,
+        }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
@@ -408,6 +415,41 @@ export function FeedWidgetsForm({ initial, canEdit }: Props) {
           Earn tiles, and add your own custom widgets. Applies to every user.
         </p>
       </div>
+
+      {/* Public sharing — off until someone decides otherwise, on purpose. */}
+      <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4">
+        <h2 className="text-sm font-bold text-white">
+          Let shared post links open without an account
+        </h2>
+        <p className="mt-1 text-xs leading-relaxed text-slate-400">
+          When this is on, a shared post opens at{" "}
+          <code className="text-slate-300">/post/&lt;id&gt;</code> for anyone,
+          with a proper preview card on Facebook, X, WhatsApp and LinkedIn, and
+          the post becomes indexable by search engines. Group posts, hidden
+          posts and posts by suspended accounts are never included.
+        </p>
+        <p className="mt-2 text-xs leading-relaxed text-amber-300">
+          Read this before switching it on: the composer marks every post public
+          and gives the author no choice, so turning this on publishes{" "}
+          <strong>every post already written</strong>, for people who were never
+          asked. Search engines keep copies. Add an audience picker to the
+          composer first, or accept that the existing posts go public.
+        </p>
+        <label className="mt-3 inline-flex cursor-pointer items-center gap-2.5">
+          <input
+            type="checkbox"
+            checked={publicSharing}
+            onChange={(e) => setPublicSharing(e.target.checked)}
+            disabled={!canEdit}
+            className="h-4 w-4 rounded border-slate-600 bg-slate-800 text-amber-500"
+          />
+          <span className="text-sm font-medium text-white">
+            {publicSharing
+              ? "On — shared links open for everyone"
+              : "Off — shared links ask the visitor to sign in"}
+          </span>
+        </label>
+      </section>
 
       {/* Section 1 — widget order & visibility */}
       <section className="space-y-2.5">

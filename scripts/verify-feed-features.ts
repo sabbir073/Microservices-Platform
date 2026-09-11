@@ -13,6 +13,12 @@ import {
   FEED_AUTHOR_SELECT,
   FEED_POST_SELECT,
 } from "../src/lib/feed-post-shape";
+import { isPubliclyVisible } from "../src/lib/public-post-gate";
+import {
+  FEED_WIDGETS,
+  RAIL_GROUPS,
+  widgetGroupOf,
+} from "../src/lib/feed-widgets";
 
 /**
  * Feed: reactions, save, image viewer, report.
@@ -457,6 +463,215 @@ async function main() {
     );
   }
 
+  /* ── 7. The logged-out post page ── */
+  //
+  // The single most important assertion in this file after the reaction-money
+  // one. `/post/<id>` renders with no session at all, so the gate in
+  // `public-post-gate.ts` is the entire difference between a share link and a
+  // data leak — and it is exercised here against REAL rows, not a hand-built
+  // object, because the failure mode that matters is a column changing shape
+  // underneath it.
+  console.log("\n7. A private post is not publicly readable");
+  {
+    const gateTag = `pub${Date.now().toString(36)}`;
+
+    // The author of every post in this block EXCEPT the banned one. It has to
+    // be a user created explicitly ACTIVE: `User.status` defaults to
+    // PENDING_VERIFICATION, so the ordinary fixture user above is not ACTIVE and
+    // the gate refuses their posts for the author reason before it ever reaches
+    // the reason each case is meant to test. (That the first draft of this block
+    // failed exactly that way is the gate behaving correctly.)
+    const author = await prisma.user.create({
+      data: {
+        email: `${gateTag}-a@t.local`,
+        name: `${gateTag}a`,
+        password: "x",
+        referralCode: `${gateTag}a`,
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    made.gateAuthor = author.id;
+
+    const stranger = await prisma.user.create({
+      data: {
+        email: `${gateTag}-b@t.local`,
+        name: `${gateTag}b`,
+        password: "x",
+        referralCode: `${gateTag}b`,
+        status: "BANNED",
+      },
+      select: { id: true },
+    });
+    made.banned = stranger.id;
+
+    const group = await prisma.group.create({
+      data: { name: `${gateTag} group`, ownerId: author.id },
+      select: { id: true },
+    });
+    made.group = group.id;
+
+    // One row per way a post can be non-public, plus the one that IS public.
+    const rows = await Promise.all([
+      prisma.post.create({
+        data: { userId: author.id, content: "public", isPublic: true },
+        select: { id: true },
+      }),
+      prisma.post.create({
+        data: { userId: author.id, content: "private", isPublic: false },
+        select: { id: true },
+      }),
+      prisma.post.create({
+        data: { userId: author.id, content: "hidden", isHidden: true },
+        select: { id: true },
+      }),
+      prisma.post.create({
+        data: { userId: author.id, content: "in a group", groupId: group.id },
+        select: { id: true },
+      }),
+      prisma.post.create({
+        data: { userId: stranger.id, content: "by a banned author" },
+        select: { id: true },
+      }),
+    ]);
+    made.gatePosts = rows.map((r) => r.id).join(",");
+
+    const gateSelect = {
+      isPublic: true,
+      isHidden: true,
+      groupId: true,
+      user: { select: { status: true } },
+    } as const;
+
+    const [pub, priv, hidden, inGroup, banned] = await Promise.all(
+      rows.map((r) =>
+        prisma.post.findUnique({ where: { id: r.id }, select: gateSelect })
+      )
+    );
+
+    check("a genuinely public post IS publicly readable", isPubliclyVisible(pub));
+    check(
+      "isPublic:false is NOT publicly readable",
+      isPubliclyVisible(priv) === false
+    );
+    check(
+      "a moderator-hidden post is NOT publicly readable",
+      isPubliclyVisible(hidden) === false
+    );
+    // This is the one that catches people out: `Post.isPublic` DEFAULTS to true,
+    // so a group post is `isPublic: true` and only the groupId check stops it.
+    check(
+      "a group post is NOT publicly readable even though isPublic is true",
+      inGroup?.isPublic === true && isPubliclyVisible(inGroup) === false
+    );
+    check(
+      "a banned author's post is NOT publicly readable",
+      isPubliclyVisible(banned) === false
+    );
+    check("a missing post is NOT publicly readable", isPubliclyVisible(null) === false);
+
+    // And the gate cannot be satisfied by a partially-populated row.
+    check(
+      "a row with no author is NOT publicly readable",
+      isPubliclyVisible({
+        isPublic: true,
+        isHidden: false,
+        groupId: null,
+        user: null,
+      }) === false
+    );
+    check(
+      "a SUSPENDED author is NOT publicly readable",
+      isPubliclyVisible({
+        isPublic: true,
+        isHidden: false,
+        groupId: null,
+        user: { status: "SUSPENDED" },
+      }) === false
+    );
+
+    const page = code("src/app/post/[id]/page.tsx");
+    check(
+      "the public page asks the gate rather than querying Post itself",
+      /getPublicPost\(/.test(page) && !/prisma\./.test(page)
+    );
+    check(
+      "it unfurls — generateMetadata with og:, twitter: and a canonical",
+      /export async function generateMetadata/.test(page) &&
+        /openGraph/.test(page) &&
+        /twitter/.test(page) &&
+        /alternates: \{ canonical/.test(page)
+    );
+    check(
+      "a refused post gets the same metadata as a missing one, and is noindex",
+      /robots: \{ index: false/.test(page)
+    );
+    check(
+      "no ad slot is mounted on the logged-out page",
+      !/AdRenderer|NetworkAdSlot|AnchorAdBar|FeedAdCard/.test(page)
+    );
+    check(
+      "there is no engagement control that would 401 for a logged-out viewer",
+      !/onClick|<button/.test(page)
+    );
+
+    const card = code("src/components/user/feed/feed-post-card.tsx");
+    check(
+      "the share button hands out the PUBLIC url, not the dead /social/:id",
+      /\/post\/\$\{post\.id\}/.test(card) && !/\/social\/\$\{post\.id\}/.test(card)
+    );
+  }
+
+  /* ── 8. The feed shell is organised, not just styled ── */
+  console.log("\n8. Feed shell");
+  {
+    check(
+      "every catalog widget declares a band",
+      FEED_WIDGETS.every((w) => RAIL_GROUPS.some((g) => g.id === w.group))
+    );
+    // Collapsing a band you can collapse costs a suggestion. Collapsing the ad
+    // band would cost an impression, which is revenue, so it must not be one.
+    check(
+      "the Sponsored band cannot be collapsed away",
+      RAIL_GROUPS.find((g) => g.id === "ad")?.collapsible === false &&
+        widgetGroupOf("sponsored") === "ad"
+    );
+    check(
+      "an unknown (admin custom) widget lands in More, never in Sponsored",
+      widgetGroupOf("custom-whatever") === "more"
+    );
+
+    const view = code("src/components/user/feed/social-feed-view.tsx");
+    check(
+      "the rail's widgets are reachable below xl, via a sheet",
+      /<BottomSheet/.test(view) && /railOpen/.test(view)
+    );
+    check(
+      "the sheet mounts its contents only while open (no second rail fetch)",
+      /\{railOpen && /.test(view)
+    );
+    check(
+      "one definition feeds both the aside and the sheet",
+      (view.match(/\{railContent\}/g) ?? []).length === 2
+    );
+    check(
+      "tabs and sort share one toolbar",
+      /aria-pressed=\{sort === s\}/.test(view) &&
+        (view.match(/inline-flex h-10/g) ?? []).length >= 2
+    );
+
+    const rail = code("src/components/user/feed/feed-right-rail.tsx");
+    check("the rail renders its bands", /RAIL_GROUPS\.map/.test(rail));
+    check(
+      "a band with nothing in it renders no heading",
+      /items\.length === 0\) return null/.test(rail)
+    );
+    check(
+      "the band heading is a real 40px target",
+      /h-10 w-full items-center justify-between/.test(rail)
+    );
+  }
+
   console.log(
     `\n${passed} passed, ${failures.length} failed` +
       (failures.length ? `\n\n${failures.map((f) => `  - ${f}`).join("\n")}\n` : "\n")
@@ -470,12 +685,20 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
+    if (made.gatePosts) {
+      await prisma.post
+        .deleteMany({ where: { id: { in: made.gatePosts.split(",") } } })
+        .catch(() => {});
+    }
+    if (made.group) {
+      await prisma.group.deleteMany({ where: { id: made.group } }).catch(() => {});
+    }
     if (made.post) {
       await prisma.savedPost.deleteMany({ where: { postId: made.post } }).catch(() => {});
       await prisma.like.deleteMany({ where: { postId: made.post } }).catch(() => {});
       await prisma.post.deleteMany({ where: { id: made.post } }).catch(() => {});
     }
-    for (const k of ["owner", "reactor"]) {
+    for (const k of ["owner", "reactor", "banned", "gateAuthor"]) {
       if (made[k]) await prisma.user.deleteMany({ where: { id: made[k] } }).catch(() => {});
     }
     console.log("fixtures cleaned");

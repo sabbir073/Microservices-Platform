@@ -394,6 +394,26 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
     toast.success("Deleted");
     loadAll();
   };
+  /**
+   * Move every ad out of a space that renders nowhere.
+   *
+   * `QW` sat in the database outside the canonical list with two ACTIVE, funded
+   * ads inside it that could never serve once — and no screen said so. Deleting
+   * the space is blocked while it holds ads (rightly: they are someone's ads),
+   * so this is the operation that actually unblocks them.
+   */
+  const reassignPlacement = async (p: Placement, targetId: string) => {
+    if (!targetId) return;
+    const res = await fetch(`/api/admin/ads/placements/${p.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetPlacementId: targetId }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(d.error ?? "Failed");
+    toast.success(`Moved ${d.moved} ad(s) to ${d.to}`);
+    loadAll();
+  };
   const togglePlacement = async (p: Placement) => {
     await fetch(`/api/admin/ads/placements/${p.id}`, {
       method: "PATCH",
@@ -897,6 +917,43 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                   </button>
                 </div>
               )}
+              {/* Rate-card discoverability.
+                  The per-space rate card has existed and worked since it
+                  shipped, and not one of the 29 spaces has ever had a price set
+                  — every click on every space bills the single global default.
+                  The controls were on each card, several scrolls down, with
+                  nothing saying they were all empty. This states the fact and
+                  points at the fix; it deliberately suggests no prices, because
+                  what a space is worth is the owner's call, not a default. */}
+              {(() => {
+                const priced = placements.filter((p) => p.cpcUsd != null).length;
+                if (placements.length === 0) return null;
+                return (
+                  <div
+                    className={cn(
+                      "rounded-xl border p-3 mb-1",
+                      priced === 0
+                        ? "border-amber-500/40 bg-amber-500/10"
+                        : "border-slate-800 bg-slate-900/40"
+                    )}
+                  >
+                    <p className="text-xs text-slate-200">
+                      <span className="font-bold">
+                        {priced} of {placements.length}
+                      </span>{" "}
+                      spaces have their own click price. The rest bill the global
+                      default of{" "}
+                      <span className="font-bold text-white">{usd(cpcUsd)}</span>{" "}
+                      per click.
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      {priced === 0
+                        ? "So a click on Withdrawal — the longest-dwell page on the platform — earns exactly what a click on a slot nobody scrolls to earns. Set a price on the high-value spaces below (the “Click price” box on each card); leave it blank to keep the global rate."
+                        : "Blank means “use the global rate”. Spend already billed is never re-priced — each click snapshots the rate in force at the time."}
+                    </p>
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                 {placements.map((p) => (
                   <AdSpaceCard
@@ -910,6 +967,10 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                     onSetInterstitial={(secs) => setPlacementInterstitial(p, secs)}
                     onSetRate={(patch) => setPlacementRate(p, patch)}
                     onDelete={() => deletePlacement(p.id)}
+                    reassignTargets={placements
+                      .filter((t) => t.id !== p.id && CANONICAL_NAMES.has(t.name))
+                      .map((t) => ({ id: t.id, name: t.name }))}
+                    onReassign={(targetId) => reassignPlacement(p, targetId)}
                   />
                 ))}
               </div>
@@ -1077,6 +1138,8 @@ function AdSpaceCard({
   onSetInterstitial,
   onSetRate,
   onDelete,
+  reassignTargets,
+  onReassign,
 }: {
   placement: Placement;
   canManage: boolean;
@@ -1088,6 +1151,9 @@ function AdSpaceCard({
   onSetInterstitial: (secs: number | null) => void;
   onSetRate: (patch: { cpcUsd?: number | null; monthlyUsd?: number | null; isRentable?: boolean }) => void;
   onDelete: () => void;
+  /** Real, mounted spaces a stranded ad can be moved into. */
+  reassignTargets: { id: string; name: string }[];
+  onReassign: (targetPlacementId: string) => void;
 }) {
   // Effective interval for this space: its own override, else the global default.
   const effectiveRotation = p.rotationSeconds ?? rotationSeconds;
@@ -1147,6 +1213,39 @@ function AdSpaceCard({
                 Custom space — only renders where you mount &lt;AdRenderer placement=&quot;{p.name}&quot;&gt; in code.
               </p>
             )
+          )}
+          {/* Stranded ads.
+              A space outside the canonical list is mounted on no page, so an ad
+              inside it is ACTIVE, approved, funded — and structurally unable to
+              serve, forever, with nothing anywhere saying so. `QW` held two.
+              The ads are never deleted on the admin's behalf; this says what is
+              wrong and offers the one move that fixes it. */}
+          {isCustom && stats.totalAds > 0 && (
+            <div className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 p-2 space-y-1.5">
+              <p className="text-[11px] font-semibold text-red-300">
+                {stats.totalAds} ad{stats.totalAds === 1 ? "" : "s"} stranded here
+                {stats.activeAds > 0 ? ` (${stats.activeAds} active)` : ""} — this
+                space renders on no page, so they can never serve.
+              </p>
+              {canManage && reassignTargets.length > 0 && (
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    e.target.value = "";
+                    if (v) onReassign(v);
+                  }}
+                  className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded-md text-white text-[11px]"
+                >
+                  <option value="">Move these ads to…</option>
+                  {reassignTargets.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {PLACEMENT_LABEL[t.name] ?? t.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           )}
           {stats.activeAds > 1 && (
             <p className="text-[10px] text-emerald-400/80 mt-1">
@@ -1331,6 +1430,8 @@ interface CampaignRow extends ReportRow { title: string }
 interface CountryRow {
   code: string;
   label: string;
+  /** Emoji flag from the canonical `Country` table; "" for the unknown bucket. */
+  flag?: string;
   impressions: number;
   clicks: number;
   ctr: number;
@@ -1845,11 +1946,21 @@ function CountryBreakdown({
                 const unknown = r.code === "ZZ";
                 return (
                   <tr key={r.code} className="border-t border-slate-800">
-                    <td className="py-1.5 pr-2 truncate max-w-40">
+                    {/* Flag + full name + code, all three.
+                        A column of bare ISO codes is a column the owner has to
+                        decode before he can read his own revenue; the name comes
+                        from the same `Country` table the targeting dropdown
+                        offers, so the report names a country exactly as it was
+                        named when it was bought. The code stays because it is
+                        what the data actually holds. */}
+                    <td className="py-1.5 pr-2 truncate max-w-48">
+                      {r.flag ? <span className="mr-1">{r.flag}</span> : null}
                       <span className={unknown ? "text-amber-300" : "text-white"}>
                         {r.label}
                       </span>{" "}
-                      <span className="text-[10px] text-slate-500">{r.code}</span>
+                      <span className="text-[10px] text-slate-500">
+                        {unknown ? "(no country recorded)" : `(${r.code})`}
+                      </span>
                     </td>
                     <td className="py-1.5 text-right tabular-nums text-slate-300">
                       {r.impressions.toLocaleString()}

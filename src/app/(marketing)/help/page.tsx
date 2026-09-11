@@ -78,14 +78,14 @@ export default function PublicHelpPage() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search help articles…"
-          className="w-full rounded-2xl bg-(--mk-surface) border border-(--mk-border) backdrop-blur-xl pl-12 pr-4 py-4 text-(--mk-text) placeholder-slate-500 focus:outline-none focus:border-blue-500/40"
+          className="w-full rounded-2xl mk-card backdrop-blur-xl pl-12 pr-4 py-4 text-(--mk-text) placeholder-slate-500 focus:outline-none focus:border-blue-500/40"
         />
       </div>
 
       <div className="mt-8 space-y-4">
         {filtered.length === 0 && <p className="text-center text-sm text-(--mk-subtle) py-8">No articles match your search.</p>}
         {filtered.map((c) => (
-          <div key={c.title} className="rounded-2xl bg-(--mk-surface) border border-(--mk-border) backdrop-blur-xl overflow-hidden">
+          <div key={c.title} className="rounded-2xl mk-card backdrop-blur-xl overflow-hidden">
             <div className="flex items-center gap-2.5 px-5 py-3.5 border-b border-(--mk-border)">
               <c.icon className="h-4 w-4 text-indigo-600" />
               <p className="text-sm font-bold text-(--mk-text)">{c.title}</p>
@@ -109,7 +109,7 @@ export default function PublicHelpPage() {
         ))}
       </div>
 
-      <div className="mt-10 rounded-2xl bg-(--mk-surface) border border-(--mk-border) p-6 text-center">
+      <div className="mt-10 rounded-2xl mk-card p-6 text-center">
         <div className="mb-2 inline-flex items-center gap-2 text-indigo-600"><Mail className="h-4 w-4" /><span className="text-sm font-bold uppercase tracking-wider">Still need help?</span></div>
         <p className="text-(--mk-muted) text-sm">Our support team replies around the clock.</p>
         <div className="mt-4 flex flex-wrap justify-center gap-3">

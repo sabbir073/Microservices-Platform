@@ -86,3 +86,48 @@ export async function bumpAdCountryDailyStat(
     /* ignore — rollup is non-critical */
   }
 }
+
+/**
+ * Lifetime impressions per ad, from `AdDailyStat` — the CANONICAL counter.
+ *
+ * ## Why there are two counters at all, and which one wins
+ *
+ * Every impression increments two things in the same transaction: `Ad.impressions`
+ * (a lifetime running total on the ad row) and `AdDailyStat.impressions` (the
+ * date-partitioned rollup). They were not always written together, and the
+ * database still carries the scar: 72 impressions of disagreement across 5 ads,
+ * in BOTH directions, all of it pre-dating the buffered counter. Clicks agree
+ * exactly, which is the tell — clicks were never buffered, because they are money.
+ *
+ * `AdDailyStat` is canonical, for reasons that are not a coin toss:
+ *
+ *  - It is the only one with a time axis. Every report, chart and date range is
+ *    already built on it, including the per-country rollup, which is derived by
+ *    summing the same flushed batch and therefore agrees with it by construction.
+ *  - A lifetime total can be rebuilt from dailies; dailies can never be rebuilt
+ *    from a lifetime total. The reconstructable number is not the source.
+ *  - It is what the admin sees. Two surfaces quoting different impression counts
+ *    for the same ad is worse than either number being slightly off: it destroys
+ *    trust in both, and the advertiser dashboard is a number the owner is BILLING
+ *    against.
+ *
+ * `Ad.impressions` keeps being written — it is a cheap denormalised total and the
+ * serve path already has the row — but nothing user-facing reads it any more, so
+ * the historic drift is now inert rather than contradictory. It is deliberately
+ * NOT back-corrected: rewriting a ledger-adjacent counter to make a number prettier
+ * is how history stops being history, and the daily rows are already right.
+ */
+export async function lifetimeImpressionsByAd(
+  adIds: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (adIds.length === 0) return out;
+  // Accelerate collapses wide groupBy typings to `{}` — restate the row shape.
+  const rows = (await prisma.adDailyStat.groupBy({
+    by: ["adId"],
+    where: { adId: { in: adIds } },
+    _sum: { impressions: true },
+  })) as unknown as { adId: string; _sum: { impressions: number | null } }[];
+  for (const r of rows) out.set(r.adId, r._sum.impressions ?? 0);
+  return out;
+}

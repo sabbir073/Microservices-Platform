@@ -1,6 +1,13 @@
 "use client";
 
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { Avatar } from "@/components/user/primitives/avatar";
 import {
@@ -21,6 +28,7 @@ import {
   Loader2,
   CheckCircle2,
   Circle,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { cn, pct, pts } from "@/lib/utils";
@@ -30,7 +38,11 @@ import { notifyCenter } from "@/lib/notify-center";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import {
   DEFAULT_WIDGET_CONFIG,
+  RAIL_GROUPS,
+  widgetGroupOf,
   type FeedWidgetConfig,
+  type FeedWidgetGroup,
+  type FeedWidgetGroupDef,
 } from "@/lib/feed-widgets";
 import {
   DEFAULT_QUICK_EARN,
@@ -76,6 +88,13 @@ interface Props {
   quickEarn?: QuickEarnTile[];
   /** Admin-created custom sidebar widgets. */
   customWidgets?: CustomWidget[];
+  /**
+   * Render the band headings. The rail wants them; a one-off embed that only
+   * needs the cards can turn them off without forking the component.
+   */
+  showHeadings?: boolean;
+  /** Legal/footer links — the rail shows them, the mobile sheet does not. */
+  showFooter?: boolean;
 }
 
 interface RailWidgets {
@@ -302,6 +321,8 @@ export function FeedRightRail({
   widgetConfig = DEFAULT_WIDGET_CONFIG,
   quickEarn = DEFAULT_QUICK_EARN,
   customWidgets = [],
+  showHeadings = true,
+  showFooter = true,
 }: Props) {
   const rankTone = ["text-amber-400", "text-gray-300", "text-orange-400"];
   const [widgets, setWidgets] = useState<RailWidgets | null>(null);
@@ -606,22 +627,144 @@ export function FeedRightRail({
     );
   };
 
+  // The enabled widgets, in the admin's order, resolved to nodes and dropped
+  // into their band. Order WITHIN a band is still exactly the admin's order —
+  // grouping decides which heading a card sits under, not how the admin's
+  // drag-and-drop is honoured.
+  const banded = new Map<FeedWidgetGroup, { id: string; node: ReactNode }[]>();
+  for (const w of widgetConfig) {
+    if (!w.enabled) continue;
+    const node = renderers[w.id] ?? renderCustom(w.id);
+    if (!node) continue; // a widget with nothing to show contributes no heading
+    const g = widgetGroupOf(w.id);
+    const list = banded.get(g) ?? [];
+    list.push({ id: w.id, node });
+    banded.set(g, list);
+  }
+
   return (
-    <div className="space-y-4">
-      {widgetConfig
-        .filter((w) => w.enabled)
-        .map((w) => {
-          const node = renderers[w.id] ?? renderCustom(w.id);
-          return node ? <Fragment key={w.id}>{node}</Fragment> : null;
-        })}
+    <div className="space-y-3">
+      {RAIL_GROUPS.map((g) => {
+        const items = banded.get(g.id);
+        // An empty band renders nothing at all — not a heading over a gap. This
+        // matters most for "Sponsored": an ad-free user resolves that widget to
+        // no node, and a lone "Sponsored" label above white space would be a
+        // worse advert for the upgrade than the ad itself.
+        if (!items || items.length === 0) return null;
+        return (
+          <RailGroup key={g.id} group={g} showHeading={showHeadings}>
+            {items.map((it) => (
+              <Fragment key={it.id}>{it.node}</Fragment>
+            ))}
+          </RailGroup>
+        );
+      })}
 
       {/* Footer links (always shown) */}
-      <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 text-[11px] text-gray-600">
-        <Link href="/privacy" className="hover:text-gray-400">Privacy</Link>
-        <Link href="/terms" className="hover:text-gray-400">Terms</Link>
-        <Link href="/refund" className="hover:text-gray-400">Refunds</Link>
-        <span>© {new Date().getFullYear()} EarnGPT</span>
-      </div>
+      {showFooter && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 pt-1 text-[11px] text-gray-500">
+          <Link href="/privacy" className="hover:text-gray-300">Privacy</Link>
+          <Link href="/terms" className="hover:text-gray-300">Terms</Link>
+          <Link href="/refund" className="hover:text-gray-300">Refunds</Link>
+          <span>© {new Date().getFullYear()} EarnGPT</span>
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * Collapse state for the rail's bands.
+ *
+ * It is a module-level store read through `useSyncExternalStore` rather than
+ * `useState` + an effect, for two reasons. The rail and the mobile sheet render
+ * the same bands from the same definition, so both copies have to agree the
+ * instant one of them is toggled — an effect-per-copy would leave the sheet
+ * showing a band the rail had closed. And reading `localStorage` during render
+ * would disagree with the server HTML: the third argument below is the server
+ * snapshot, so every band hydrates OPEN and only then settles to what this
+ * viewer chose, which is the direction that cannot hide a widget.
+ */
+const railBandListeners = new Set<() => void>();
+
+function subscribeRailBands(cb: () => void): () => void {
+  railBandListeners.add(cb);
+  return () => {
+    railBandListeners.delete(cb);
+  };
+}
+
+function readBandCollapsed(key: string): boolean {
+  try {
+    return window.localStorage.getItem(key) === "1";
+  } catch {
+    // Storage blocked (a private window) — the band stays open. That is the
+    // safe default: a widget nobody can reopen is worse than one always shown.
+    return false;
+  }
+}
+
+function writeBandCollapsed(key: string, value: boolean) {
+  try {
+    window.localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    /* nothing to persist to — the toggle still works for this session */
+  }
+  for (const cb of railBandListeners) cb();
+}
+
+/**
+ * One labelled band of the rail.
+ *
+ * The heading is a real 40px button, not a 20px caption with a chevron glued to
+ * it — a `[&>button]` rule on a wrapper reaches DIRECT children only, and this
+ * codebase has already shipped a 20px like target that way once.
+ */
+function RailGroup({
+  group,
+  showHeading,
+  children,
+}: {
+  group: FeedWidgetGroupDef;
+  showHeading: boolean;
+  children: ReactNode;
+}) {
+  const storageKey = `feed.rail.collapsed.${group.id}`;
+  const collapsed = useSyncExternalStore(
+    subscribeRailBands,
+    useCallback(
+      () => (group.collapsible ? readBandCollapsed(storageKey) : false),
+      [group.collapsible, storageKey]
+    ),
+    () => false
+  );
+
+  if (!showHeading) return <div className="space-y-3">{children}</div>;
+
+  return (
+    <section>
+      {group.collapsible ? (
+        <button
+          type="button"
+          onClick={() => writeBandCollapsed(storageKey, !collapsed)}
+          aria-expanded={!collapsed}
+          className="flex h-10 w-full items-center justify-between rounded-lg px-1 text-left text-[11px] font-bold uppercase tracking-wider text-gray-400 hover:text-gray-200"
+        >
+          {group.label}
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 transition-transform",
+              collapsed && "-rotate-90"
+            )}
+            aria-hidden
+          />
+        </button>
+      ) : (
+        <p className="flex h-10 items-center px-1 text-[11px] font-bold uppercase tracking-wider text-gray-400">
+          {group.label}
+        </p>
+      )}
+      {!collapsed && <div className="space-y-3">{children}</div>}
+    </section>
   );
 }

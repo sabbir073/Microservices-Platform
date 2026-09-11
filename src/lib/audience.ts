@@ -32,6 +32,39 @@ export interface AudienceCriteria {
 const ci = (vals?: string[]) =>
   vals && vals.length ? { in: vals, mode: "insensitive" as const } : undefined;
 
+/**
+ * `audienceWhere` with the country list widened to every spelling `User.country`
+ * might legitimately hold.
+ *
+ * The plain matcher compares `User.country` against the ISO2 codes the segment
+ * was built from. That is correct for the column as documented — and wrong for
+ * the column as it exists: three accounts hold the literal string "Bangladesh"
+ * from a free-text admin field (since replaced by the canonical dropdown), and
+ * an import or a partner feed could deliver ISO3 tomorrow. Those users are not
+ * shown an error, they are simply absent from every segment that names their
+ * country.
+ *
+ * So the countries clause is expanded through the canonical `Country` table:
+ * "BD" becomes `["BD", "BGD", "Bangladesh"]`, still matched case-insensitively.
+ * It is a separate async function rather than a change to `audienceWhere`
+ * because that one is synchronous and called from paths that cannot await.
+ *
+ * Every other dimension is untouched — this is about a code column, not about
+ * loosening targeting.
+ */
+export async function audienceWhereResolved(
+  c: AudienceCriteria = {}
+): Promise<Prisma.UserWhereInput> {
+  if (!c.countries?.length) return audienceWhere(c);
+  try {
+    const { countryMatchAliases } = await import("@/lib/country-codes");
+    const countries = await countryMatchAliases(c.countries);
+    return audienceWhere({ ...c, countries });
+  } catch {
+    return audienceWhere(c);
+  }
+}
+
 export function audienceWhere(c: AudienceCriteria = {}): Prisma.UserWhereInput {
   const where: Prisma.UserWhereInput = { status: "ACTIVE" };
 
