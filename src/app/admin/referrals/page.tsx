@@ -40,6 +40,13 @@ export default async function AdminReferralsPage({ searchParams }: PageProps) {
   });
 
   const bonusConfig = await getReferralBonusConfig();
+  // Plans a milestone can hand out as a free subscription. Only active ones —
+  // offering a retired plan as a prize is a promise nothing can deliver.
+  const referralPackages = await prisma.package.findMany({
+    where: { isActive: true },
+    orderBy: { accessLevel: "asc" },
+    select: { id: true, name: true },
+  });
 
   // The page ranked who refers the MOST but never answered the other direction
   // — "this account, where did it come from?" That is the question that gets
@@ -160,7 +167,12 @@ export default async function AdminReferralsPage({ searchParams }: PageProps) {
       </div>
 
       {/* Referral signup bonus config (feature #9) */}
-      {canEdit && <ReferralBonusConfigForm initial={bonusConfig} />}
+      {canEdit && (
+        <ReferralBonusConfigForm
+          initial={bonusConfig}
+          packages={referralPackages}
+        />
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

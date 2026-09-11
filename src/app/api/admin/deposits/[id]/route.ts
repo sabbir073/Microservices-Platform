@@ -125,6 +125,18 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     link: "/wallet",
   });
 
+  // A cut of the deposit to whoever invited them, if the admin has that on.
+  // AFTER the transaction commits and fire-and-forget: a referral bonus must
+  // never be able to fail a deposit that has already been credited.
+  void import("@/lib/referral-bonus").then(({ awardReferralMoneyBonus }) =>
+    awardReferralMoneyBonus(
+      deposit.userId,
+      "DEPOSIT",
+      Number(deposit.amount),
+      id
+    ).catch(() => {})
+  );
+
   await writeAudit({
     actorId: session.user.id,
     action: "DEPOSIT_APPROVED",

@@ -291,22 +291,46 @@ export function DepositView({ from }: { from?: string } = {}) {
             </p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {methods.map((m) => (
-                <button
-                  key={m.key}
-                  type="button"
-                  onClick={() => setMethod(m.key)}
-                  className={`p-2.5 rounded-lg border text-sm font-semibold inline-flex items-center justify-center gap-1.5 ${
-                    method === m.key
-                      ? "border-indigo-500 bg-indigo-500/10 text-white"
-                      : "border-gray-700 bg-gray-800 text-gray-300"
-                  }`}
-                >
-                  <BrandIcon brand={m.key} colored className="w-4 h-4 shrink-0" />
-                  <span className="truncate">{m.label}</span>
-                </button>
-              ))}
+              {methods.map((m) => {
+                // The charge is shown on the card itself, before an amount is
+                // typed. A fee a user only discovers at the last step reads as
+                // a trick even when it was always going to be charged.
+                const pct = effectiveChargePct(m);
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    onClick={() => setMethod(m.key)}
+                    className={`p-2.5 rounded-lg border text-sm font-semibold flex flex-col items-center justify-center gap-0.5 ${
+                      method === m.key
+                        ? "border-indigo-500 bg-indigo-500/10 text-white"
+                        : "border-gray-700 bg-gray-800 text-gray-300"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5 max-w-full">
+                      <BrandIcon brand={m.key} colored className="w-4 h-4 shrink-0" />
+                      <span className="truncate">{m.label}</span>
+                    </span>
+                    <span
+                      className={`text-[10px] font-bold ${
+                        pct > 0 ? "text-amber-400" : "text-emerald-400"
+                      }`}
+                    >
+                      {pct > 0 ? `+${pct}% fee` : "No fee"}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
+          )}
+          {methods.length > 0 && (
+            <p className="mt-2 text-[11px] text-gray-500">
+              The fee shown is charged on top of what you add — your wallet is
+              credited the full USD amount.
+              {vat.enabled && vat.pct > 0
+                ? ` VAT of ${vat.pct}% is added as well.`
+                : ""}
+            </p>
           )}
         </div>
 

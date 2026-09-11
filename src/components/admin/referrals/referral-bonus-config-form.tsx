@@ -27,8 +27,11 @@ import {
  */
 export function ReferralBonusConfigForm({
   initial,
+  packages = [],
 }: {
   initial: ReferralBonusConfig;
+  /** Plans a milestone can hand out, for the subscription reward. */
+  packages?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [cfg, setCfg] = useState<ReferralBonusConfig>({
@@ -74,7 +77,14 @@ export function ReferralBonusConfigForm({
   const addMilestone = () =>
     set("milestones", [
       ...cfg.milestones,
-      { referrals: 0, points: 0, label: "" },
+      {
+        referrals: 0,
+        rewardType: "POINTS",
+        points: 0,
+        packageId: packages[0]?.id ?? "",
+        months: 1,
+        label: "",
+      },
     ]);
   const setMilestone = (i: number, patch: Partial<ReferralMilestone>) =>
     set(
@@ -192,20 +202,78 @@ export function ReferralBonusConfigForm({
                     className={inp}
                   />
                 </div>
-                <div className="w-28">
+                <div className="w-32">
                   <label className="mb-1 block text-[11px] text-slate-400">
-                    Points
+                    Reward
                   </label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={m.points || ""}
+                  <select
+                    value={m.rewardType}
                     onChange={(e) =>
-                      setMilestone(i, { points: parseInt(e.target.value) || 0 })
+                      setMilestone(i, {
+                        rewardType: e.target.value as "POINTS" | "SUBSCRIPTION",
+                      })
                     }
                     className={inp}
-                  />
+                  >
+                    <option value="POINTS">Points</option>
+                    <option value="SUBSCRIPTION">Free subscription</option>
+                  </select>
                 </div>
+                {m.rewardType === "POINTS" ? (
+                  <div className="w-28">
+                    <label className="mb-1 block text-[11px] text-slate-400">
+                      Points
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={m.points || ""}
+                      onChange={(e) =>
+                        setMilestone(i, { points: parseInt(e.target.value) || 0 })
+                      }
+                      className={inp}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <div className="w-36">
+                      <label className="mb-1 block text-[11px] text-slate-400">
+                        Plan
+                      </label>
+                      <select
+                        value={m.packageId}
+                        onChange={(e) =>
+                          setMilestone(i, { packageId: e.target.value })
+                        }
+                        className={inp}
+                      >
+                        <option value="">Choose…</option>
+                        {packages.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="w-24">
+                      <label className="mb-1 block text-[11px] text-slate-400">
+                        Months
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={m.months || 1}
+                        onChange={(e) =>
+                          setMilestone(i, {
+                            months: parseInt(e.target.value) || 1,
+                          })
+                        }
+                        className={inp}
+                      />
+                    </div>
+                  </>
+                )}
                 <div className="min-w-32 flex-1">
                   <label className="mb-1 block text-[11px] text-slate-400">
                     Name — the user sees this
@@ -235,6 +303,44 @@ export function ReferralBonusConfigForm({
               <Plus className="h-3.5 w-3.5" /> Add a step
             </button>
           </div>
+
+          {/* What counts as "active" — the setting that decides whether this
+              ladder is worth climbing honestly or worth farming. */}
+          <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-2.5">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              What counts as an active referral
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Num
+                label="Days they must be active"
+                value={cfg.milestoneActivity.minActiveDays}
+                onChange={(v) =>
+                  set("milestoneActivity", {
+                    ...cfg.milestoneActivity,
+                    minActiveDays: v,
+                  })
+                }
+                cls={inp}
+              />
+              <Num
+                label="…within the last N days"
+                value={cfg.milestoneActivity.windowDays}
+                onChange={(v) =>
+                  set("milestoneActivity", {
+                    ...cfg.milestoneActivity,
+                    windowDays: Math.max(1, v),
+                  })
+                }
+                cls={inp}
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+              A day counts when the invitee claims a daily mission or gets a task
+              approved — DISTINCT days, so twenty tasks in one sitting is one day.
+              Set the first to 0 to count any account that is simply not banned,
+              which is easy to farm and not recommended when the prize is a plan.
+            </p>
+          </div>
         </Model>
 
         <Model
@@ -263,6 +369,37 @@ export function ReferralBonusConfigForm({
               label="Referrer gets"
               value={cfg.purchasePoints}
               onChange={(v) => set("purchasePoints", v)}
+              cls={inp}
+            />
+          </div>
+        </Model>
+
+        <Model
+          n={0}
+          title="A cut of deposits and withdrawals"
+          blurb="A percentage of the money an invitee moves, paid to whoever brought them in. This is what makes a referral programme pay for itself — the referrer keeps earning as their invitee keeps using the platform, so bringing people in is worth doing properly rather than once. Paid from the platform's margin; it never comes out of the user's own deposit or payout."
+        >
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Switch
+              label="On every deposit"
+              checked={cfg.depositEnabled}
+              onChange={(v) => set("depositEnabled", v)}
+            />
+            <Num
+              label="Referrer gets (% of the deposit)"
+              value={cfg.depositPercent}
+              onChange={(v) => set("depositPercent", v)}
+              cls={inp}
+            />
+            <Switch
+              label="On every withdrawal"
+              checked={cfg.withdrawalEnabled}
+              onChange={(v) => set("withdrawalEnabled", v)}
+            />
+            <Num
+              label="Referrer gets (% of the withdrawal)"
+              value={cfg.withdrawalPercent}
+              onChange={(v) => set("withdrawalPercent", v)}
               cls={inp}
             />
           </div>

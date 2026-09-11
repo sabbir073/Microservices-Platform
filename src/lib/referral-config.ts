@@ -13,12 +13,44 @@
  * points. Paid ONCE per referrer per threshold.
  */
 export interface ReferralMilestone {
-  /** Qualified referrals needed to reach this step. */
+  /** ACTIVE referrals needed to reach this step — see `milestoneActivity`. */
   referrals: number;
-  /** Points paid on reaching it. */
+  /**
+   * What they get.
+   *
+   * "Bring 100 active users and get a month of Gold" is a different promise
+   * from "get 5,000 points", and it is the one that moves people: a
+   * subscription has a price they already know and a value they already want.
+   */
+  rewardType: "POINTS" | "SUBSCRIPTION";
+  /** Points paid on reaching it. Used when `rewardType` is POINTS. */
   points: number;
+  /** Which plan to grant. Used when `rewardType` is SUBSCRIPTION. */
+  packageId: string;
+  /** How many months of it. Used when `rewardType` is SUBSCRIPTION. */
+  months: number;
   /** What to call it — "Bronze", "Silver". Shown to the user. */
   label: string;
+}
+
+/**
+ * What counts as an "active" referral for the milestone ladder.
+ *
+ * `UserStatus.ACTIVE` only means "not banned" — it says nothing about whether
+ * the person has ever done anything, so counting it would let someone climb the
+ * ladder on a pile of registered-and-abandoned accounts. A milestone that pays
+ * a free subscription has to be harder to farm than that.
+ *
+ * "Active" here means the invitee actually turned up: a claimed daily mission
+ * or an approved task on at least `minActiveDays` DISTINCT days inside the last
+ * `windowDays`. Distinct days, not events — twenty tasks in one sitting is one
+ * day of activity, which is what stops a single burst from qualifying.
+ */
+export interface MilestoneActivity {
+  /** Distinct days with activity required. 0 → any non-banned account counts. */
+  minActiveDays: number;
+  /** How far back to look, in days. */
+  windowDays: number;
 }
 
 export interface ReferralBonusConfig {
@@ -51,6 +83,9 @@ export interface ReferralBonusConfig {
    */
   milestones: ReferralMilestone[];
 
+  /** How strictly an invitee has to have engaged to count toward a milestone. */
+  milestoneActivity: MilestoneActivity;
+
   // ── 4. Purchase-based ──
   /** Points when a referred user buys any package/subscription. */
   subscriptionEnabled: boolean;
@@ -63,6 +98,20 @@ export interface ReferralBonusConfig {
    */
   purchaseEnabled: boolean;
   purchasePoints: number;
+
+  // ── Money movement: a cut of what invitees deposit and withdraw ──
+  /**
+   * A percentage of every deposit an invitee makes, paid to the referrer.
+   *
+   * This is the one that makes a referral programme pay for itself: the
+   * referrer keeps earning as their invitee keeps using the platform, so
+   * bringing people in is worth doing properly rather than once.
+   */
+  depositEnabled: boolean;
+  depositPercent: number;
+  /** The same on withdrawals — paid from the platform, not out of the payout. */
+  withdrawalEnabled: boolean;
+  withdrawalPercent: number;
 
   // ── Month-end activity bonus ──
   monthlyEnabled: boolean;
@@ -96,10 +145,15 @@ export const REFERRAL_BONUS_DEFAULTS: ReferralBonusConfig = {
   inviteePoints: 0,
   milestonesEnabled: false,
   milestones: [],
+  milestoneActivity: { minActiveDays: 5, windowDays: 30 },
   subscriptionEnabled: true,
   subscriptionPoints: 0,
   purchaseEnabled: false,
   purchasePoints: 0,
+  depositEnabled: false,
+  depositPercent: 0,
+  withdrawalEnabled: false,
+  withdrawalPercent: 0,
   monthlyEnabled: true,
   monthlyPoints: 0,
   monthlyMinMissionDays: 20,
@@ -122,12 +176,24 @@ export function normaliseMilestones(input: unknown): ReferralMilestone[] {
   for (const raw of input) {
     const m = raw as Partial<ReferralMilestone>;
     const referrals = Math.floor(Number(m?.referrals));
-    const points = Math.floor(Number(m?.points));
     if (!Number.isFinite(referrals) || referrals < 1) continue;
-    if (!Number.isFinite(points) || points < 1) continue;
+
+    const rewardType = m?.rewardType === "SUBSCRIPTION" ? "SUBSCRIPTION" : "POINTS";
+    const points = Math.floor(Number(m?.points)) || 0;
+    const months = Math.min(24, Math.max(1, Math.floor(Number(m?.months)) || 1));
+    const packageId = String(m?.packageId ?? "");
+
+    // A step that cannot pay anything is dropped rather than stored: it would
+    // sit in the ladder looking like a reward and silently give nothing.
+    if (rewardType === "POINTS" && points < 1) continue;
+    if (rewardType === "SUBSCRIPTION" && !packageId) continue;
+
     byThreshold.set(referrals, {
       referrals,
+      rewardType,
       points,
+      packageId,
+      months,
       label: String(m?.label ?? "").slice(0, 40) || `${referrals} referrals`,
     });
   }

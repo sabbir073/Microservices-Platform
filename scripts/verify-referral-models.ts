@@ -194,6 +194,182 @@ async function main() {
     );
   }
 
+  /* ── 4b. A cut of deposits and withdrawals ── */
+  console.log("\n4b. Money movement pays the referrer");
+  {
+    const lib = code(LIB);
+    check(
+      "there is a percentage bonus on money moved",
+      /export async function awardReferralMoneyBonus/.test(lib)
+    );
+    check(
+      "it is a percentage of the amount, converted at the current rate",
+      /amountUsd \* \(pct \/ 100\)\) \* pointsPerUsd/.test(lib)
+    );
+    check(
+      "deposit and withdrawal have separate switches and percentages",
+      /cfg\.depositEnabled/.test(lib) &&
+        /cfg\.withdrawalEnabled/.test(lib) &&
+        /cfg\.depositPercent/.test(lib) &&
+        /cfg\.withdrawalPercent/.test(lib)
+    );
+    check(
+      "idempotent per movement",
+      /reference: `refbonus_\$\{kind\.toLowerCase\(\)\}_\$\{sourceRef\}`/.test(lib),
+      "a webhook replay or a re-approval must not pay twice"
+    );
+
+    const dep = code("src/app/api/admin/deposits/[id]/route.ts");
+    check(
+      "the deposit hook fires AFTER the credit commits",
+      dep.indexOf("deliverToUser") < dep.indexOf("awardReferralMoneyBonus"),
+      "a bonus must never be able to fail a deposit that is already credited"
+    );
+    const wd = code("src/app/api/admin/withdrawals/[id]/route.ts");
+    check(
+      "the withdrawal hook only fires once the money has gone out",
+      /awardReferralMoneyBonus\(/.test(wd) &&
+        wd.indexOf("Withdrawal marked as paid") >
+          wd.indexOf("awardReferralMoneyBonus"),
+      "paying on a payout that later fails would have to be clawed back"
+    );
+    check(
+      "…and is fire-and-forget",
+      /void import\("@\/lib\/referral-bonus"\)/.test(wd) &&
+        /void import\("@\/lib\/referral-bonus"\)/.test(dep)
+    );
+  }
+
+  /* ── 4c. The user is told what the fee is BEFORE they commit ── */
+  console.log("\n4c. Fee disclosure, before an amount is entered");
+  {
+    const dv = code("src/components/user/wallet/deposit-view.tsx");
+    check(
+      "each deposit method shows its own charge on the card",
+      /effectiveChargePct\(m\)/.test(dv) && /% fee`/.test(dv),
+      "a fee that only appears after an amount is typed reads as a trick"
+    );
+    check(
+      "a zero-charge method says so rather than showing nothing",
+      /No fee/.test(dv),
+      "silence is ambiguous — the user cannot tell 'free' from 'not loaded yet'"
+    );
+    check(
+      "VAT is named up front when it is switched on",
+      /vat\.enabled && vat\.pct > 0/.test(dv)
+    );
+
+    const wv = code("src/components/user/wallet/withdrawal-view.tsx");
+    const feeAt = wv.indexOf("Fee (");
+    check(
+      "the withdrawal fee percentage is on screen",
+      feeAt > -1 && /feePct\.toFixed\(1\)/.test(wv)
+    );
+    check(
+      "…and is NOT hidden behind an entered amount",
+      feeAt > -1 &&
+        !/amount > 0 &&[\s\S]{0,400}Fee \(/.test(wv) &&
+        !/\{hasAmount && [\s\S]{0,400}Fee \(/.test(wv),
+      "the breakdown block must render unconditionally so the % is visible at rest"
+    );
+  }
+
+  /* ── 3b. "Active" means active, not merely un-banned ── */
+  console.log("\n3b. What counts as an active referral");
+  {
+    const lib = code(LIB);
+    check(
+      "the count is measured on real activity, not account status alone",
+      /dailyMissionClaim\.findMany/.test(lib) &&
+        /taskSubmission\.findMany/.test(lib),
+      "UserStatus.ACTIVE only means 'not banned' — 100 dead accounts would have earned a free plan"
+    );
+    check(
+      "DISTINCT days are counted, not events",
+      /toISOString\(\)\.slice\(0, 10\)/.test(lib) && /new Set<string>/.test(lib),
+      "twenty tasks in one sitting is one day of being active"
+    );
+    check(
+      "two signals count, so one habit is not required",
+      /claimedAt/.test(lib) && /AUTO_APPROVED/.test(lib)
+    );
+    check(
+      "only approved work counts",
+      /status: \{ in: \["APPROVED", "AUTO_APPROVED"\] \}/.test(lib),
+      "a rejected submission is not evidence of anything"
+    );
+    check(
+      "an admin can still fall back to the simple rule",
+      /if \(minDays === 0\) return live\.length/.test(lib)
+    );
+    check(
+      "the default is stricter than 'exists'",
+      REFERRAL_BONUS_DEFAULTS.milestoneActivity.minActiveDays > 0,
+      "a default of 0 would ship the farmable version"
+    );
+  }
+
+  /* ── 3c. A milestone can pay a free subscription ── */
+  console.log("\n3c. Subscriptions as a milestone prize");
+  {
+    const lib = code(LIB);
+    check(
+      "a step can grant a plan instead of points",
+      /rewardType === "SUBSCRIPTION"/.test(lib) &&
+        /grantMilestoneSubscription/.test(lib)
+    );
+    check(
+      "the step is CLAIMED before the plan is granted",
+      /allowZero: true[\s\S]{0,800}if \(!claimed\) continue;[\s\S]{0,200}grantMilestoneSubscription/.test(
+        lib
+      ),
+      "granting first and recording after hands out a free month on every re-run"
+    );
+    check(
+      "granting EXTENDS an existing plan rather than overwriting it",
+      /me\.packageExpiresAt > now \? me\.packageExpiresAt : now/.test(lib),
+      "someone who just paid for a month and then earns one should end with two"
+    );
+    check(
+      "a deleted plan fails loudly rather than paying nothing",
+      /if \(!pkg\) return false/.test(lib) && /console\.error/.test(lib)
+    );
+
+    // A step that cannot pay anything must never be stored.
+    const bad = normaliseMilestones([
+      { referrals: 5, rewardType: "SUBSCRIPTION", packageId: "", months: 1 },
+      { referrals: 9, rewardType: "POINTS", points: 0 },
+      { referrals: 100, rewardType: "SUBSCRIPTION", packageId: "pkg_gold", months: 1 },
+    ]);
+    check(
+      "a subscription step with no plan is dropped",
+      !bad.some((m) => m.referrals === 5)
+    );
+    check("a points step worth nothing is dropped", !bad.some((m) => m.referrals === 9));
+    check("a complete subscription step survives", bad.some((m) => m.referrals === 100));
+    check(
+      "months are clamped to something sane",
+      normaliseMilestones([
+        { referrals: 1, rewardType: "SUBSCRIPTION", packageId: "p", months: 999 },
+      ])[0].months <= 24
+    );
+
+    const form = code(FORM);
+    check(
+      "the admin can pick the plan and the number of months",
+      /Free subscription/.test(form) && /months:/.test(form)
+    );
+    check(
+      "…and only ACTIVE plans are offered",
+      /isActive: true/.test(code("src/app/admin/referrals/page.tsx")),
+      "offering a retired plan as a prize is a promise nothing can deliver"
+    );
+    check(
+      "the activity rule is editable beside the ladder",
+      /milestoneActivity/.test(form)
+    );
+  }
+
   /* ── 5. Multi-tier, untouched ── */
   console.log("\n5. Multi-tier — left exactly as it was");
   {

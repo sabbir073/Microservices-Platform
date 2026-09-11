@@ -234,6 +234,20 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
         link: "/wallet",
       });
 
+      // A cut to whoever invited them, if the admin has that on. Paid on the
+      // GROSS amount, and only once the money has actually gone out — a bonus
+      // for a payout that later failed would have to be clawed back. Outside
+      // the transaction and fire-and-forget: this must never be able to fail a
+      // withdrawal that is already marked paid.
+      void import("@/lib/referral-bonus").then(({ awardReferralMoneyBonus }) =>
+        awardReferralMoneyBonus(
+          existingWithdrawal.userId,
+          "WITHDRAWAL",
+          toNum(existingWithdrawal.amount),
+          id
+        ).catch(() => {})
+      );
+
       return NextResponse.json({
         success: true,
         withdrawal,

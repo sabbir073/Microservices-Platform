@@ -10,6 +10,7 @@ import {
   REFERRAL_BONUS_DEFAULTS,
   normaliseMilestones,
   type ReferralBonusConfig,
+  type MilestoneActivity,
 } from "@/lib/referral-config";
 import { TransactionType, NotificationType } from "@/generated/prisma";
 
@@ -29,6 +30,7 @@ export {
   normaliseMilestones,
   type ReferralBonusConfig,
   type ReferralMilestone,
+  type MilestoneActivity,
 } from "@/lib/referral-config";
 
 const KEY = "referral_bonus_config";
@@ -93,8 +95,14 @@ async function awardBonus(opts: {
   notifyMessage: string;
   /** Extra detail for the ledger row. */
   meta?: Record<string, unknown>;
+  /**
+   * Record the row even with zero points. Used to CLAIM a milestone whose
+   * reward is a subscription rather than points — the reference constraint is
+   * what makes the grant happen once.
+   */
+  allowZero?: boolean;
 }): Promise<boolean> {
-  if (opts.points <= 0) return false;
+  if (opts.points <= 0 && !opts.allowZero) return false;
   try {
     const pointsPerUsd = await getPointsPerUsd();
     const usd = pointsPerUsd > 0 ? opts.points / pointsPerUsd : 0;
@@ -239,16 +247,110 @@ export async function awardInviteeSignupBonus(
 }
 
 /**
- * How many of a referrer's invitees count toward a milestone.
+ * How many of a referrer's invitees are genuinely ACTIVE.
  *
- * ACTIVE accounts only. Counting raw rows would make the ladder farmable with
- * addresses that never verify — and the platform already counts ACTIVE
- * referrals elsewhere for exactly this reason, so the two agree.
+ * `UserStatus.ACTIVE` on its own means "not banned" — nothing more. Counting
+ * that would let someone reach a milestone, and collect a free subscription,
+ * on a hundred accounts that registered and were never seen again. When the
+ * prize is a month of a paid plan, the bar has to be higher than "exists".
+ *
+ * So activity is measured: a claimed daily mission or an approved task, on at
+ * least `minActiveDays` DISTINCT days inside the window. Distinct days is the
+ * part that matters — twenty submissions in one sitting is one day of being
+ * active, and counting events instead would make a single burst look like a
+ * month of engagement.
+ *
+ * `minActiveDays: 0` restores the old "any live account" behaviour for an admin
+ * who wants the simpler rule.
  */
-export async function qualifiedReferralCount(referrerId: string): Promise<number> {
-  return prisma.user.count({
+export async function qualifiedReferralCount(
+  referrerId: string,
+  activity?: MilestoneActivity
+): Promise<number> {
+  const live = await prisma.user.findMany({
     where: { referredById: referrerId, status: "ACTIVE" },
+    select: { id: true },
   });
+  if (live.length === 0) return 0;
+
+  const minDays = Math.max(0, Math.floor(activity?.minActiveDays ?? 0));
+  if (minDays === 0) return live.length;
+
+  const windowDays = Math.max(1, Math.floor(activity?.windowDays ?? 30));
+  const since = new Date(Date.now() - windowDays * 86_400_000);
+  const ids = live.map((u) => u.id);
+
+  // Two signals, because a user who does tasks but ignores the daily mission is
+  // still plainly active, and vice versa.
+  const [missions, submissions] = await Promise.all([
+    prisma.dailyMissionClaim.findMany({
+      where: { userId: { in: ids }, claimedAt: { gte: since } },
+      select: { userId: true, claimedAt: true },
+    }),
+    prisma.taskSubmission.findMany({
+      where: {
+        userId: { in: ids },
+        createdAt: { gte: since },
+        status: { in: ["APPROVED", "AUTO_APPROVED"] },
+      },
+      select: { userId: true, createdAt: true },
+    }),
+  ]);
+
+  const daysByUser = new Map<string, Set<string>>();
+  const mark = (userId: string, when: Date) => {
+    const day = when.toISOString().slice(0, 10);
+    const set = daysByUser.get(userId) ?? new Set<string>();
+    set.add(day);
+    daysByUser.set(userId, set);
+  };
+  for (const m of missions) mark(m.userId, m.claimedAt);
+  for (const t of submissions) mark(t.userId, t.createdAt);
+
+  let n = 0;
+  for (const id of ids) {
+    if ((daysByUser.get(id)?.size ?? 0) >= minDays) n++;
+  }
+  return n;
+}
+
+/**
+ * Grant a free subscription as a milestone reward.
+ *
+ * Extends from the CURRENT expiry when the user already has time on a plan,
+ * rather than overwriting it — someone who just paid for a month and then earns
+ * one should end up with two, not with their purchase quietly replaced.
+ *
+ * Idempotency is the caller's: it only runs after `awardBonus`-style reference
+ * checking, so a repeated milestone cannot grant twice.
+ */
+async function grantMilestoneSubscription(
+  referrerId: string,
+  packageId: string,
+  months: number
+): Promise<boolean> {
+  const pkg = await prisma.package
+    .findUnique({ where: { id: packageId }, select: { id: true, name: true } })
+    .catch(() => null);
+  // A deleted plan must not silently pay nothing — the caller reports false and
+  // the milestone stays unpaid rather than being marked done.
+  if (!pkg) return false;
+
+  const me = await prisma.user.findUnique({
+    where: { id: referrerId },
+    select: { packageExpiresAt: true },
+  });
+  const now = new Date();
+  const base =
+    me?.packageExpiresAt && me.packageExpiresAt > now ? me.packageExpiresAt : now;
+  const end = new Date(base);
+  end.setMonth(end.getMonth() + Math.max(1, months));
+
+  await prisma.user.update({
+    where: { id: referrerId },
+    data: { packageId: pkg.id, packageExpiresAt: end },
+  });
+  return true;
 }
 
 /**
@@ -269,11 +371,47 @@ export async function awardReferralMilestones(
   }
   if (!(await referrerQualifies(referrerId, cfg))) return 0;
 
-  const count = await qualifiedReferralCount(referrerId);
+  const count = await qualifiedReferralCount(referrerId, cfg.milestoneActivity);
   let paid = 0;
 
   for (const m of cfg.milestones) {
     if (count < m.referrals) break; // sorted ascending — the rest are further off
+
+    if (m.rewardType === "SUBSCRIPTION") {
+      // Claim the step FIRST, with a zero-point ledger row, so the reference
+      // constraint is what stops a second grant. Granting the plan first and
+      // recording after would hand out a free month on every re-run.
+      const claimed = await awardBonus({
+        referrerId,
+        referredUserId: referrerId,
+        points: 0,
+        allowZero: true,
+        reference: `refbonus_milestone_${referrerId}_${m.referrals}`,
+        sourceType: "MILESTONE",
+        description: `Referral milestone — ${m.label}`,
+        notifyTitle: `Milestone reached: ${m.label}`,
+        notifyMessage: `You've invited ${m.referrals} active members — your free subscription is on its way.`,
+        meta: { rewardType: "SUBSCRIPTION", packageId: m.packageId, months: m.months },
+      });
+      if (!claimed) continue;
+
+      const granted = await grantMilestoneSubscription(
+        referrerId,
+        m.packageId,
+        m.months
+      );
+      if (granted) {
+        paid++;
+      } else {
+        // The plan is gone. Leave a trail rather than failing silently — the
+        // referrer earned something the platform could not deliver.
+        console.error(
+          `milestone ${m.referrals} for ${referrerId}: package ${m.packageId} not found`
+        );
+      }
+      continue;
+    }
+
     const ok = await awardBonus({
       referrerId,
       // A milestone is about the referrer's own total, not one invitee, so
@@ -325,6 +463,58 @@ export async function awardReferralPurchaseBonus(
     notifyTitle: "Referral bonus!",
     notifyMessage: `Your invitee made their first purchase — you earned ${cfg.purchasePoints} points.`,
     meta: { sourceRef },
+  });
+}
+
+/**
+ * A cut of what an invitee deposits or withdraws, paid to their referrer.
+ *
+ * The percentage is of the MONEY MOVED, converted to points at the current
+ * rate. It comes out of the platform's margin, never out of the user's own
+ * deposit or payout — a referral programme that quietly shaved the invitee's
+ * money would be the platform charging them for having used a link.
+ *
+ * Idempotent per movement: the deposit or withdrawal id is the reference, so a
+ * webhook replay or an admin re-approving pays once.
+ */
+export async function awardReferralMoneyBonus(
+  referredUserId: string,
+  kind: "DEPOSIT" | "WITHDRAWAL",
+  amountUsd: number,
+  sourceRef: string
+): Promise<void> {
+  if (!(amountUsd > 0)) return;
+  const cfg = await getReferralBonusConfig();
+  if (!cfg.enabled) return;
+
+  const on = kind === "DEPOSIT" ? cfg.depositEnabled : cfg.withdrawalEnabled;
+  const pct = kind === "DEPOSIT" ? cfg.depositPercent : cfg.withdrawalPercent;
+  if (!on || !(pct > 0)) return;
+
+  const referred = await prisma.user
+    .findUnique({
+      where: { id: referredUserId },
+      select: { referredById: true },
+    })
+    .catch(() => null);
+  if (!referred?.referredById) return;
+  if (!(await referrerQualifies(referred.referredById, cfg))) return;
+
+  const pointsPerUsd = await getPointsPerUsd();
+  const points = Math.floor((amountUsd * (pct / 100)) * pointsPerUsd);
+  if (points <= 0) return;
+
+  const verb = kind === "DEPOSIT" ? "deposited" : "withdrew";
+  await awardBonus({
+    referrerId: referred.referredById,
+    referredUserId,
+    points,
+    reference: `refbonus_${kind.toLowerCase()}_${sourceRef}`,
+    sourceType: kind === "DEPOSIT" ? "PURCHASE" : "MONTHLY_BONUS",
+    description: `Referral ${kind.toLowerCase()} bonus (${pct}%)`,
+    notifyTitle: "Referral bonus!",
+    notifyMessage: `Someone you invited ${verb} funds — you earned ${points.toLocaleString()} points.`,
+    meta: { kind, pct, amountUsd },
   });
 }
 
