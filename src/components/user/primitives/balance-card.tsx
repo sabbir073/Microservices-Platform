@@ -9,12 +9,14 @@ interface BalanceCardProps {
   /** Non-withdrawable ad credit (USD). When set, a third tile + top-up action show. */
   adCredit?: number;
   /**
-   * Task credit (points bought to fund tasks). When set, a violet tile shows.
+   * Task credit (points bought to fund tasks). When set, a fourth tile shows.
    *
-   * Violet on purpose, and only violet: earned points are amber, cash emerald,
-   * ad credit sky. The balance is separate precisely so a buyer can tell which
-   * pot they are looking at, and two screens tinting it differently would undo
-   * that faster than any wording could fix.
+   * The four pots used to be told apart by hue — points amber, cash emerald,
+   * ad credit sky, task credit violet — which is four saturated colours inside
+   * one card, and the reason a buyer could not tell at a glance which figure
+   * was the big one. They are told apart by their LABEL and their icon now,
+   * which is what a label is for; the only thing that varies in size here is
+   * the total, and it is the total that should.
    */
   taskCredit?: number;
   packageTier?: string;
@@ -48,80 +50,77 @@ export function BalanceCard({
   const showAdCredit = adCredit !== undefined;
   const showTaskCredit = taskCredit !== undefined && taskCredit > 0;
   return (
+    /* The one thing on a money screen that should be unmistakable.
+       It was a translucent indigo wash over a card, with the total at 24px and
+       four sub-tiles whose labels were amber, emerald, violet and sky — so the
+       total, the points, the cash, the credit and the tier badge were five
+       roughly-equal claims on the eye, four of them in different colours.
+
+       Now: the panel IS the gradient, the total is `t-hero` (up to 48px,
+       weight 800, tabular) and everything else on it is white at 11-14px. The
+       ratio between the total and its own label is about 4:1, which is what
+       makes it the answer to "what do I see first" rather than the brightest
+       thing winning. The sub-tiles keep their icons and lose their hues. */
     <div
       className={cn(
-        "relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-linear-to-br from-indigo-600/25 via-violet-600/10 to-gray-900 p-5 elevate-2",
+        "app-panel app-accent app-accent-glow relative overflow-hidden",
         className
       )}
     >
-      <div className="absolute -top-12 -right-12 w-40 h-40 rounded-full bg-indigo-500/20 blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-16 -left-10 w-40 h-40 rounded-full bg-purple-500/20 blur-3xl pointer-events-none" />
+      {/* Depth on the gradient itself rather than coloured blobs behind it. */}
+      <div
+        aria-hidden
+        className="absolute -top-16 -right-10 w-56 h-56 rounded-full bg-white/12 blur-3xl pointer-events-none"
+      />
 
-      <div className="relative flex items-start justify-between gap-2 mb-3">
+      <div className="relative flex items-start justify-between gap-3 mb-5">
         <div className="min-w-0">
-          <p className="text-[10px] uppercase tracking-wider text-gray-400 font-bold">
-            Total Balance
-          </p>
-          <p className="font-extrabold text-white tabular-nums mt-0.5 leading-tight whitespace-nowrap text-[clamp(1.25rem,6vw,1.5rem)]">
+          <p className="t-eyebrow text-white/90">Total Balance</p>
+          <p className="t-hero mt-1.5 whitespace-nowrap text-white">
             {usd(cash + ptInUsd)}
           </p>
-          <p className="text-[10px] text-gray-500">Cash + points value</p>
+          <p className="t-meta mt-1.5 text-white/90">Cash + points value</p>
         </div>
         {packageTier && (
-          <span className="shrink-0 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-400 text-[10px] font-bold uppercase">
+          <span className="shrink-0 inline-flex items-center rounded-full bg-white/20 border border-white/40 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-white">
             {packageTier}
           </span>
         )}
       </div>
 
       <div className="relative grid grid-cols-2 gap-2">
-        <div className="min-w-0 rounded-xl bg-gray-900/60 border border-gray-800 p-3">
-          <div className="flex items-center gap-1.5 text-amber-400 mb-1">
+        <div className="min-w-0 rounded-(--app-r-control) bg-black/20 border border-white/25 p-3">
+          <div className="flex items-center gap-1.5 text-white/90 mb-1">
             <Coins className="w-3.5 h-3.5 shrink-0" />
-            <span className="text-[10px] uppercase tracking-wider font-bold">
-              Points
-            </span>
+            <span className="t-eyebrow">Points</span>
           </div>
-          <p className="font-bold text-white tabular-nums leading-tight whitespace-nowrap text-[clamp(0.9rem,4.2vw,1.125rem)]">
-            {pts(points)}
-          </p>
-          <p className="text-[10px] text-gray-500">{usd(ptInUsd)}</p>
+          <p className="t-figure-sm whitespace-nowrap text-white">{pts(points)}</p>
+          <p className="t-meta text-white/90">{usd(ptInUsd)}</p>
         </div>
-        <div className="min-w-0 rounded-xl bg-gray-900/60 border border-gray-800 p-3">
-          <div className="flex items-center gap-1.5 text-emerald-400 mb-1">
+        <div className="min-w-0 rounded-(--app-r-control) bg-black/20 border border-white/25 p-3">
+          <div className="flex items-center gap-1.5 text-white/90 mb-1">
             <DollarSign className="w-3.5 h-3.5 shrink-0" />
-            <span className="text-[10px] uppercase tracking-wider font-bold">
-              Cash
-            </span>
+            <span className="t-eyebrow">Cash</span>
           </div>
-          <p className="font-bold text-white tabular-nums leading-tight whitespace-nowrap text-[clamp(0.9rem,4.2vw,1.125rem)]">
-            {usd(cash)}
-          </p>
-          <p className="text-[10px] text-gray-500">Withdrawable</p>
+          <p className="t-figure-sm whitespace-nowrap text-white">{usd(cash)}</p>
+          <p className="t-meta text-white/90">Withdrawable</p>
         </div>
 
         {showTaskCredit && (
-          <div className="col-span-2 rounded-xl bg-gray-900/60 border border-gray-800 p-3 flex items-center justify-between gap-2">
+          <div className="col-span-2 rounded-(--app-r-control) bg-black/20 border border-white/25 p-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className={cn("flex items-center gap-1.5 mb-1", TASK_CREDIT.text)}>
+              <div className="flex items-center gap-1.5 mb-1 text-white/90">
                 <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-[10px] uppercase tracking-wider font-bold">
-                  {TASK_CREDIT.label}
-                </span>
+                <span className="t-eyebrow">{TASK_CREDIT.label}</span>
               </div>
-              <p className="font-bold text-white tabular-nums leading-tight whitespace-nowrap text-[clamp(0.9rem,4.2vw,1.125rem)]">
+              <p className="t-figure-sm whitespace-nowrap text-white">
                 {pts(taskCredit)}
               </p>
-              <p className="text-[10px] text-gray-500 truncate">
-                {TASK_CREDIT.blurb}
-              </p>
+              <p className="t-meta text-white/90 truncate">{TASK_CREDIT.blurb}</p>
             </div>
             <Link
               href="/buy-points"
-              className={cn(
-                "shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors",
-                TASK_CREDIT.chip
-              )}
+              className="app-press app-tap-row shrink-0 inline-flex items-center gap-1 px-3.5 rounded-(--app-r-chip) bg-white/20 border border-white/40 text-white text-xs font-extrabold hover:bg-white/30"
             >
               <Plus className="w-3.5 h-3.5" /> Buy
             </Link>
@@ -129,22 +128,22 @@ export function BalanceCard({
         )}
 
         {showAdCredit && (
-          <div className="col-span-2 rounded-xl bg-gray-900/60 border border-gray-800 p-3 flex items-center justify-between gap-2">
+          <div className="col-span-2 rounded-(--app-r-control) bg-black/20 border border-white/25 p-3 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-sky-400 mb-1">
+              <div className="flex items-center gap-1.5 text-white/90 mb-1">
                 <Megaphone className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-[10px] uppercase tracking-wider font-bold">
-                  Ad Credit
-                </span>
+                <span className="t-eyebrow">Ad Credit</span>
               </div>
-              <p className="font-bold text-white tabular-nums leading-tight whitespace-nowrap text-[clamp(0.9rem,4.2vw,1.125rem)]">
+              <p className="t-figure-sm whitespace-nowrap text-white">
                 {usd(adCredit)}
               </p>
-              <p className="text-[10px] text-gray-500 truncate">Funds ad campaigns · non-withdrawable</p>
+              <p className="t-meta text-white/90 truncate">
+                Funds ad campaigns · non-withdrawable
+              </p>
             </div>
             <Link
               href={adTopUpHref}
-              className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-500/15 border border-sky-500/30 text-sky-300 text-xs font-semibold hover:bg-sky-500/25 transition-colors"
+              className="app-press app-tap-row shrink-0 inline-flex items-center gap-1 px-3.5 rounded-(--app-r-chip) bg-white/20 border border-white/40 text-white text-xs font-extrabold hover:bg-white/30"
             >
               <Plus className="w-3.5 h-3.5" /> Top up
             </Link>
@@ -152,19 +151,28 @@ export function BalanceCard({
         )}
       </div>
 
+      {/* Withdraw is the primary action, so on a gradient panel it is the solid
+          WHITE button — the strongest contrast available here (up to 5.7:1 the
+          other way). A second gradient button on a gradient panel would be
+          invisible, which is what the old "from-indigo-600" button did. */}
       {!compact && (
-        <div className={cn("relative mt-3 grid gap-2", addFundsHref ? "grid-cols-2" : "grid-cols-1")}>
+        <div
+          className={cn(
+            "relative mt-4 grid gap-2",
+            addFundsHref ? "grid-cols-2" : "grid-cols-1"
+          )}
+        >
           {addFundsHref && (
             <Link
               href={addFundsHref}
-              className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-gray-900/70 border border-gray-700 hover:border-emerald-500/40 text-white text-sm font-semibold transition-colors"
+              className="app-press app-tap-row inline-flex items-center justify-center gap-1.5 rounded-(--app-r-control) bg-white/15 border border-white/40 text-white text-sm font-extrabold hover:bg-white/25"
             >
               <Plus className="w-4 h-4" /> Add funds
             </Link>
           )}
           <Link
             href={withdrawHref}
-            className="inline-flex items-center justify-center gap-1.5 py-2.5 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:opacity-90 text-white text-sm font-semibold transition-opacity"
+            className="app-press app-tap-row inline-flex items-center justify-center gap-1.5 rounded-(--app-r-control) bg-white text-gray-950 text-sm font-extrabold hover:bg-white/90"
           >
             Withdraw <ArrowUpRight className="w-4 h-4" />
           </Link>

@@ -3,6 +3,11 @@ import * as fs from "fs";
 import * as path from "path";
 import { USER_HOME } from "../src/lib/routes";
 import {
+  ACCENT_SURFACE,
+  DEFAULT_ACCENT,
+  accentSurfaceCss,
+} from "../src/lib/accent-palette";
+import {
   DEFAULT_LANDING_CONTENT,
   withEarnCardLinks,
   withRequiredNavLinks,
@@ -232,7 +237,7 @@ function main() {
     check("the bottom tab bar is md:hidden", /md:hidden fixed bottom-0/.test(bar));
     check(
       "the header hamburger hides at the same breakpoint",
-      /items-center gap-1 md:hidden/.test(hdr)
+      /items-center gap-0\.5 md:hidden/.test(hdr)
     );
     // A bar that is `md:hidden` but polls on `max-width: 1023px` runs a 60s
     // fetch loop for every tablet and desktop user to feed a badge they cannot
@@ -296,15 +301,21 @@ function main() {
     );
 
     /* Touch targets. 44px is the floor for anything a thumb hits. */
+    // The rail's rows are `app-nav-item` now, which carries min-height 2.75rem
+    // in the token layer (asserted in section 7), so counting `min-h-11`
+    // literals here would fail on the correct code. What must hold is that
+    // every row uses the shared definition and none has drifted back to a
+    // hand-typed padding.
     check(
-      "nav rows are at least 44px tall",
-      (sb.match(/min-h-11/g) ?? []).length >= 3,
+      "nav rows use the 44px shared row definition",
+      (sb.match(/app-nav-item/g) ?? []).length >= 3 &&
+        !/min-h-11 px-3 py-2 rounded-xl/.test(sb),
       "at py-2 these rows were 36px"
     );
     check("tab bar rows are at least 56px tall", (bar.match(/min-h-14/g) ?? []).length >= 2);
     check(
       "header icon buttons are 44px",
-      (hdr.match(/w-11 h-11/g) ?? []).length >= 4,
+      (hdr.match(/(^|[ "])app-tap/g) ?? []).length >= 4,
       "p-2 around a 24px icon is a 40px target"
     );
 
@@ -737,6 +748,843 @@ function main() {
       unrendered.length === 0,
       unrendered.join(", ")
     );
+  }
+
+
+  /* ── 7. The app design system ──────────────────────────────────────────
+     The marketing surface got a token layer and the app did not, so the
+     product was 2,000 ad-hoc utility strings and a per-file colour opinion.
+     This section pins down the four ways that regresses, in the order they
+     actually happened:
+
+       a) a token declared in one theme only — invisible text the first time
+          somebody flips the toggle;
+       b) a colour that looks fine to the author and measures 4.2:1;
+       c) a tap target derived from padding plus a line-height, or inherited
+          from a parent selector that does not reach the child;
+       d) the failure mode of the LAST pass: tokens defined, components left
+          on the classes they already had, and the whole thing reported as a
+          redesign while looking identical.
+
+     (d) is why the checks below name specific strings that were REMOVED.
+     A rule that only asserts the new class is present passes happily on a
+     file that has both. */
+  console.log("\n7. App design system — tokens, scale, contrast, targets");
+  {
+    const css = read("src/app/globals.css");
+
+    /* ── 7a. Declared in both themes ──────────────────────────────────── */
+
+    /**
+     * Every `--name: value;` inside the blocks a selector opens.
+     *
+     * Written as a scan rather than one regex on purpose. The obvious version
+     * anchors the selector to `^` or a preceding `}`, and every block in this
+     * file is preceded by a banner comment instead — so it matched almost
+     * nothing while reporting every token as "declared in light only". A check
+     * that silently finds nothing is worse than no check.
+     */
+    const declsIn = (selector: string) => {
+      const out = new Map<string, string>();
+      let from = 0;
+      for (;;) {
+        const at = css.indexOf(selector, from);
+        if (at < 0) break;
+        from = at + selector.length;
+        // The selector must be a whole token (`:root` must not match
+        // `:root:not([data-theme])`) and must open a block immediately.
+        const rest = css.slice(from);
+        const open = rest.match(/^\s*\{/);
+        if (!open) continue;
+        const bodyStart = from + open[0].length;
+        const end = css.indexOf("}", bodyStart);
+        if (end < 0) continue;
+        for (const d of css
+          .slice(bodyStart, end)
+          .matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
+          out.set(d[1], d[2].trim());
+        }
+      }
+      return out;
+    };
+
+    // Tailwind v4 emits `@theme` into `:root`, and the neutral ramp the app
+    // tokens point at (`--color-gray-900` and friends) lives there — so for
+    // the purpose of resolving a token to a colour the two are one scope.
+    const rootDecls = new Map([
+      ...declsIn("@theme"),
+      ...declsIn(":root"),
+    ]);
+    const lightDecls = declsIn('html[data-theme="light"]');
+
+    // The load-bearing rule. A token that exists ONLY under a theme selector
+    // has no value at all in the other theme: the property falls back to
+    // `unset`, which for a colour is transparent or inherited — i.e. text
+    // that is simply not there.
+    const orphans = [...lightDecls.keys()].filter(
+      (k) => (k.startsWith("--app-") || k.startsWith("--shell-")) && !rootDecls.has(k)
+    );
+    check(
+      "no app/shell token is declared only in the light theme",
+      orphans.length === 0,
+      orphans.join(", ")
+    );
+
+    // The colour tokens whose VALUE must differ per theme (a single value
+    // cannot clear 4.5:1 on both a near-black and a white card).
+    const THEMED = [
+      "--app-in",
+      "--app-out",
+      "--app-warn",
+      "--app-info",
+      "--app-in-soft",
+      "--app-out-soft",
+      "--app-warn-soft",
+      "--app-info-soft",
+      "--app-in-line",
+      "--app-out-line",
+      "--app-warn-line",
+      "--app-info-line",
+      "--app-surface",
+      "--app-surface-2",
+      "--app-line",
+      "--app-line-strong",
+      "--app-accent-edge",
+      "--app-rail-a",
+      "--app-rail-b",
+      "--app-e1",
+      "--app-e2",
+      "--app-e3",
+    ];
+    const missingDark = THEMED.filter((t) => !rootDecls.has(t));
+    const missingLight = THEMED.filter((t) => !lightDecls.has(t));
+    check(
+      `all ${THEMED.length} theme-sensitive tokens are declared in dark`,
+      missingDark.length === 0,
+      missingDark.join(", ")
+    );
+    check(
+      `all ${THEMED.length} theme-sensitive tokens are declared in light`,
+      missingLight.length === 0,
+      missingLight.join(", ")
+    );
+
+    // The shape / rhythm / motion tokens are theme-independent by design, so
+    // they belong in `:root` and nowhere else.
+    for (const t of [
+      "--app-grad",
+      "--app-grad-a",
+      "--app-grad-b",
+      "--app-r-chip",
+      "--app-r-control",
+      "--app-r-card",
+      "--app-r-panel",
+      "--app-gap",
+      "--app-pad",
+      "--app-pad-lg",
+      "--app-ease",
+    ]) {
+      check(`${t} is declared`, rootDecls.has(t));
+    }
+
+    /* ── 7b. Contrast, computed ───────────────────────────────────────────
+       Not "looks fine": WCAG 2.1 relative luminance, recomputed from the
+       values actually in the file on every run, so retuning a token either
+       stays inside the floor or fails here. Body text 4.5:1, non-text 3:1,
+       and a GRADIENT is measured at its worst end — the end that is closest
+       in luminance to whatever sits on it. */
+    const srgb = (c: number) => {
+      const s = c / 255;
+      return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    };
+    const lum = (hex: string) => {
+      const h = hex.replace("#", "");
+      const n =
+        h.length === 3
+          ? h
+              .split("")
+              .map((x) => x + x)
+              .join("")
+          : h;
+      return (
+        0.2126 * srgb(parseInt(n.slice(0, 2), 16)) +
+        0.7152 * srgb(parseInt(n.slice(2, 4), 16)) +
+        0.0722 * srgb(parseInt(n.slice(4, 6), 16))
+      );
+    };
+    const ratio = (a: string, b: string) => {
+      const [x, y] = [lum(a), lum(b)];
+      return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+    };
+    /** Flatten `rgba(255,255,255,alpha)` over an opaque backdrop. */
+    const over = (fgHex: string, alpha: number, bgHex: string) => {
+      const px = (h: string, i: number) =>
+        parseInt(h.replace("#", "").slice(i * 2, i * 2 + 2), 16);
+      const mix = (i: number) =>
+        Math.round(px(fgHex, i) * alpha + px(bgHex, i) * (1 - alpha));
+      return (
+        "#" +
+        [0, 1, 2]
+          .map((i) => mix(i).toString(16).padStart(2, "0"))
+          .join("")
+      );
+    };
+
+    /**
+     * Tailwind's own ramp, read from the INSTALLED package, for any token that
+     * still points into it via `var()`.
+     *
+     * This used to be five hexes typed from memory — and they were the v3
+     * values. Tailwind v4 ships the ramp as `oklch()`, where indigo-600 is
+     * #4f39f6, not #4f46e5. So the gradient was being measured against a colour
+     * the browser never painted: close enough that the numbers looked right,
+     * which is the worst kind of wrong for a contrast check. Reading and
+     * converting the real file means the measurement tracks whatever Tailwind
+     * version is installed, including an upgrade that reshades the ramp.
+     */
+    const oklchToHex = (Lp: number, C: number, Hdeg: number) => {
+      const h = (Hdeg * Math.PI) / 180;
+      const A = C * Math.cos(h);
+      const B = C * Math.sin(h);
+      const l = (Lp + 0.3963377774 * A + 0.2158037573 * B) ** 3;
+      const m = (Lp - 0.1055613458 * A - 0.0638541728 * B) ** 3;
+      const s = (Lp - 0.0894841775 * A - 1.291485548 * B) ** 3;
+      const enc = (x: number) => {
+        const v =
+          x <= 0.0031308 ? 12.92 * x : 1.055 * Math.pow(Math.max(x, 0), 1 / 2.4) - 0.055;
+        return Math.round(Math.min(1, Math.max(0, v)) * 255)
+          .toString(16)
+          .padStart(2, "0");
+      };
+      return (
+        "#" +
+        enc(4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s) +
+        enc(-1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s) +
+        enc(-0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s)
+      );
+    };
+    const TW: Record<string, string> = {};
+    {
+      const themeFile = path.join(root, "node_modules/tailwindcss/theme.css");
+      const raw = fs.existsSync(themeFile) ? fs.readFileSync(themeFile, "utf8") : "";
+      for (const m of raw.matchAll(
+        /(--color-[a-z]+-\d+):\s*oklch\(([\d.]+)%\s+([\d.]+)\s+([\d.]+)\)/g
+      )) {
+        TW[m[1]] = oklchToHex(Number(m[2]) / 100, Number(m[3]), Number(m[4]));
+      }
+      check(
+        "Tailwind's shipped ramp was read and converted",
+        Object.keys(TW).length > 200,
+        `${Object.keys(TW).length} colours`
+      );
+    }
+    /** Resolve a token to a hex, following one level of `var()`. */
+    const hexOf = (token: string, theme: "dark" | "light"): string => {
+      const raw =
+        (theme === "light" ? lightDecls.get(token) : undefined) ??
+        rootDecls.get(token) ??
+        "";
+      const direct = raw.match(/#[0-9a-fA-F]{3,8}/)?.[0];
+      if (direct) return direct.slice(0, 7);
+      const ref = raw.match(/var\((--[\w-]+)\)/)?.[1];
+      if (ref && TW[ref]) return TW[ref];
+      if (ref) return hexOf(ref, theme);
+      return "";
+    };
+
+    // The surfaces text actually sits on, per theme.
+    const SURF = {
+      dark: {
+        card: hexOf("--app-surface", "dark"),
+        tile: hexOf("--app-surface-2", "dark"),
+        chrome: "#15171f",
+      },
+      light: {
+        card: hexOf("--app-surface", "light"),
+        tile: hexOf("--app-surface-2", "light"),
+        chrome: "#ffffff",
+      },
+    };
+    check(
+      "every surface token resolved to a colour",
+      Object.values(SURF).every((s) => Object.values(s).every((v) => /^#/.test(v))),
+      JSON.stringify(SURF)
+    );
+
+    const gradA = hexOf("--app-grad-a", "dark");
+    const gradB = hexOf("--app-grad-b", "dark");
+
+    type Row = [string, string, string, string, number];
+    const rows: Row[] = [
+      // The one gradient, measured at BOTH ends against the white it carries.
+      ["dark+light", "white on gradient start", "#ffffff", gradA, 4.5],
+      ["dark+light", "white on gradient end", "#ffffff", gradB, 4.5],
+      // Labels printed on the gradient at reduced opacity, flattened first.
+      // Labels on the gradient are white at 90%, not 75%. At 75% the eyebrow
+      // measured 3.89:1 against the violet end and at 70% the caption 3.58:1 —
+      // both under the floor, on the balance panel, which is the one surface
+      // this whole pass exists to make feel good. 90% is 4.91:1.
+      [
+        "dark+light",
+        "white/90 label on gradient end",
+        over("#ffffff", 0.9, gradB),
+        gradB,
+        4.5,
+      ],
+      [
+        "dark+light",
+        "white/90 label on the black/20 tile over the gradient",
+        over("#ffffff", 0.9, over("#000000", 0.2, gradB)),
+        over("#000000", 0.2, gradB),
+        4.5,
+      ],
+      // The solid-white primary action on the gradient panel (Withdraw, Claim).
+      ["dark+light", "gradient end behind a white button", gradB, "#ffffff", 3],
+      // Semantic text, both themes, on the card and on the nested tile.
+      ...(["dark", "light"] as const).flatMap((th): Row[] => {
+        const s = SURF[th];
+        return [
+          [th, "money in on card", hexOf("--app-in", th), s.card, 4.5],
+          [th, "money in on tile", hexOf("--app-in", th), s.tile, 4.5],
+          [th, "money out on card", hexOf("--app-out", th), s.card, 4.5],
+          [th, "warning on card", hexOf("--app-warn", th), s.card, 4.5],
+          [th, "brand text on card", hexOf("--app-info", th), s.card, 4.5],
+          // Chips: the label on its own soft fill.
+          [th, "in chip on in-soft", hexOf("--app-in", th), hexOf("--app-in-soft", th), 4.5],
+          [th, "out chip on out-soft", hexOf("--app-out", th), hexOf("--app-out-soft", th), 4.5],
+          [th, "warn chip on warn-soft", hexOf("--app-warn", th), hexOf("--app-warn-soft", th), 4.5],
+          [th, "brand chip on info-soft", hexOf("--app-info", th), hexOf("--app-info-soft", th), 4.5],
+          // Non-text, 3:1. The active-nav rail and the tab underline carry no
+          // text at all, so the fill is the only thing identifying them.
+          [th, "nav rail (a) on chrome", hexOf("--app-rail-a", th), s.chrome, 3],
+          [th, "nav rail (b) on chrome", hexOf("--app-rail-b", th), s.chrome, 3],
+          // The hairline that defines the gradient button's edge — the fill
+          // itself is 2.84:1 against the dark bar, which is why it exists.
+          [th, "accent edge on chrome", hexOf("--app-accent-edge", th), s.chrome, 3],
+        ];
+      }),
+      // The neutral ramp that carries most of the words on the screen. These
+      // were measured in an earlier pass; re-measured here because this layer
+      // changed which surface they sit on.
+      ["dark", "gray-300 body on card", "#c7ccdb", SURF.dark.card, 4.5],
+      ["dark", "gray-400 meta on card", "#99a0b6", SURF.dark.card, 4.5],
+      ["dark", "gray-500 eyebrow on card", "#828ba0", SURF.dark.card, 4.5],
+      ["dark", "gray-400 meta on tile", "#99a0b6", SURF.dark.tile, 4.5],
+      ["light", "gray-300 body on card", "#334155", SURF.light.card, 4.5],
+      ["light", "gray-400 meta on card", "#475569", SURF.light.card, 4.5],
+      ["light", "gray-500 eyebrow on card", "#5b6675", SURF.light.card, 4.5],
+      ["light", "gray-400 meta on tile", "#475569", SURF.light.tile, 4.5],
+      // The one decorative hue left in the feed: a loved heart.
+      ["dark", "loved heart (rose-400) on card", "#fb7185", SURF.dark.card, 4.5],
+      ["light", "loved heart (rose-700) on card", "#be123c", SURF.light.card, 4.5],
+    ];
+
+    console.log("\n   theme      ratio  floor  pair");
+    const failed: string[] = [];
+    for (const [theme, label, fg, bg, floor] of rows) {
+      if (!/^#/.test(fg) || !/^#/.test(bg)) {
+        failed.push(`${label} — unresolved (${fg || "?"} on ${bg || "?"})`);
+        continue;
+      }
+      const r = ratio(fg, bg);
+      console.log(
+        `   ${theme.padEnd(10)} ${r.toFixed(2).padStart(5)}  ${String(floor).padStart(4)}   ` +
+          `${label} (${fg} on ${bg})`
+      );
+      if (r < floor) failed.push(`${theme} ${label}: ${r.toFixed(2)} < ${floor}`);
+    }
+    check(
+      `all ${rows.length} measured pairs clear their floor`,
+      failed.length === 0,
+      failed.join("; ")
+    );
+
+    // A gradient painted into TEXT is a different measurement from a gradient
+    // painted behind it, and the brand ramp fails the text one badly (2.96:1
+    // on the dark card). The balance figure is white ON the gradient for
+    // exactly this reason, and nothing in the app may clip it into glyphs.
+    for (const f of [
+      "src/components/user/primitives/balance-card.tsx",
+      "src/components/dashboard/sidebar.tsx",
+      "src/components/user/feed/feed-right-rail.tsx",
+    ]) {
+      check(
+        `${f.split("/").pop()} does not clip a gradient into text`,
+        !/bg-clip-text/.test(code(f))
+      );
+    }
+
+    /* ── 7c. The scale is DECLARED and USED ───────────────────────────── */
+    for (const cls of [
+      "t-hero",
+      "t-figure",
+      "t-figure-sm",
+      "t-title",
+      "t-section",
+      "t-card-title",
+      "t-body",
+      "t-meta",
+      "t-eyebrow",
+      "app-card",
+      "app-panel",
+      "app-tile",
+      "app-accent",
+      "app-accent-soft",
+      "app-chip",
+      "app-icon",
+      "app-nav-item",
+      "app-tap",
+      "app-press",
+      "app-lift",
+    ]) {
+      check(`.${cls} is defined`, new RegExp(`\\.${cls}\\s*[,{]`).test(css));
+    }
+
+    // Defined is not the same as used, and a token layer nobody calls is the
+    // exact shape of the last pass: a diff full of new CSS and a product that
+    // looks identical. Every class the layer defines must appear in at least
+    // one component, or it is scaffolding pretending to be a design system.
+    {
+      const walk = (dir: string): string[] => {
+        const full = path.join(root, dir);
+        if (!fs.existsSync(full)) return [];
+        return fs.readdirSync(full, { withFileTypes: true }).flatMap((e) =>
+          e.isDirectory()
+            ? walk(path.join(dir, e.name))
+            : /\.tsx?$/.test(e.name)
+              ? [read(path.join(dir, e.name))]
+              : []
+        );
+      };
+      const src = [...walk("src/components"), ...walk("src/app")].join("\n");
+      const unused = [
+        "t-hero",
+        "t-figure",
+        "t-figure-sm",
+        "t-title",
+        "t-section",
+        "t-card-title",
+        "t-body",
+        "t-meta",
+        "t-eyebrow",
+        "t-in",
+        "t-out",
+        "t-warn",
+        "app-card",
+        "app-panel",
+        "app-tile",
+        "app-accent",
+        "app-accent-soft",
+        "app-accent-glow",
+        "app-chip",
+        "app-chip-in",
+        "app-chip-out",
+        "app-chip-warn",
+        "app-chip-info",
+        "app-icon",
+        "app-icon-accent",
+        "app-icon-lg",
+        "app-nav-item",
+        "app-tap",
+        "app-tap-row",
+        "app-press",
+        "app-lift",
+        "app-sheet",
+        "app-tick",
+      ].filter((c) => !new RegExp(`[" ]${c}[" ]`).test(src));
+      check(
+        "every class the token layer defines is used by a component",
+        unused.length === 0,
+        unused.join(", ")
+      );
+    }
+
+    // The balance figure must be the biggest thing on its card by a wide
+    // margin — that is the whole brief for the money surfaces. `t-hero` tops
+    // out at 3rem against an 0.6875rem eyebrow: a 4.4x ratio.
+    const hero = css.match(/\.t-hero\s*\{[^}]*font-size:\s*clamp\([^)]*,\s*([\d.]+)rem\)/);
+    const eyebrow = css.match(/\.t-eyebrow\s*\{[^}]*font-size:\s*([\d.]+)rem/);
+    check(
+      "t-hero is at least 4x the eyebrow at full size",
+      !!hero && !!eyebrow && Number(hero[1]) / Number(eyebrow[1]) >= 4,
+      hero && eyebrow ? `${hero[1]}rem vs ${eyebrow[1]}rem` : "not found"
+    );
+
+    // USED, not merely defined. This is the check that would have failed on
+    // the previous pass: each of these files must reference the scale.
+    const SCALE = /\b(t-hero|t-figure|t-figure-sm|t-title|t-section|t-card-title|t-body|t-meta|t-eyebrow|app-card|app-tile|app-accent|app-icon|app-chip|app-nav-item|app-tap|app-press)\b/;
+    for (const f of [
+      "src/components/dashboard/header.tsx",
+      "src/components/dashboard/sidebar.tsx",
+      "src/components/dashboard/bottom-tab-bar.tsx",
+      "src/components/user/feed/feed-post-card.tsx",
+      "src/components/user/feed/feed-quick-links.tsx",
+      "src/components/user/feed/create-post-composer.tsx",
+      "src/components/user/feed/feed-right-rail.tsx",
+      "src/components/user/feed/mobile-earn-block.tsx",
+      "src/components/user/feed/social-feed-view.tsx",
+      "src/components/user/primitives/balance-card.tsx",
+      "src/components/user/primitives/stat-card.tsx",
+      "src/components/user/primitives/task-card.tsx",
+      "src/components/user/primitives/transaction-row.tsx",
+      "src/components/user/primitives/skeleton.tsx",
+      "src/components/user/tasks/tasks-hub-view.tsx",
+      "src/components/user/wallet/wallet-view.tsx",
+      "src/components/user/feed/active-events-card.tsx",
+      "src/components/user/feed/reaction-button.tsx",
+      // `(main)/layout.tsx` is deliberately not in this list: it consumes the
+      // rhythm token rather than a class, and has its own check below.
+      "src/app/(main)/dashboard/page.tsx",
+    ]) {
+      check(`${f.split("/").pop()} uses the app scale`, SCALE.test(code(f)));
+    }
+
+    // The page gutter is the same fluid step the cards space themselves by,
+    // rather than a hand-typed px-4 that put a card's content 16px from the
+    // screen edge with its own padding immediately inside it.
+    check(
+      "the app's page gutter comes from the rhythm token",
+      /px-\(--app-pad\)/.test(code("src/app/(main)/layout.tsx"))
+    );
+
+    /* ── 7d. The rainbow does not come back ───────────────────────────────
+       Named strings that were REMOVED. Asserting only that the new class is
+       present passes on a file that kept both, which is how a pass ends up
+       being a class rename. */
+    const gone: [string, RegExp, string][] = [
+      [
+        "src/components/user/feed/feed-quick-links.tsx",
+        /text-(amber|emerald|sky|violet|rose|indigo)-400/,
+        "six shortcuts in six hues — the row the owner screenshotted",
+      ],
+      [
+        "src/components/user/tasks/tasks-hub-view.tsx",
+        /CARD_COLOR|bg-(red|blue|purple|pink|cyan)-500\/10/,
+        "twelve category cards in nine hues",
+      ],
+      [
+        "src/components/dashboard/sidebar.tsx",
+        /TONE\[|bg-(emerald|red)-500\/12|bg-clip-text/,
+        "a hue per mode section, plus a gradient wordmark that read 2.4:1 in light mode",
+      ],
+      [
+        "src/app/(main)/dashboard/page.tsx",
+        /ring-1 ring-(indigo|emerald|amber|pink|sky)-500\/20|text-(cyan|fuchsia|violet)-400/,
+        "ten shortcuts in nine hues under a tinted balance card",
+      ],
+      [
+        "src/components/user/primitives/stat-card.tsx",
+        /text-(indigo|violet|amber|emerald|pink)-400/,
+        "a hue per tile in every stat row in the product",
+      ],
+      [
+        "src/components/user/feed/feed-post-card.tsx",
+        /border-cyan-500\/40|border-amber-500\/40|bg-indigo-500 hover:bg-indigo-600/,
+        "a coloured card border per post state, and a solid indigo Follow x20",
+      ],
+      [
+        "src/components/user/feed/mobile-earn-block.tsx",
+        /bg-orange-500|text-amber-400|text-emerald-400|COLOR_CLASSES/,
+        "an amber coin, an emerald figure and an orange streak around one balance",
+      ],
+      [
+        "src/components/user/feed/feed-right-rail.tsx",
+        /bg-orange-500|text-amber-400\/90|COLOR_CLASSES/,
+        "the same four colours again, in the desktop copy of that card",
+      ],
+      [
+        "src/components/user/primitives/transaction-row.tsx",
+        /text-red-400|text-emerald-400|meta\.tone/,
+        "a hue per transaction source, twelve rows deep",
+      ],
+      [
+        "src/components/user/feed/create-post-composer.tsx",
+        /tone: "text-(emerald|amber|pink)-400"|border-indigo-500\/30/,
+        "three coloured quick-action icons inside a tinted composer panel",
+      ],
+      [
+        "src/components/user/feed/active-events-card.tsx",
+        /text-violet-(300|400)|bg-violet-500|from-violet-500|text-amber-400|text-emerald-400/,
+        "violet chrome, an amber reward, a fuchsia bar and an emerald tick in one card",
+      ],
+      [
+        "src/components/user/feed/donation-block.tsx",
+        /bg-pink-500\/10|text-pink-400/,
+        "a pink button inside a post, under a neutral card",
+      ],
+      [
+        "src/components/admin/settings/feed-widgets-form.tsx",
+        /COLOR_CLASSES\[tile\.color\]/,
+        "an admin preview tinted by a colour the app does not render",
+      ],
+    ];
+    for (const [f, re, why] of gone) {
+      check(`${f.split("/").pop()}: ${why} is gone`, !re.test(code(f)));
+    }
+
+    // The one gradient. Nothing outside the token layer may hand-roll one on
+    // these surfaces — that is what "concentrated" means in practice.
+    for (const f of [
+      "src/components/user/primitives/balance-card.tsx",
+      "src/components/user/feed/mobile-earn-block.tsx",
+      "src/components/dashboard/bottom-tab-bar.tsx",
+      "src/components/user/tasks/tasks-hub-view.tsx",
+      "src/components/dashboard/sidebar.tsx",
+      "src/components/dashboard/header.tsx",
+    ]) {
+      check(
+        `${f.split("/").pop()} paints no ad-hoc gradient`,
+        !/bg-linear-to|bg-gradient-to/.test(code(f))
+      );
+    }
+    // The rail is the exception and has to be checked differently: the promo
+    // card and the custom widgets take a from/to pair from the ADMIN, which is
+    // campaign data, not a design decision. What must hold is that every
+    // gradient there is data-driven and the fallback is the app's own.
+    {
+      const rail = code("src/components/user/feed/feed-right-rail.tsx");
+      const grads = rail.match(/bg-linear-to[a-z-]*/g) ?? [];
+      const guarded = rail.match(/\?\s*"bg-linear-to-br"\s*:\s*"app-accent"/g) ?? [];
+      check(
+        "every gradient in the rail is admin data, falling back to app-accent",
+        grads.length > 0 && grads.length === guarded.length,
+        `${grads.length} gradients, ${guarded.length} guarded`
+      );
+    }
+
+    /* ── 7e. Tap targets ──────────────────────────────────────────────────
+       Written ON the control. `[&>button]` styles DIRECT children only, and
+       a like button once ended up a 20px target because it rendered its own
+       wrapper and inherited none of the row's padding. */
+    check(
+      "the post action row no longer sizes its targets with a child selector",
+      !/\[&>button\]/.test(code("src/components/user/feed/feed-post-card.tsx"))
+    );
+    const TAP = /\b(app-tap|app-tap-row|min-h-11|min-h-14)\b/g;
+    for (const [f, min] of [
+      ["src/components/user/feed/feed-post-card.tsx", 6],
+      ["src/components/dashboard/header.tsx", 6],
+      ["src/components/dashboard/sidebar.tsx", 2],
+      ["src/components/user/feed/feed-quick-links.tsx", 1],
+      ["src/components/user/primitives/task-card.tsx", 1],
+      ["src/components/user/feed/reaction-button.tsx", 1],
+    ] as const) {
+      const n = (code(f).match(TAP) ?? []).length;
+      check(
+        `${f.split("/").pop()} declares ≥${min} explicit tap targets`,
+        n >= min,
+        `found ${n}`
+      );
+    }
+    // The floors themselves, in the token layer.
+    check(
+      ".app-tap is 44px in both axes",
+      /\.app-tap\s*\{[^}]*min-height:\s*2\.75rem[^}]*min-width:\s*2\.75rem/.test(css)
+    );
+    check(
+      ".app-nav-item is 44px tall",
+      /\.app-nav-item\s*\{[^}]*min-height:\s*2\.75rem/.test(css)
+    );
+    check(
+      ".app-tap carries touch-action so the first tap is not delayed 300ms",
+      /\.app-tap\s*\{[^}]*touch-action:\s*manipulation/.test(css)
+    );
+
+    /* ── 7f. Motion answers prefers-reduced-motion ────────────────────── */
+    const reducedBlocks = (
+      css.match(/@media \(prefers-reduced-motion: reduce\)[\s\S]*?\n\}/g) ?? []
+    ).join("\n");
+    for (const cls of ["app-press", "app-lift", "app-sheet", "app-tick"]) {
+      check(
+        `.${cls} is answered under prefers-reduced-motion`,
+        reducedBlocks.includes(cls)
+      );
+    }
+    // A hover lift on a touch device leaves the card stuck in its hover state
+    // after a tap, because there is no pointer to move away.
+    check(
+      ".app-lift is behind a hover/fine-pointer query",
+      /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*?\.app-lift/.test(css)
+    );
+
+    /* ── 7g. Nothing became unreachable ───────────────────────────────────
+       Two header controls moved into the account menu. Moved is fine; gone
+       is not, and the difference is one `git grep` nobody runs. */
+    const header = code("src/components/dashboard/header.tsx");
+    check(
+      "the theme toggle is still in the shell (now a row in the account menu)",
+      /<ThemeSwitch[^>]*withLabel/.test(header)
+    );
+    check(
+      "Reports is still reachable from the account menu",
+      /Reports &amp; Transactions|Reports & Transactions/.test(header)
+    );
+    check(
+      "the theme toggle supports the labelled menu-row form",
+      /withLabel/.test(code("src/components/dashboard/theme-switch.tsx"))
+    );
+    check(
+      "the balance still links to the wallet from the header",
+      /href="\/wallet"/.test(header)
+    );
+
+    /* ── 7h. Every accent, not just the default ───────────────────────────
+       This is the assertion the whole accent bug reduces to: nobody had ever
+       measured any accent but the one that ships. The picker offers 19, each
+       remaps the brand ramp, and the gradient, the nav rail and the button
+       edge are all drawn off it — so `yellow` and `gold` put white text on a
+       bright fill at roughly 2.9:1, on the balance panel, silently.
+
+       Every row of ACCENT_SURFACE is re-measured here on every run, both
+       gradient ends against white and all three chrome marks against the bar
+       they sit on IN EACH THEME. A new accent added to the picker without a
+       measured row fails at the first check below rather than shipping. */
+    {
+      const DARK_BAR = "#15171f";
+      const LIGHT_BAR = "#ffffff";
+
+      // The picker's list is the authority on what can be chosen; the table is
+      // the authority on what those choices look like. If they disagree, some
+      // accent renders with no surface at all.
+      const provider = read("src/components/providers/theme-provider.tsx");
+      const listed = (
+        provider.match(/export const ACCENTS: Accent\[\] = \[([\s\S]*?)\];/)?.[1] ?? ""
+      )
+        .split(",")
+        .map((s) => s.trim().replace(/^"|"$/g, ""))
+        .filter(Boolean);
+      const tabled = Object.keys(ACCENT_SURFACE);
+      check("the accent list was found in the theme provider", listed.length > 0);
+      check(
+        `every offered accent has a measured surface (${listed.length})`,
+        listed.length === tabled.length && listed.every((a) => tabled.includes(a)),
+        `picker: ${listed.filter((a) => !tabled.includes(a)).join(", ") || "-"}; ` +
+          `table only: ${tabled.filter((a) => !listed.includes(a)).join(", ") || "-"}`
+      );
+      check(
+        `the default accent "${DEFAULT_ACCENT}" is one of them`,
+        tabled.includes(DEFAULT_ACCENT)
+      );
+
+      console.log(
+        "\n   accent    grad-a  white  grad-b  white | dark rail-a/b + edge | light rail-a/b + edge"
+      );
+      const bad: string[] = [];
+      for (const [name, a] of Object.entries(ACCENT_SURFACE)) {
+        // Both ends, because a gradient is only as legible as its lightest end.
+        const wa = ratio("#ffffff", a.gradA);
+        const wb = ratio("#ffffff", a.gradB);
+        // The edge uses the same value as rail-a, so measuring rail-a measures
+        // both; they are listed separately in the table for clarity.
+        const da = ratio(a.railADark, DARK_BAR);
+        const db = ratio(a.railBDark, DARK_BAR);
+        const la = ratio(a.railALight, LIGHT_BAR);
+        const lb = ratio(a.railBLight, LIGHT_BAR);
+        console.log(
+          `   ${name.padEnd(9)} ${a.gradA} ${wa.toFixed(2)}   ${a.gradB} ${wb.toFixed(2)}  | ` +
+            `${a.railADark} ${da.toFixed(2)} ${a.railBDark} ${db.toFixed(2)} | ` +
+            `${a.railALight} ${la.toFixed(2)} ${a.railBLight} ${lb.toFixed(2)}`
+        );
+        if (wa < 4.5) bad.push(`${name} grad-a white ${wa.toFixed(2)}`);
+        if (wb < 4.5) bad.push(`${name} grad-b white ${wb.toFixed(2)}`);
+        if (da < 3) bad.push(`${name} rail-a/edge on dark bar ${da.toFixed(2)}`);
+        if (db < 3) bad.push(`${name} rail-b on dark bar ${db.toFixed(2)}`);
+        if (la < 3) bad.push(`${name} rail-a/edge on white bar ${la.toFixed(2)}`);
+        if (lb < 3) bad.push(`${name} rail-b on white bar ${lb.toFixed(2)}`);
+        // A gradient whose ends are far apart in luminance stops reading as one
+        // colour — silver's companion hue landed 2x away before the table
+        // fell back to silver's own ramp.
+        const spread = ratio(a.gradA, a.gradB);
+        if (spread > 1.8) bad.push(`${name} gradient ends ${spread.toFixed(2)}x apart`);
+      }
+      check(
+        `all ${Object.keys(ACCENT_SURFACE).length} accents clear 4.5:1 for white ` +
+          `and 3:1 for the chrome marks in BOTH themes`,
+        bad.length === 0,
+        bad.join("; ")
+      );
+
+      // The stylesheet is a projection of the table, not a second copy of it.
+      const generated = accentSurfaceCss();
+      check(
+        "globals.css contains the generated accent block, unedited",
+        css.includes(generated),
+        "re-run this script and paste the block it prints over the generated section"
+      );
+
+      // The default (no `data-accent` attribute at all) has to be the same
+      // surface as explicitly choosing the default accent, or a user who never
+      // opens the picker gets colours nobody measured.
+      const dflt = ACCENT_SURFACE[DEFAULT_ACCENT];
+      const base = [
+        ["--app-grad-a", dflt.gradA, "dark"],
+        ["--app-grad-b", dflt.gradB, "dark"],
+        ["--app-accent-edge", dflt.railADark, "dark"],
+        ["--app-rail-a", dflt.railADark, "dark"],
+        ["--app-rail-b", dflt.railBDark, "dark"],
+        ["--app-accent-edge", dflt.railALight, "light"],
+        ["--app-rail-a", dflt.railALight, "light"],
+        ["--app-rail-b", dflt.railBLight, "light"],
+      ] as const;
+      const wrong = base.filter(
+        ([token, want, theme]) =>
+          (theme === "light" ? lightDecls : rootDecls).get(token) !== want
+      );
+      check(
+        "the no-accent default matches the default accent's row exactly",
+        wrong.length === 0,
+        wrong.map(([t, w, th]) => `${th} ${t} should be ${w}`).join(", ")
+      );
+
+      // Literal hexes, not `var()`. Tailwind v4 ships the ramp as oklch and the
+      // accent blocks overwrite three of its steps, so a token that points at
+      // the ramp is measured against one value and painted with another — which
+      // is exactly how indigo-600 was measured at #4f46e5 (v3) while the browser
+      // painted #4f39f6 (v4).
+      const indirect = [
+        "--app-grad-a",
+        "--app-grad-b",
+        "--app-accent-edge",
+        "--app-rail-a",
+        "--app-rail-b",
+      ].filter((t) =>
+        [rootDecls.get(t), lightDecls.get(t)].some((v) => v && v.includes("var("))
+      );
+      check(
+        "the gradient and chrome-mark tokens are literal hexes, not ramp refs",
+        indirect.length === 0,
+        indirect.join(", ")
+      );
+    }
+
+    /* -- 7i. No setting renders nothing -------------------------------------
+       The Quick Earn tiles used to take a per-tile colour from the admin. The
+       feed and the rail render them neutral now, so that control changes
+       nothing a user can see. This codebase has shipped a silently dead
+       setting twice before -- an admin sets it, nothing happens, and the
+       platform reads as broken rather than as configured -- so the control has
+       to SAY so. The stored value is kept either way. */
+    {
+      const form = read("src/components/admin/settings/feed-widgets-form.tsx");
+      check(
+        "the Quick Earn colour picker is disabled rather than silently dead",
+        /value=\{tile\.color\}[\s\S]{0,200}?disabled/.test(form) &&
+          !/value=\{tile\.color\}[\s\S]{0,120}?onChange/.test(form),
+        "a control that writes a value the app never reads is worse than no control"
+      );
+      check(
+        "...and it says why, on screen, next to itself",
+        /Colour is no longer used/.test(form)
+      );
+      check(
+        "the stored value is still shown by name, not thrown away",
+        /COLOR_OPTIONS\.map/.test(form)
+      );
+      check(
+        "the reason is recorded where the map is defined",
+        /NO LONGER RENDERED/.test(read("src/lib/feed-quick-earn.ts"))
+      );
+    }
   }
 
   console.log(

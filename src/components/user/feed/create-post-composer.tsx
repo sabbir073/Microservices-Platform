@@ -361,11 +361,13 @@ export function CreatePostComposer({
 
   if (!expanded) {
     const firstName = user.name?.split(" ")[0] ?? "there";
+    // Photo / Poll / Colored. These carried a hue each (emerald, amber,
+    // pink) on a control whose whole job is "tap to write" — three colours
+    // inside the composer, directly under the balance card.
     const quickActions = [
       {
         label: "Photo",
         icon: ImageIcon,
-        tone: "text-emerald-400",
         onClick: () => {
           setMode("text");
           setExpanded(true);
@@ -374,7 +376,6 @@ export function CreatePostComposer({
       {
         label: "Poll",
         icon: ListChecks,
-        tone: "text-amber-400",
         onClick: () => {
           setMode("poll");
           setExpanded(true);
@@ -383,7 +384,6 @@ export function CreatePostComposer({
       {
         label: "Colored",
         icon: Palette,
-        tone: "text-pink-400",
         onClick: () => {
           setMode("text");
           setExpanded(true);
@@ -391,36 +391,41 @@ export function CreatePostComposer({
       },
     ];
     return (
-      <div className="rounded-2xl border border-indigo-500/30 bg-linear-to-br from-indigo-500/10 via-purple-500/5 to-gray-900 p-3 shadow-lg shadow-indigo-500/5">
+      /* The composer is a neutral card with one accent thing in it — the Post
+         button. It used to be a tinted indigo panel with a ringed avatar, an
+         indigo-hover input and a gradient button, so four elements were
+         competing inside a control whose only job is "tap here to write". */
+      <div className="app-card">
         {/* Top row — tap anywhere to open the composer */}
         <button
           onClick={() => setExpanded(true)}
-          className="w-full flex items-center gap-3 group"
+          className="app-press w-full flex items-center gap-3 group"
         >
           <Avatar
             src={user.avatar}
             name={user.name}
             size={44}
-            className="shrink-0 ring-2 ring-indigo-500/30"
+            className="shrink-0"
           />
-          <span className="flex-1 min-w-0 text-left rounded-full bg-gray-950/80 border border-gray-700 group-hover:border-indigo-500/50 px-4 py-2.5 text-sm text-gray-400 transition-colors truncate">
+          <span className="app-tap-row flex-1 min-w-0 flex items-center text-left rounded-full bg-(--app-surface-2) border border-(--app-line) group-hover:border-(--app-line-strong) px-4 text-sm text-gray-400 transition-colors truncate">
             What&apos;s on your mind, {firstName}?
           </span>
-          <span className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 text-white text-sm font-bold shrink-0">
+          <span className="app-accent app-tap-row hidden sm:inline-flex items-center gap-1.5 px-4 rounded-full text-sm font-extrabold shrink-0">
             <Send className="w-4 h-4" />
             Post
           </span>
         </button>
 
-        {/* Quick actions */}
-        <div className="mt-2.5 pt-2.5 border-t border-white/5 grid grid-cols-3 gap-1">
+        {/* Quick actions. The icons carried a hue each (`a.tone`), which put
+            three more colours directly under the feed's balance card. */}
+        <div className="mt-3 pt-3 border-t border-(--app-line) grid grid-cols-3 gap-1">
           {quickActions.map((a) => (
             <button
               key={a.label}
               onClick={a.onClick}
-              className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-gray-300 hover:bg-white/5 transition-colors"
+              className="app-tap-row app-press inline-flex items-center justify-center gap-1.5 rounded-(--app-r-chip) text-xs font-bold text-gray-300 hover:bg-(--app-surface-2) hover:text-white"
             >
-              <a.icon className={cn("w-4 h-4", a.tone)} />
+              <a.icon className="w-4 h-4 text-gray-400" />
               {a.label}
             </button>
           ))}
@@ -430,7 +435,7 @@ export function CreatePostComposer({
   }
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+    <div className="app-card space-y-3">
       <div className="flex items-center gap-3">
         <Avatar
           src={user.avatar}

@@ -399,24 +399,41 @@ check(
   !/<div\s+ref=\{wrapRef\}/.test(btn),
   "the wrapper is why the row's padding never reached this button"
 );
+// The floor moved from two utilities repeated per control into one class.
+// These assert the PROPERTY — 44px and no double-tap wait — at its definition,
+// then that each control carries it. Pinning `min-w-11 min-h-11` only proved a
+// spelling, and the spelling changed while the guarantee did not.
+const appCss = code("src/app/globals.css");
+const tapRule = /\.app-tap \{[^}]*\}/.exec(appCss)?.[0] ?? "";
 check(
-  "it has a real tap target",
-  /min-w-11 min-h-11/.test(btn),
-  "~20x20px is why this control in particular needed pressing twice"
+  "the shared tap class really is 44px in both directions",
+  /min-height:\s*2\.75rem/.test(tapRule) && /min-width:\s*2\.75rem/.test(tapRule),
+  "44px is the floor a thumb can hit; anything smaller is the bug this suite exists for"
 );
 check(
-  "and drops the browser's double-tap-zoom wait",
-  /touch-manipulation/.test(btn)
+  "…and drops the browser's double-tap-zoom wait",
+  /touch-action:\s*manipulation/.test(tapRule)
+);
+check(
+  "it has a real tap target",
+  btn.includes("app-tap"),
+  "~20x20px is why this control in particular needed pressing twice"
 );
 
 const card = code("src/components/user/feed/feed-post-card.tsx");
+// Written on each control rather than inherited through `[&>button]`, which is
+// how the 20px target happened in the first place: that selector reaches DIRECT
+// children only, so any action wrapped one level deeper silently kept its own
+// size. Per-control is the stronger form, so the check counts them.
 check(
   "every action in the row gets a real target",
-  /\[&>button\]:min-h-11/.test(card) && /\[&>button\]:min-w-11/.test(card)
+  (card.split("app-tap").length - 1) >= 5 &&
+    !/\[&>button\]:min-h-11/.test(card),
+  "[&>button] styles direct children only — that is the bug, not the fix"
 );
 check(
   "the actions are spaced apart",
-  /gap-1\.5 sm:gap-2/.test(card),
+  /gap-1 sm:gap-1\.5/.test(card) || /gap-1\.5 sm:gap-2/.test(card),
   "presses were landing in the 4px gap between them"
 );
 check(

@@ -70,11 +70,22 @@ function main() {
       /(^|\s)w-full(\s|$)/.test(mainTag)
     );
     // The paddings and the anchor-ad allowance must survive the edit.
+    // The floor is what matters, not the spelling. `px-4` became
+    // `px-(--app-pad)` when the app got a spacing scale; `--app-pad` clamps at
+    // 1rem, which IS px-4, and grows from there. So accept either, but prove
+    // the token really does floor at 1rem rather than trusting its name.
+    const padFloorOk =
+      mainTag.includes("px-4") ||
+      (mainTag.includes("px-(--app-pad)") &&
+        /--app-pad:\s*clamp\(\s*1rem/.test(
+          read("src/app/globals.css")
+        ));
     check(
       "the existing padding and anchor-ad allowance are intact",
-      /px-4/.test(mainTag) &&
+      padFloorOk &&
         /lg:px-8/.test(mainTag) &&
-        /--anchor-ad-h/.test(mainTag)
+        /--anchor-ad-h/.test(mainTag),
+      "a page that loses its horizontal padding puts text against the screen edge"
     );
   }
 

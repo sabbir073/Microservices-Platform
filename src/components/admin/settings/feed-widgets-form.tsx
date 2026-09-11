@@ -20,7 +20,6 @@ import { FEED_WIDGETS, type FeedWidgetConfig } from "@/lib/feed-widgets";
 import {
   ICON_OPTIONS,
   COLOR_OPTIONS,
-  COLOR_CLASSES,
   QUICK_EARN_ICONS,
   DEFAULT_QUICK_EARN,
   type QuickEarnTile,
@@ -142,7 +141,10 @@ function TileRow({
         >
           <GripVertical className="w-4 h-4" />
         </button>
-        <Icon className={cn("w-4 h-4 shrink-0", COLOR_CLASSES[tile.color])} />
+        {/* Neutral, because that is how the app renders it. This preview used
+            to be tinted with `tile.color`, so the colour appeared to work here
+            and then did nothing on the feed. */}
+        <Icon className="w-4 h-4 shrink-0 text-slate-300" />
         <input
           value={tile.label}
           onChange={(e) => onChange({ label: e.target.value })}
@@ -190,16 +192,33 @@ function TileRow({
             <option key={o.key} value={o.key}>{o.label}</option>
           ))}
         </select>
-        <select
-          value={tile.color}
-          onChange={(e) => onChange({ color: e.target.value })}
-          disabled={!canEdit}
-          className={inputCls}
-        >
-          {COLOR_OPTIONS.map((o) => (
-            <option key={o.key} value={o.key}>{o.label}</option>
-          ))}
-        </select>
+        {/* NOT USED. The feed and the sidebar rail render these tiles in the
+            app's neutral style — twelve shortcuts in twelve hues was the thing
+            the redesign removed — so this no longer changes anything a user
+            sees. It stays visible and disabled rather than deleted: the stored
+            value is preserved on save, and an admin can see WHY the control
+            does nothing instead of setting it and waiting for a change that
+            never comes. */}
+        <div className="min-w-0">
+          <select
+            value={tile.color}
+            disabled
+            aria-describedby={`qe-color-note-${tile.id}`}
+            title="Not used — tiles render in the app's neutral style"
+            className={cn(inputCls, "w-full opacity-60 cursor-not-allowed")}
+          >
+            {COLOR_OPTIONS.map((o) => (
+              <option key={o.key} value={o.key}>{o.label}</option>
+            ))}
+          </select>
+          <p
+            id={`qe-color-note-${tile.id}`}
+            className="mt-1 text-[11px] leading-tight text-slate-400"
+          >
+            Colour is no longer used — tiles render in the app&apos;s neutral
+            style.
+          </p>
+        </div>
       </div>
     </Reorder.Item>
   );

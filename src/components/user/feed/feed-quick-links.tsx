@@ -30,30 +30,35 @@ import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
  * nobody ever finds.
  */
 
+/* Six shortcuts, ONE colour.
+   This row is the exact thing the owner screenshotted: an amber Daily, an
+   indigo Tasks, an emerald Market, a sky Wallet, a violet Team and a rose
+   Ranks, six saturated hues in 300px, none of which carried any meaning — the
+   colour was decoration assigned in the order the links were written. Squinting
+   at it gave you six equally loud dots and no idea which one mattered.
+   They are neutral now and read as one row of six peers, which is what they
+   are; where you are is carried by the page you are on. */
 const LINKS = [
   {
     href: "/daily-mission",
     label: "Daily Mission",
     short: "Daily",
     icon: CalendarCheck,
-    tone: "text-amber-400",
   },
-  { href: "/tasks", label: "Tasks", short: "Tasks", icon: ListTodo, tone: "text-indigo-400" },
+  { href: "/tasks", label: "Tasks", short: "Tasks", icon: ListTodo },
   {
     href: "/marketplace",
     label: "Marketplace",
     short: "Market",
     icon: Store,
-    tone: "text-emerald-400",
   },
-  { href: "/wallet", label: "Wallet", short: "Wallet", icon: Wallet, tone: "text-sky-400" },
-  { href: "/referrals", label: "My Team", short: "Team", icon: Users, tone: "text-violet-400" },
+  { href: "/wallet", label: "Wallet", short: "Wallet", icon: Wallet },
+  { href: "/referrals", label: "My Team", short: "Team", icon: Users },
   {
     href: "/leaderboard",
     label: "Leaderboard",
     short: "Ranks",
     icon: Trophy,
-    tone: "text-rose-400",
   },
 ] as const;
 
@@ -81,11 +86,11 @@ export function FeedQuickLinks({
             href={l.href}
             aria-label={l.label}
             title={l.label}
-            // h-10 to match the toolbar's other controls, and to stay a real
-            // tap target rather than a decorative icon.
-            className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+            // 44px, written on the element itself — the toolbar's other
+            // controls match, and a shortcut row on a phone is pure tap target.
+            className="app-tap app-press inline-flex shrink-0 items-center gap-1.5 rounded-(--app-r-chip) px-2.5 text-xs font-bold text-gray-300 hover:bg-(--app-surface-2) hover:text-white"
           >
-            <l.icon className={`h-4 w-4 shrink-0 ${l.tone}`} />
+            <l.icon className="h-4.5 w-4.5 shrink-0" />
             <span className="hidden sm:inline">{l.short}</span>
           </Link>
         ))}

@@ -6,9 +6,12 @@ import { Coins, Flame, Gift, Check, Loader2, Zap } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { cn, pts } from "@/lib/utils";
 import { notifyCenter } from "@/lib/notify-center";
+import { BalanceSkeleton } from "@/components/user/primitives/skeleton";
+// `COLOR_CLASSES` is deliberately not imported any more: the admin still picks
+// a colour per Quick Earn tile and it is still stored, but the feed renders
+// these tiles neutral. See the note on the grid below.
 import {
   QUICK_EARN_ICONS,
-  COLOR_CLASSES,
   type QuickEarnTile,
 } from "@/lib/feed-quick-earn";
 
@@ -85,38 +88,48 @@ export function MobileEarnBlock({
 
   return (
     <div className={cn("space-y-3", className)}>
-      {/* Daily Bonus claim */}
+      {/* The money surface on the feed.
+          It was a glass panel with an amber coin, an emerald "today" figure and
+          an orange streak strip — three hues at roughly one size, so the
+          balance did not read as the subject of its own card. It is now the one
+          gradient panel on this screen, the figure is `t-figure` (up to 32px,
+          weight 800) against an 11px label, and the streak sits on the gradient
+          as a translucent strip rather than importing a fourth colour. */}
+      {/* The card reserves its own height while the fetch is in flight. It used
+          to render nothing, so the whole feed jumped down by ~150px the moment
+          the balance arrived — on the screen people open first. */}
+      {!data && <BalanceSkeleton />}
       {data && (
-        <section className="glass p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-eyebrow">Your balance</p>
-              <p className="text-2xl font-extrabold text-white tabular-nums mt-0.5 inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap">
-                <Coins className="w-5 h-5 text-amber-400 shrink-0" />
+        <section className="app-accent app-accent-glow rounded-(--app-r-card) p-(--app-pad)">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="t-eyebrow text-white/90">Your balance</p>
+              <p className="t-figure mt-1 inline-flex items-center gap-2 min-w-0 whitespace-nowrap text-white">
+                <Coins className="w-6 h-6 shrink-0 text-white/90" />
                 {pts(data.balance.points)}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-eyebrow">Today</p>
-              <p className="text-sm font-bold text-emerald-400 tabular-nums mt-0.5">
+            <div className="text-right shrink-0">
+              <p className="t-eyebrow text-white/90">Today</p>
+              <p className="t-figure-sm mt-1 text-white">
                 +{data.balance.todayEarnings.toLocaleString()}
               </p>
             </div>
           </div>
-          <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-orange-500/10 border border-orange-500/20 px-3 py-2">
-            <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-orange-300">
+          <div className="mt-4 flex items-center justify-between gap-2 rounded-(--app-r-control) bg-black/20 border border-white/25 px-3 py-2">
+            <span className="inline-flex items-center gap-1.5 text-sm font-bold text-white">
               <Flame className="w-4 h-4" />
               {data.streak.current}-day streak
             </span>
             {claimed ? (
-              <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400">
+              <span className="inline-flex items-center gap-1 text-xs font-bold text-white/90">
                 <Check className="w-3.5 h-3.5" /> Claimed
               </span>
             ) : (
               <button
                 onClick={claim}
                 disabled={claiming}
-                className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold disabled:opacity-50"
+                className="app-press app-tap-row inline-flex items-center gap-1.5 px-4 rounded-full bg-white text-gray-950 text-xs font-extrabold disabled:opacity-60"
               >
                 {claiming ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -130,12 +143,16 @@ export function MobileEarnBlock({
         </section>
       )}
 
-      {/* Quick Earn — 3-up mobile, 4-up tablet */}
+      {/* Quick Earn — 3-up mobile, 4-up tablet.
+          The tile icons used to be coloured from an admin-picked palette, so
+          six shortcuts were six hues sitting directly under the balance card
+          and competing with it. Neutral now: the heading says what the row is,
+          and the card above it is what the eye should reach first. */}
       {tiles.length > 0 && (
-        <section className="glass p-4">
+        <section className="app-card">
           <div className="flex items-center gap-2 mb-3">
-            <Zap className="w-4 h-4 text-amber-400" />
-            <h2 className="text-sm font-bold text-white">Quick Earn</h2>
+            <Zap className="w-4 h-4 text-gray-400" />
+            <h2 className="t-section text-white">Quick Earn</h2>
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
             {tiles.map((q) => {
@@ -144,14 +161,12 @@ export function MobileEarnBlock({
                 <Link
                   key={q.id}
                   href={q.href}
-                  className="glass-hover flex flex-col items-center gap-1 rounded-xl bg-gray-950/40 border border-gray-800 px-2 py-3 text-center font-semibold text-gray-200"
+                  className={cn(
+                    "app-tile app-press app-lift flex flex-col items-center justify-center gap-1.5",
+                    "min-h-20 px-2 py-3 text-center font-bold text-gray-200"
+                  )}
                 >
-                  <Icon
-                    className={cn(
-                      "w-5 h-5 shrink-0",
-                      COLOR_CLASSES[q.color] ?? "text-indigo-400"
-                    )}
-                  />
+                  <Icon className="w-5 h-5 shrink-0 text-gray-400" />
                   <span className="w-full truncate text-xs leading-tight">
                     {q.label}
                   </span>

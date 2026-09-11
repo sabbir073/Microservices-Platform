@@ -15,13 +15,25 @@ interface StatCardProps {
   className?: string;
 }
 
+/**
+ * The `tone` prop names a colour, and 40-odd call sites pick one per tile, so a
+ * four-tile row was reliably four hues — blue, purple, amber, green — none of
+ * which meant anything beyond "this is the second tile". That is the single
+ * biggest source of the rainbow, because this component is everywhere.
+ *
+ * The prop stays (renaming it would touch every caller for no visual gain) but
+ * it now resolves to only what is genuinely semantic. `green` is money in and
+ * `amber` is attention, so those keep a colour, drawn from the four app
+ * tokens. Everything else is the neutral icon tile: a stat's meaning is in its
+ * number and its label, not in the hue of a 20px glyph.
+ */
 const TONE_CLASSES: Record<NonNullable<StatCardProps["tone"]>, string> = {
-  blue: "bg-indigo-500/10 text-indigo-400 ring-1 ring-indigo-500/20",
-  purple: "bg-violet-500/10 text-violet-400 ring-1 ring-violet-500/20",
-  amber: "bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20",
-  green: "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20",
-  pink: "bg-pink-500/10 text-pink-400 ring-1 ring-pink-500/20",
-  slate: "bg-gray-700/40 text-gray-300 ring-1 ring-gray-700",
+  blue: "app-icon",
+  purple: "app-icon",
+  pink: "app-icon",
+  slate: "app-icon",
+  green: "app-icon bg-(--app-in-soft) border-(--app-in-line) text-(--app-in)",
+  amber: "app-icon bg-(--app-warn-soft) border-(--app-warn-line) text-(--app-warn)",
 };
 
 /**
@@ -32,16 +44,14 @@ const TONE_CLASSES: Record<NonNullable<StatCardProps["tone"]>, string> = {
  * referrals and the seller dashboard, and the balance hero — still share ONE
  * definition. Change it here, every tile follows.
  */
-export const STAT_VALUE_CLASS =
-  "font-extrabold text-white tabular-nums tracking-tight leading-tight whitespace-nowrap text-[clamp(1rem,4.6vw,1.25rem)]";
+export const STAT_VALUE_CLASS = "t-figure-sm text-white whitespace-nowrap";
 
 /** Same, for the denser tiles that sit 3-up or inside a nested grid. */
 export const STAT_VALUE_CLASS_SM =
   "font-bold text-white tabular-nums tracking-tight leading-tight whitespace-nowrap text-[clamp(0.9rem,4.2vw,1.125rem)]";
 
 /** Labels wrap to two lines rather than clipping — "Tasks Com…" reads as broken. */
-export const STAT_LABEL_CLASS =
-  "text-xs font-medium text-gray-400 leading-tight line-clamp-2";
+export const STAT_LABEL_CLASS = "t-meta text-gray-400 line-clamp-2";
 
 /**
  * The one stat tile for user surfaces.
@@ -71,18 +81,9 @@ export function StatCard({
       : value;
 
   return (
-    <div className={cn("card p-3 sm:p-4", className)}>
-      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-        {icon && (
-          <div
-            className={cn(
-              "grid h-9 w-9 sm:h-10 sm:w-10 place-items-center rounded-xl shrink-0",
-              TONE_CLASSES[tone]
-            )}
-          >
-            {icon}
-          </div>
-        )}
+    <div className={cn("app-card", className)}>
+      <div className="flex items-center gap-3 min-w-0">
+        {icon && <div className={TONE_CLASSES[tone]}>{icon}</div>}
         <div className="min-w-0 flex-1">
           <p
             className={STAT_VALUE_CLASS}

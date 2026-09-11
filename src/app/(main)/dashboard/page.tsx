@@ -43,22 +43,26 @@ import { ProfileCompletionBanner } from "@/components/user/primitives/profile-co
 import { getKycPromptState } from "@/lib/kyc-prompt-server";
 import { KycPromptBanner } from "@/components/user/primitives/kyc-prompt-banner";
 
+/* Four shortcuts, previously indigo / emerald / amber / pink, above six more
+   in cyan / emerald / fuchsia / sky / violet / amber. Ten shortcuts, nine
+   hues, sitting under a balance card that was itself tinted indigo — this one
+   screen carried most of the complaint on its own. Neutral. */
 const QUICK_ACTIONS = [
-  { label: "Tasks", href: "/tasks", icon: CheckCircle, tone: "bg-indigo-500/10 text-indigo-400 ring-1 ring-indigo-500/20" },
-  { label: "Add funds", href: "/deposit", icon: Plus, tone: "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20" },
-  { label: "Invite", href: "/referrals", icon: Users, tone: "bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20" },
-  { label: "Leaderboard", href: "/leaderboard", icon: Trophy, tone: "bg-pink-500/10 text-pink-400 ring-1 ring-pink-500/20" },
+  { label: "Tasks", href: "/tasks", icon: CheckCircle },
+  { label: "Add funds", href: "/deposit", icon: Plus },
+  { label: "Invite", href: "/referrals", icon: Users },
+  { label: "Leaderboard", href: "/leaderboard", icon: Trophy },
 ];
 
 // Discovery strip — surfaces the platform's earning + spending surfaces so the
 // dashboard reflects everything now available (not just tasks).
 const EXPLORE = [
-  { label: "Offerwalls", href: "/offerwalls", icon: Compass, tone: "text-cyan-400" },
-  { label: "Daily Bonus", href: "/earn", icon: Gift, tone: "text-emerald-400" },
-  { label: "Marketplace", href: "/marketplace", icon: ShoppingBag, tone: "text-fuchsia-400" },
-  { label: "Courses", href: "/courses", icon: GraduationCap, tone: "text-sky-400" },
-  { label: "Games", href: "/games", icon: Gamepad2, tone: "text-violet-400" },
-  { label: "Lottery", href: "/lottery", icon: Trophy, tone: "text-amber-400" },
+  { label: "Offerwalls", href: "/offerwalls", icon: Compass },
+  { label: "Daily Bonus", href: "/earn", icon: Gift },
+  { label: "Marketplace", href: "/marketplace", icon: ShoppingBag },
+  { label: "Courses", href: "/courses", icon: GraduationCap },
+  { label: "Games", href: "/games", icon: Gamepad2 },
+  { label: "Lottery", href: "/lottery", icon: Trophy },
 ];
 
 export default async function DashboardPage() {
@@ -170,10 +174,10 @@ export default async function DashboardPage() {
 
       {/* Greeting */}
       <div>
-        <h1 className="text-xl font-bold text-white">
+        <h1 className="t-title text-white">
           Welcome back, {user.name?.split(" ")[0] || "User"}!
         </h1>
-        <p className="text-sm text-gray-400 mt-0.5">
+        <p className="t-body text-gray-400 mt-1">
           Here&apos;s what&apos;s happening with your earnings today.
         </p>
       </div>
@@ -225,42 +229,42 @@ export default async function DashboardPage() {
       {canConvertPoints && (
         <Link
           href="/wallet"
-          className="flex items-center gap-3 rounded-xl border border-sky-500/25 bg-linear-to-r from-sky-500/10 to-indigo-500/5 p-3 hover:border-sky-500/40 transition-colors"
+          className="app-card app-press app-lift flex items-center gap-3"
         >
-          <div className="w-9 h-9 rounded-lg bg-sky-500/15 grid place-items-center text-sky-300 shrink-0">
-            <ArrowRightLeft className="w-4 h-4" />
+          <div className="app-icon">
+            <ArrowRightLeft className="w-4.5 h-4.5" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-white">Convert points to cash</p>
-            <p className="text-xs text-gray-400">
+            <p className="t-card-title text-white">Convert points to cash</p>
+            <p className="t-meta text-gray-400 mt-0.5">
               You have enough points to convert into withdrawable cash.
             </p>
           </div>
-          <span className="text-xs font-bold text-sky-300 shrink-0">Convert →</span>
+          <span className="t-meta font-extrabold text-(--app-info) shrink-0">
+            Convert →
+          </span>
         </Link>
       )}
 
       {/* Quick actions — compact chips (no cramped 2-up on phones) */}
       <div>
-        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2 px-1">
-          Quick Access
-        </p>
+        <p className="t-eyebrow text-gray-500 mb-2.5 px-1">Quick Access</p>
         <div className="grid grid-cols-4 gap-2">
           {[
             ...QUICK_ACTIONS,
             ...(isAdvertiser
-              ? [{ label: "Run Ads", href: "/advertiser", icon: Megaphone, tone: "bg-sky-500/10 text-sky-400 ring-1 ring-sky-500/20" }]
+              ? [{ label: "Run Ads", href: "/advertiser", icon: Megaphone }]
               : []),
           ].map((qa) => (
             <Link
               key={qa.label}
               href={qa.href}
-              className="group card card-interactive flex flex-col items-center justify-center gap-1.5 p-3"
+              className="group app-card app-press app-lift flex flex-col items-center justify-center gap-2 p-3"
             >
-              <div className={`w-10 h-10 rounded-xl grid place-items-center ${qa.tone}`}>
+              <div className="app-icon">
                 <qa.icon className="w-5 h-5" />
               </div>
-              <span className="text-[11px] font-medium text-gray-300 group-hover:text-white text-center leading-tight">
+              <span className="text-[11px] font-bold text-gray-300 group-hover:text-white text-center leading-tight">
                 {qa.label}
               </span>
             </Link>
@@ -270,18 +274,16 @@ export default async function DashboardPage() {
 
       {/* Explore the platform — surfaces every earning + spending surface */}
       <div>
-        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-2 px-1">
-          Explore
-        </p>
+        <p className="t-eyebrow text-gray-500 mb-2.5 px-1">Explore</p>
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
           {EXPLORE.map((e) => (
             <Link
               key={e.label}
               href={e.href}
-              className="group card card-interactive flex items-center gap-2 p-2.5"
+              className="group app-card app-press app-lift app-tap-row flex items-center gap-2 p-2.5"
             >
-              <e.icon className={`w-4 h-4 shrink-0 ${e.tone}`} />
-              <span className="text-[11px] font-medium text-gray-300 group-hover:text-white truncate min-w-0">
+              <e.icon className="w-4 h-4 shrink-0 text-gray-400" />
+              <span className="text-[11px] font-bold text-gray-300 group-hover:text-white truncate min-w-0">
                 {e.label}
               </span>
             </Link>
@@ -296,10 +298,13 @@ export default async function DashboardPage() {
       />
 
       {/* Recent activity (real last-5 transactions) */}
-      <section className="card p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-white">Recent Activity</h2>
-          <Link href="/wallet" className="text-sm text-indigo-400 hover:text-indigo-300">
+      <section className="app-card">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h2 className="t-section text-white">Recent Activity</h2>
+          <Link
+            href="/wallet"
+            className="app-press app-tap-row inline-flex items-center px-2.5 -mr-2 rounded-(--app-r-chip) t-meta font-extrabold text-(--app-info) hover:bg-(--app-info-soft)"
+          >
             View all
           </Link>
         </div>
@@ -339,10 +344,13 @@ export default async function DashboardPage() {
       </section>
 
       {/* Available tasks preview */}
-      <section className="card p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-base font-semibold text-white">Available Tasks</h2>
-          <Link href="/tasks" className="text-sm text-indigo-400 hover:text-indigo-300">
+      <section className="app-card">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h2 className="t-section text-white">Available Tasks</h2>
+          <Link
+            href="/tasks"
+            className="app-press app-tap-row inline-flex items-center px-2.5 -mr-2 rounded-(--app-r-chip) t-meta font-extrabold text-(--app-info) hover:bg-(--app-info-soft)"
+          >
             View all
           </Link>
         </div>
@@ -358,26 +366,27 @@ export default async function DashboardPage() {
               <Link
                 key={t.id}
                 href={taskRunHref(t.type, t.id)}
-                className="flex items-center gap-3 rounded-xl border border-gray-800 bg-gray-950 p-3 hover:border-indigo-500/40 transition-colors group"
+                className="app-tile app-press app-lift flex items-center gap-3 group"
               >
-                <div className="w-10 h-10 rounded-lg bg-indigo-500/10 flex items-center justify-center shrink-0">
-                  <Star className="w-5 h-5 text-indigo-400" />
+                <div className="app-icon">
+                  <Star className="w-5 h-5" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white truncate group-hover:text-indigo-400 transition-colors">
-                    {t.title}
-                  </p>
-                  <p className="text-xs text-gray-500 capitalize">
+                  <p className="t-card-title text-white truncate">{t.title}</p>
+                  <p className="t-meta text-gray-500 capitalize mt-0.5">
                     {t.type.toLowerCase()}
                     {t.difficulty ? ` · ${t.difficulty.toLowerCase()}` : ""}
                   </p>
                 </div>
+                {/* The reward, not the icon, is why anyone reads this row — so
+                    it is the biggest thing in it. It was 14px amber against a
+                    14px white title and a 20px indigo star. */}
                 <div className="text-right shrink-0">
-                  <p className="text-sm font-bold text-amber-400 tabular-nums">
+                  <p className="t-figure-sm text-white">
                     +{t.pointsReward.toLocaleString()}
                   </p>
                   {t.xpReward > 0 && (
-                    <p className="text-xs text-gray-500">+{t.xpReward} XP</p>
+                    <p className="t-meta text-gray-500">+{t.xpReward} XP</p>
                   )}
                 </div>
               </Link>

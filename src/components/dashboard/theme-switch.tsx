@@ -12,15 +12,24 @@ import { useTheme } from "@/components/providers/theme-provider";
  * follow them into the app. This one drives the real app theme through
  * `useTheme()`.
  *
- * It lives in the header rather than only in Settings because a theme is
- * something people change on a whim — in a dark room, in sunlight — and a
- * control buried three taps deep is one they will not find when they want it.
- * The user header had no toggle at all; the admin header did.
+ * It lives one tap from every screen rather than only in Settings, because a
+ * theme is something people change on a whim — in a dark room, in sunlight —
+ * and a control buried three taps deep is one they will not find when they
+ * want it. It moved out of the header ROW and into the account menu in the
+ * same bar: a preference does not earn a permanent slot beside the controls
+ * people press every day, and seven equal-weight controls in one row is what
+ * "crowded" meant. `withLabel` is the menu-row form.
  *
  * "system" is a real stored value, so pressing this resolves it to whichever
  * side the user is NOT currently looking at, rather than assuming dark.
  */
-export function ThemeSwitch({ className = "" }: { className?: string }) {
+export function ThemeSwitch({
+  className = "",
+  withLabel = false,
+}: {
+  className?: string;
+  withLabel?: boolean;
+}) {
   const { theme, setTheme } = useTheme();
 
   // `theme` may be "system"; ask the document what actually got applied so the
@@ -42,11 +51,16 @@ export function ThemeSwitch({ className = "" }: { className?: string }) {
       title={isLight ? "Dark mode" : "Light mode"}
       className={
         className ||
-        // 40px so it is a real tap target on a phone, not a decorative icon.
-        "inline-flex h-10 w-10 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+        // 44px so it is a real tap target on a phone, not a decorative icon.
+        "app-tap app-press inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:bg-(--shell-hover) hover:text-white"
       }
     >
-      {isLight ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+      {isLight ? (
+        <Moon className="h-4.5 w-4.5 shrink-0" />
+      ) : (
+        <Sun className="h-4.5 w-4.5 shrink-0" />
+      )}
+      {withLabel && <span>{isLight ? "Dark mode" : "Light mode"}</span>}
     </button>
   );
 }

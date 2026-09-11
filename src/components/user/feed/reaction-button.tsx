@@ -43,11 +43,16 @@ export function ReactionButton({
       aria-label={reacted ? "Remove your love" : "Love this post"}
       title={reacted ? "Loved" : "Love"}
       className={cn(
-        // min-h/min-w rather than padding alone: the row is dense and a tap
+        // `app-tap` rather than padding alone: the row is dense and a tap
         // target has to survive whatever the neighbouring content does to it.
-        "inline-flex items-center justify-center gap-1.5 min-w-11 min-h-11 px-3 rounded-lg",
-        "text-sm transition-colors touch-manipulation select-none",
-        "hover:bg-gray-800/60 active:bg-gray-800",
+        // It is on the button itself and not inherited from the row, which is
+        // the whole history of this control.
+        "app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip)",
+        "text-sm select-none hover:bg-(--app-surface-2)",
+        // Rose is kept, and it is the ONE decorative hue left in the post card:
+        // a heart that turns grey when you press it is not a heart. Everything
+        // else in this row is neutral so that this is the only thing that
+        // changes colour when you act.
         reacted ? "text-rose-400" : "text-gray-400 hover:text-rose-400"
       )}
     >

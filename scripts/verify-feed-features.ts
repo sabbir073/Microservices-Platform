@@ -756,10 +756,21 @@ async function main() {
       "one definition feeds both the aside and the sheet",
       (view.match(/\{railContent\}/g) ?? []).length === 2
     );
+    // The point is ONE toolbar holding both decisions at a consistent control
+    // height — it replaced a tab strip at the top of the column and a sort
+    // toggle floating on its own row below the composer. Counting a literal
+    // `inline-flex h-10` only counted a spelling: the tabs moved onto the
+    // shared `app-tap-row` height floor while sort kept `h-10`, and the
+    // toolbar was never in question.
+    const toolbars = (
+      view.match(/sticky top-\[calc\(4rem\+env\(safe-area-inset-top\)\)\]/g) ?? []
+    ).length;
     check(
       "tabs and sort share one toolbar",
       /aria-pressed=\{sort === s\}/.test(view) &&
-        (view.match(/inline-flex h-10/g) ?? []).length >= 2
+        toolbars === 1 &&
+        view.includes("app-tap-row"),
+      "two control rows in two places, each holding one decision, is what this replaced"
     );
 
     const rail = code("src/components/user/feed/feed-right-rail.tsx");

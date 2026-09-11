@@ -161,14 +161,7 @@ const navigationGroups: Group[] = [
    means they can never drift apart again. */
 type ModeSection = {
   section: string;
-  tone: "indigo" | "emerald" | "red";
   items: NavItem[];
-};
-
-const TONE: Record<ModeSection["tone"], { active: string; hover: string }> = {
-  indigo: { active: "bg-indigo-500/12 text-indigo-300", hover: "hover:text-indigo-300" },
-  emerald: { active: "bg-emerald-500/12 text-emerald-300", hover: "hover:text-emerald-300" },
-  red: { active: "bg-red-500/12 text-red-400", hover: "hover:text-red-400" },
 };
 
 const adminNavigation = [
@@ -217,15 +210,20 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features, hidde
     (item.keywords?.includes(q) ?? false) ||
     item.href.includes(q);
 
+  // The three mode sections used to carry a hue each — Teaching indigo,
+  // Buying emerald, Administration red — so a rail that already had a violet
+  // avatar and an indigo active row showed four accent colours at once, none of
+  // which meant anything. They are one neutral list now; the section heading is
+  // what tells them apart, which is the job a heading has.
   const modeSections: ModeSection[] = [];
   if (isTutor(user.role as UserRole | undefined)) {
-    modeSections.push({ section: "Teaching", tone: "indigo", items: tutorNavigation });
+    modeSections.push({ section: "Teaching", items: tutorNavigation });
   }
   if (features?.includes("createTasks") && !hidden.has("/buyer")) {
-    modeSections.push({ section: "Buying", tone: "emerald", items: buyerNavigation });
+    modeSections.push({ section: "Buying", items: buyerNavigation });
   }
   if (isAdmin(user.role as UserRole | undefined)) {
-    modeSections.push({ section: "Administration", tone: "red", items: adminNavigation });
+    modeSections.push({ section: "Administration", items: adminNavigation });
   }
 
   const groups = navigationGroups
@@ -235,13 +233,18 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features, hidde
 
   return (
     <>
-      {/* Logo */}
-      <div className="flex h-16 shrink-0 items-center px-6 border-b border-(--shell-border)">
-        <Link href="/social" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-white" />
-          </div>
-          <span className="text-lg font-bold bg-linear-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+      {/* Logo.
+          The wordmark was `bg-clip-text` over indigo-400 → purple-400. On the
+          WHITE light-mode rail that is pale indigo on white: 2.4:1, under the
+          4.5:1 floor, on the one piece of text that names the product. The mark
+          keeps the gradient (it is a shape, and it is one of the three places
+          the gradient is allowed); the word is now solid foreground. */}
+      <div className="flex h-16 shrink-0 items-center gap-2.5 px-5 border-b border-(--shell-border)">
+        <Link href="/social" className="app-press flex items-center gap-2.5">
+          <span className="app-icon app-icon-accent h-9 w-9 rounded-(--app-r-control)">
+            <Sparkles className="w-4.5 h-4.5" />
+          </span>
+          <span className="text-lg font-extrabold tracking-tight text-white">
             EarnGPT
           </span>
         </Link>
@@ -252,12 +255,13 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features, hidde
         <Link
           href="/profile"
           onClick={onNavigate}
+          aria-current={pathname.startsWith("/profile") ? "page" : undefined}
           aria-label="Open profile"
           className={cn(
-            "flex items-center gap-3 px-2 py-2 rounded-lg transition-colors",
+            "app-press flex items-center gap-3 p-2 rounded-(--app-r-control) transition-colors",
             pathname.startsWith("/profile")
-              ? "bg-indigo-500/10"
-              : "hover:bg-gray-800"
+              ? "bg-(--app-info-soft)"
+              : "hover:bg-(--shell-hover)"
           )}
         >
           <Avatar
@@ -269,15 +273,15 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features, hidde
           <div className="flex-1 min-w-0">
             <p
               className={cn(
-                "text-sm font-medium truncate",
+                "t-card-title truncate",
                 pathname.startsWith("/profile")
-                  ? "text-indigo-400"
+                  ? "text-(--app-info)"
                   : "text-white"
               )}
             >
               {user.name || "User"}
             </p>
-            <p className="text-xs text-gray-500 truncate">{user.email}</p>
+            <p className="t-meta text-gray-500 truncate">{user.email}</p>
           </div>
         </Link>
       </div>
@@ -285,40 +289,45 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features, hidde
       {/* Filter — the shell's "find a page" affordance. */}
       <div className="px-3 pt-3 pb-1">
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
           <input
             type="search"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter menu…"
             aria-label="Filter navigation"
-            className="w-full min-h-10 pl-9 pr-8 py-2 rounded-xl bg-gray-900 border border-(--shell-border) text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            className="app-tap-row w-full pl-10 pr-10 py-2 rounded-(--app-r-control) bg-(--app-surface-2) border border-(--app-line) text-sm text-white placeholder:text-gray-500 focus:outline-none focus:border-(--app-accent-edge) focus:ring-1 focus:ring-(--app-accent-edge)"
           />
           {filter && (
             <button
               type="button"
               onClick={() => setFilter("")}
               aria-label="Clear filter"
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-gray-500 hover:text-white"
+              className="app-press absolute right-1 top-1/2 -translate-y-1/2 grid h-9 w-9 place-items-center rounded-(--app-r-chip) text-gray-400 hover:text-white hover:bg-(--shell-hover)"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           )}
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
+      {/* Navigation.
+          Every row is `app-nav-item`: one 44px definition, one active state
+          (soft brand fill plus the gradient rail, drawn by the class off
+          `aria-current`, so the marker can never drift from the ARIA state the
+          way a separately-rendered `<span>` could). Icons are 18px and inherit
+          the row's colour — they were 16px and, in the mode sections, three
+          different hues. */}
+      <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-5">
         {noResults && (
-          <p className="px-3 py-6 text-sm text-gray-400 text-center">
+          <p className="px-3 py-6 t-body text-gray-400 text-center">
             Nothing matches “{filter}”.
           </p>
         )}
         {groups.map((group) => (
           <div key={group.section}>
-            <p className="px-3 text-[10px] font-bold text-gray-500 uppercase tracking-[0.12em] mb-2">
-              {group.section}
-            </p>
+            <p className="t-eyebrow px-3 mb-2 text-gray-500">{group.section}</p>
             <ul className="space-y-0.5">
               {group.items.map((item) => {
                 const isActive =
@@ -329,20 +338,9 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features, hidde
                       href={item.href}
                       onClick={onNavigate}
                       aria-current={isActive ? "page" : undefined}
-                      className={cn(
-                        // min-h-11 = 44px. At `py-2` these rows were 36px, so
-                        // every entry in the phone drawer was under the touch
-                        // minimum and neighbours were a 4px miss apart.
-                        "relative flex items-center gap-3 min-h-11 px-3 py-2 rounded-xl text-sm font-medium transition-all",
-                        isActive
-                          ? "bg-indigo-500/12 text-indigo-300 ring-1 ring-inset ring-indigo-500/20"
-                          : "text-gray-400 hover:text-white hover:bg-(--shell-hover)"
-                      )}
+                      className="app-nav-item app-press"
                     >
-                      {isActive && (
-                        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-1 rounded-r-full bg-linear-to-b from-indigo-400 to-violet-500" />
-                      )}
-                      <item.icon className="w-4 h-4 shrink-0" />
+                      <item.icon className="w-4.5 h-4.5 shrink-0" />
                       <span className="min-w-0 truncate">{item.name}</span>
                     </Link>
                   </li>
@@ -356,51 +354,41 @@ function SidebarContent({ user, pathname, onNavigate, onSignOut, features, hidde
       {/* Modes: Teaching / Buying / Administration. One loop — these were
           three copies of the same 30 lines that differed only in a colour. */}
       {!q &&
-        modeSections.map((mode) => {
-          const tone = TONE[mode.tone];
-          return (
-            <div
-              key={mode.section}
-              className="border-t border-(--shell-border) px-3 py-3"
-            >
-              <p className="px-3 text-[10px] font-bold text-gray-500 uppercase tracking-[0.12em] mb-2">
-                {mode.section}
-              </p>
-              <ul className="space-y-0.5">
-                {mode.items.map((item) => {
-                  const isActive =
-                    pathname === item.href || pathname.startsWith(`${item.href}/`);
-                  return (
-                    <li key={item.name}>
-                      <Link
-                        href={item.href}
-                        onClick={onNavigate}
-                        aria-current={isActive ? "page" : undefined}
-                        className={cn(
-                          "flex items-center gap-3 min-h-11 px-3 py-2 rounded-xl text-sm font-medium transition-colors",
-                          isActive
-                            ? tone.active
-                            : cn("text-gray-400 hover:bg-(--shell-hover)", tone.hover)
-                        )}
-                      >
-                        <item.icon className="w-4 h-4 shrink-0" />
-                        <span className="min-w-0 truncate">{item.name}</span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          );
-        })}
+        modeSections.map((mode) => (
+          <div
+            key={mode.section}
+            className="border-t border-(--shell-border) px-3 py-3"
+          >
+            <p className="t-eyebrow px-3 mb-2 text-gray-500">{mode.section}</p>
+            <ul className="space-y-0.5">
+              {mode.items.map((item) => {
+                const isActive =
+                  pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return (
+                  <li key={item.name}>
+                    <Link
+                      href={item.href}
+                      onClick={onNavigate}
+                      aria-current={isActive ? "page" : undefined}
+                      className="app-nav-item app-press"
+                    >
+                      <item.icon className="w-4.5 h-4.5 shrink-0" />
+                      <span className="min-w-0 truncate">{item.name}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
 
       {/* Sign Out Button */}
       <div className="border-t border-(--shell-border) px-3 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <button
           onClick={onSignOut}
-          className="w-full flex items-center gap-3 min-h-11 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-400 hover:text-red-400 hover:bg-(--shell-hover) transition-colors"
+          className="app-nav-item app-press w-full hover:text-(--app-out)"
         >
-          <LogOut className="w-5 h-5 shrink-0" />
+          <LogOut className="w-4.5 h-4.5 shrink-0" />
           Sign Out
         </button>
       </div>
@@ -440,7 +428,7 @@ export function Sidebar({ user, features, hiddenPaths, avatar }: SidebarProps) {
       {/* Phone drawer */}
       <div
         className={cn(
-          "app-chrome fixed inset-y-0 left-0 z-50 w-[min(20rem,85vw)] rounded-none transform transition-transform duration-300 ease-out md:hidden",
+          "app-chrome app-sheet fixed inset-y-0 left-0 z-50 w-[min(20rem,85vw)] rounded-none transform md:hidden",
           "pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)]",
           isMobileOpen ? "translate-x-0" : "-translate-x-full"
         )}
@@ -452,7 +440,7 @@ export function Sidebar({ user, features, hiddenPaths, avatar }: SidebarProps) {
         <button
           onClick={() => setMobileOpen(false)}
           aria-label="Close menu"
-          className="absolute top-3 right-3 z-10 inline-flex items-center justify-center w-11 h-11 rounded-xl text-gray-400 hover:text-white hover:bg-(--shell-hover)"
+          className="app-tap app-press absolute top-3 right-3 z-10 inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:text-white hover:bg-(--shell-hover)"
         >
           <X className="w-5 h-5" />
         </button>

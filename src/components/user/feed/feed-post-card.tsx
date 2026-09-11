@@ -469,26 +469,31 @@ export const FeedPostCard = memo(function FeedPostCard({
     <article
       ref={articleRef}
       className={cn(
-        "relative rounded-xl border bg-gray-900 overflow-hidden animate-card-in",
-        "transition-colors duration-200 hover:border-gray-700",
-        post.isAnnouncement
-          ? "border-cyan-500/40 ring-1 ring-cyan-500/20"
-          : promotionActive
-            ? "border-amber-500/40"
-            : "border-gray-800"
+        // One radius, one surface, one border, one shadow — the card is the
+        // paper, not the message. A post was previously given a cyan border
+        // when it was an announcement and an amber one when it was promoted, so
+        // a feed with a couple of each was three border colours deep before any
+        // content was read. Both states are still called out, but by the badge
+        // in the corner, which is where a label belongs.
+        "app-card relative overflow-hidden p-0 animate-card-in",
+        "transition-colors duration-200 hover:border-(--app-line-strong)"
       )}
     >
-      {/* Top-right badge (OFFICIAL > PROMOTED, mutually exclusive in render). */}
+      {/* Top-right badge (OFFICIAL > PROMOTED, mutually exclusive in render).
+          These are the two states that are genuinely worth a colour on a post
+          — one is the platform speaking, one is paid placement — so they keep
+          one each, as a chip. What they lost is the matching border and ring
+          around the whole card. */}
       {(post.isAnnouncement || promotionActive) && (
-        <div className="absolute top-3 right-3 z-10">
+        <div className="absolute top-3.5 right-3.5 z-10">
           {post.isAnnouncement ? (
-            <span className="inline-flex items-center gap-1 rounded-md bg-cyan-500 text-gray-950 px-2 py-0.5 text-[10px] font-extrabold tracking-wider uppercase shadow-md">
+            <span className="app-chip app-chip-info uppercase tracking-wider">
               <Megaphone className="w-3 h-3" />
               Official
             </span>
           ) : (
             <span
-              className="inline-flex items-center gap-1 rounded-md bg-amber-500 text-gray-950 px-2 py-0.5 text-[10px] font-extrabold tracking-wider uppercase shadow-md"
+              className="app-chip app-chip-warn uppercase tracking-wider"
               title={post.promotedNote ? `Promoted by ${post.promotedNote}` : "Promoted"}
             >
               <Sparkles className="w-3 h-3" />
@@ -497,7 +502,7 @@ export const FeedPostCard = memo(function FeedPostCard({
           )}
         </div>
       )}
-      <div className="p-4">
+      <div className="p-(--app-pad)">
         {/* Header */}
         <div className="flex items-start gap-3">
           <Link
@@ -506,7 +511,7 @@ export const FeedPostCard = memo(function FeedPostCard({
           >
             <Avatar
               src={post.user?.avatar}
-              size={40}
+              size={44}
               name={post.user?.name}
               fallbackText={initial}
             />
@@ -515,23 +520,26 @@ export const FeedPostCard = memo(function FeedPostCard({
             <div className="inline-flex items-center gap-1.5">
               <Link
                 href={post.user ? profileHref(post.user) : "#"}
-                className="text-sm font-semibold text-white hover:text-indigo-400 transition-colors"
+                className="t-card-title text-white hover:text-(--app-info) transition-colors"
               >
                 {post.user?.name ?? "Anonymous"}
               </Link>
               {post.user?.isBlueVerified && (
                 <CheckCircle
-                  className="w-3.5 h-3.5 text-blue-400 fill-blue-500/30"
+                  className="w-4 h-4 shrink-0 text-(--app-info)"
                   aria-label="Verified"
                 />
               )}
+              {/* Was an amber pill. A level is not a warning, and on a feed
+                  where a third of authors are level 10+ it was a wall of amber
+                  next to a blue tick and a blue Follow button. */}
               {post.user && post.user.level >= 10 && (
-                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-bold">
+                <span className="app-chip uppercase tracking-wider">
                   Lvl {post.user.level}
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-gray-500 flex items-center gap-1.5">
+            <p className="t-meta mt-0.5 text-gray-500 flex items-center gap-1.5">
               {formatDistanceToNow(new Date(post.createdAt), {
                 addSuffix: true,
               })}
@@ -561,11 +569,17 @@ export const FeedPostCard = memo(function FeedPostCard({
             <button
               onClick={toggleFollowAuthor}
               disabled={followBusy}
+              /* Follow was a solid indigo fill. In a feed of twenty posts from
+                 people you do not follow, that is twenty saturated buttons
+                 stacked down the page, each as loud as the balance card — and
+                 white on indigo-500 is 4.47:1, under the floor. It is an
+                 outlined control now: still the only button in the post header,
+                 still obviously pressable, no longer shouting twenty times. */
               className={cn(
-                "px-3 py-1 rounded-lg text-xs font-bold transition-colors disabled:opacity-50",
+                "app-press app-tap-row shrink-0 px-3.5 rounded-(--app-r-chip) text-xs font-extrabold border disabled:opacity-50",
                 post.isFollowingAuthor
-                  ? "bg-gray-800 text-white border border-gray-700"
-                  : "bg-indigo-500 hover:bg-indigo-600 text-white"
+                  ? "bg-(--app-surface-2) text-gray-300 border-(--app-line)"
+                  : "bg-transparent text-(--app-info) border-(--app-info-line) hover:bg-(--app-info-soft)"
               )}
             >
               {followBusy ? (
@@ -581,26 +595,23 @@ export const FeedPostCard = memo(function FeedPostCard({
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setMenuOpen((v) => !v)}
-                className="p-1.5 text-gray-500 hover:text-white"
+                className="app-tap app-press inline-flex items-center justify-center rounded-(--app-r-chip) text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
                 aria-label="Post actions"
               >
                 <MoreHorizontal className="w-4 h-4" />
               </button>
               {menuOpen && (
-                <div className="absolute right-0 mt-1 w-52 rounded-lg border border-gray-700 bg-gray-950 shadow-xl z-20 overflow-hidden">
+                <div className="absolute right-0 mt-1 w-56 rounded-(--app-r-control) border border-(--app-line) bg-(--app-surface) shadow-(--app-e3) z-20 overflow-hidden p-1">
                   {/* Available to everyone, own post or not. */}
                   <button
                     onClick={() => {
                       setMenuOpen(false);
                       void toggleSave();
                     }}
-                    className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-gray-900 inline-flex items-center gap-2"
+                    className="app-nav-item app-press w-full text-left text-xs"
                   >
                     <Bookmark
-                      className={cn(
-                        "w-3.5 h-3.5",
-                        post.isSaved ? "text-amber-400 fill-amber-400" : "text-amber-400"
-                      )}
+                      className={cn("w-4 h-4 shrink-0", post.isSaved && "fill-current")}
                     />
                     {post.isSaved ? "Remove from saved" : "Save post"}
                   </button>
@@ -610,21 +621,21 @@ export const FeedPostCard = memo(function FeedPostCard({
                         setMenuOpen(false);
                         setReportOpen(true);
                       }}
-                      className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-gray-900 inline-flex items-center gap-2"
+                      className="app-nav-item app-press w-full text-left text-xs"
                     >
-                      <Flag className="w-3.5 h-3.5 text-rose-400" />
+                      <Flag className="w-4 h-4 shrink-0" />
                       Report post
                     </button>
                   )}
-                  <div className="border-t border-gray-800" />
+                  <div className="my-1 border-t border-(--app-line)" />
                   {isAdmin && (
                     <>
                       <button
                         onClick={toggleAnnounce}
                         disabled={busy}
-                        className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-gray-900 inline-flex items-center gap-2 disabled:opacity-50"
+                        className="app-nav-item app-press w-full text-left text-xs disabled:opacity-50"
                       >
-                        <Megaphone className="w-3.5 h-3.5 text-cyan-400" />
+                        <Megaphone className="w-4 h-4 shrink-0" />
                         {post.isAnnouncement
                           ? "Remove Announcement"
                           : "Mark as Announcement"}
@@ -635,16 +646,16 @@ export const FeedPostCard = memo(function FeedPostCard({
                           setPromoteOpen(true);
                         }}
                         disabled={busy}
-                        className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-gray-900 inline-flex items-center gap-2 disabled:opacity-50"
+                        className="app-nav-item app-press w-full text-left text-xs disabled:opacity-50"
                       >
-                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <Sparkles className="w-4 h-4 shrink-0" />
                         {promotionActive ? "Edit Promotion" : "Promote Post"}
                       </button>
-                      <div className="border-t border-gray-800" />
+                      <div className="my-1 border-t border-(--app-line)" />
                       <button
                         onClick={forceDelete}
                         disabled={busy}
-                        className="w-full text-left px-3 py-2 text-xs text-red-300 hover:bg-red-500/10 inline-flex items-center gap-2 disabled:opacity-50"
+                        className="app-nav-item app-press w-full text-left text-xs text-(--app-out) hover:text-(--app-out) disabled:opacity-50"
                       >
                         <X className="w-3.5 h-3.5" />
                         Force Delete
@@ -776,7 +787,7 @@ export const FeedPostCard = memo(function FeedPostCard({
           FEED_POST_BELOW declares maxHeightPx: 72 and the renderer enforces it,
           so the two were fighting over a different number. */}
       {underPostBanner && (
-        <div className="px-4 pb-1">
+        <div className="px-(--app-pad) pb-1">
           <AdRenderer placement="FEED_POST_BELOW" />
         </div>
       )}
@@ -788,9 +799,14 @@ export const FeedPostCard = memo(function FeedPostCard({
           so got none of it, ending up a ~20px target wedged against its
           neighbours. That is the "have to press it two or three times" bug:
           the presses were landing in the 4px gap, or on the row.
-          `touch-manipulation` drops the browser's own double-tap-zoom wait, so
-          the first tap registers immediately instead of ~300ms later. */}
-      <div className="flex items-center gap-1.5 sm:gap-2 px-1.5 py-1 border-t border-gray-800 [&>button]:min-h-11 [&>button]:min-w-11 [&>button]:px-3 [&>button]:rounded-lg [&>button]:hover:bg-gray-800/60 [&>button]:active:bg-gray-800 [&>button]:transition-colors [&>button]:touch-manipulation">
+
+          It is written on each control now, as `app-tap`, rather than inherited
+          from a parent selector that silently skips a wrapped child. A child
+          selector cannot be relied on to size a target it may not reach.
+          `touch-manipulation` (part of `app-tap`) drops the browser's own
+          double-tap-zoom wait, so the first tap registers immediately instead
+          of ~300ms later. */}
+      <div className="flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 border-t border-(--app-line)">
         <ReactionButton
           reacted={post.isLiked}
           disabled={busy}
@@ -800,35 +816,41 @@ export const FeedPostCard = memo(function FeedPostCard({
             the tap-to-break-down popover has been removed rather than left as a
             control that shows the same number a second time. */}
         {post.likesCount > 0 && (
-          <span className="text-sm text-gray-400 tabular-nums font-medium -ml-1 mr-0.5">
+          <span className="text-sm text-gray-400 tabular-nums font-bold -ml-1 mr-0.5">
             {post.likesCount}
           </span>
         )}
         <button
           onClick={() => setShowComments((v) => !v)}
           aria-label="Comments"
-          className="inline-flex items-center justify-center gap-1.5 text-sm text-gray-400 hover:text-white"
+          className="app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm font-semibold text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
         >
           <MessageCircle className="w-5 h-5" />
-          <span className="tabular-nums font-medium">
+          <span className="tabular-nums font-bold">
             {post.commentsCount}
           </span>
         </button>
         <button
           onClick={() => setShareOpen(true)}
           aria-label="Share"
-          className="inline-flex items-center justify-center gap-1.5 text-sm text-gray-400 hover:text-white"
+          className="app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm font-semibold text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
         >
           <Share2 className="w-5 h-5" />
           <span className="hidden sm:inline">Share</span>
         </button>
+        {/* Saved is a state, not a warning — it was amber, the same colour the
+            level badge, the boost control and the link-click counter all used
+            in the same card. It is now the brand mark, filled, which says
+            "you did this" without adding a hue. */}
         <button
           onClick={toggleSave}
           aria-label={post.isSaved ? "Remove from saved" : "Save post"}
           title={post.isSaved ? "Saved" : "Save"}
           className={cn(
-            "inline-flex items-center justify-center gap-1.5 text-sm transition-colors",
-            post.isSaved ? "text-amber-400" : "text-gray-400 hover:text-amber-400"
+            "app-tap app-press inline-flex items-center justify-center px-3 rounded-(--app-r-chip) text-sm hover:bg-(--app-surface-2)",
+            post.isSaved
+              ? "text-(--app-info)"
+              : "text-gray-400 hover:text-white"
           )}
         >
           <Bookmark className={cn("w-5 h-5", post.isSaved && "fill-current")} />
@@ -838,36 +860,36 @@ export const FeedPostCard = memo(function FeedPostCard({
           !(post.boostedUntil && new Date(post.boostedUntil) > new Date()) && (
             <button
               onClick={() => setBoostOpen(true)}
-              className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-amber-400 ml-auto"
+              className="app-tap app-press ml-auto inline-flex items-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm font-semibold text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
             >
               <Megaphone className="w-4 h-4" />
               Boost
             </button>
           )}
         {post.boostedUntil && new Date(post.boostedUntil) > new Date() && (
-          <span className="inline-flex items-center gap-1.5 text-xs text-amber-400 font-bold">
+          <span className="app-chip app-chip-warn ml-auto">
             <Megaphone className="w-3.5 h-3.5" />
             Boosted
           </span>
         )}
         {post.isOwner && (
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto flex items-center gap-1">
             {!!(post.linkPreview || findFirstUrl(post.content)) && (
               <span
-                className="inline-flex items-center gap-1.5 text-sm text-amber-400"
+                className="app-tap-row inline-flex items-center gap-1.5 px-2 text-sm text-gray-400"
                 title="Link clicks (total)"
               >
                 <MousePointerClick className="w-4 h-4" />
-                <span className="tabular-nums text-xs">{post.linkClicksCount ?? 0}</span>
+                <span className="tabular-nums text-xs font-bold">{post.linkClicksCount ?? 0}</span>
               </span>
             )}
             <button
               onClick={() => setShowAnalytics((v) => !v)}
-              className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-indigo-400"
+              className="app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
               title="View analytics"
             >
               <BarChart3 className="w-4 h-4" />
-              <span className="tabular-nums text-xs">{post.viewsCount ?? 0}</span>
+              <span className="tabular-nums text-xs font-bold">{post.viewsCount ?? 0}</span>
             </button>
           </div>
         )}

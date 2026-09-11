@@ -36,6 +36,7 @@ import { profileHref } from "@/lib/user-href";
 import { missionItemLabel } from "@/lib/mission-labels";
 import { notifyCenter } from "@/lib/notify-center";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { BalanceSkeleton } from "@/components/user/primitives/skeleton";
 import {
   DEFAULT_WIDGET_CONFIG,
   RAIL_GROUPS,
@@ -44,10 +45,12 @@ import {
   type FeedWidgetGroup,
   type FeedWidgetGroupDef,
 } from "@/lib/feed-widgets";
+// `COLOR_CLASSES` is deliberately not imported: the admin still picks a colour
+// per Quick Earn tile and it is still stored, but the rail renders these
+// neutral — see the Quick Earn grid below.
 import {
   DEFAULT_QUICK_EARN,
   QUICK_EARN_ICONS,
-  COLOR_CLASSES,
   type QuickEarnTile,
 } from "@/lib/feed-quick-earn";
 import type { CustomWidget } from "@/lib/feed-custom-widgets";
@@ -132,9 +135,9 @@ function Card({
   action?: React.ReactNode;
 }) {
   return (
-    <section className="glass p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-white inline-flex items-center gap-1.5">
+    <section className="app-card">
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="t-section text-white inline-flex items-center gap-2">
           {icon}
           {title}
         </h3>
@@ -167,10 +170,10 @@ function FollowButton({ userId }: { userId: string }) {
       onClick={toggle}
       disabled={busy}
       className={cn(
-        "inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold transition-colors shrink-0 disabled:opacity-50",
+        "app-press app-tap-row inline-flex items-center gap-1.5 px-3.5 rounded-full text-xs font-extrabold shrink-0 border disabled:opacity-50",
         following
-          ? "bg-gray-800 text-gray-300"
-          : "bg-white text-gray-900 hover:bg-gray-200"
+          ? "bg-(--app-surface-2) text-gray-300 border-(--app-line)"
+          : "bg-transparent text-(--app-info) border-(--app-info-line) hover:bg-(--app-info-soft)"
       )}
     >
       {following ? (
@@ -219,37 +222,41 @@ function EarnStreakCard({
   };
 
   return (
-    <section className="glass p-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-eyebrow">Your balance</p>
-          <p className="text-2xl font-extrabold text-white tabular-nums mt-0.5 inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap">
-            <Coins className="w-5 h-5 text-amber-400 shrink-0" />
+    /* The rail's money card, matched to the phone one so the same numbers look
+       the same at every width. Was a glass panel with an amber coin, an emerald
+       today figure and an orange streak strip — four colours around one
+       balance. One gradient, one figure, everything else white. */
+    <section className="app-accent app-accent-glow rounded-(--app-r-card) p-(--app-pad)">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="t-eyebrow text-white/90">Your balance</p>
+          <p className="t-figure mt-1 inline-flex items-center gap-2 min-w-0 whitespace-nowrap text-white">
+            <Coins className="w-6 h-6 shrink-0 text-white/90" />
             {pts(data.balance.points)}
           </p>
         </div>
-        <div className="text-right">
-          <p className="text-eyebrow">Today</p>
-          <p className="text-sm font-bold text-emerald-400 tabular-nums mt-0.5">
+        <div className="text-right shrink-0">
+          <p className="t-eyebrow text-white/90">Today</p>
+          <p className="t-figure-sm mt-1 text-white">
             +{data.balance.todayEarnings.toLocaleString()}
           </p>
         </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-orange-500/10 border border-orange-500/20 px-3 py-2">
-        <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-orange-300">
+      <div className="mt-4 flex items-center justify-between gap-2 rounded-(--app-r-control) bg-black/20 border border-white/25 px-3 py-2">
+        <span className="inline-flex items-center gap-1.5 text-sm font-bold text-white">
           <Flame className="w-4 h-4" />
           {data.streak.current}-day streak
         </span>
         {claimed ? (
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-400">
+          <span className="inline-flex items-center gap-1 text-xs font-bold text-white/90">
             <Check className="w-3.5 h-3.5" /> Claimed
           </span>
         ) : (
           <button
             onClick={claim}
             disabled={claiming}
-            className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-orange-500 hover:bg-orange-600 text-white text-xs font-bold disabled:opacity-50"
+            className="app-press app-tap-row inline-flex items-center gap-1.5 px-4 rounded-full bg-white text-gray-950 text-xs font-extrabold disabled:opacity-60"
           >
             {claiming ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -280,32 +287,32 @@ function ReferralCard({ referral }: { referral: RailWidgets["referral"] }) {
   return (
     <Card
       title="Refer & Earn"
-      icon={<Users className="w-4 h-4 text-emerald-400" />}
+      icon={<Users className="w-4 h-4 text-gray-400" />}
       action={
         <Link
           href="/referrals"
-          className="text-xs text-indigo-400 hover:text-indigo-300"
+          className="app-press app-tap-row inline-flex items-center px-2.5 -mr-2 rounded-(--app-r-chip) t-meta font-extrabold text-(--app-info) hover:bg-(--app-info-soft)"
         >
           Details
         </Link>
       }
     >
-      <p className="text-xs text-gray-400">
+      <p className="t-meta text-gray-400">
         Invite friends — earn commission on their activity.
       </p>
-      <div className="mt-2 flex items-center gap-2">
-        <code className="flex-1 min-w-0 truncate rounded-lg bg-gray-950/60 border border-gray-800 px-3 py-2 text-sm font-mono font-bold text-indigo-300">
+      <div className="mt-3 flex items-center gap-2">
+        <code className="app-tap-row flex-1 min-w-0 flex items-center truncate rounded-(--app-r-control) bg-(--app-surface-2) border border-(--app-line) px-3 text-sm font-mono font-bold text-white">
           {referral.code}
         </code>
         <button
           onClick={copy}
-          className="inline-flex items-center gap-1 px-3 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shrink-0"
+          className="app-accent app-press app-tap-row inline-flex items-center gap-1.5 px-3.5 rounded-(--app-r-control) text-xs font-extrabold shrink-0"
         >
           {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
           {copied ? "Copied" : "Copy"}
         </button>
       </div>
-      <p className="mt-2 text-[11px] text-gray-500">
+      <p className="mt-2.5 t-meta text-gray-500">
         {referral.totalReferrals} referral
         {referral.totalReferrals === 1 ? "" : "s"} joined
       </p>
@@ -355,17 +362,17 @@ export function FeedRightRail({
         }
       />
     ) : (
-      <div className="glass p-4 h-28 animate-pulse" />
+      <BalanceSkeleton />
     ),
     dailyMission:
       widgets?.mission && widgets.mission.total > 0 ? (
         <Card
           title="Daily Mission"
-          icon={<Target className="w-4 h-4 text-indigo-400" />}
+          icon={<Target className="w-4 h-4 text-gray-400" />}
           action={
             <Link
               href="/daily-mission"
-              className="text-xs text-indigo-400 hover:text-indigo-300 inline-flex items-center"
+              className="app-press app-tap-row inline-flex items-center px-2.5 -mr-2 rounded-(--app-r-chip) t-meta font-extrabold text-(--app-info) hover:bg-(--app-info-soft)"
             >
               Continue <ChevronRight className="w-3.5 h-3.5" />
             </Link>
@@ -376,14 +383,14 @@ export function FeedRightRail({
               {widgets.mission.done}/{widgets.mission.total} done
             </span>
             {widgets.mission.claimedToday && (
-              <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
+              <span className="t-in inline-flex items-center gap-1 font-bold">
                 <Check className="w-3 h-3" /> Claimed
               </span>
             )}
           </div>
-          <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+          <div className="h-2 rounded-full bg-(--app-surface-2) overflow-hidden">
             <div
-              className="h-full rounded-full bg-linear-to-r from-indigo-500 to-violet-500 transition-all"
+              className="h-full rounded-full bg-(image:--app-rail) transition-all"
               style={{
                 // pct(): guarded — a mission with 0 steps produced NaN%.
                 width: `${pct(widgets.mission.done, widgets.mission.total)}%`,
@@ -404,10 +411,10 @@ export function FeedRightRail({
               {widgets.mission.items.map((it, i) => (
                 <li
                   key={`${it.taskType}-${i}`}
-                  className="flex items-center gap-2 text-xs rounded-md px-1 py-1.25 transition-colors hover:bg-gray-800/40"
+                  className="flex items-center gap-2 text-xs rounded-md px-1 py-1.25 transition-colors hover:bg-(--app-surface-2)"
                 >
                   {it.done ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-(--app-in)" />
                   ) : (
                     <Circle className="w-3.5 h-3.5 text-gray-600 shrink-0" />
                   )}
@@ -422,7 +429,7 @@ export function FeedRightRail({
                   <span className="w-9 text-right text-gray-500 tabular-nums shrink-0">
                     {it.completedToday}/{it.target}
                   </span>
-                  <span className="w-12 inline-flex items-center justify-end gap-0.5 text-amber-400/90 font-semibold tabular-nums shrink-0">
+                  <span className="w-12 inline-flex items-center justify-end gap-0.5 text-gray-300 font-bold tabular-nums shrink-0">
                     <Coins className="w-3 h-3 shrink-0" />+{it.points}
                   </span>
                 </li>
@@ -431,13 +438,13 @@ export function FeedRightRail({
           )}
 
           {widgets.mission.rewardPoints > 0 && (
-            <p className="mt-2.5 pt-2.5 border-t border-gray-800 text-[11px] text-gray-400">
+            <p className="mt-2.5 pt-2.5 border-t border-(--app-line) t-meta text-gray-400">
               Complete all →{" "}
-              <span className="text-amber-400 font-semibold">
+              <span className="font-extrabold text-white">
                 +{widgets.mission.rewardPoints} pts
               </span>
               {widgets.mission.rewardXp > 0 && (
-                <span className="text-violet-400 font-semibold">
+                <span className="font-extrabold text-white">
                   {" "}
                   · +{widgets.mission.rewardXp} XP
                 </span>
@@ -448,7 +455,7 @@ export function FeedRightRail({
       ) : null,
     quickEarn:
       quickTiles.length > 0 ? (
-        <Card title="Quick Earn" icon={<Zap className="w-4 h-4 text-amber-400" />}>
+        <Card title="Quick Earn" icon={<Zap className="w-4 h-4 text-gray-400" />}>
           <div className="grid grid-cols-2 gap-2">
             {quickTiles.map((q) => {
               const Icon = QUICK_EARN_ICONS[q.icon] ?? Zap;
@@ -456,14 +463,9 @@ export function FeedRightRail({
                 <Link
                   key={q.id}
                   href={q.href}
-                  className="glass-hover flex items-center gap-2 rounded-lg bg-gray-950/40 border border-gray-800 px-3 py-2.5 text-sm font-semibold text-gray-200"
+                  className="app-tile app-press app-lift app-tap-row flex items-center gap-2.5 text-sm font-bold text-gray-200"
                 >
-                  <Icon
-                    className={cn(
-                      "w-4 h-4 shrink-0",
-                      COLOR_CLASSES[q.color] ?? "text-indigo-400"
-                    )}
-                  />
+                  <Icon className="w-4 h-4 shrink-0 text-gray-400" />
                   <span className="truncate min-w-0">{q.label}</span>
                 </Link>
               );
@@ -563,15 +565,17 @@ export function FeedRightRail({
     promo: (
       <Link
         href={promo?.linkUrl || "/packages"}
+        // The promo's gradient is ADMIN DATA, not a design choice: the owner
+        // picks a from/to pair per campaign. When they have not, it falls back
+        // to the app's one gradient rather than to a second hand-typed pair.
         className={cn(
-          "block rounded-2xl p-4 bg-linear-to-br text-white",
-          promo?.bgGradient || "from-indigo-600 to-purple-600"
+          "app-press block rounded-(--app-r-card) p-(--app-pad) text-white",
+          promo?.bgGradient ? "bg-linear-to-br" : "app-accent",
+          promo?.bgGradient
         )}
       >
-        <p className="text-[10px] uppercase tracking-wider font-bold opacity-80">
-          Promotion
-        </p>
-        <p className="text-base font-bold mt-0.5">
+        <p className="t-eyebrow text-white/90">Promotion</p>
+        <p className="t-section mt-1">
           {promo?.title ?? "Upgrade & earn more"}
         </p>
         <p className="text-xs opacity-90 mt-0.5">
@@ -611,16 +615,19 @@ export function FeedRightRail({
     return (
       <Link
         href={w.href || "/packages"}
+        // Same rule as the promo above: the gradient is the admin's, and the
+        // fallback is the app's one gradient rather than a second literal.
         className={cn(
-          "block rounded-2xl p-4 bg-linear-to-br text-white",
-          w.gradient || "from-indigo-600 to-purple-600"
+          "app-press block rounded-(--app-r-card) p-(--app-pad) text-white",
+          w.gradient ? "bg-linear-to-br" : "app-accent",
+          w.gradient
         )}
       >
-        <p className="text-base font-bold">{w.title}</p>
+        <p className="t-section">{w.title}</p>
         {w.subtitle && (
-          <p className="text-xs opacity-90 mt-0.5">{w.subtitle}</p>
+          <p className="t-meta opacity-90 mt-1">{w.subtitle}</p>
         )}
-        <span className="inline-block mt-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur text-[11px] font-semibold">
+        <span className="app-tap-row inline-flex items-center mt-3 px-3.5 rounded-full bg-white/20 border border-white/40 text-[11px] font-extrabold">
           Learn more →
         </span>
       </Link>

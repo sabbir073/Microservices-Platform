@@ -244,6 +244,7 @@ html[data-accent="silver"] {
   --shell-border: #272b38;
   --shell-hover: #1f2331;
   --shell-shadow: 0 8px 30px -12px rgba(0, 0, 0, 0.7);
+  --shell-veil: 88%;
 }
 
 /* Base styles */
@@ -710,6 +711,9 @@ html[data-theme="light"] {
      page #eaeef5 = L* 94.0, chrome #ffffff = L* 100 (Δ 6.0),
      border #d7dee9 = L* 88.2 (Δ 11.8 from the chrome it edges). */
   --shell-bg: #ffffff;
+  /* 97%, not 88% — see `.app-chrome`. Dark text under a white bar reads
+     through anything looser, and the blur does not hide it. */
+  --shell-veil: 97%;
   --shell-border: #d7dee9;
   --shell-hover: #eef2f8;
   --shell-shadow: 0 1px 2px 0 rgba(16, 24, 40, 0.06),
@@ -736,7 +740,18 @@ html[data-theme="light"] {
      opaque, legible bar instead of the page showing through. */
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     .app-chrome {
-      background-color: color-mix(in oklab, var(--shell-bg) 88%, transparent);
+      /* How opaque the bar is, per theme — NOT one number for both.
+         88% works on a near-black bar because the pale text scrolling beneath
+         it has nowhere to go: blur plus a dark ground swallows it. On a WHITE
+         bar the same 12% lets dark body text read straight through, and the
+         page heading was visibly printed across the header.
+         `.glass-strong` learned this once already and sits at 94%; this class
+         was written later and repeated the mistake. */
+      background-color: color-mix(
+        in oklab,
+        var(--shell-bg) var(--shell-veil, 88%),
+        transparent
+      );
       backdrop-filter: blur(20px) saturate(140%);
       -webkit-backdrop-filter: blur(20px) saturate(140%);
     }
@@ -849,6 +864,32 @@ html[data-theme="light"] .text-red-300, html[data-theme="light"] .text-red-400 {
 html[data-theme="light"] .text-rose-300, html[data-theme="light"] .text-rose-400 { color: #be123c !important; }
 html[data-theme="light"] .text-pink-300, html[data-theme="light"] .text-pink-400 { color: #be185d !important; }
 html[data-theme="light"] .text-fuchsia-300, html[data-theme="light"] .text-fuchsia-400 { color: #a21caf !important; }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Light mode gets its depth from SHADOW, because it cannot get it from colour.
+
+   In dark mode the three surfaces are three different colours — chrome #15171f
+   sits above card #10121b sits above page #0a0b11 — so a card reads as a card
+   without any shadow at all. Invert that and both the chrome and the card land
+   on white: identical. The page ground is the only thing left, and it shows
+   only in the gutters, so the sidebar, the feed and the rail merge into one
+   flat white field. That is the "it doesn't look good in light mode" this
+   fixes, and no amount of border tuning reaches it — the border was already a
+   7.4 L* step and still looked flat, because a 1px line is not depth.
+
+   Targeted at the two classes TOGETHER, which is the app's card idiom (345
+   uses). Inputs and chips pair `bg-gray-800` with `border-gray-700`, so they
+   keep their flat inset look and do not start floating.
+
+   Dark mode is untouched: it does not need this and the shadow would be
+   invisible on a near-black ground anyway.
+   ───────────────────────────────────────────────────────────────────────── */
+html[data-theme="light"] .bg-gray-900.border-gray-800,
+html[data-theme="light"] .bg-slate-900.border-slate-800 {
+  box-shadow:
+    0 1px 2px 0 rgba(16, 24, 40, 0.05),
+    0 10px 26px -16px rgba(16, 24, 40, 0.2);
+}
 
 /* Borders */
 html[data-theme="light"] .border-gray-800 { border-color: #e6eaf2 !important; }
@@ -1304,4 +1345,769 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #9aa6b8; 
     opacity: 1;
     transform: none;
   }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   APP DESIGN SYSTEM (`app-*` tokens, `t-*` type scale)
+
+   The in-product counterpart to the `mk-*` marketing layer, written in the same
+   language on purpose: one type ramp, one rhythm, one shape scale, one accent,
+   three elevations. The app had none of these, and the result was the specific
+   complaint that started this pass — six saturated hues competing in one row
+   (a blue pill, a violet avatar, an orange streak, an emerald wallet, a rose
+   trophy, a blue Follow) with every element at roughly the same size, so the
+   eye had nowhere to land.
+
+   The rule this layer encodes:
+
+     COLOUR IS CONCENTRATED, NOT ADDED.
+       · ONE gradient — `--app-grad` — for the few things that matter most:
+         the primary action, the balance surface, the active nav item.
+       · Semantic colour ONLY where the meaning is genuinely semantic:
+         money in, money out, warning, informational. Four tokens, no more.
+       · Everything else is neutral. A card is not more interesting for
+         having a coloured border.
+     HIERARCHY IS SIZE AND WEIGHT FIRST, COLOUR SECOND.
+       The balance figure is `t-hero` (up to 48px, weight 800). The label above
+       it is `t-eyebrow` (11px). That 4x ratio is what makes one thing the
+       answer to "what do I see first" — not a brighter green.
+
+   Every token below is declared for BOTH themes in this file. A token that
+   exists in only one theme is invisible text the first time someone flips the
+   toggle, which is how the `mk-*` layer learned the same lesson.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── The one gradient ────────────────────────────────────────────────────
+     Deliberately the 600 step of the brand ramp, not the 500. White on
+     indigo-500 measures 4.28:1 — under the 4.5:1 floor — and the app was
+     painting white labels on exactly that pair in the balance hero, the
+     primary buttons and the centre tab. At the 600 step the worst end is
+     5.89:1, so a label anywhere along it is legible.
+
+     It is a SURFACE gradient, never a text gradient: clipped into glyphs the
+     same indigo measures under 3:1 on the dark card, which is why the balance
+     figure is white ON the gradient rather than painted with it.
+
+     LITERAL hexes, not `var(--color-indigo-600)`, and that is the point.
+     Tailwind v4 ships its ramp as `oklch()` — indigo-600 is #4f39f6 here and
+     was #4f46e5 in v3 — so a token pointing at the ramp is measured against
+     whichever value the installed Tailwind happens to hold, and the accent
+     blocks overwrite three of those steps with hexes of their own on top.
+     Pinning the literal means the colour that was measured is the colour that
+     gets painted. These are the `indigo` row of ACCENT_SURFACE
+     (src/lib/accent-palette.ts), which is the default accent, so a user who
+     has never opened the theme picker and one who explicitly picks indigo see
+     the same measured surface. The accent picker recolours all of this through
+     the generated block at the end of this file. */
+  --app-grad-a: #4f39f6;
+  --app-grad-b: #7f22fe;
+  --app-grad: linear-gradient(135deg, var(--app-grad-a) 0%, var(--app-grad-b) 100%);
+  --app-grad-glow: 0 10px 30px -12px color-mix(in oklab, var(--app-grad-a) 70%, transparent);
+
+  /* The gradient has a second problem the 600 step creates rather than solves,
+     and it needs its own tokens. A surface dark enough for white text is too
+     dark to be told apart from near-black chrome: indigo-600 on the dark
+     sidebar measures 2.84:1, under the 3:1 floor a non-text element has to
+     clear. So the two jobs are separated.
+
+     `--app-accent-edge` is a hairline on the gradient surface, bright enough
+     (5.72:1 on the dark bar) to define the button's boundary that the fill
+     itself cannot.
+     `--app-rail-*` paints the indicators that carry NO text — the active
+     sidebar rail, the active tab underline — where nothing is constrained by
+     white-on-colour, so each theme takes the most vivid step that still clears
+     3:1 against its own bar.
+
+     Both are per-theme AND per-accent. For silver the dark bar wants step 400
+     (#c7ced9) and the white bar step 700 (#6b7688): four steps apart, in
+     opposite directions. One value could not have served both. Every accent's
+     pair is in src/lib/accent-palette.ts and re-measured by the verify script
+     on every run. */
+  --app-accent-edge: #7c86ff;
+  --app-rail-a: #7c86ff;
+  --app-rail-b: #a684ff;
+  --app-rail: linear-gradient(180deg, var(--app-rail-a), var(--app-rail-b));
+
+  /* ── Semantic colour — four meanings, nothing decorative ─────────────────
+     `in`  money arriving, a completed thing, a success
+     `out` money leaving, a destructive action, a failure
+     `warn` pending, expiring, needs attention
+     `info` the brand voice in text form, where a gradient cannot go
+     Measured against the card surface each sits on; see the table in
+     scripts/verify-app-shell.ts, which recomputes these on every run. */
+  --app-in: #34d399;
+  --app-out: #f87171;
+  --app-warn: #fbbf24;
+  --app-info: #a5b4fc;
+  /* Soft fills for the same four. Non-text, so the 3:1 floor applies to the
+     border, not the fill. */
+  --app-in-soft: #0d2a22;
+  --app-out-soft: #2e1416;
+  --app-warn-soft: #2b1f07;
+  --app-info-soft: #1b1e33;
+  --app-in-line: #14523f;
+  --app-out-line: #5c2529;
+  --app-warn-line: #5a4310;
+  --app-info-line: #343a63;
+
+  /* ── Shape ───────────────────────────────────────────────────────────────
+     Four radii, not the twelve the app had. Crowding and a tight corner are
+     most of what reads as "cheap"; these are one step larger than what was
+     there. */
+  --app-r-chip: 0.625rem;
+  --app-r-control: 0.875rem;
+  --app-r-card: 1.25rem;
+  --app-r-panel: 1.5rem;
+
+  /* ── Rhythm ──────────────────────────────────────────────────────────────
+     Fluid rather than a breakpoint, so there is no width at which the padding
+     is briefly the wrong size. */
+  --app-gap: clamp(0.75rem, 2.2vw, 1rem);
+  --app-pad: clamp(1rem, 3.2vw, 1.375rem);
+  --app-pad-lg: clamp(1.25rem, 4.5vw, 1.75rem);
+
+  /* ── Elevation ───────────────────────────────────────────────────────────
+     Three steps. Dark mode gets depth from shadow AND a hairline inset
+     highlight; light mode from shadow alone, because a white card on an
+     off-white page has no colour step to lean on. */
+  --app-e1: inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
+    0 1px 2px 0 rgba(0, 0, 0, 0.45), 0 12px 28px -14px rgba(0, 0, 0, 0.7);
+  --app-e2: inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+    0 4px 10px -4px rgba(0, 0, 0, 0.5), 0 22px 48px -20px rgba(0, 0, 0, 0.75);
+  --app-e3: inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
+    0 10px 24px -8px rgba(0, 0, 0, 0.55), 0 34px 70px -26px rgba(0, 0, 0, 0.8);
+
+  /* Card chrome, so `.app-card` never has to guess. */
+  --app-surface: var(--color-gray-900);
+  --app-surface-2: var(--color-gray-800);
+  --app-line: #262a38;
+  --app-line-strong: #333849;
+
+  /* ── Motion ──────────────────────────────────────────────────────────────
+     One curve and two durations for the whole app. The curve is the iOS sheet
+     easing: fast out of the gate, long settle. */
+  --app-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --app-fast: 0.14s;
+  --app-slow: 0.26s;
+}
+
+html[data-theme="light"] {
+  /* The gradient is a coloured surface: it is the same in both themes, and is
+     already declared above. Only what sits on neutral changes here. */
+  /* Light mode. The gradient itself clears 6.46:1 against a white bar, so the
+     edge here firms the button rather than rescuing it — it is the 500 step,
+     one lighter than the fill, which reads as a highlight along the top of the
+     control instead of a second outline. The rail takes the same step: on
+     white, 500 is the most saturated point that still clears 3:1. */
+  --app-accent-edge: #615fff;
+  --app-rail-a: #615fff;
+  --app-rail-b: #8e51ff;
+
+  --app-in: #047857;
+  --app-out: #b91c1c;
+  --app-warn: #b45309;
+  --app-info: #4338ca;
+  --app-in-soft: #e7f6ef;
+  --app-out-soft: #fdeceb;
+  --app-warn-soft: #fdf2e3;
+  --app-info-soft: #eef0fe;
+  --app-in-line: #b9e2d1;
+  --app-out-line: #f3c6c3;
+  --app-warn-line: #f0d8ae;
+  --app-info-line: #cfd4fa;
+
+  --app-e1: 0 1px 2px 0 rgba(16, 24, 40, 0.07),
+    0 10px 24px -14px rgba(16, 24, 40, 0.2);
+  --app-e2: 0 2px 6px -2px rgba(16, 24, 40, 0.09),
+    0 20px 44px -20px rgba(16, 24, 40, 0.26);
+  --app-e3: 0 8px 20px -6px rgba(16, 24, 40, 0.12),
+    0 34px 70px -26px rgba(16, 24, 40, 0.3);
+
+  --app-surface: #ffffff;
+  --app-surface-2: #eef1f7;
+  --app-line: #e3e8f0;
+  --app-line-strong: #cfd7e4;
+}
+
+@layer components {
+  /* ── Type scale ──────────────────────────────────────────────────────────
+     Seven steps, fluid, with tracking tightening as size grows. The app's
+     problem was not that any one size was wrong — it was that a sidebar row, a
+     toolbar button and a card heading were all 14px/600, so nothing was
+     subordinate to anything. These are ratios you can see from across a room.
+
+     `t-hero` and `t-figure` are tabular by default: a balance that reflows its
+     own digits as it counts up is the single loudest "not a real product" tell
+     on a money screen. */
+  .t-hero {
+    font-size: clamp(2.25rem, 10vw, 3rem);
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.035em;
+    font-variant-numeric: tabular-nums;
+  }
+  .t-figure {
+    font-size: clamp(1.5rem, 6vw, 2rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.028em;
+    font-variant-numeric: tabular-nums;
+  }
+  .t-figure-sm {
+    font-size: clamp(1.125rem, 4.4vw, 1.375rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.022em;
+    font-variant-numeric: tabular-nums;
+  }
+  .t-title {
+    font-size: clamp(1.375rem, 3.4vw, 1.75rem);
+    font-weight: 800;
+    line-height: 1.15;
+    letter-spacing: -0.024em;
+    text-wrap: balance;
+  }
+  .t-section {
+    font-size: clamp(1rem, 1.9vw, 1.125rem);
+    font-weight: 700;
+    line-height: 1.3;
+    letter-spacing: -0.014em;
+  }
+  .t-card-title {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    line-height: 1.35;
+    letter-spacing: -0.008em;
+  }
+  .t-body {
+    font-size: 0.875rem;
+    font-weight: 400;
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
+  .t-meta {
+    font-size: 0.75rem;
+    font-weight: 500;
+    line-height: 1.4;
+  }
+  .t-eyebrow {
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    line-height: 1.2;
+  }
+
+  /* ── Semantic text ───────────────────────────────────────────────────────
+     The ONLY four colours a number or a label is allowed to be. */
+  .t-in {
+    color: var(--app-in);
+  }
+  .t-out {
+    color: var(--app-out);
+  }
+  .t-warn {
+    color: var(--app-warn);
+  }
+  .t-info {
+    color: var(--app-info);
+  }
+
+  /* ── Surfaces ────────────────────────────────────────────────────────────
+     `app-card` is the default container for everything in the product. It is
+     neutral, it is generously padded, and it has a real radius. It carries its
+     own per-theme shadow rather than relying on the light-mode rule that
+     shadows a literal gray-900 element, because it does not use that class. */
+  .app-card {
+    background-color: var(--app-surface);
+    border: 1px solid var(--app-line);
+    border-radius: var(--app-r-card);
+    box-shadow: var(--app-e1);
+    padding: var(--app-pad);
+  }
+  .app-panel {
+    background-color: var(--app-surface);
+    border: 1px solid var(--app-line);
+    border-radius: var(--app-r-panel);
+    box-shadow: var(--app-e2);
+    padding: var(--app-pad-lg);
+  }
+  /* A tile nested INSIDE a card: one step in, no shadow, no second border
+     colour. This is what replaced the tinted mini-cards. */
+  .app-tile {
+    background-color: var(--app-surface-2);
+    border: 1px solid var(--app-line);
+    border-radius: var(--app-r-control);
+    padding: 0.75rem;
+  }
+
+  /* ── The accent surface ──────────────────────────────────────────────────
+     One class, one gradient. Used by: the primary button, the balance hero,
+     the active centre tab, the active sidebar rail. Nothing else may paint a
+     gradient — that is the whole point of the pass. */
+  .app-accent {
+    background-image: var(--app-grad);
+    color: #fff;
+    border: 1px solid var(--app-accent-edge);
+  }
+  .app-accent-glow {
+    box-shadow: var(--app-grad-glow);
+  }
+  /* The soft version, for an active nav row or a selected chip: the brand at
+     low opacity with a real border, never a second hue. */
+  .app-accent-soft {
+    background-color: var(--app-info-soft);
+    border: 1px solid var(--app-info-line);
+    color: var(--app-info);
+  }
+
+  /* ── Chips ───────────────────────────────────────────────────────────────
+     A chip is neutral unless it carries one of the four meanings. */
+  .app-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.625rem;
+    border-radius: 9999px;
+    border: 1px solid var(--app-line);
+    background-color: var(--app-surface-2);
+    color: var(--color-gray-400);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+  .app-chip-in {
+    background-color: var(--app-in-soft);
+    border-color: var(--app-in-line);
+    color: var(--app-in);
+  }
+  .app-chip-out {
+    background-color: var(--app-out-soft);
+    border-color: var(--app-out-line);
+    color: var(--app-out);
+  }
+  .app-chip-warn {
+    background-color: var(--app-warn-soft);
+    border-color: var(--app-warn-line);
+    color: var(--app-warn);
+  }
+  .app-chip-info {
+    background-color: var(--app-info-soft);
+    border-color: var(--app-info-line);
+    color: var(--app-info);
+  }
+
+  /* ── Icon tiles ──────────────────────────────────────────────────────────
+     Coloured icons were the main source of the rainbow: every list item had a
+     hue picked from a nine-entry map. An icon tile is now neutral by default
+     and inherits the row's text colour, so a list of twelve categories reads
+     as one list. `app-icon-accent` exists for the ONE tile on a screen that is
+     genuinely the subject. */
+  .app-icon {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--app-r-control);
+    background-color: var(--app-surface-2);
+    border: 1px solid var(--app-line);
+    color: var(--color-gray-300);
+  }
+  .app-icon-accent {
+    background-image: var(--app-grad);
+    border-color: var(--app-accent-edge);
+    color: #fff;
+  }
+  .app-icon-lg {
+    width: 3rem;
+    height: 3rem;
+  }
+
+  /* ── Tap target ──────────────────────────────────────────────────────────
+     44px, as a class, because the app kept re-deriving it from padding plus a
+     line-height and kept getting 36px. Written on the element itself — never
+     as a child selector, which is how a like button once ended up a 20px
+     target while the rule that was supposed to size it styled only the direct
+     children it happened to have. */
+  .app-tap {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+    touch-action: manipulation;
+  }
+  /* For a row that is already tall enough and only needs the height floor. */
+  .app-tap-row {
+    min-height: 2.75rem;
+    touch-action: manipulation;
+  }
+
+  /* ── Nav row ─────────────────────────────────────────────────────────────
+     One definition for the sidebar, the drawer and the mode sections, which
+     were three near-copies. Active state is a soft brand fill plus a gradient
+     rail — size and position, not just a hue shift on 14px text. */
+  .app-nav-item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--app-r-control);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--color-gray-400);
+    touch-action: manipulation;
+    transition: background-color var(--app-fast) ease,
+      color var(--app-fast) ease;
+  }
+  .app-nav-item:hover {
+    background-color: var(--shell-hover);
+    color: var(--color-gray-100);
+  }
+  .app-nav-item[aria-current="page"] {
+    background-color: var(--app-info-soft);
+    color: var(--app-info);
+    font-weight: 700;
+  }
+  .app-nav-item[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 1.25rem;
+    width: 0.1875rem;
+    transform: translateY(-50%);
+    border-radius: 0 9999px 9999px 0;
+    background-image: var(--app-rail);
+  }
+}
+
+/* ── Motion ────────────────────────────────────────────────────────────────
+   Three rules for the whole product, mirroring `mk-press` on the marketing
+   surface so the two halves feel like one company. */
+.app-press {
+  transition: transform var(--app-fast) var(--app-ease),
+    box-shadow var(--app-slow) ease, background-color var(--app-slow) ease,
+    border-color var(--app-slow) ease, color var(--app-slow) ease;
+}
+.app-press:active {
+  transform: scale(0.97);
+}
+.app-press:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--app-surface),
+    0 0 0 4px color-mix(in oklab, var(--app-grad-a) 70%, transparent);
+}
+
+/* A card lifting on hover — pointer devices only, so a phone tap does not
+   leave a card stuck in its hover state. */
+@media (hover: hover) and (pointer: fine) {
+  .app-lift {
+    transition: transform var(--app-slow) var(--app-ease),
+      box-shadow var(--app-slow) ease, border-color var(--app-slow) ease;
+  }
+  .app-lift:hover {
+    transform: translateY(-2px);
+    border-color: var(--app-line-strong);
+    box-shadow: var(--app-e2);
+  }
+}
+
+/* The sheet / drawer curve, shared by the bottom sheet and the nav drawer. */
+.app-sheet {
+  transition: transform var(--app-slow) var(--app-ease);
+}
+
+/* A figure that has just changed, on the money surfaces. Short, once, and
+   scale-only, so a balance refresh reads as "this updated" without the screen
+   appearing to reflow. */
+@keyframes app-tick {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.045);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.app-tick {
+  animation: app-tick 0.36s var(--app-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-press,
+  .app-lift,
+  .app-sheet {
+    transition-duration: 0.001ms;
+  }
+  .app-press:active {
+    transform: none;
+  }
+  .app-lift:hover {
+    transform: none;
+  }
+  .app-tick {
+    animation: none;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   ACCENT SURFACES — GENERATED. DO NOT EDIT BY HAND.
+
+   Source of truth: `ACCENT_SURFACE` in src/lib/accent-palette.ts.
+   Emitted by:      `accentSurfaceCss()` in that same file.
+   Enforced by:     scripts/verify-app-shell.ts, which re-renders the table and
+                    fails if this block is not byte-identical to it, and which
+                    recomputes every contrast ratio in the table on every run.
+
+   Why it is generated rather than written: the app has 19 accents, and before
+   this block existed exactly one of them had ever been measured. The gradient,
+   the nav rail and the button edge all came off `--color-indigo-*`, which the
+   accent picker remaps — so picking `yellow` or `gold` put white text on a
+   bright fill at roughly 2.9:1, on the balance panel, and nothing caught it.
+   Nineteen hand-written blocks would have drifted the same way; one table plus
+   an assertion cannot.
+
+   What varies per accent, and why it has to:
+     · the GRADIENT step, because white has to clear 4.5:1 on both ends. Cool
+       accents settle at 600; every warm accent needs 700 and silver needs 800.
+     · the RAIL and EDGE step, PER THEME, because a non-text mark has to clear
+       3:1 against the chrome and the chrome is near-black in one theme and
+       white in the other. Silver swings four steps in opposite directions.
+
+   To change an accent: edit the row in accent-palette.ts, run
+   `npx tsx --tsconfig tsconfig.script.json scripts/verify-app-shell.ts`, and
+   paste the block it prints over this one.
+   ════════════════════════════════════════════════════════════════════════════ */
+html[data-accent="red"] {
+  --app-grad-a: #c10007;
+  --app-grad-b: #c70036;
+  --app-accent-edge: #ff6467;
+  --app-rail-a: #ff6467;
+  --app-rail-b: #ff637e;
+}
+html[data-theme="light"][data-accent="red"] {
+  --app-accent-edge: #fb2c36;
+  --app-rail-a: #fb2c36;
+  --app-rail-b: #ff2056;
+}
+html[data-accent="orange"] {
+  --app-grad-a: #ca3500;
+  --app-grad-b: #bb4d00;
+  --app-accent-edge: #ff8904;
+  --app-rail-a: #ff8904;
+  --app-rail-b: #ffb900;
+}
+html[data-theme="light"][data-accent="orange"] {
+  --app-accent-edge: #ca3500;
+  --app-rail-a: #ca3500;
+  --app-rail-b: #bb4d00;
+}
+html[data-accent="amber"] {
+  --app-grad-a: #bb4d00;
+  --app-grad-b: #ca3500;
+  --app-accent-edge: #ffb900;
+  --app-rail-a: #ffb900;
+  --app-rail-b: #ff8904;
+}
+html[data-theme="light"][data-accent="amber"] {
+  --app-accent-edge: #bb4d00;
+  --app-rail-a: #bb4d00;
+  --app-rail-b: #ca3500;
+}
+html[data-accent="yellow"] {
+  --app-grad-a: #a65f00;
+  --app-grad-b: #bb4d00;
+  --app-accent-edge: #fdc700;
+  --app-rail-a: #fdc700;
+  --app-rail-b: #ffb900;
+}
+html[data-theme="light"][data-accent="yellow"] {
+  --app-accent-edge: #a65f00;
+  --app-rail-a: #a65f00;
+  --app-rail-b: #bb4d00;
+}
+html[data-accent="lime"] {
+  --app-grad-a: #497d00;
+  --app-grad-b: #008236;
+  --app-accent-edge: #9ae600;
+  --app-rail-a: #9ae600;
+  --app-rail-b: #05df72;
+}
+html[data-theme="light"][data-accent="lime"] {
+  --app-accent-edge: #497d00;
+  --app-rail-a: #497d00;
+  --app-rail-b: #008236;
+}
+html[data-accent="green"] {
+  --app-grad-a: #008236;
+  --app-grad-b: #007a55;
+  --app-accent-edge: #05df72;
+  --app-rail-a: #05df72;
+  --app-rail-b: #00d492;
+}
+html[data-theme="light"][data-accent="green"] {
+  --app-accent-edge: #00a63e;
+  --app-rail-a: #00a63e;
+  --app-rail-b: #009966;
+}
+html[data-accent="emerald"] {
+  --app-grad-a: #007a55;
+  --app-grad-b: #00786f;
+  --app-accent-edge: #00d492;
+  --app-rail-a: #00d492;
+  --app-rail-b: #00d5be;
+}
+html[data-theme="light"][data-accent="emerald"] {
+  --app-accent-edge: #009966;
+  --app-rail-a: #009966;
+  --app-rail-b: #009689;
+}
+html[data-accent="teal"] {
+  --app-grad-a: #00786f;
+  --app-grad-b: #007595;
+  --app-accent-edge: #00d5be;
+  --app-rail-a: #00d5be;
+  --app-rail-b: #00d3f2;
+}
+html[data-theme="light"][data-accent="teal"] {
+  --app-accent-edge: #009689;
+  --app-rail-a: #009689;
+  --app-rail-b: #0092b8;
+}
+html[data-accent="cyan"] {
+  --app-grad-a: #007595;
+  --app-grad-b: #0069a8;
+  --app-accent-edge: #00d3f2;
+  --app-rail-a: #00d3f2;
+  --app-rail-b: #00bcff;
+}
+html[data-theme="light"][data-accent="cyan"] {
+  --app-accent-edge: #0092b8;
+  --app-rail-a: #0092b8;
+  --app-rail-b: #0084d1;
+}
+html[data-accent="sky"] {
+  --app-grad-a: #0069a8;
+  --app-grad-b: #1447e6;
+  --app-accent-edge: #00bcff;
+  --app-rail-a: #00bcff;
+  --app-rail-b: #51a2ff;
+}
+html[data-theme="light"][data-accent="sky"] {
+  --app-accent-edge: #0084d1;
+  --app-rail-a: #0084d1;
+  --app-rail-b: #155dfc;
+}
+html[data-accent="blue"] {
+  --app-grad-a: #155dfc;
+  --app-grad-b: #4f39f6;
+  --app-accent-edge: #51a2ff;
+  --app-rail-a: #51a2ff;
+  --app-rail-b: #7c86ff;
+}
+html[data-theme="light"][data-accent="blue"] {
+  --app-accent-edge: #2b7fff;
+  --app-rail-a: #2b7fff;
+  --app-rail-b: #615fff;
+}
+html[data-accent="indigo"] {
+  --app-grad-a: #4f39f6;
+  --app-grad-b: #7f22fe;
+  --app-accent-edge: #7c86ff;
+  --app-rail-a: #7c86ff;
+  --app-rail-b: #a684ff;
+}
+html[data-theme="light"][data-accent="indigo"] {
+  --app-accent-edge: #615fff;
+  --app-rail-a: #615fff;
+  --app-rail-b: #8e51ff;
+}
+html[data-accent="violet"] {
+  --app-grad-a: #7f22fe;
+  --app-grad-b: #9810fa;
+  --app-accent-edge: #a684ff;
+  --app-rail-a: #a684ff;
+  --app-rail-b: #c27aff;
+}
+html[data-theme="light"][data-accent="violet"] {
+  --app-accent-edge: #8e51ff;
+  --app-rail-a: #8e51ff;
+  --app-rail-b: #ad46ff;
+}
+html[data-accent="purple"] {
+  --app-grad-a: #8200db;
+  --app-grad-b: #a800b7;
+  --app-accent-edge: #c27aff;
+  --app-rail-a: #c27aff;
+  --app-rail-b: #ed6aff;
+}
+html[data-theme="light"][data-accent="purple"] {
+  --app-accent-edge: #ad46ff;
+  --app-rail-a: #ad46ff;
+  --app-rail-b: #e12afb;
+}
+html[data-accent="fuchsia"] {
+  --app-grad-a: #a800b7;
+  --app-grad-b: #c6005c;
+  --app-accent-edge: #ed6aff;
+  --app-rail-a: #ed6aff;
+  --app-rail-b: #fb64b6;
+}
+html[data-theme="light"][data-accent="fuchsia"] {
+  --app-accent-edge: #e12afb;
+  --app-rail-a: #e12afb;
+  --app-rail-b: #f6339a;
+}
+html[data-accent="pink"] {
+  --app-grad-a: #c6005c;
+  --app-grad-b: #c70036;
+  --app-accent-edge: #fb64b6;
+  --app-rail-a: #fb64b6;
+  --app-rail-b: #ff637e;
+}
+html[data-theme="light"][data-accent="pink"] {
+  --app-accent-edge: #f6339a;
+  --app-rail-a: #f6339a;
+  --app-rail-b: #ff2056;
+}
+html[data-accent="rose"] {
+  --app-grad-a: #c70036;
+  --app-grad-b: #c10007;
+  --app-accent-edge: #ff637e;
+  --app-rail-a: #ff637e;
+  --app-rail-b: #ff6467;
+}
+html[data-theme="light"][data-accent="rose"] {
+  --app-accent-edge: #ff2056;
+  --app-rail-a: #ff2056;
+  --app-rail-b: #fb2c36;
+}
+html[data-accent="gold"] {
+  --app-grad-a: #8a6b18;
+  --app-grad-b: #bb4d00;
+  --app-accent-edge: #e3c15a;
+  --app-rail-a: #e3c15a;
+  --app-rail-b: #ffb900;
+}
+html[data-theme="light"][data-accent="gold"] {
+  --app-accent-edge: #8a6b18;
+  --app-rail-a: #8a6b18;
+  --app-rail-b: #bb4d00;
+}
+html[data-accent="silver"] {
+  --app-grad-a: #535c6b;
+  --app-grad-b: #3c434f;
+  --app-accent-edge: #c7ced9;
+  --app-rail-a: #c7ced9;
+  --app-rail-b: #90a1b9;
+}
+html[data-theme="light"][data-accent="silver"] {
+  --app-accent-edge: #6b7688;
+  --app-rail-a: #6b7688;
+  --app-rail-b: #314158;
 }

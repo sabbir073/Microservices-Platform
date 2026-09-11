@@ -107,7 +107,12 @@ export default async function MainLayout({
             Nothing below ~1400px moves: at 1280px the region is already 928px,
             well under the cap, so the feed's right rail and every mobile and
             tablet layout are untouched. */}
-        <main className="mx-auto w-full max-w-7xl py-6 px-4 sm:px-6 lg:px-8 pb-[calc(6rem+var(--anchor-ad-h,0px))] md:pb-[calc(2rem+var(--anchor-ad-h,0px))] scroll-mt-[calc(4rem+env(safe-area-inset-top))]">
+        {/* Page gutter. `px-4` on a phone put a card's content 16px from the
+            screen edge and its own padding immediately inside that — the
+            crowding that reads as cheap. `--app-gap` is the same fluid step the
+            cards space themselves by, so the gutter and the rhythm inside the
+            page are one measurement rather than two guesses. */}
+        <main className="mx-auto w-full max-w-7xl py-(--app-pad) px-(--app-pad) sm:px-6 lg:px-8 pb-[calc(6rem+var(--anchor-ad-h,0px))] md:pb-[calc(2rem+var(--anchor-ad-h,0px))] scroll-mt-[calc(4rem+env(safe-area-inset-top))]">
           <AppRefreshShell>{children}</AppRefreshShell>
         </main>
       </div>

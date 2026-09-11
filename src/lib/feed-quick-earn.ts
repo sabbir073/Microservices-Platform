@@ -92,7 +92,23 @@ export const ICON_OPTIONS: { key: string; label: string }[] = [
   { key: "megaphone", label: "Megaphone" },
 ];
 
-/** Color tone the admin can pick (key → Tailwind text class). */
+/**
+ * NO LONGER RENDERED.
+ *
+ * These ten tones were applied to the Quick Earn tile icons on the feed and in
+ * the sidebar rail, which meant a twelve-shortcut grid was twelve competing
+ * hues sitting directly under the balance card — the single thing the redesign
+ * set out to remove. Both surfaces now render the tiles neutral.
+ *
+ * The map is kept, and so is the stored `color` on every tile, so nothing an
+ * admin has already set is destroyed and the feature can be switched back on
+ * without a migration. What is NOT kept is a control that silently does
+ * nothing: the picker in Settings → Feed Widgets is disabled and labelled, and
+ * its preview icon renders neutral so the form shows what the app shows.
+ *
+ * `COLOR_OPTIONS` below still reads from this map — it is what populates that
+ * (disabled) picker, so the stored value is still displayed by name.
+ */
 export const COLOR_CLASSES: Record<string, string> = {
   indigo: "text-indigo-400",
   violet: "text-violet-400",

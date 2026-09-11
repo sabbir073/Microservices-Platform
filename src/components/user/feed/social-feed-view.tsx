@@ -148,7 +148,7 @@ export function SocialFeedView({
             It sticks under the app header (h-16 plus the safe-area inset) at
             z-20 — below the header's z-30 — so the controls stay reachable while
             reading without ever covering the header's own menus. */}
-        <div className="sticky top-[calc(4rem+env(safe-area-inset-top))] z-20 flex items-center gap-2 rounded-xl border border-gray-800 bg-gray-950/90 px-1.5 py-1.5 backdrop-blur">
+        <div className="sticky top-[calc(4rem+env(safe-area-inset-top))] z-20 flex items-center gap-2 rounded-(--app-r-card) border border-(--app-line) bg-(--app-surface) px-2 py-2 shadow-(--app-e1)">
           {/* The BAR stays when Groups is off — it carries the sort control and
               the panel handle, which are worth a row on their own. The TABS do
               not: one tab is not a choice, it is a button that reports where you
@@ -163,13 +163,13 @@ export function SocialFeedView({
                   key={t.key}
                   onClick={() => setTab(t.key)}
                   className={cn(
-                    "inline-flex h-10 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors",
+                    "app-tap-row app-press inline-flex shrink-0 items-center gap-1.5 rounded-(--app-r-chip) px-3 text-sm font-bold",
                     isActive
-                      ? "bg-indigo-500/15 text-indigo-300"
+                      ? "app-accent-soft"
                       : "text-gray-400 hover:text-white"
                   )}
                 >
-                  <t.icon className="h-4 w-4" />
+                  <t.icon className="h-4.5 w-4.5" />
                   {t.label}
                 </button>
               );
@@ -187,17 +187,23 @@ export function SocialFeedView({
           {/* Sort — Feed tab only, because it sorts posts and the Groups tab has
               none. It used to render on both and do nothing on one of them. */}
           {activeTab === "feed" && (
-            <div className="inline-flex shrink-0 overflow-hidden rounded-lg border border-gray-800">
+            /* The "For You" pill was a solid indigo-500 chip — white text on it
+               measures 4.47:1, under the floor — sitting beside a violet
+               avatar, an orange streak and an emerald wallet figure. A segmented
+               control does not need a fill to say which half is chosen: the
+               selected side is the raised surface and the bolder text, which is
+               how a native segmented control works. */
+            <div className="inline-flex shrink-0 overflow-hidden rounded-(--app-r-chip) border border-(--app-line) bg-(--app-surface-2) p-0.5">
               {(["recent", "trending"] as const).map((s) => (
                 <button
                   key={s}
                   onClick={() => setSort(s)}
                   aria-pressed={sort === s}
                   className={cn(
-                    "inline-flex h-10 items-center gap-1 px-3 text-xs font-semibold",
+                    "app-press inline-flex h-10 items-center gap-1.5 rounded-[calc(var(--app-r-chip)-2px)] px-3 text-xs font-bold",
                     sort === s
-                      ? "bg-indigo-500 text-white"
-                      : "bg-gray-900 text-gray-400 hover:text-white"
+                      ? "bg-(--app-surface) text-white shadow-(--app-e1)"
+                      : "text-gray-400 hover:text-white"
                   )}
                 >
                   {s === "recent" ? (
@@ -219,9 +225,9 @@ export function SocialFeedView({
             type="button"
             onClick={() => setRailOpen(true)}
             aria-label="Open earnings and discovery panel"
-            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-800 bg-gray-900 text-gray-300 hover:text-white xl:hidden"
+            className="app-tap app-press inline-flex shrink-0 items-center justify-center rounded-(--app-r-chip) border border-(--app-line) bg-(--app-surface-2) text-gray-300 hover:text-white xl:hidden"
           >
-            <PanelRight className="h-4 w-4" />
+            <PanelRight className="h-4.5 w-4.5" />
           </button>
         </div>
 

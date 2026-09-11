@@ -64,21 +64,13 @@ const TABS: { key: TabKey; label: string; icon: typeof ListTodo }[] = [
   { key: "offerwall", label: "Offerwall", icon: Globe },
 ];
 
-// Static full class strings (Tailwind can't see `bg-${color}` interpolation).
-const CARD_COLOR: Record<
-  string,
-  { chip: string; hover: string; bar: string }
-> = {
-  red: { chip: "bg-red-500/10 text-red-400", hover: "hover:border-red-500/40", bar: "bg-red-500" },
-  blue: { chip: "bg-blue-500/10 text-blue-400", hover: "hover:border-blue-500/40", bar: "bg-blue-500" },
-  amber: { chip: "bg-amber-500/10 text-amber-400", hover: "hover:border-amber-500/40", bar: "bg-amber-500" },
-  purple: { chip: "bg-purple-500/10 text-purple-400", hover: "hover:border-purple-500/40", bar: "bg-purple-500" },
-  pink: { chip: "bg-pink-500/10 text-pink-400", hover: "hover:border-pink-500/40", bar: "bg-pink-500" },
-  cyan: { chip: "bg-cyan-500/10 text-cyan-400", hover: "hover:border-cyan-500/40", bar: "bg-cyan-500" },
-  emerald: { chip: "bg-emerald-500/10 text-emerald-400", hover: "hover:border-emerald-500/40", bar: "bg-emerald-500" },
-  indigo: { chip: "bg-indigo-500/10 text-indigo-400", hover: "hover:border-indigo-500/40", bar: "bg-indigo-500" },
-  violet: { chip: "bg-violet-500/10 text-violet-400", hover: "hover:border-violet-500/40", bar: "bg-violet-500" },
-};
+/* The `color` on each category below is kept — it is part of the catalogue
+   descriptor and other surfaces may still want it — but the hub no longer
+   renders it. Twelve category cards in nine hues is the worst instance of the
+   problem in the product: a wall of red, blue, amber, purple, pink, cyan,
+   emerald, indigo and violet, where the colour told you nothing except that
+   someone had assigned one. Twelve identical neutral cards let the twelve
+   LABELS do the distinguishing, which is what they are for. */
 
 type Kind = "type" | "board" | "feature";
 interface Category {
@@ -86,7 +78,17 @@ interface Category {
   label: string;
   description: string;
   icon: typeof Video;
-  color: keyof typeof CARD_COLOR;
+  /** Catalogue metadata. Kept on the descriptor, no longer rendered here. */
+  color:
+    | "red"
+    | "blue"
+    | "amber"
+    | "purple"
+    | "pink"
+    | "cyan"
+    | "emerald"
+    | "indigo"
+    | "violet";
   href: string;
   kind: Kind;
   /** Real Task.type (kind="type") for daily progress. */
@@ -218,8 +220,8 @@ export function TasksHubView({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-white">Tasks</h1>
-        <p className="text-gray-400 mt-1">
+        <h1 className="t-title text-white">Tasks</h1>
+        <p className="t-body text-gray-400 mt-1">
           Pick a task type to start earning points and XP
         </p>
       </div>
@@ -250,8 +252,8 @@ export function TasksHubView({
 
       {/* Tab row */}
       <ScrollFadeRow
-        className="-mx-1 sticky top-0 z-10 bg-gray-950/80 backdrop-blur-sm"
-        innerClassName="flex gap-1 px-1 pb-1"
+        className="-mx-1 sticky top-0 z-10"
+        innerClassName="flex gap-1.5 px-1 pb-1"
         ariaLabel="Task tabs"
       >
         {TABS.map((t) => {
@@ -260,11 +262,12 @@ export function TasksHubView({
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
-                "shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors border",
+                "app-tap-row app-press shrink-0 inline-flex items-center gap-1.5 px-3.5 rounded-full text-sm font-bold whitespace-nowrap border",
                 isActive
-                  ? "bg-indigo-500/15 text-white border-indigo-500/40"
-                  : "bg-gray-900 text-gray-400 border-gray-800 hover:text-white hover:bg-gray-800"
+                  ? "app-accent-soft"
+                  : "bg-(--app-surface) text-gray-400 border-(--app-line) hover:text-white"
               )}
             >
               <t.icon className="w-4 h-4" />
@@ -285,7 +288,6 @@ export function TasksHubView({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {visibleCategories.map((cat) => {
-              const c = CARD_COLOR[cat.color];
               const Icon = cat.icon;
               const row = progressFor(cat);
               const hasProgress = !!row && row.available > 0;
@@ -296,47 +298,43 @@ export function TasksHubView({
                 <Link
                   key={cat.key}
                   href={cat.href}
-                  className={cn(
-                    "card card-interactive p-5 flex flex-col transition-colors",
-                    c.hover
-                  )}
+                  className="app-card app-press app-lift flex flex-col"
                 >
                   <div className="flex items-start gap-3">
-                    <div
-                      className={cn(
-                        "w-12 h-12 rounded-xl grid place-items-center shrink-0",
-                        c.chip
-                      )}
-                    >
+                    <div className="app-icon app-icon-lg">
                       <Icon className="w-6 h-6" />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="font-semibold text-white">{cat.label}</h3>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <h3 className="t-section text-white">{cat.label}</h3>
+                      <p className="t-meta text-gray-500 mt-1">
                         {cat.description}
                       </p>
                     </div>
                   </div>
 
                   {hasProgress ? (
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between text-[11px] mb-1">
+                    <div className="mt-auto pt-4">
+                      <div className="flex items-center justify-between t-meta mb-1.5">
                         <span className="text-gray-400">
                           {row!.completedToday}/{row!.available} done today
                         </span>
-                        <span className="text-amber-400 font-bold">
+                        {/* XP available is a genuine "there is something here
+                            for you" signal, so it keeps the one warn colour —
+                            it used to be amber next to an amber icon tile, an
+                            amber card border and an amber progress bar. */}
+                        <span className="t-warn font-bold">
                           Up to {row!.earnableXp} XP
                         </span>
                       </div>
-                      <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+                      <div className="h-2 rounded-full bg-(--app-surface-2) overflow-hidden">
                         <div
-                          className={cn("h-full rounded-full transition-[width]", c.bar)}
+                          className="h-full rounded-full transition-[width] bg-(image:--app-rail)"
                           style={{ width: `${pct}%` }}
                         />
                       </div>
                     </div>
                   ) : (
-                    <span className="mt-4 inline-flex items-center gap-1 text-xs font-semibold text-gray-400">
+                    <span className="mt-auto pt-4 inline-flex items-center gap-1 text-xs font-bold text-gray-400">
                       Explore <ArrowRight className="w-3.5 h-3.5" />
                     </span>
                   )}

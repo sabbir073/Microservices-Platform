@@ -118,13 +118,13 @@ export function WalletView(props: WalletViewProps) {
   const pointsPerUsd = props.pointsPerUsd;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-(--app-gap)">
       <header>
-        <h1 className="text-2xl font-bold text-white inline-flex items-center gap-2">
-          <Wallet className="w-6 h-6 text-indigo-400" />
+        <h1 className="t-title text-white inline-flex items-center gap-2.5">
+          <Wallet className="w-6 h-6 text-gray-400" />
           Wallet
         </h1>
-        <p className="text-gray-400 text-sm mt-0.5">
+        <p className="t-body text-gray-400 mt-1">
           Your earnings, referral commission, and payouts.
         </p>
       </header>
@@ -146,25 +146,30 @@ export function WalletView(props: WalletViewProps) {
         pointsPerUsd={pointsPerUsd}
       />
 
+      {/* Add funds was a solid emerald button next to a grey one. Emerald is
+          money IN here, which is nearly right — but on a screen whose hero is
+          already a gradient panel with a white Withdraw button on it, a third
+          filled button in a fourth colour is one claim too many. Both are
+          outlined; the money verbs are already in the panel above. */}
       <div className="flex gap-2">
         <Link
           href="/deposit"
-          className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold"
+          className="app-press app-tap-row flex-1 inline-flex items-center justify-center gap-1.5 rounded-(--app-r-control) bg-(--app-surface) border border-(--app-line) hover:border-(--app-line-strong) text-white text-sm font-extrabold"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-4 h-4 text-(--app-in)" />
           Add funds
         </Link>
         <Link
           href="/withdrawal"
-          className="flex-1 inline-flex items-center justify-center gap-1.5 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm font-bold"
+          className="app-press app-tap-row flex-1 inline-flex items-center justify-center gap-1.5 rounded-(--app-r-control) bg-(--app-surface) border border-(--app-line) hover:border-(--app-line-strong) text-white text-sm font-extrabold"
         >
-          <ArrowUpRight className="w-4 h-4" />
+          <ArrowUpRight className="w-4 h-4 text-gray-400" />
           Withdraw
         </Link>
       </div>
 
       {/* Tabs */}
-      <ScrollFadeRow innerClassName="flex gap-1 border-b border-gray-800" ariaLabel="Wallet tabs">
+      <ScrollFadeRow innerClassName="flex gap-1 border-b border-(--app-line)" ariaLabel="Wallet tabs">
         {(
           [
             { key: "balance", label: "Balance", icon: Coins },
@@ -179,10 +184,11 @@ export function WalletView(props: WalletViewProps) {
             <button
               key={t.key}
               onClick={() => setTab(t.key)}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
-                "shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors",
+                "app-tap-row app-press shrink-0 inline-flex items-center gap-1.5 px-4 text-sm font-bold border-b-2 -mb-px",
                 isActive
-                  ? "text-white border-indigo-500"
+                  ? "text-white border-(--app-rail-a)"
                   : "text-gray-500 border-transparent hover:text-white"
               )}
             >
@@ -285,13 +291,17 @@ function ConvertCard({
   };
 
   return (
-    <div className="rounded-2xl border border-sky-500/25 bg-linear-to-br from-sky-500/10 to-indigo-500/5 p-4">
+    /* Was a sky-tinted panel sitting directly under an indigo-tinted balance
+       card: two tinted surfaces, two hues, one above the other. Neutral card,
+       and the ONE accent thing inside it is the Convert button, which is the
+       action. */
+    <div className="app-card">
       <div className="min-w-0">
-        <p className="text-sm font-bold text-white flex items-center gap-1.5">
-          <ArrowRightLeft className="w-4 h-4 text-sky-400 shrink-0" />
+        <p className="t-section text-white flex items-center gap-2">
+          <ArrowRightLeft className="w-4 h-4 text-gray-400 shrink-0" />
           Convert points to cash
         </p>
-        <p className="text-xs text-gray-400 mt-0.5">
+        <p className="t-meta text-gray-400 mt-1">
           {canConvert
             ? "Choose how many points to move into withdrawable cash."
             : `Earn ${remaining.toLocaleString()} more points to unlock — converting opens at ${threshold.toLocaleString()} pts.`}
@@ -308,12 +318,12 @@ function ConvertCard({
                 value={amountStr}
                 onChange={(e) => onAmountChange(e.target.value)}
                 placeholder={String(minConvert)}
-                className="w-full pl-3 pr-14 py-2 bg-gray-950 border border-gray-800 rounded-lg text-white text-sm font-bold tabular-nums focus:outline-none focus:border-sky-500"
+                className="app-tap-row w-full pl-3.5 pr-16 bg-(--app-surface-2) border border-(--app-line) rounded-(--app-r-control) text-white text-sm font-bold tabular-nums focus:outline-none focus:border-(--app-accent-edge)"
               />
               <button
                 type="button"
                 onClick={() => setAmountStr(String(points))}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 px-2 py-1 rounded-md bg-gray-800 text-[10px] font-bold text-sky-300 hover:bg-gray-700"
+                className="app-press absolute right-1.5 top-1/2 -translate-y-1/2 px-2.5 py-1.5 rounded-(--app-r-chip) bg-(--app-surface) border border-(--app-line) text-[10px] font-extrabold text-gray-300 hover:text-white"
               >
                 MAX
               </button>
@@ -321,23 +331,23 @@ function ConvertCard({
             <button
               onClick={convert}
               disabled={!amountValid || busy}
-              className="shrink-0 inline-flex items-center gap-1.5 px-4 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-bold disabled:opacity-40 disabled:cursor-not-allowed"
+              className="app-accent app-press app-tap-row shrink-0 inline-flex items-center gap-1.5 px-4 rounded-(--app-r-control) text-xs font-extrabold disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRightLeft className="w-3.5 h-3.5" />}
               Convert
             </button>
           </div>
-          <div className="flex items-center justify-between text-[11px] mt-1.5">
+          <div className="flex items-center justify-between t-meta mt-2">
             <span className="text-gray-500">
               Balance {points.toLocaleString()} pts · min {minConvert.toLocaleString()}
             </span>
-            <span className="text-sky-300 font-semibold tabular-nums">≈ {usd(previewUsd)}</span>
+            <span className="t-in font-bold tabular-nums">≈ {usd(previewUsd)}</span>
           </div>
         </>
       ) : (
         <div className="mt-3">
-          <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
-            <div className="h-full bg-linear-to-r from-sky-400 to-indigo-400" style={{ width: `${pct}%` }} />
+          <div className="h-2 rounded-full bg-(--app-surface-2) overflow-hidden">
+            <div className="h-full bg-(image:--app-rail)" style={{ width: `${pct}%` }} />
           </div>
           <div className="flex justify-between text-[10px] text-gray-500 mt-1 tabular-nums">
             <span>{points.toLocaleString()} pts</span>

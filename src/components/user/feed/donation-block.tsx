@@ -70,7 +70,7 @@ export function DonationBlock({
         {!post.isOwner && (
           <button
             onClick={() => setOpen(true)}
-            className="w-full mt-2 py-2 rounded-lg bg-pink-500/10 hover:bg-pink-500/20 text-pink-400 text-xs font-bold inline-flex items-center justify-center gap-1.5"
+            className="app-press app-tap-row w-full mt-2.5 rounded-(--app-r-control) bg-(--app-surface-2) border border-(--app-line) hover:border-(--app-line-strong) text-white text-xs font-extrabold inline-flex items-center justify-center gap-1.5"
           >
             💝 Donate pts
           </button>
