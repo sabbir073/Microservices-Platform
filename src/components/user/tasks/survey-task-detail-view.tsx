@@ -31,6 +31,8 @@ import {
   AdblockNotice,
 } from "@/components/user/primitives/task-upgrade-notice";
 import { ensureAdsAllowed } from "@/lib/adblock";
+import { ShieldCheck } from "lucide-react";
+import { BUYER_SURVEY_NOTICE } from "@/lib/survey-buyer";
 
 interface SurveyTask {
   id: string;
@@ -42,6 +44,8 @@ interface SurveyTask {
   thumbnailUrl?: string | null;
   duration?: number | null;
   surveyConfig?: SurveyConfig | null;
+  /** Set when an advertiser funded this survey rather than the platform. */
+  fundedByUserId?: string | null;
 }
 
 interface UserStatus {
@@ -333,6 +337,22 @@ export function SurveyTaskDetailView({ taskId }: { taskId: string }) {
       </div>
 
       <AdRenderer placement="TASK_START" />
+
+      {/*
+        Told BEFORE the first answer, not in a policy page.
+        A buyer-funded survey hands the answers to someone outside the
+        platform, and the one thing this screen cannot take back is what
+        somebody typed into a free-text box. `src/lib/survey-buyer.ts` is what
+        enforces the promise made here.
+      */}
+      {task.fundedByUserId && (
+        <div className="flex gap-2 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3">
+          <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+          <p className="text-xs leading-relaxed text-emerald-200/85">
+            {BUYER_SURVEY_NOTICE}
+          </p>
+        </div>
+      )}
 
       {cfg?.introMessage && (
         <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 text-sm text-gray-200 whitespace-pre-wrap">

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
+import { adRevenueWindow } from "@/lib/ad-revenue";
 import { getPointsPerUsd } from "@/lib/economy";
 
 /**
@@ -107,12 +108,17 @@ export async function getRevenueBreakdown(range: Range = {}): Promise<RevenueBre
       _sum: { platformFeeUsd: true },
       _count: true,
     }),
-    // Ads are already surfaced elsewhere; included so one total covers everything.
-    prisma.adCampaign.aggregate({
-      where: { isHouse: false },
-      _sum: { spentTotal: true },
-      _count: true,
-    }),
+    // Ads. Windowed through `adRevenueWindow`, which sums AdDailyStat day rows,
+    // because `AdCampaign.spentTotal` is LIFETIME — reading it here meant the
+    // date filter above every other line on this screen silently did nothing to
+    // the ad line, so a one-week view showed a year of ad revenue beside a
+    // week of everything else and the total was neither.
+    //
+    // With no `from`, an epoch start makes the window effectively lifetime, so
+    // the unfiltered screen still shows what it always did. The same house and
+    // network exclusions the ad panels use apply here, or this would report the
+    // platform's own house inventory billing itself as income.
+    adRevenueWindow(range.from ?? new Date(0), range.to ?? new Date()),
     // Subscriptions bought off-platform are created `isActive: false` and only
     // flip to true when an admin verifies the payment — so summing every row
     // counted money nobody has been paid yet as revenue. Rejections are
@@ -152,7 +158,7 @@ export async function getRevenueBreakdown(range: Range = {}): Promise<RevenueBre
     SumCount<{ houseCutPoints: number | null; overflowToHouse: number | null }>,
     Array<{ payoutAmount: unknown; userPayout: number | null }>,
     SumCount<{ platformFeeUsd: unknown }>,
-    SumCount<{ spentTotal: unknown }>,
+    Awaited<ReturnType<typeof adRevenueWindow>>,
     SumCount<{ amount: unknown }>,
     SumCount<{ points: number | null }>,
   ];
@@ -225,11 +231,15 @@ export async function getRevenueBreakdown(range: Range = {}): Promise<RevenueBre
     {
       key: "ads",
       label: "Ad revenue",
-      usd: toNum(ads._sum.spentTotal as never),
-      count: ads._count,
-      from: "AdCampaign.spentTotal (non-house, lifetime)",
-      measured: ads._count > 0,
-      note: "Lifetime — campaign spend has no per-day column outside AdDailyStat.",
+      usd: ads.usd,
+      // Billable clicks, not campaigns: revenue here is charged per click, so
+      // the count beside the money should be the thing that produced it.
+      count: ads.clicks,
+      from: "AdDailyStat.spendUsd (non-house, non-network, windowed)",
+      // Impressions, not clicks — a window with traffic and no clicks is
+      // measured and genuinely zero, which is different from having no data.
+      measured: ads.impressions > 0,
+      note: "Honours the date filter. House and network inventory excluded.",
     },
     {
       key: "taskfee",

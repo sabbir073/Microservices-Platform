@@ -454,6 +454,241 @@ async function main() {
     );
   }
 
+  /* ── 8. A retired key cannot quietly collide with a live one ─────────── */
+  console.log("\n8. No live key is a near-miss of a retired one");
+  {
+    // Every key a previous settings surface wrote that nothing reads any
+    // more: the ones already migrated out of the database
+    // (`scripts/migrate-settings-keys.ts`, §6 above) and the 8 rows
+    // `scripts/cleanup-stale-settings.ts` lists for deletion. A key belongs
+    // here for as long as it could ever be typed again by mistake.
+    const RETIRED_KEYS = [
+      "withdrawal_fee_pct",
+      "task_reward_multiplier",
+      "referral_l1_pct",
+      "referral_l2_pct",
+      "referral_l3_pct",
+      "site_name",
+      "daily_earning_limit",
+      "max_tasks_per_day",
+      "file_upload_max_mb",
+      "api_rate_limit_per_min",
+      "allow_registration",
+      "points_to_usd",
+      "support_email",
+      "site_description",
+      "dark_mode_default",
+      "show_social_feed",
+      "show_leaderboard",
+      "primary_color",
+    ];
+
+    // Ignore `_`/`-`/`.` entirely, and treat the tokens "to" and "per" as the
+    // same token — that is exactly what makes `points_to_usd` a near-miss of
+    // `points_per_usd`: strip the separators and swap the words and the two
+    // keys become identical strings.
+    const normalize = (key: string): string =>
+      key
+        .toLowerCase()
+        .split(/[_\-.]+/)
+        .map((t) => (t === "to" || t === "per" ? "" : t))
+        .join("");
+
+    // De-duplicated: a key may legitimately appear in the catalog AND in the
+    // "lives on another screen" list (marketplace.fee_percent does — it has a
+    // control on the settings form and a pointer to the marketplace screen).
+    // Without this, such a key collides with itself and the check reads as a
+    // failure that no edit can fix.
+    const liveKeys = [
+      ...new Set([
+        ...SETTINGS_CATALOG.map((e) => e.key),
+        ...SETTINGS_ELSEWHERE.flatMap((e) => (e.key ? [e.key] : [])),
+      ]),
+    ];
+
+    // ── What is ASSERTED: no two LIVE keys collide ──
+    //
+    // This is a property of the code and is fixable in the code, so it is a
+    // test. Two live keys that normalize to the same string are a rename
+    // waiting to land on the wrong one.
+    const liveCollisions: string[] = [];
+    for (let i = 0; i < liveKeys.length; i++) {
+      for (let j = i + 1; j < liveKeys.length; j++) {
+        if (normalize(liveKeys[i]) === normalize(liveKeys[j])) {
+          liveCollisions.push(`${liveKeys[i]} ~ ${liveKeys[j]}`);
+        }
+      }
+    }
+    check(
+      "no two LIVE setting keys normalize to the same string",
+      liveCollisions.length === 0,
+      liveCollisions.join(", ")
+    );
+
+    // ── What is REPORTED, not asserted: retired rows still in the database ──
+    //
+    // `points_to_usd` normalizes to `points_per_usd`, and that will be true
+    // forever — the retired name does not change and neither does the live one.
+    // Asserting it would make this suite permanently red on a condition no code
+    // change can clear, and a suite that is always red is a suite nobody runs.
+    // The real hazard is the ROW: while it exists, a future rename can land on
+    // it and silently inherit a value nobody set. So the row is what is
+    // reported, with the command that removes it.
+    const stillPresent = (await prisma.systemSetting.findMany({
+      where: { key: { in: RETIRED_KEYS } },
+      select: { key: true },
+    })) as unknown as { key: string }[];
+    const risky = stillPresent
+      .map((r) => {
+        const hit = liveKeys.find(
+          (l) => l !== r.key && normalize(l) === normalize(r.key)
+        );
+        return hit ? `${r.key} ~ ${hit}` : null;
+      })
+      .filter((x): x is string => x !== null);
+    console.log(
+      `   ${stillPresent.length} retired row(s) still in the database` +
+        (risky.length
+          ? `, ${risky.length} of them a near-miss of a live key: ${risky.join(", ")}`
+          : "")
+    );
+    if (stillPresent.length) {
+      console.log(
+        "   → npx tsx --tsconfig tsconfig.script.json scripts/cleanup-stale-settings.ts --apply"
+      );
+    }
+    check("the retired-row audit ran", true);
+  }
+
+  /* ── 9. The two forms outside this catalog tell the truth too ────────── */
+  console.log(
+    "\n9. Feed widgets & Social earning — the other two settings forms"
+  );
+  {
+    // These two post to their own endpoints, backed by their own SystemSetting
+    // categories ("feed" / "social_earning") rather than SETTINGS_CATALOG, so
+    // nothing above this section ever looked at them — the last un-audited
+    // settings ground on the platform.
+
+    const feedRoute = read("src/app/api/admin/settings/feed-widgets/route.ts");
+    const feedPage = "src/app/admin/settings/feed-widgets/page.tsx";
+    const FEED_KEYS = [
+      "feed.sidebar_widgets",
+      "feed.quick_earn_tiles",
+      "feed.custom_widgets",
+      "feed.public_post_sharing",
+    ];
+    check(
+      "the feed-widgets route still writes all 4 keys the form controls",
+      FEED_KEYS.every((k) => feedRoute.includes(`"${k}"`))
+    );
+    const deadFeedKeys = FEED_KEYS.filter(
+      (k) =>
+        !files.some(
+          (f) =>
+            !f.startsWith("src/app/api/admin/settings/feed-widgets") &&
+            f !== feedPage &&
+            bodies.get(f)!.includes(`"${k}"`)
+        )
+    );
+    check(
+      "every feed-widgets key is read somewhere outside its own route/page",
+      deadFeedKeys.length === 0,
+      deadFeedKeys.join(", ")
+    );
+
+    // Social earning: the API route and the engine (`social-actions.ts`) build
+    // their key names from the same 8 activities and the same 10 per-side
+    // suffixes, so a literal per-key scan would only re-check that both files
+    // import the same array. What actually drifted before (per
+    // `social-earning-admin.ts`'s own doc comment) was this suffix
+    // vocabulary and the fallback defaults either side used for it — so check
+    // that the vocabulary itself is identical on both ends.
+    const socialRoute = read(
+      "src/app/api/admin/settings/social-earning/route.ts"
+    );
+    const socialActions = read("src/lib/social-actions.ts");
+    const PER_SIDE_SUFFIXES = [
+      "_enabled",
+      "_points",
+      "_recipient_xp",
+      "_actor_enabled",
+      "_actor_points",
+      "_actor_xp",
+      "_actor_per_count",
+      "_recipient_per_count",
+      "_recipient_per_window",
+      "_actor_per_window",
+    ];
+    check(
+      "every per-activity suffix the route writes is one the engine reads",
+      PER_SIDE_SUFFIXES.every(
+        (s) => socialRoute.includes(s) && socialActions.includes(s)
+      )
+    );
+
+    const SOCIAL_SCALAR_KEYS = [
+      "enabled",
+      "poster_mode_enabled",
+      "engager_mode_enabled",
+      "daily_cap_per_user",
+      "poster_daily_cap_per_user",
+      "engager_daily_cap_per_user",
+      "pair_daily_cap_per_user",
+      "min_level_to_earn",
+      "daily_xp_cap_per_user",
+      "cap_per_post",
+      "min_account_age_hours",
+      "count_toward_daily_missions",
+      "mission_distinct_post",
+    ];
+    const missingScalarWrite = SOCIAL_SCALAR_KEYS.filter(
+      (k) => !socialRoute.includes(`"social_earning.${k}"`)
+    );
+    check(
+      "every social-earning scalar the form has a field for is written by the route",
+      missingScalarWrite.length === 0,
+      missingScalarWrite.join(", ")
+    );
+    const missingScalarRead = SOCIAL_SCALAR_KEYS.filter(
+      (k) => !socialActions.includes(`get("${k}")`)
+    );
+    check(
+      "…and every one of those is read by the engine's parseSocialEarningConfig",
+      missingScalarRead.length === 0,
+      missingScalarRead.join(", ")
+    );
+
+    // Reachable from the admin UI, not just by typing the URL — same rule as
+    // §7f for the marketplace settings page.
+    for (const [routePath, pagePath] of [
+      [
+        "/admin/settings/feed-widgets",
+        "src/app/admin/settings/feed-widgets/page.tsx",
+      ],
+      [
+        "/admin/settings/social-earning",
+        "src/app/admin/settings/social-earning/page.tsx",
+      ],
+    ] as const) {
+      const linked = files.some(
+        (f) =>
+          f !== pagePath &&
+          !f.startsWith("scripts/") &&
+          // Matches both a JSX attribute (`href="..."`, as in the marketplace
+          // check above) and an object literal (`href: "..."`, how rbac.ts's
+          // nav registry and the SETTINGS_ELSEWHERE catalog entries write it).
+          new RegExp(`href[:=]\\s*"${routePath.replace(/\//g, "\\/")}"`).test(
+            bodies.get(f)!
+          )
+      );
+      check(
+        `${routePath} is reachable from the admin UI, not just by typing the URL`,
+        linked
+      );
+    }
+  }
+
   console.log(
     `\n${failures.length === 0 ? "COMPLETE" : "FAILED"}: ${passed} passed, ${failures.length} failed`
   );

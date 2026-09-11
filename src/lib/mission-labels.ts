@@ -49,7 +49,9 @@ export const TYPE_TO_ROUTE: Record<string, string> = {
   ARTICLE: "/article-tasks",
   VIDEO: "/video-tasks",
   QUIZ: "/quiz-tasks",
-  SURVEY: "/quiz-tasks",
+  // /survey-tasks, not /quiz-tasks: a "complete a survey" mission sent people
+  // to the quiz list, where the survey they were asked for was not.
+  SURVEY: "/survey-tasks",
   SOCIAL: "/social-tasks",
   PROXY: "/proxy-tasks",
   OFFERWALL: "/earn#offerwall",

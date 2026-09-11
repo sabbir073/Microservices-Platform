@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
+import { isNetworkAdType } from "@/lib/ad-revenue";
 
 // GET /api/admin/ads/analytics?days=14 — platform-wide ad time-series from
 // AdDailyStat + lifetime totals.
@@ -80,9 +81,7 @@ export async function GET(req: NextRequest) {
     : [];
   const earning = new Set(
     adRows
-      .filter(
-        (a) => !a.campaign?.isHouse && a.type !== "ADSENSE" && a.type !== "GAM"
-      )
+      .filter((a) => !a.campaign?.isHouse && !isNetworkAdType(a.type))
       .map((a) => a.id)
   );
 

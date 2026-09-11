@@ -3,7 +3,11 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { clearRateCardCache } from "@/lib/ad-rate-card";
-import { isCanonicalPlacement } from "@/lib/ad-placements";
+import {
+  checkAdFitsPlacement,
+  isCanonicalPlacement,
+  placementLabel,
+} from "@/lib/ad-placements";
 import { writeAudit } from "@/lib/audit";
 
 interface RouteParams {
@@ -129,19 +133,89 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       { status: 400 }
     );
   }
-  const { count } = await prisma.ad.updateMany({
+  // Every OTHER write path (admin create, admin edit, advertiser create,
+  // advertiser edit) refuses an ad whose size or type the target space cannot
+  // render. This one moved ads with no such check, so "unstranding" an ad could
+  // land it in a space where it is just as unserveable — the same bug with a
+  // different placement name on it.
+  //
+  // So: move the ads that FIT, leave the ones that do not exactly where they
+  // are, and name them. Nothing is deleted and nothing is silently mangled;
+  // the admin is told which ads still need a home and why, and can pick a
+  // different space for those.
+  const candidates = (await prisma.ad.findMany({
     where: { placementId: from.id },
+    select: { id: true, headline: true, size: true, width: true, height: true, type: true },
+  })) as unknown as {
+    id: string;
+    headline: string | null;
+    size: string | null;
+    width: number | null;
+    height: number | null;
+    type: string;
+  }[];
+
+  const fits: string[] = [];
+  const problems: { adId: string; title: string; reason: string }[] = [];
+  for (const ad of candidates) {
+    const bad = checkAdFitsPlacement({
+      placementName: to.name,
+      placementLabel: placementLabel(to.name),
+      size: ad.size,
+      width: ad.width,
+      height: ad.height,
+      type: ad.type,
+    });
+    if (bad.length === 0) fits.push(ad.id);
+    else
+      problems.push({
+        adId: ad.id,
+        title: ad.headline ?? ad.id,
+        reason: bad.map((b) => b.message).join(" "),
+      });
+  }
+
+  if (candidates.length > 0 && fits.length === 0) {
+    return NextResponse.json(
+      {
+        error: `None of these ads can render in ${placementLabel(to.name)}. ${problems[0]?.reason ?? ""}`.trim(),
+        moved: 0,
+        skipped: problems.length,
+        problems,
+      },
+      { status: 400 }
+    );
+  }
+
+  const { count } = await prisma.ad.updateMany({
+    where: { placementId: from.id, id: { in: fits } },
     data: { placementId: to.id },
   });
   await writeAudit({
     actorId: session.user.id,
     action: "ads.placement.reassign",
-    summary: `Moved ${count} ad(s) from ${from.name} to ${to.name}`,
+    summary: `Moved ${count} ad(s) from ${from.name} to ${to.name}${
+      problems.length ? ` — ${problems.length} left behind (wrong size or type)` : ""
+    }`,
     entity: "AdPlacement",
     entityId: from.id,
-    meta: { from: from.name, to: to.name, moved: count },
+    meta: {
+      from: from.name,
+      to: to.name,
+      moved: count,
+      skipped: problems.length,
+      skippedAdIds: problems.map((x) => x.adId),
+    },
   });
-  return NextResponse.json({ success: true, moved: count, to: to.name });
+  return NextResponse.json({
+    success: true,
+    moved: count,
+    skipped: problems.length,
+    problems,
+    to: to.name,
+    /** True when the space is now empty and can be retired. */
+    emptyNow: problems.length === 0,
+  });
 }
 
 export async function DELETE(_request: NextRequest, { params }: RouteParams) {
@@ -150,13 +224,44 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { id } = await params;
+  const row = await prisma.adPlacement.findUnique({
+    where: { id },
+    select: { id: true, name: true },
+  });
+  if (!row) {
+    return NextResponse.json({ error: "Placement not found" }, { status: 404 });
+  }
+  // A canonical space is mounted in the code — deleting its row does not remove
+  // the <AdRenderer>, it just makes every render of that space miss, until
+  // `ensureDefaultPlacements()` puts the row back with no rate card and no
+  // bookings. Only a junk space (one outside the canonical list) can be retired.
+  if (isCanonicalPlacement(row.name)) {
+    return NextResponse.json(
+      {
+        error: `${placementLabel(row.name)} is a real ad space that pages render — it can be switched off, but not deleted.`,
+      },
+      { status: 400 }
+    );
+  }
   const count = await prisma.ad.count({ where: { placementId: id } });
   if (count > 0) {
     return NextResponse.json(
-      { error: `Cannot delete — ${count} ad(s) use this placement` },
+      {
+        error: `Cannot retire — ${count} ad(s) are still in this space. Move them somewhere that renders first.`,
+      },
       { status: 400 }
     );
   }
   await prisma.adPlacement.delete({ where: { id } });
-  return NextResponse.json({ success: true });
+  // Retiring a space also drops its bookings and serve stats (both cascade), so
+  // it is a real deletion and belongs in the log with a name on it.
+  await writeAudit({
+    actorId: session.user.id,
+    action: "ads.placement.delete",
+    summary: `Retired the dead ad space "${row.name}"`,
+    entity: "AdPlacement",
+    entityId: id,
+    meta: { name: row.name },
+  });
+  return NextResponse.json({ success: true, name: row.name });
 }

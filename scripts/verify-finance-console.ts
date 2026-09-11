@@ -310,9 +310,17 @@ async function main() {
       "withdrawal fees count only completed payouts",
       /status: "COMPLETED"/.test(s)
     );
+    // The exclusion moved into `adRevenueWindow` when the ad line started
+    // honouring the date filter. Same guarantee, asserted where it now lives —
+    // plus the reason it moved, so this does not drift back.
     check(
       "ad revenue excludes house campaigns",
-      /isHouse: false/.test(s)
+      /isHouse/.test(src("lib/ad-revenue.ts"))
+    );
+    check(
+      "…and the finance console asks for a WINDOW, not a lifetime total",
+      /adRevenueWindow\(/.test(s) && !/spentTotal/.test(s),
+      "a lifetime figure beside windowed ones makes the total mean nothing"
     );
   }
 

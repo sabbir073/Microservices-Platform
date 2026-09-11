@@ -63,13 +63,27 @@ async function main() {
     const revenue = code("lib/finance/revenue.ts");
     const dash = code("app/admin/page.tsx");
 
+    // These two used to pin `_sum: { spentTotal: true }` and a literal
+    // `isHouse: false` inside revenue.ts. Both guarantees still hold, but the
+    // query moved into `adRevenueWindow` — `spentTotal` is LIFETIME, so reading
+    // it here made the ad line ignore the date filter every other line obeys.
+    // Assert where the money now comes from, and that the exclusion lives in
+    // the helper rather than having quietly disappeared.
+    const adRevenueLib = code("lib/ad-revenue.ts");
     check(
-      "finance sums spentTotal, not budget",
-      /_sum: \{ spentTotal: true \}/.test(revenue)
+      "finance reads windowed ad revenue, not a lifetime campaign total",
+      /adRevenueWindow\(/.test(revenue) &&
+        !/_sum: \{ spentTotal: true \}/.test(revenue),
+      "spentTotal has no time axis, so the date filter did nothing to this line"
+    );
+    check(
+      "…and it is passed the caller's range, not a hardcoded window",
+      /adRevenueWindow\(range\.from/.test(revenue)
     );
     check(
       "finance excludes house campaigns — they bill nothing by design",
-      /where: \{ isHouse: false \},\s*_sum: \{ spentTotal: true \}/.test(revenue)
+      /isHouse/.test(adRevenueLib) && /isNetworkAdType/.test(adRevenueLib),
+      "house inventory billing itself is not income, and network types are not ours"
     );
     check(
       "the dashboard sums spentTotal, not budget, for revenue",
@@ -113,8 +127,13 @@ async function main() {
   {
     const s = code("app/api/admin/ads/analytics/route.ts");
     check(
+      // The literal pair used to be spelled out here. It is now the shared
+      // `isNetworkAdType` from src/lib/ad-revenue.ts — same exclusion, one
+      // definition, so this accepts either spelling rather than pinning the
+      // panel to a copy it no longer owns.
       "the platform-wide eCPM excludes them too",
-      /!a\.campaign\?\.isHouse && a\.type !== "ADSENSE" && a\.type !== "GAM"/.test(s)
+      /!a\.campaign\?\.isHouse && !isNetworkAdType\(a\.type\)/.test(s) ||
+        /!a\.campaign\?\.isHouse && a\.type !== "ADSENSE" && a\.type !== "GAM"/.test(s)
     );
     check(
       "it no longer divides by every impression in the window",
@@ -398,6 +417,75 @@ async function main() {
     Math.abs(earningSpend - lifetime) < 0.01,
     `rollup ${earningSpend.toFixed(4)} vs spentTotal ${lifetime.toFixed(4)}`
   );
+
+  /* D — a date range has to change the ad revenue figure.
+   *
+   * `AdCampaign.spentTotal` is a lifetime counter with no date on it, so every
+   * panel reading it reported the all-time total inside a filtered window —
+   * the range control moved twelve numbers and left this one still. The per-day
+   * data is in `AdDailyStat`; `src/lib/ad-revenue.ts` is now the one place that
+   * sums it, through the same house/network gate section C checks for.
+   */
+  console.log("\nD. Windowed ad revenue is real");
+  {
+    const lib = code("lib/ad-revenue.ts");
+    check(
+      "the windowed sum reads AdDailyStat, not spentTotal",
+      /adDailyStat\.findMany/.test(lib) && !/spentTotal/.test(lib.replace(/[\s\S]*?export /, "export "))
+    );
+    check(
+      "it excludes house inventory",
+      /campaign\.isHouse/.test(lib) || /isHouse/.test(lib)
+    );
+    check(
+      "…and network inventory, by the shared predicate",
+      /export function isNetworkAdType/.test(lib)
+    );
+    check(
+      "the other panels use that predicate instead of their own copy",
+      ["app/api/admin/ads/analytics/route.ts",
+       "app/api/admin/ads/report/route.ts",
+       "app/api/admin/ads/report/export/route.ts"].every((f) =>
+        /isNetworkAdType/.test(code(f))
+      ),
+      "a fifth copy is how the figures start disagreeing"
+    );
+    check(
+      "the ads dashboard shows the windowed revenue beside the lifetime one",
+      /label=\{`Revenue \(\$\{days\}d\)`\}/.test(
+        code("components/admin/ads/ad-manager-view.tsx")
+      )
+    );
+
+    // Runtime: a window wide enough to hold everything must equal the filtered
+    // rollup above, and a window before the platform existed must be zero.
+    const { adRevenueWindow } = await import("../src/lib/ad-revenue");
+    const all = await adRevenueWindow(new Date("2000-01-01"), new Date());
+    check(
+      "an all-time window equals the house/network-filtered rollup",
+      Math.abs(all.usd - earningSpend) < 0.01,
+      `window ${all.usd.toFixed(4)} vs rollup ${earningSpend.toFixed(4)}`
+    );
+    const perSpace = [...all.byPlacementId.values()].reduce((x, v) => x + v.usd, 0);
+    check(
+      "the per-space split adds up to the total",
+      Math.abs(perSpace - all.usd) < 0.01,
+      `${perSpace.toFixed(4)} vs ${all.usd.toFixed(4)}`
+    );
+    const none = await adRevenueWindow(new Date("2001-01-01"), new Date("2001-12-31"));
+    check("a window with no days in it earns nothing", none.usd === 0);
+    console.log(
+      `   window carries ${all.houseImpressions} house and ${all.networkImpressions} network impression(s), earning $0 by design`
+    );
+
+    // Still lifetime, and owned by the finance side — reported, not edited.
+    const revenueLib = code("lib/finance/revenue.ts");
+    if (/spentTotal/.test(revenueLib)) {
+      console.log(
+        "   NOTE: src/lib/finance/revenue.ts still reads AdCampaign.spentTotal (lifetime) — swap that aggregate for adRevenueWindow(from, to) to make /admin/finance honour its date filter"
+      );
+    }
+  }
   const blindSpend = allStats.reduce((s, r) => s + Number(r.spendUsd), 0);
   console.log(
     `   unfiltered rollup would report $${blindSpend.toFixed(4)} against $${lifetime.toFixed(4)} of real revenue`

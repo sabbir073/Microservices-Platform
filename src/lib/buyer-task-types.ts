@@ -6,7 +6,7 @@
  * hand-copied second list in the client is how the tick-boxes end up offering a
  * type the server then rejects.
  */
-export const BUYER_TASK_TYPES = ["SOCIAL", "VIDEO", "CUSTOM"] as const;
+export const BUYER_TASK_TYPES = ["SOCIAL", "VIDEO", "CUSTOM", "SURVEY"] as const;
 
 /**
  * What each type needs from the buyer, and what a worker will be asked to do.
@@ -31,6 +31,11 @@ export const BUYER_TASK_TYPE_META: Record<
   CUSTOM: {
     label: "Custom",
     blurb: "Anything else — you write the steps and review the proof.",
+  },
+  SURVEY: {
+    label: "Survey",
+    blurb:
+      "Ask a set of questions and read the answers. You see every answer and never who gave it — respondents are told that before they start.",
   },
 };
 

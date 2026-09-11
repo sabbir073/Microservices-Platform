@@ -341,6 +341,40 @@ async function main() {
       "the ad manager surfaces stranded ads",
       /stranded here/.test(code("components/admin/ads/ad-manager-view.tsx"))
     );
+    // Reassignment has to actually land the ads somewhere they can render.
+    // Every other write path refuses an ad whose size or type the space cannot
+    // show; this one moved them blind, which "unstrands" an ad into a space
+    // where it is just as unserveable.
+    const reassign = code("app/api/admin/ads/placements/[id]/route.ts");
+    check(
+      "a reassignment checks the ad actually fits the target space",
+      /checkAdFitsPlacement\(/.test(reassign),
+      "moving a 728x90 into a 300x250 slot is not a fix"
+    );
+    check(
+      "…and an ad that does not fit is LEFT, named, never mangled",
+      /skipped/.test(reassign) && /problems/.test(reassign)
+    );
+    check(
+      "a dead space can be retired once it is empty",
+      /adPlacement\.delete/.test(reassign) &&
+        /ads\.placement\.delete/.test(reassign),
+      "the deletion is audited, because bookings and serve stats go with it"
+    );
+    check(
+      "…but a REAL mounted space can never be deleted",
+      /isCanonicalPlacement\(row\.name\)/.test(reassign),
+      "deleting the row does not unmount the <AdRenderer>"
+    );
+    check(
+      "nothing is deleted without the admin asking",
+      /confirmDialog\(/.test(code("components/admin/ads/ad-manager-view.tsx"))
+    );
+    check(
+      "the box that created junk spaces by hand is gone",
+      !/ADD CUSTOM SPACE/.test(code("components/admin/ads/ad-manager-view.tsx")),
+      "typing a name into a box is how QW came to exist"
+    );
     // The stranded rows themselves are REPORTED, never deleted: they are an
     // admin's ads and the fix is a reassignment someone has to choose.
     const canonicalNames = new Set<string>(AD_PLACEMENTS.map((x) => x.name));
@@ -385,6 +419,25 @@ async function main() {
     const totalSpaces = await prisma.adPlacement.count();
     console.log(
       `   ${priced}/${totalSpaces} spaces have their own click price; the rest use the global default`
+    );
+    // Pricing a space was a guess: a blank box, lifetime impressions, and
+    // nothing saying what the space had ever earned. The card now carries a
+    // real 30-day figure and the rate a click there bills today. It still
+    // suggests no price -- what a space is worth is the owner's call.
+    const placementsApi = code("app/api/admin/ads/placements/route.ts");
+    check(
+      "each space reports what it actually earned, through the house/network gate",
+      /adRevenueLastDays\(/.test(placementsApi) &&
+        /byPlacementId/.test(placementsApi)
+    );
+    check(
+      "…and what a click there bills today",
+      /effectiveCpcUsd/.test(placementsApi) &&
+        /effectiveCpcUsd/.test(code("components/admin/ads/ad-manager-view.tsx"))
+    );
+    check(
+      "no price is ever suggested or defaulted per space",
+      !/suggestedCpc/.test(placementsApi)
     );
   }
 

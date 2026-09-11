@@ -3,7 +3,9 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getBuyerSettings } from "@/lib/buyer-settings";
-import { getBuyerScope, platformRefusal } from "@/lib/buyer-scope";
+import { getBuyerScope, platformRefusal, typeRefusal } from "@/lib/buyer-scope";
+import { buyerSurveySchema, buildBuyerSurveyConfig } from "@/lib/survey-buyer";
+import { validateSurveyConfig } from "@/lib/survey-tasks";
 import { sanitizeTaskAudience, EMPTY_TASK_AUDIENCE } from "@/lib/task-targeting";
 import { userCanFeature } from "@/lib/packages";
 import { writeAudit } from "@/lib/audit";
@@ -45,6 +47,10 @@ const patchSchema = z.object({
   socialPlatform: z.string().max(40).nullable().optional(),
   socialAction: z.string().max(40).nullable().optional(),
   minLevel: z.number().int().min(1).max(100).optional(),
+  // SURVEY — the whole question set, replaced wholesale. Question ids are
+  // preserved by the builder, so editing a prompt never orphans the answers
+  // already given under that id.
+  survey: buyerSurveySchema.optional(),
   // Only honoured while the task is still awaiting review — see above.
   pointsReward: z.number().int().min(1).max(10_000_000).optional(),
   targetCount: z.number().int().min(1).max(10_000_000).optional(),
@@ -124,6 +130,37 @@ export async function PATCH(
     if (stop) return NextResponse.json({ error: stop }, { status: 403 });
   }
 
+  // ── Type scope, on EDIT as well as on create ───────────────────────────────
+  //
+  // `type` is deliberately absent from the patch schema: a task cannot be
+  // converted from one type to another at all, so the "create a permitted type
+  // then edit it across" move has nothing to land on. What CAN still cross the
+  // line is the payload of a type: sending a survey to a task while SURVEY is
+  // suspended on this account would let a blocked buyer keep running one. So a
+  // survey edit is refused unless SURVEY is open to this buyer right now, and
+  // refused outright on a task that is not a survey.
+  let surveyConfig = null as ReturnType<typeof buildBuyerSurveyConfig> | null;
+  if (d.survey) {
+    if (task.type !== "SURVEY") {
+      return NextResponse.json(
+        { error: "This task isn't a survey — its questions can't be changed." },
+        { status: 400 }
+      );
+    }
+    const scope = await getBuyerScope(userId);
+    const stop = typeRefusal(scope, "SURVEY");
+    if (stop) return NextResponse.json({ error: stop }, { status: 403 });
+
+    surveyConfig = buildBuyerSurveyConfig(d.survey);
+    const check = validateSurveyConfig(surveyConfig);
+    if (!check.ok) {
+      return NextResponse.json(
+        { error: check.error ?? "That survey isn't valid." },
+        { status: 400 }
+      );
+    }
+  }
+
   // Reward and completion count are frozen once the task has been published.
   if (!notYetLive) {
     if (d.pointsReward != null && d.pointsReward !== task.pointsReward) {
@@ -187,6 +224,7 @@ export async function PATCH(
     d.socialUrl !== undefined ||
     d.socialPlatform !== undefined ||
     d.socialAction !== undefined ||
+    d.survey !== undefined ||
     touchedAudience;
 
   const backToReview = !notYetLive && contentChanged;
@@ -211,6 +249,9 @@ export async function PATCH(
               ? { socialAction: d.socialAction }
               : {}),
           }
+        : {}),
+      ...(surveyConfig
+        ? { surveyConfig: surveyConfig as unknown as object }
         : {}),
       ...audience,
       ...(notYetLive

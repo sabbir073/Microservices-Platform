@@ -9,6 +9,7 @@ import {
   allPlatformKeys,
   type BuyerScope,
 } from "../src/lib/buyer-scope";
+import { BUYER_TASK_TYPES } from "../src/lib/buyer-task-types";
 
 /**
  * Which platforms and which task types a buyer may use — globally, and one
@@ -212,6 +213,83 @@ async function main() {
     check(
       "a buyer with nothing left sees a lock, not an empty form",
       /scope\.types\.length === 0/.test(page)
+    );
+  }
+
+  /* ── 4b. SURVEY is a buyer type, gated on create AND on edit ── */
+  console.log("\n4b. SURVEY: the fourth buyer type, and its privacy rule");
+  {
+    const create = code(CREATE);
+    const edit = code("src/app/api/tasks/mine/[id]/route.ts");
+    const responses = code("src/app/api/tasks/mine/[id]/responses/route.ts");
+    const lib = code("src/lib/survey-buyer.ts");
+
+    check(
+      "SURVEY is one of the buyer task types",
+      BUYER_TASK_TYPES.includes("SURVEY" as never),
+      BUYER_TASK_TYPES.join(", ")
+    );
+    check(
+      "the create route accepts SURVEY and validates the questions",
+      /"SURVEY"/.test(create) && /validateSurveyConfig\(surveyConfig\)/.test(create),
+      "an unvalidated survey is a task nobody can answer"
+    );
+    check(
+      "…and it is still typeRefusal that decides who may create one",
+      /typeRefusal\(scope, d\.type\)/.test(create)
+    );
+    check(
+      "the EDIT route refuses a survey edit when SURVEY is suspended",
+      /typeRefusal\(scope, "SURVEY"\)/.test(edit),
+      "create a permitted type, then edit it across — the exact move the block exists to stop"
+    );
+    check(
+      "…and refuses survey questions on a task that is not a survey",
+      /task\.type !== "SURVEY"/.test(edit)
+    );
+    check(
+      "one schema for both routes",
+      /buyerSurveySchema/.test(create) && /buyerSurveySchema/.test(edit),
+      "two copies is how an edit accepts what a create refuses"
+    );
+
+    // The privacy rule. These are the fields that must never be selected.
+    check(
+      "the buyer's response route never reads the respondent's account",
+      !/user:\s*\{/.test(responses) && !/email/.test(responses),
+      "worker identity must not leak to the buyer"
+    );
+    check(
+      "responses are scoped to the task this buyer funded",
+      /fundedByUserId: session\.user\.id/.test(responses)
+    );
+    check(
+      "rows are pseudonymous and dated to the day only",
+      /Respondent \$\{labels\.size \+ 1\}/.test(lib) &&
+        /toISOString\(\)\.slice\(0, 10\)/.test(lib),
+      "a to-the-second timestamp can be lined up against a public feed post"
+    );
+    check(
+      "the rule is stated to the worker BEFORE they answer",
+      /BUYER_SURVEY_NOTICE/.test(
+        code("src/components/user/tasks/survey-task-detail-view.tsx")
+      ),
+      "a worker who has not been told is a worker who did not consent"
+    );
+    check(
+      "…and the same words are shown to the buyer building it",
+      /BUYER_SURVEY_NOTICE/.test(
+        code("src/components/user/tasks/survey-builder.tsx")
+      )
+    );
+    check(
+      "a buyer survey never asks for a proof screenshot",
+      /proofRequirements: \{ screenshot: false \}/.test(lib),
+      "those routinely contain a profile page"
+    );
+    check(
+      "no second money path — completions are charged the usual way",
+      !/chargeTaskCompletion/.test(create) && !/transaction\.update/.test(responses)
     );
   }
 

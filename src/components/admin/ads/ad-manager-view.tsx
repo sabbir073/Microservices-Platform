@@ -80,6 +80,11 @@ interface Placement {
   interstitialSeconds?: number | null;
   _count?: { ads: number };
   stats?: PlacementStats;
+  /** Billable revenue and traffic for this space over the last 30 days. */
+  recent?: { days: number; usd: number; impressions: number; clicks: number };
+  /** What a click here costs today — own rate, or the global one. */
+  effectiveCpcUsd?: number;
+  usesGlobalRate?: boolean;
 }
 interface Ad {
   id: string;
@@ -180,7 +185,6 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   const [adFilter, setAdFilter] = useState({ status: "", placement: "", q: "" });
   const [campModal, setCampModal] = useState<Campaign | "new" | null>(null);
   const [campDetail, setCampDetail] = useState<string | null>(null);
-  const [newPlacement, setNewPlacement] = useState("");
   const [demoBusy, setDemoBusy] = useState(false);
   const [rotationSeconds, setRotationSeconds] = useState(12);
   const [rotationBusy, setRotationBusy] = useState(false);
@@ -386,12 +390,27 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   // Badge hint only — the queue itself counts server-side (this list is capped).
   const pendingCount = ads.filter((a) => a.status?.toUpperCase() === "PENDING").length;
 
-  const deletePlacement = async (id: string) => {
-    if (!(await confirmDialog({ title: "Delete this placement?", tone: "danger", confirmLabel: "Delete" }))) return;
+  /**
+   * Retire a dead space. Only ever offered for a NON-canonical one, and only
+   * the admin can ask for it: the route refuses while any ad is still inside,
+   * refuses outright for a real mounted space, and writes an audit row —
+   * retiring a space also drops its bookings and serve stats.
+   */
+  const deletePlacement = async (id: string, name: string) => {
+    if (
+      !(await confirmDialog({
+        title: `Retire the "${name}" ad space?`,
+        description:
+          "It renders on no page. Its bookings and serve history go with it. The ads that were in it are not touched — move them first if any are left.",
+        tone: "danger",
+        confirmLabel: "Retire",
+      }))
+    )
+      return;
     const res = await fetch(`/api/admin/ads/placements/${id}`, { method: "DELETE" });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.error ?? "Failed");
-    toast.success("Deleted");
+    toast.success(`Retired "${name}"`);
     loadAll();
   };
   /**
@@ -411,7 +430,21 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
     });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.error ?? "Failed");
-    toast.success(`Moved ${d.moved} ad(s) to ${d.to}`);
+    // A partial move is the normal outcome when the stranded ads are different
+    // sizes: the ones that fit are moved, the rest stay put and are named. Say
+    // both numbers — "Moved 1 ad" while a second silently stayed behind is how
+    // an admin concludes the job is done when it is not.
+    if (d.skipped > 0) {
+      toast.error(
+        `Moved ${d.moved} to ${d.to}. ${d.skipped} couldn't go: ${
+          d.problems?.[0]?.reason ?? "wrong size or type for that space"
+        }`
+      );
+    } else {
+      toast.success(
+        `Moved ${d.moved} ad(s) to ${d.to}. This space is empty now — retire it with the bin icon.`
+      );
+    }
     loadAll();
   };
   const togglePlacement = async (p: Placement) => {
@@ -456,18 +489,6 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ interstitialSeconds: secs }),
     });
-    loadAll();
-  };
-  const addPlacement = async () => {
-    if (!newPlacement.trim()) return;
-    const res = await fetch("/api/admin/ads/placements", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newPlacement }),
-    });
-    if (!res.ok) return toast.error("Failed");
-    setNewPlacement("");
-    toast.success("Placement added");
     loadAll();
   };
   const deleteAd = async (id: string) => {
@@ -904,19 +925,12 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                 </div>
               )}
 
-              {canManage && (
-                <div className="flex gap-2 max-w-md">
-                  <input
-                    value={newPlacement}
-                    onChange={(e) => setNewPlacement(e.target.value)}
-                    placeholder="ADD CUSTOM SPACE (e.g. HOME_HERO)"
-                    className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder:text-slate-600"
-                  />
-                  <button onClick={addPlacement} className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold">
-                    <Plus className="w-4 h-4" /> Add
-                  </button>
-                </div>
-              )}
+              {/* The "ADD CUSTOM SPACE" box that used to live here is gone.
+                  An ad space is a <AdRenderer> mounted in a page: typing a name
+                  into a box creates a database row that renders nowhere, which
+                  is precisely how `QW` came to exist and hold two funded ads
+                  that could never serve. The create API has refused
+                  non-canonical names since; the box could only ever 400. */}
               {/* Rate-card discoverability.
                   The per-space rate card has existed and worked since it
                   shipped, and not one of the 29 spaces has ever had a price set
@@ -966,7 +980,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                     onSetRotation={(secs) => setPlacementRotation(p, secs)}
                     onSetInterstitial={(secs) => setPlacementInterstitial(p, secs)}
                     onSetRate={(patch) => setPlacementRate(p, patch)}
-                    onDelete={() => deletePlacement(p.id)}
+                    onDelete={() => deletePlacement(p.id, p.name)}
                     reassignTargets={placements
                       .filter((t) => t.id !== p.id && CANONICAL_NAMES.has(t.name))
                       .map((t) => ({ id: t.id, name: t.name }))}
@@ -1247,6 +1261,21 @@ function AdSpaceCard({
               )}
             </div>
           )}
+          {/* Empty and dead: the reassignment is done and the row is all that
+              is left. Say so, rather than leaving a bin icon to be noticed. */}
+          {isCustom && stats.totalAds === 0 && canManage && (
+            <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2">
+              <p className="text-[11px] text-amber-200">
+                Empty and renders on no page.{" "}
+                <button
+                  onClick={onDelete}
+                  className="font-bold underline underline-offset-2 hover:text-white"
+                >
+                  Retire this space
+                </button>
+              </p>
+            </div>
+          )}
           {stats.activeAds > 1 && (
             <p className="text-[10px] text-emerald-400/80 mt-1">
               {stats.activeAds} active ads · rotate every {effectiveRotation}s &amp; on reload
@@ -1330,6 +1359,34 @@ function AdSpaceCard({
       {canManage && (
         <div className="pt-1 border-t border-slate-800 space-y-1.5">
           <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Rate card</p>
+          {/* What this space earns, and what a click in it is worth right now.
+              Pricing a space used to be a guess: the box below was blank, the
+              only figures on the card were lifetime impressions, and nothing
+              said whether the space had ever made a penny. These two lines are
+              the facts the decision needs — no price is suggested, because
+              what a space is worth is the owner's call. */}
+          <div className="rounded-lg bg-slate-800/50 px-2 py-1.5 space-y-0.5">
+            <p className="text-[11px] text-slate-300">
+              Last {p.recent?.days ?? 30} days:{" "}
+              <span className="font-bold text-white tabular-nums">
+                {usd(p.recent?.usd ?? 0)}
+              </span>{" "}
+              <span className="text-slate-500">
+                from {(p.recent?.impressions ?? 0).toLocaleString()} impressions ·{" "}
+                {(p.recent?.clicks ?? 0).toLocaleString()} clicks
+              </span>
+            </p>
+            <p className="text-[10px] text-slate-500">
+              A click here bills{" "}
+              <span className="font-semibold text-slate-300">
+                {usd(p.effectiveCpcUsd ?? cpcUsd)}
+              </span>{" "}
+              {p.usesGlobalRate === false ? "(this space's own rate)" : "(global rate)"}
+              {(p.recent?.clicks ?? 0) === 0 && (p.recent?.impressions ?? 0) > 0
+                ? " — impressions but no clicks yet"
+                : ""}
+            </p>
+          </div>
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             <label className="whitespace-nowrap w-20">Per click $</label>
             <input
@@ -1588,6 +1645,12 @@ function AnalyticsTab() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* The windowed figure FIRST, because the range picker above it is the
+            control an admin just used. `revenue.windowSpend` sums AdDailyStat
+            through the house/network gate; `lifetime` is AdCampaign.spentTotal
+            and is not affected by the range at all — kept, beside it, labelled,
+            rather than left as the only "Revenue" on a filtered screen. */}
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.windowSpend)}`} label={`Revenue (${days}d)`} tone="emerald" />
         <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.lifetime)}`} label="Revenue (lifetime)" tone="emerald" />
         <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.ecpm)}`} label={`eCPM (${days}d)`} tone="purple" />
         <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.unspent)}`} label="Advertiser budget unspent" tone="amber" />

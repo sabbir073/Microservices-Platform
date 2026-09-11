@@ -9,6 +9,8 @@ import { getBuyerSettings, quoteTask } from "@/lib/buyer-settings";
 import { getTaskCredit } from "@/lib/task-credit";
 import { detectProvider } from "@/lib/video-tasks";
 import { getPlatform } from "@/lib/social-tasks";
+import { validateSurveyConfig, type SurveyConfig } from "@/lib/survey-tasks";
+import { buyerSurveySchema, buildBuyerSurveyConfig } from "@/lib/survey-buyer";
 import {
   getBuyerScope,
   typeRefusal,
@@ -20,7 +22,7 @@ import { TransactionType, TransactionStatus, TaskType } from "@/generated/prisma
 // Task types this endpoint knows how to build. WHICH of them a buyer may
 // actually use is an admin setting (`buyer.allowed_task_types`) checked below —
 // this tuple is only the set the schema can parse.
-const ALLOWED_TYPES = ["SOCIAL", "VIDEO", "CUSTOM"] as const;
+const ALLOWED_TYPES = ["SOCIAL", "VIDEO", "CUSTOM", "SURVEY"] as const;
 
 const schema = z.object({
   title: z.string().min(3).max(120),
@@ -41,6 +43,8 @@ const schema = z.object({
   watchSeconds: z.number().int().min(5).max(3600).optional(),
   // CUSTOM
   instructions: z.string().max(4000).optional().nullable(),
+  // SURVEY
+  survey: buyerSurveySchema.optional(),
   // Audience targeting (only honored when the user has the `targetTasks` feature).
   countries: z.array(z.string().max(8)).max(50).optional(),
   genders: z.array(z.string().max(10)).max(5).optional(),
@@ -144,6 +148,28 @@ export async function POST(req: NextRequest) {
       { error: "A video task needs the link to the video." },
       { status: 400 }
     );
+  }
+
+  // SURVEY. No extra feature flag: `surveyTasks` is the WORKER-side gate (it
+  // decides who is shown survey tasks), and reusing it here would mean a buyer
+  // could not commission a survey they are not allowed to answer. Buyer scope
+  // above is the gate for creating one.
+  let surveyConfig: SurveyConfig | null = null;
+  if (d.type === "SURVEY") {
+    if (!d.survey) {
+      return NextResponse.json(
+        { error: "A survey task needs at least one question." },
+        { status: 400 }
+      );
+    }
+    surveyConfig = buildBuyerSurveyConfig(d.survey);
+    const check = validateSurveyConfig(surveyConfig);
+    if (!check.ok) {
+      return NextResponse.json(
+        { error: check.error ?? "That survey isn't valid." },
+        { status: 400 }
+      );
+    }
   }
 
   if (d.type === "SOCIAL" && (!d.socialUrl || !d.socialAction)) {
@@ -311,6 +337,13 @@ export async function POST(req: NextRequest) {
             d.type === "SOCIAL" ? d.socialPlatform?.toUpperCase() || null : null,
           socialAction: d.type === "SOCIAL" ? d.socialAction || null : null,
           socialUrl: d.type === "SOCIAL" ? d.socialUrl || null : null,
+          // The runner reads `surveyConfig` and does not care who built the
+          // task, so a buyer survey is answered by exactly the same screen an
+          // admin survey is. One-response-per-person is enforced in
+          // /api/tasks/[id]/start, also regardless of who funded it.
+          ...(d.type === "SURVEY" && surveyConfig
+            ? { surveyConfig: surveyConfig as unknown as object }
+            : {}),
         },
       });
 

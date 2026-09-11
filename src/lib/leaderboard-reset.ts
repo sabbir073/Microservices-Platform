@@ -360,10 +360,29 @@ export async function topUsers(
     }));
   }
   // TASKS_COMPLETED
+  //
+  // "Completed" means APPROVED or AUTO_APPROVED — the exact status filter the
+  // public /leaderboard "tasks" board and the TASKS component of the COMBINED
+  // score both rank on (`api/leaderboard/route.ts` type=tasks,
+  // `computeCombinedTopUsers` in leaderboard.ts). This used to count EVERY
+  // submission a user had ever made, approved or not — same class of bug as
+  // the POINTS_EARNED metric above (which now shares `topTaskEarners` with
+  // the board it pays): a board that ranks one way and pays another. A user
+  // could out-earn a real top performer here by submitting proof that was
+  // never approved, since a pending or rejected submission was worth exactly
+  // as much as a paid one.
+  //
+  // The initial pool is still ordered by the ALL-submissions relation count
+  // (Prisma cannot filter a relation count by status inside `orderBy`), so a
+  // wider net than the other single-metric branches is pulled before the
+  // final approved-only count decides who actually ranks — then the list is
+  // re-sorted by that real value, because the pool order is only a candidate
+  // net, not the answer.
+  const TASK_POOL = Math.max(POOL, 200);
   const usersRaw = await prisma.user.findMany({
     where: NON_STAFF_WHERE,
     orderBy: { taskSubmissions: { _count: "desc" } },
-    take: POOL,
+    take: TASK_POOL,
     select: {
       id: true,
       name: true,
@@ -375,17 +394,20 @@ export async function topUsers(
     name: string | null;
     package: { slug: string } | null;
   }>;
-  const eligibleUsers = filterByEligibility(users);
+  const eligiblePool = users.filter(
+    (u) => u.package?.slug && eligibleSet.has(u.package.slug.toUpperCase())
+  );
   const counts = await Promise.all(
-    eligibleUsers.map((u) =>
-      prisma.taskSubmission.count({ where: { userId: u.id } })
+    eligiblePool.map((u) =>
+      prisma.taskSubmission.count({
+        where: { userId: u.id, status: { in: ["APPROVED", "AUTO_APPROVED"] } },
+      })
     )
   );
-  return eligibleUsers.map((u, i) => ({
-    userId: u.id,
-    name: u.name,
-    value: counts[i],
-  }));
+  return eligiblePool
+    .map((u, i) => ({ userId: u.id, name: u.name, value: counts[i] }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, take);
 }
 
 /** Reads the frozen winner list back off a claimed cycle row. */

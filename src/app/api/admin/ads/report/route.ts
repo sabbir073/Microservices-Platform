@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
 import { UNKNOWN_COUNTRY, countryLabel, countryFlag } from "@/lib/ad-geo";
 import { countryDetailMap, type CountryDetail } from "@/lib/country-codes";
+import { isNetworkAdType } from "@/lib/ad-revenue";
 
 // GET /api/admin/ads/report?days=N — per-ad / per-placement / per-campaign
 // breakdown from AdDailyStat over the last N days (impressions, clicks, CTR,
@@ -27,7 +28,8 @@ const EMPTY: Agg = {
   networkImpressions: 0,
 };
 
-const isNetworkType = (t: string) => t === "ADSENSE" || t === "GAM";
+// One definition of "billed by Google, not by us" — see src/lib/ad-revenue.ts.
+const isNetworkType = (t: string) => isNetworkAdType(t);
 
 /** One country's slice of the window. */
 export interface CountryRow {

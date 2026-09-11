@@ -10,6 +10,7 @@ import {
   Wallet,
   Target,
   PlayCircle,
+  ClipboardList,
   Users,
   Clock,
   AlertCircle,
@@ -23,8 +24,14 @@ import {
   TaskAudienceTargeting,
   type TaskAudienceValue,
 } from "@/components/admin/tasks/task-audience-targeting";
+import {
+  SurveyBuilder,
+  emptySurveyDraft,
+  surveyDraftProblem,
+  type SurveyDraft,
+} from "@/components/user/tasks/survey-builder";
 
-type TaskType = "SOCIAL" | "VIDEO" | "CUSTOM";
+type TaskType = "SOCIAL" | "VIDEO" | "CUSTOM" | "SURVEY";
 
 export interface BuyerPlatform {
   key: string;
@@ -103,6 +110,8 @@ export function CreateTaskView({
   const [watchSeconds, setWatchSeconds] = useState(30);
   // CUSTOM
   const [instructions, setInstructions] = useState("");
+  // SURVEY
+  const [survey, setSurvey] = useState<SurveyDraft>(emptySurveyDraft);
   // Rewards
   const [pointsReward, setPointsReward] = useState(50);
   const [targetCount, setTargetCount] = useState(10);
@@ -206,6 +215,13 @@ export function CreateTaskView({
       toast.error("Social tasks need an action and a target URL");
       return;
     }
+    if (type === "SURVEY") {
+      const problem = surveyDraftProblem(survey);
+      if (problem) {
+        toast.error(problem);
+        return;
+      }
+    }
 
     setBusy(true);
     try {
@@ -220,6 +236,15 @@ export function CreateTaskView({
       if (type === "VIDEO") {
         body.videoUrl = videoUrl.trim();
         body.watchSeconds = Math.max(5, Math.floor(watchSeconds));
+      }
+      if (type === "SURVEY") {
+        body.survey = {
+          questions: survey.questions.map((q, i) => ({ ...q, order: i })),
+          introMessage: survey.introMessage.trim() || undefined,
+          thankYouMessage: survey.thankYouMessage.trim() || undefined,
+          randomizeQuestions: survey.randomizeQuestions,
+          shuffleOptions: survey.shuffleOptions,
+        };
       }
       if (type === "SOCIAL") {
         body.socialPlatform = socialPlatform.trim() || undefined;
@@ -294,12 +319,13 @@ export function CreateTaskView({
 
       {/* Type toggle. Only the types the admin allows buyers to create — an
           option that the API will refuse is worse than no option. */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {(
           [
             { value: "SOCIAL", label: "Social", icon: Share2 },
             { value: "VIDEO", label: "Video", icon: PlayCircle },
             { value: "CUSTOM", label: "Custom", icon: Sparkles },
+            { value: "SURVEY", label: "Survey", icon: ClipboardList },
           ] as const
         )
           .filter((opt) => allowedTypes.includes(opt.value))
@@ -445,6 +471,8 @@ export function CreateTaskView({
               />
             </div>
           </>
+        ) : type === "SURVEY" ? (
+          <SurveyBuilder value={survey} onChange={setSurvey} />
         ) : (
           <div>
             <label className="block text-xs font-medium text-gray-400 mb-1.5">

@@ -9,6 +9,7 @@ import { getAdDensity } from "@/lib/ad-density";
 import { getBrowseEarnConfig } from "@/lib/browse-earn";
 import { getRewardedConfig } from "@/lib/ads-rewarded";
 import { getAdFrequencyConfig } from "@/lib/ad-frequency";
+import { adRevenueLastDays } from "@/lib/ad-revenue";
 
 export async function GET() {
   const session = await auth();
@@ -47,24 +48,55 @@ export async function GET() {
     statsByPlacement.set(ad.placementId, cur);
   }
 
-  const withStats = placements.map((p) => ({
-    ...p,
-    stats:
-      statsByPlacement.get(p.id) ?? {
-        impressions: 0,
-        clicks: 0,
-        activeAds: 0,
-        totalAds: 0,
+  const cpcUsd = Math.min(
+    100,
+    Math.max(0.001, Number(await getSetting<number>("ads.cpcUsd", 0.05)) || 0.05)
+  );
+  // ── What this space actually earns ────────────────────────────────────────
+  //
+  // Pricing a space was a guess: the card showed lifetime impressions and a
+  // blank "click price" box, and nothing anywhere said what the space had ever
+  // brought in. So every one of the 29 sat on the global rate.
+  //
+  // A real 30-day figure per space, through the same house/network gate the
+  // reports use (`src/lib/ad-revenue.ts`), makes it an informed decision. No
+  // price is ever suggested — what a space is worth is the owner's call — but
+  // "this space earned $0.00 from 4,100 impressions" and "this one earned
+  // $3.20 from 900" are the two facts that decision needs.
+  const window = await adRevenueLastDays(30).catch(() => null);
+
+  const withStats = placements.map((p) => {
+    const earned = window?.byPlacementId.get(p.id);
+    const rate = p.cpcUsd == null ? cpcUsd : Number(p.cpcUsd);
+    return {
+      ...p,
+      stats:
+        statsByPlacement.get(p.id) ?? {
+          impressions: 0,
+          clicks: 0,
+          activeAds: 0,
+          totalAds: 0,
+        },
+      /** Billable revenue and traffic for this space over the last 30 days. */
+      recent: {
+        days: 30,
+        usd: earned?.usd ?? 0,
+        impressions: earned?.impressions ?? 0,
+        clicks: earned?.clicks ?? 0,
       },
-  }));
+      /**
+       * What a click here costs TODAY: the space's own rate, or the global
+       * one when it has none. The card shows this so "no rate set" reads as a
+       * price rather than as a blank.
+       */
+      effectiveCpcUsd: Number.isFinite(rate) ? rate : cpcUsd,
+      usesGlobalRate: p.cpcUsd == null,
+    };
+  });
 
   const rotationSeconds = Math.min(
     60,
     Math.max(5, Number(await getSetting<number>("ads.rotation_seconds", 12)) || 12)
-  );
-  const cpcUsd = Math.min(
-    100,
-    Math.max(0.001, Number(await getSetting<number>("ads.cpcUsd", 0.05)) || 0.05)
   );
   const adsenseClient = String((await getSetting<string>("ads.adsense_client", "")) || "");
   const gamNetworkCode = String((await getSetting<string>("ads.gam_network_code", "")) || "");

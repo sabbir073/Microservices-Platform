@@ -640,15 +640,32 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
             </span>
           </div>
           <p className="text-sm text-slate-400 mt-1 mb-2">
-            The intent: leaderboards reset on schedule (daily 00:00, weekly Mon
-            00:00, monthly 1st 00:00) and prize distribution runs automatically.
+            This is live: an hourly Vercel cron closes each daily (00:00 UTC),
+            weekly (Monday 00:00 UTC) and monthly (1st, 00:00 UTC) window as
+            soon as it ends, and pays the winners in the same run.
           </p>
-          <p className="mb-4 text-xs text-slate-500">
-            Runs hourly on Vercel cron and pays the window that has just closed,
-            in <span className="font-semibold text-slate-400">UTC</span> (00:00
+          <p className="mb-2 text-xs text-slate-500">
+            Runs hourly and pays the window that has just closed, in{" "}
+            <span className="font-semibold text-slate-400">UTC</span> (00:00
             UTC = 06:00 in Dhaka). A missed midnight — deploy, outage — is
             picked up on the next hour rather than skipped, and a cycle can only
             be paid once however many times it runs.
+          </p>
+          <p className="mb-2 text-xs text-slate-500">
+            <span className="font-semibold text-amber-300">
+              The very first scheduled run is special:
+            </span>{" "}
+            it seals whichever daily, weekly and monthly windows had already
+            closed before this went live — <em>without</em> paying them, since
+            nobody was competing under these rules yet. Every window after
+            that pays normally.
+          </p>
+          <p className="text-xs text-slate-500">
+            Requires <code className="text-slate-400">CRON_SECRET</code> to be
+            set in Vercel. With no secret configured the scheduled endpoint
+            refuses to run at all rather than sit open — this route moves real
+            money — so this switch does nothing on an environment where that
+            variable was never set, however long it has been on.
           </p>
 
           {/* Switch-style toggle */}

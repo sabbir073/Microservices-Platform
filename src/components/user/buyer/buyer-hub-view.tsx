@@ -650,6 +650,16 @@ export function BuyerHubView({
                       {t.type} · {t.pointsReward.toLocaleString()} pts each ·{" "}
                       {new Date(t.createdAt).toLocaleDateString()}
                     </p>
+                    {/* The answers are the whole product of a survey, so the
+                        way to them is on the task, not buried in a menu. */}
+                    {t.type === "SURVEY" && (
+                      <Link
+                        href={`/buyer/surveys/${t.id}`}
+                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-400 hover:text-indigo-300"
+                      >
+                        View responses
+                      </Link>
+                    )}
                   </div>
                   <span
                     className={cn(

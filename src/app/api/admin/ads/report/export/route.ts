@@ -6,6 +6,7 @@ import { toNum } from "@/lib/money";
 
 import { csvCell } from "@/lib/csv";
 import { UNKNOWN_COUNTRY, countryLabel } from "@/lib/ad-geo";
+import { isNetworkAdType } from "@/lib/ad-revenue";
 
 /**
  * `GET /api/admin/ads/report/export?days=N&scope=ad|placement|campaign|daily`
@@ -25,7 +26,8 @@ import { UNKNOWN_COUNTRY, countryLabel } from "@/lib/ad-geo";
  * `scope=daily` is the per-day, per-ad grain — the raw rows, for anyone who
  * wants to pivot them themselves.
  */
-const isNetworkType = (t: string) => t === "ADSENSE" || t === "GAM";
+// One definition of "billed by Google, not by us" — see src/lib/ad-revenue.ts.
+const isNetworkType = (t: string) => isNetworkAdType(t);
 
 interface Agg {
   impressions: number;
