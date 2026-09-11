@@ -378,6 +378,38 @@ async function main() {
     check("the credit audit ran", true);
   }
 
+  /* -- The newer buyer surfaces cannot reach a balance at all -- */
+  console.log("\nThe buyer's newer surfaces touch no balance");
+  {
+    // Every file added for planning, results and reporting is read-only about
+    // money. Stated as a test rather than a convention: the next person adding
+    // a "refund this completion" button to the report flow would be crossing
+    // the line the three balances exist to draw, and would find out here.
+    const files = [
+      "src/lib/buyer-reach.ts",
+      "src/lib/buyer-reports.ts",
+      "src/app/api/tasks/mine/reach/route.ts",
+      "src/app/api/admin/buyer-reports/route.ts",
+    ];
+    const offenders = files.filter((f) =>
+      /(cashBalance|pointsBalance|taskCreditPoints):\s*\{|spendTaskCredit|purchaseTaskCredit|chargeTaskCompletion/.test(
+        read(f)
+      )
+    );
+    check(
+      "planning, results and reporting move no money",
+      offenders.length === 0,
+      offenders.join(", ") || undefined
+    );
+    const api = read("src/app/api/tasks/mine/[id]/submissions/route.ts");
+    check(
+      "…and neither does the buyer's view of the work",
+      !/spendTaskCredit|chargeTaskCompletion|taskCreditPoints: \{/.test(api),
+      "a buyer-triggered refund would be a reject button with a friendlier label"
+    );
+  }
+
+
   console.log(
     `\n${failures.length === 0 ? "COMPLETE" : "FAILED"}: ${passed} passed, ${failures.length} failed`
   );

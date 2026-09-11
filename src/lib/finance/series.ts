@@ -10,6 +10,7 @@ import {
   isSettled,
   magnitudePoints,
   magnitudeUsd,
+  pointsDenominated,
   sourceOf,
   type LedgerRow,
 } from "./signing";
@@ -131,6 +132,9 @@ async function loadRows(range: Range): Promise<LoadedRow[]> {
  * income as its cost. For those, the user's point value is the real figure.
  */
 function platformUsd(row: LedgerRow, pointsPerUsd: number): number {
+  // Points-only rows (the buyer task fee, the task-credit spend mirror) carry
+  // zero in `amount`; reading it would report real income as nothing at all.
+  if (pointsDenominated(row)) return magnitudePoints(row) / pointsPerUsd;
   if (amountIsUserValue(row)) return magnitudeUsd(row);
   return magnitudePoints(row) / pointsPerUsd;
 }

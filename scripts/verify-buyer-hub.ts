@@ -2,6 +2,7 @@ import "dotenv/config";
 import * as fs from "fs";
 import * as path from "path";
 import { prisma } from "./_q";
+import { Prisma } from "../src/generated/prisma/client";
 
 /**
  * The buyer's own view of what they bought.
@@ -82,12 +83,15 @@ async function main() {
     const view = read(VIEW);
     check(
       "'completed' counts APPROVED submissions, not every attempt",
-      /status: \{ in: \["APPROVED", "AUTO_APPROVED"\] \}/.test(page),
+      /tally\(t\.id, \["APPROVED", "AUTO_APPROVED"\]\)/.test(page),
       "_count.submissions includes rejected and pending ones"
     );
     check(
-      "pending is derived as total minus approved, never negative",
-      /Math\.max\(\s*0,/.test(page)
+      "'awaiting review' counts PENDING rows, not 'everything minus approved'",
+      /by: \["taskId", "status"\]/.test(page) &&
+        /pendingByTask/.test(page) &&
+        !/t\._count\.submissions - \(approvedByTask/.test(page),
+      "the old arithmetic counted every REJECTED attempt as one still awaiting review"
     );
     check(
       // Credit moves in points now, so the figure is a credit total, not a
@@ -231,13 +235,26 @@ async function main() {
     const api = read("src/app/api/tasks/mine/[id]/submissions/route.ts");
     check(
       "ownership is in the query",
-      /where: \{ id, fundedByUserId: session\.user\.id \}/.test(api)
+      /where: \{ id, fundedByUserId: userId \}/.test(api)
+    );
+    const subWrites =
+      api.match(
+        /prisma\.taskSubmission\.(update|updateMany|create|createMany|delete|deleteMany)\(/g
+      ) ?? [];
+    check(
+      "a buyer still cannot approve, reject or re-price anything",
+      subWrites.length === 1 &&
+        /data: \{ metadata: \{ \.\.\.existing, buyerReport: report \} as never \}/.test(
+          api
+        ),
+      "the only write here is the report flag; judging work stays with admins"
     );
     check(
-      "it is READ ONLY — no approve, reject or any other write",
-      !/prisma\.taskSubmission\.(update|delete|create)/.test(api) &&
-        !/export async function (POST|PATCH|PUT|DELETE)/.test(api),
-      "a buyer who could act on submissions could refuse honest work"
+      "…and the one write it does make cannot move money",
+      !/spendTaskCredit|chargeTaskCompletion|pointsBalance|taskCreditPoints/.test(
+        api
+      ),
+      "a report that refunded the buyer would be a reject button with a friendlier label"
     );
     check(
       "only APPROVED work is shown",
@@ -245,9 +262,18 @@ async function main() {
       "showing pending work invites a buyer to lobby about it"
     );
     check(
-      "the worker's identity is withheld",
-      !/userId: true/.test(api) && !/user: \{/.test(api),
+      "the worker's identity is withheld from the response",
+      !/id: r\.userId/.test(api) &&
+        !/name: true/.test(api) &&
+        !/email: true/.test(api) &&
+        !/avatar: true/.test(api),
       "the buyer bought the proof, not a list of everyone who engaged with them"
+    );
+    check(
+      "the audience breakdown is aggregate, never per person",
+      /groupBy\(\{\s*by: \["country"\]/.test(api) &&
+        /workerIds/.test(api),
+      "'which country delivered' must not become 'who delivered'"
     );
     const hub = read(VIEW);
     check(
@@ -458,6 +484,180 @@ async function main() {
       `   ${approvals.reduce((s, r) => s + r._count._all, 0)} approved completion(s) across them`
     );
     check("the completion audit ran", true);
+  }
+
+  /* -- 4f. What the money bought -- */
+  console.log("\n4f. Results, not just a progress bar");
+  {
+    const api = read("src/app/api/tasks/mine/[id]/submissions/route.ts");
+    const view = read(VIEW);
+    check(
+      "cost is summed off the LEDGER, not recomputed from the reward",
+      /TASK_SPEND_REF/.test(api) && /task_fee_\$\{id\}_/.test(api),
+      "a second arithmetic would eventually disagree with the invoice tab"
+    );
+    check(
+      "cost per completion, accept rate, fill rate and pace are all returned",
+      /costPerCompletion/.test(api) &&
+        /acceptRate/.test(api) &&
+        /fillRate/.test(api) &&
+        /perDay/.test(api)
+    );
+    check(
+      "...and the hub renders them",
+      /function ResultsStrip/.test(view) &&
+        /Cost per completion/.test(view) &&
+        /Accepted/.test(view)
+    );
+    check(
+      "rejected work is shown as costing the buyer nothing",
+      /you paid for none of them/.test(view),
+      "a buyer who sees a low accept rate needs to know it did not cost them"
+    );
+  }
+
+  /* -- 4g. Reporting a completion is bounded -- */
+  console.log("\n4g. A report is not a reject button");
+  {
+    const lib = read("src/lib/buyer-reports.ts");
+    const api = read("src/app/api/tasks/mine/[id]/submissions/route.ts");
+    const view = read(VIEW);
+    const admin = read("src/app/api/admin/buyer-reports/route.ts");
+    check(
+      "the bounds live in ONE module the UI and the API share",
+      /export const REPORT_WINDOW_DAYS/.test(lib) &&
+        /export function reportAllowance/.test(lib) &&
+        /MIN_REPORT_REASON/.test(view) &&
+        /MIN_REPORT_REASON/.test(api),
+      "a second copy in the UI offers a button the server refuses"
+    );
+    check(
+      "one report per completion",
+      /readBuyerReport\(sub\.metadata\)/.test(api) && /409/.test(api)
+    );
+    check(
+      "reports expire with the completion",
+      /REPORT_WINDOW_DAYS \* DAY_MS/.test(api)
+    );
+    check(
+      "a task has a report allowance and the server enforces it",
+      /reportAllowance\(approved\)/.test(api) && /429/.test(api),
+      "unbounded reporting is rejection by attrition"
+    );
+    check(
+      "the report is MERGED into metadata, never written over it",
+      /\.\.\.existing/.test(api) && /\.\.\.existing/.test(admin),
+      "metadata carries the SOCIAL proof bag - the very evidence being reported"
+    );
+    check(
+      "the worker it concerns is named on the audit row",
+      /targetUserId: sub\.userId/.test(api) &&
+        /targetUserId: sub\.userId/.test(admin),
+      "an accusation nobody can see is one nobody can answer"
+    );
+    check(
+      "resolving requires an admin permission, not merely an admin page",
+      /can\(session\.user\.id, "submissions\.reject"\)/.test(admin)
+    );
+    check(
+      "neither end moves money",
+      !/spendTaskCredit|chargeTaskCompletion|cashBalance|pointsBalance/.test(
+        admin
+      ),
+      "an approved submission is final everywhere else; a report is not a refund path"
+    );
+    check(
+      "the buyer is told that BEFORE they write one",
+      /does not undo the payment/.test(view)
+    );
+    // The queue query depends on a Postgres JSON path filter. If that syntax is
+    // ever wrong the admin page throws, and it throws on the page, not here -
+    // so it is exercised against the real database.
+    try {
+      const open = await prisma.taskSubmission.count({
+        where: { metadata: { path: ["buyerReport", "status"], equals: "OPEN" } },
+      });
+      // The other half of the pair: the per-task cap counts reports in ANY
+      // state, and it is what decides whether the buyer is offered the button.
+      const any = await prisma.taskSubmission.count({
+        where: { metadata: { path: ["buyerReport", "status"], not: Prisma.DbNull } },
+      });
+      check(
+        `the open-report queue and the cap query both run (${open} open, ${any} ever)`,
+        true
+      );
+    } catch (e) {
+      check(
+        "the open-report queue query runs",
+        false,
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }
+
+  /* -- 4h. Planning before publishing -- */
+  console.log("\n4h. A buyer can see what they are buying first");
+  {
+    const reachLib = read("src/lib/buyer-reach.ts");
+    const reachApi = read("src/app/api/tasks/mine/reach/route.ts");
+    const create = read("src/components/user/tasks/create-task-view.tsx");
+    check(
+      "reach is counted with the same STRICT rule the serve query enforces",
+      /targeted dimension/i.test(reachLib) &&
+        /\{ in: values \}/.test(reachLib)
+    );
+    check(
+      "staff and non-active accounts are not counted as an audience",
+      /NON_STAFF_WHERE/.test(reachLib) && /status: "ACTIVE"/.test(reachLib)
+    );
+    check(
+      "a tiny audience does not hand back an exact headcount",
+      /TOO_NARROW/.test(reachLib) &&
+        /eligible >= TOO_NARROW \? eligible : null/.test(reachLib),
+      "postcode + age + gender can identify one real person"
+    );
+    check(
+      "the estimate runs the SAME sanitizer the create route does",
+      /sanitizeTaskAudience/.test(reachApi) &&
+        /userCanFeature\(userId, "targetTasks"\)/.test(reachApi),
+      "quoting a reach the task will never have is worse than quoting none"
+    );
+    check(
+      "the estimate route creates and charges nothing",
+      !/prisma\.(task|user|transaction)\.(create|update|updateMany|delete)/.test(
+        reachApi
+      )
+    );
+    check(
+      "pace comes from measured history, and says so",
+      /It is an estimate, not a promise/.test(create) &&
+        /of this kind over the last 30/.test(create)
+    );
+    check(
+      "an audience matching nobody is called out before publishing",
+      /Nobody on the platform matches every one of these filters/.test(create)
+    );
+  }
+
+  /* -- 4i. A new buyer can start without being told how -- */
+  console.log("\n4i. Onboarding");
+  {
+    const view = read(VIEW);
+    check(
+      "the three steps are shown while the buyer has no tasks",
+      /Getting your first task live/.test(view) &&
+        /tasks\.length === 0 && \(/.test(view)
+    );
+    check(
+      "each step ticks off against the buyer's real state",
+      /done: cashBalance > 0/.test(view) && /done: taskCredit > 0/.test(view),
+      "a checklist that never ticks is a poster, not a guide"
+    );
+    check(
+      "runway is given in days as well as completions",
+      /daysOfCredit/.test(view) && /burnPerDay/.test(view),
+      "'4 more completions' does not say whether to top up before the weekend"
+    );
   }
 
   console.log(

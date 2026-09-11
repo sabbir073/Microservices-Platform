@@ -10,6 +10,7 @@ import {
   topTaskEarners,
 } from "@/lib/leaderboard";
 import { NON_STAFF_WHERE, isStaffRole } from "@/lib/staff";
+import { leaderboardDisabled } from "@/lib/leaderboard-gate";
 
 // The combined board is identical for every viewer — cache it for 60s so the
 // expensive 500-user pipeline runs at most once per minute (was per request).
@@ -35,6 +36,12 @@ const cachedTotalParticipants = unstable_cache(
 // GET /api/leaderboard - Get leaderboard data
 export async function GET(request: NextRequest) {
   try {
+    // The feature switch, before anything is computed or served. Hiding the
+    // page is not turning the board off — this endpoint answers any saved
+    // request, from a bookmarked fetch to the mobile shell.
+    const off = await leaderboardDisabled();
+    if (off) return off;
+
     const session = await auth();
 
     const { searchParams } = new URL(request.url);

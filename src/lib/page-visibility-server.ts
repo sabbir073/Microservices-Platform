@@ -2,6 +2,7 @@ import { cache } from "react";
 import { prisma } from "@/lib/prisma";
 import { getSetting } from "@/lib/system-settings";
 import { getEffectivePackage } from "@/lib/packages";
+import { isLeaderboardEnabled } from "@/lib/leaderboard-gate";
 import {
   parsePageRules,
   parsePageOverrides,
@@ -42,12 +43,21 @@ export const getHiddenPaths = cache(async (userId: string): Promise<string[]> =>
       getEffectivePackage(userId).catch(() => null),
     ]);
     if (!user) return [];
-    return computeHiddenPaths(
+    const hidden = computeHiddenPaths(
       rules,
       pkg?.slug ?? null,
       user.role ?? null,
       parsePageOverrides(user.pageOverrides)
     );
+    // The leaderboard feature switch rides the same channel, so ONE check
+    // covers the sidebar, the bottom tab bar and the PageAccessGuard route
+    // guard instead of six copies. The page and `/api/leaderboard` enforce it
+    // themselves too — this resolver deliberately fails open, and a feature
+    // that is only hidden is not off.
+    if (!hidden.includes("/leaderboard") && !(await isLeaderboardEnabled())) {
+      hidden.push("/leaderboard");
+    }
+    return hidden;
   } catch {
     return [];
   }

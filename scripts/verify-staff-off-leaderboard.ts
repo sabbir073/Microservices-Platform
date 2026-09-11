@@ -53,7 +53,14 @@ const rbac = read("src/lib/rbac.ts");
 const api = read("src/app/api/leaderboard/route.ts");
 const lib = read("src/lib/leaderboard.ts");
 const social = read("src/app/(main)/social/page.tsx");
-const reset = read("src/app/api/admin/leaderboard/reset/route.ts");
+// The ranking + payout used to live inside the admin route. Both the admin
+// button and the Vercel cron now call `lib/leaderboard-reset`, so THAT is the
+// file the prize-money checks below have to interrogate — the route is a
+// wrapper, and asserting against a wrapper proves nothing.
+const reset = read("src/lib/leaderboard-reset.ts");
+const resetRoute = read("src/app/api/admin/leaderboard/reset/route.ts");
+const cron = read("src/app/api/cron/leaderboard-reset/route.ts");
+const gate = read("src/lib/leaderboard-gate.ts");
 
 console.log("\n--- one definition of staff ---");
 check(
@@ -228,6 +235,203 @@ check(
   "the PRIZE-PAYING reset uses the same function as the board",
   /metric === "POINTS_EARNED"[\s\S]{0,900}topTaskEarners\(POOL\)/.test(resetCode),
   "a board that ranks one way and pays another is worse than either"
+);
+
+/* ────────────────────────────────────────────────────────────────
+   lb_enabled — off means off, not hidden
+   ──────────────────────────────────────────────────────────────── */
+console.log("\n--- the leaderboard switch is a real switch ---");
+
+const gateCode = strip(gate);
+check(
+  "there is ONE shared guard, not a copy per surface",
+  /export async function isLeaderboardEnabled/.test(gateCode) &&
+    /export async function leaderboardDisabled/.test(gateCode) &&
+    /lb_enabled/.test(gateCode)
+);
+check(
+  "the boards API refuses a saved request, not just the page",
+  /leaderboardDisabled\(\)/.test(apiCode) && /if \(off\) return off;/.test(apiCode),
+  "a bookmarked fetch reaches /api/leaderboard directly — hiding the nav does nothing to it"
+);
+check(
+  "the page refuses a bookmarked URL",
+  /isLeaderboardEnabled\(\)/.test(strip(read("src/app/(main)/leaderboard/page.tsx")))
+);
+check(
+  "the nav entry goes through the existing hidden-paths resolver",
+  /isLeaderboardEnabled\(\)[\s\S]{0,200}hidden\.push\("\/leaderboard"\)/.test(
+    strip(read("src/lib/page-visibility-server.ts"))
+  ),
+  "one resolver feeds the sidebar, the bottom bar and the route guard"
+);
+check(
+  "the switch fails ON, so a settings blip cannot delete the feature",
+  /getSetting<unknown>\(KEY, null\), true\)/.test(gateCode) &&
+    /catch \{\s*return true;/.test(gateCode)
+);
+
+/* ────────────────────────────────────────────────────────────────
+   lb_auto_reset — the scheduled payout cannot pay twice
+   ──────────────────────────────────────────────────────────────── */
+console.log("\n--- the scheduled payout is idempotent ---");
+
+const cronCode = strip(cron);
+const resetRouteCode = strip(resetRoute);
+
+check(
+  "the cron reuses the admin payout instead of growing a second one",
+  /runLeaderboardReset\(/.test(cronCode) &&
+    /runLeaderboardReset\(/.test(resetRouteCode) &&
+    // The route must be a wrapper: no ranking, no ledger write of its own.
+    !/prisma\./.test(resetRouteCode),
+  "two payout implementations drift, and the one that drifts is the one paying money"
+);
+check(
+  "it is scheduled by Vercel cron, like the existing job",
+  /"path": "\/api\/cron\/leaderboard-reset"/.test(read("vercel.json"))
+);
+check(
+  "the cron endpoint is authenticated the way the existing one is",
+  /CRON_SECRET/.test(cronCode) &&
+    /Bearer \$\{secret\}/.test(cronCode) &&
+    /leaderboards\.manage/.test(cronCode),
+  "an unauthenticated endpoint that pays real balance is not something to default to on"
+);
+check(
+  "nothing runs unless lb_auto_reset is ON, and an absent setting means OFF",
+  /lb_auto_reset/.test(cronCode) && /return false;/.test(cronCode)
+);
+// `lb_auto_reset` was already TRUE in the live database years before anything
+// read it. Since each tick settles the most recently closed window, the very
+// first tick after deploy would otherwise pay out yesterday, last week and last
+// month — real points and XP, for periods nobody competed in under these rules.
+check(
+  "the first ever run seals the already-closed windows instead of paying them",
+  /lb_auto_reset_live_since/.test(cronCode) &&
+    /sealedWithoutPayout/.test(cronCode),
+  "without this, switching the scheduler on is a retroactive payout nobody authorised"
+);
+check(
+  "…and it claims that moment with create(), so two cold starts cannot both seal",
+  /systemSetting\.create\(/.test(cronCode),
+  "an upsert here would let a racing invocation move the line forward twice"
+);
+check(
+  "the seal marks the cycle completed, so the normal path skips it forever",
+  /sealedWithoutPayout: true,[\s\S]{0,200}reason:/.test(cronCode) &&
+    /completed: true,/.test(cronCode)
+);
+check(
+  "a cycle is keyed by the WINDOW it pays, never by when the job ran",
+  /export function cycleKey/.test(resetCode) &&
+    !/Date\.now\(\)_/.test(resetCode) &&
+    /`leaderboard_\$\{cycleId\}_\$\{w\.userId\}`/.test(resetCode),
+  "a run-time key makes the ledger's @@unique([userId, reference]) unreachable"
+);
+check(
+  "the cycle is CLAIMED before a point moves, and the claim is a create",
+  /prisma\.systemSetting\.create\(\{[\s\S]{0,300}key: historyKey/.test(resetCode),
+  "upsert here lets a second runner overwrite the frozen winner list mid-payout"
+);
+check(
+  "losing the claim race RESUMES the winner's frozen list, it does not re-rank",
+  /isUniqueViolation\(err\)[\s\S]{0,600}frozen = parseFrozen\(/.test(resetCode),
+  "re-ranking on a retry pays whoever is top NOW, on top of whoever was paid before"
+);
+check(
+  "a settled cycle short-circuits before any ranking query",
+  /alreadyCompleted: true/.test(resetCode) && /completed: true/.test(resetCode)
+);
+check(
+  "a duplicate payout is caught as a SKIP via the ledger, not a 500",
+  /isDuplicateLedgerError\(err\)\) return "skipped"/.test(resetCode)
+);
+check(
+  "the admin path reports a double-run as 409 rather than success",
+  /out\.paid === 0 && out\.skipped > 0/.test(resetRouteCode),
+  "'reset complete, 0 paid' reads like it worked"
+);
+check(
+  "the balance moves by compare-and-set, never a bare update",
+  /tx\.user\.updateMany\(\{[\s\S]{0,400}pointsBalance: before\.pointsBalance,/.test(
+    resetCode
+  ) && /cas\.count !== 1/.test(resetCode),
+  "an increment on a stale read silently loses a concurrent credit"
+);
+check(
+  "the payout loop is OUTSIDE the transaction (Accelerate P6005 at 15s)",
+  /for \(const w of frozen\)[\s\S]{0,200}await payWinner\(/.test(resetCode) &&
+    !/\$transaction\([\s\S]{0,200}for \(const w of frozen\)/.test(resetCode)
+);
+check(
+  "staff are excluded from the SCHEDULED prizes too, at the shared source",
+  /where: NON_STAFF_WHERE/.test(resetCode) &&
+    /computeCombinedTopUsers\(\{/.test(resetCode)
+);
+check(
+  "lb_min_entries and lb_eligible_packages gate the scheduled path as well",
+  /lb_min_entries/.test(resetCode) && /getEligiblePackages\(\)/.test(resetCode)
+);
+check(
+  "the closing window is computed from the calendar, so a missed run catches up",
+  /export function lastClosedWindowAnchor/.test(resetCode) &&
+    /lastClosedWindowAnchor\(period, now\)/.test(cronCode),
+  "'when did I last run' skips a payout after an outage"
+);
+check(
+  "every boundary is UTC — one instant worldwide, not a drifting local midnight",
+  /getUTC/.test(resetCode) && !/getFullYear\(\)|getMonth\(\)|getDate\(\)/.test(
+    resetCode.replace(/getUTC\w+\(\)/g, "")
+  )
+);
+
+/* ────────────────────────────────────────────────────────────────
+   XP prizes and gift items
+   ──────────────────────────────────────────────────────────────── */
+console.log("\n--- XP prizes and gifts are real ---");
+
+check(
+  "the XP distributions are read and credited alongside the points",
+  /lb_\$\{period\}_xp_distribution/.test(resetCode) && /xp: nextXp/.test(resetCode)
+);
+check(
+  "XP uses the ONE curve in lib/level, not a second one",
+  /from "@\/lib\/level"/.test(resetCode) && /calculateLevel\(nextXp\)/.test(resetCode),
+  "a level computed from a private curve locks users out of minLevel content"
+);
+check(
+  "an absent XP list means zero, not an invented default",
+  /export function distributeXp\(count: number, custom: number\[\] \| null\)/.test(
+    resetCode
+  ) && /out\.push\([\s\S]{0,120}: 0\);/.test(resetCode),
+  "points have a pool to spread; XP has no pool, so an empty list must mean zero XP"
+);
+check(
+  "a gift award records WHO is owed WHAT, and the winner is told",
+  /leaderboardGiftAward\.create/.test(resetCode) &&
+    /NotificationType\.ACHIEVEMENT[\s\S]{0,400}\$\{w\.gift\}/.test(resetCode)
+);
+check(
+  "a gift cannot be owed twice for one cycle+rank",
+  /@@unique\(\[cycleId, rank\]\)/.test(read("prisma/schema.prisma"))
+);
+check(
+  "an admin can see who is owed what and mark it fulfilled",
+  /leaderboardGiftAward\.findMany/.test(
+    read("src/app/api/admin/leaderboard/gifts/route.ts")
+  ) &&
+    /FULFILLED/.test(read("src/app/api/admin/leaderboard/gifts/route.ts")) &&
+    /targetUserId: existing\.userId/.test(
+      read("src/app/api/admin/leaderboard/gifts/route.ts")
+    )
+);
+check(
+  "no control still tells the admin it is 'Not wired up yet'",
+  !/Not wired up yet/.test(
+    read("src/components/admin/leaderboard/leaderboard-settings-form.tsx")
+  ),
+  "the six lb_* controls are live now — a stale warning is its own lie"
 );
 
 // ═══════════════════════════════════════════════════════════════════════════

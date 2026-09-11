@@ -2,7 +2,9 @@ import { cn } from "@/lib/utils";
 import {
   ArrowUpRight,
   ArrowDownToLine,
+  BadgeDollarSign,
   Coins,
+  Receipt,
   Gift,
   ShoppingBag,
   ShoppingCart,
@@ -29,6 +31,9 @@ const ICONS: Record<string, LucideIcon> = {
   ListChecks, MessageSquare, Users, Handshake, GraduationCap, ShoppingBag,
   ArrowDownToLine, ArrowUpRight, Repeat, Sparkles, Trophy, CalendarCheck,
   Megaphone, ShoppingCart, Undo2, Shield, Coins, Gift,
+  // `taskfee` and `payroll` name these in SOURCE_META; without them both fell
+  // through to the generic Coins fallback.
+  Receipt, BadgeDollarSign,
 };
 
 interface TransactionRowProps {

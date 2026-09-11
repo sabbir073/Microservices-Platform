@@ -729,17 +729,17 @@ model AdNetwork {
 }
 
 model Ad {
-  id                String         @id @default(cuid())
+  id                String               @id @default(cuid())
   campaignId        String
-  campaign          AdCampaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign          AdCampaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   placementId       String
-  placement         AdPlacement    @relation(fields: [placementId], references: [id])
-  type              String         @default("LOCAL") // LOCAL | HTML | ADSENSE | GAM
-  format            String         @default("BANNER") // BANNER | NATIVE (feed post-like)
+  placement         AdPlacement          @relation(fields: [placementId], references: [id])
+  type              String               @default("LOCAL") // LOCAL | HTML | ADSENSE | GAM
+  format            String               @default("BANNER") // BANNER | NATIVE (feed post-like)
   contentUrl        String? // image / GIF creative URL
   videoUrl          String? // MP4/WebM video creative URL
   targetUrl         String?
-  htmlContent       String?        @db.Text
+  htmlContent       String?              @db.Text
   // Third-party ad-network config (type ADSENSE | GAM). The self-contained
   // creative HTML is composed server-side in src/lib/ad-network.ts.
   adSlot            String? // AdSense ad-slot id (data-ad-slot)
@@ -749,13 +749,13 @@ model Ad {
   impressionPixel   String? // 1×1 beacon fired on view
   clickTracker      String? // pinged on click (local creatives)
   // Creative size — preset key (see src/lib/ad-sizes.ts); width/height used for "custom"
-  size              String?        @default("responsive")
+  size              String?              @default("responsive")
   width             Int?
   height            Int?
-  weight            Int            @default(10)
+  weight            Int                  @default(10)
   // ACTIVE | PAUSED | INACTIVE | PENDING (awaiting admin review) | CHANGES_REQUESTED | REJECTED
   // Only src/lib/ad-review.ts may write this column — it is the review gate.
-  status            String         @default("ACTIVE")
+  status            String               @default("ACTIVE")
   // Review workflow (advertiser-submitted ads land as PENDING until an admin acts)
   submittedById     String?
   submittedAt       DateTime?
@@ -765,38 +765,38 @@ model Ad {
   // "a reviewed creative exists" bit that lets an advertiser resume a paused ad
   // without being able to activate one that was never reviewed.
   approvedAt        DateTime?
-  rejectionReason   String?        @db.Text
-  rejectionCodes    String[]       @default([])
-  reviewNote        String?        @db.Text // internal reviewer note (never shown to the advertiser)
+  rejectionReason   String?              @db.Text
+  rejectionCodes    String[]             @default([])
+  reviewNote        String?              @db.Text // internal reviewer note (never shown to the advertiser)
   // One id per submission — a multi-placement submit creates N Ad rows that a
   // reviewer should see (and decide on) together.
   creativeGroupId   String?
   // ads.manage-only escape hatch: lets a trusted network creative keep
   // `allow-same-origin` while advertiser HTML never can. See sandboxed-ad-frame.
-  allowSameOrigin   Boolean        @default(false)
+  allowSameOrigin   Boolean              @default(false)
   reviews           AdReview[]
   engagements       AdEngagement[]
-  impressions       Int            @default(0)
-  clicks            Int            @default(0)
+  impressions       Int                  @default(0)
+  clicks            Int                  @default(0)
   // Native (post-like) creative fields — used when format = NATIVE
-  headline          String?        @db.Text // post-like ad copy
+  headline          String?              @db.Text // post-like ad copy
   brandName         String? // shown as author name
   brandLogo         String? // author avatar URL
   ctaLabel          String? // CTA button label (e.g. "Learn More")
   // Promote-a-real-post: when set, the native ad renders this post + its author
   promotedPostId    String?
-  promotedPost      Post?          @relation("PostAds", fields: [promotedPostId], references: [id], onDelete: SetNull)
+  promotedPost      Post?                @relation("PostAds", fields: [promotedPostId], references: [id], onDelete: SetNull)
   // Simple targeting: { countries?, genders?, minLevel?, packages? } (null = everyone)
   targeting         Json?
   // Viewer-reward (watch-and-earn)
-  rewardPoints      Int            @default(0)
-  rewardCooldownSec Int            @default(3600)
-  watchSeconds      Int            @default(15)
+  rewardPoints      Int                  @default(0)
+  rewardCooldownSec Int                  @default(3600)
+  watchSeconds      Int                  @default(15)
   views             AdView[]
   dailyStats        AdDailyStat[]
   countryStats      AdCountryDailyStat[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 
   @@index([campaignId])
   @@index([placementId])
@@ -1619,6 +1619,8 @@ model User {
   courseRefundsProcessed            CourseRefundRequest[]        @relation("CourseRefundAdmin")
   courseViews                       CourseListingView[]
   lotteryTickets                    LotteryTicket[]
+  leaderboardGifts                  LeaderboardGiftAward[]       @relation("LeaderboardGiftWinner")
+  leaderboardGiftsFulfilled         LeaderboardGiftAward[]       @relation("LeaderboardGiftFulfiller")
   adCampaigns                       AdCampaign[]                 @relation("UserAdCampaigns")
   posts                             Post[]
   comments                          Comment[]
@@ -4450,4 +4452,46 @@ model InvoiceLine {
   position    Int     @default(0)
 
   @@index([invoiceId])
+}
+
+enum LeaderboardGiftStatus {
+  PENDING
+  FULFILLED
+  CANCELLED
+}
+
+/// A physical/digital prize a leaderboard rank won, and whether it was handed over.
+///
+/// `lb_gift_items` let an admin promise "rank 1 wins a phone" for two months
+/// before this existed, and nothing anywhere recorded the promise — the winner
+/// was never told and no admin could see who was owed what. This is the
+/// smallest honest version of keeping that promise: the award is recorded, the
+/// winner is notified, and an admin marks it FULFILLED. It is deliberately NOT
+/// a shipping system — no address, no carrier, no tracking.
+///
+/// Unique on (cycleId, rank): re-running or resuming a cycle's payout can never
+/// owe the same gift twice, the same way the ledger reference stops double points.
+model LeaderboardGiftAward {
+  id            String                @id @default(cuid())
+  /// e.g. "2026-09_monthly" — the WINDOW, not the run time.
+  cycleId       String
+  period        String
+  rank          Int
+  userId        String
+  user          User                  @relation("LeaderboardGiftWinner", fields: [userId], references: [id], onDelete: Cascade)
+  giftName      String
+  giftImage     String?
+  status        LeaderboardGiftStatus @default(PENDING)
+  notes         String?
+  fulfilledAt   DateTime?
+  fulfilledById String?
+  fulfilledBy   User?                 @relation("LeaderboardGiftFulfiller", fields: [fulfilledById], references: [id], onDelete: SetNull)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@unique([cycleId, rank])
+  @@index([userId])
+  @@index([status])
+  @@index([cycleId])
+  @@index([fulfilledById])
 }

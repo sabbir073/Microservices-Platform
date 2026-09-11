@@ -26,6 +26,10 @@ export type SourceKey =
   // because "Purchase" told a buyer nothing about where their credit went.
   | "taskcredit"
   | "purchase"
+  // Staff salary / commission. Its own bucket, never folded into "bonus":
+  // payroll is the platform's own operating expense, and burying it in the
+  // same line as user bonuses makes the profit figure unreadable.
+  | "payroll"
   | "refund"
   | "admin"
   | "other";
@@ -65,8 +69,12 @@ export function deriveSource(type: string, reference?: string | null): SourceKey
     case "REFUND":
       return "refund";
     case "GIFT":
-    case "BONUS":
       return "bonus";
+    case "BONUS":
+      // Payroll is written as BONUS with a `payroll_` reference (see
+      // src/lib/payroll/run.ts) — there is no SALARY transaction type, and
+      // adding one is a schema change.
+      return ref.startsWith("payroll_") ? "payroll" : "bonus";
     case "PURCHASE":
       if (ref.startsWith("taskcredit_") || ref.startsWith("taskspend_")) {
         return "taskcredit";
@@ -111,6 +119,7 @@ export const SOURCE_META: Record<SourceKey, SourceMeta> = {
   adcredit: { label: "Ad Credit", icon: "Megaphone", tone: "bg-violet-500/10 text-violet-400", swatch: "bg-violet-500", outflow: true },
   taskfee: { label: "Task fees", icon: "Receipt", tone: "bg-teal-500/10 text-teal-400", swatch: "bg-teal-500" },
   taskcredit: { label: "Task Credit", icon: "Sparkles", tone: "bg-violet-500/10 text-violet-400", swatch: "bg-violet-500" },
+  payroll: { label: "Payroll", icon: "BadgeDollarSign", tone: "bg-rose-500/10 text-rose-400", swatch: "bg-rose-500", outflow: true },
   purchase: { label: "Purchase", icon: "ShoppingCart", tone: "bg-amber-500/10 text-amber-400", swatch: "bg-amber-500", outflow: true },
   refund: { label: "Refund", icon: "Undo2", tone: "bg-green-500/10 text-green-400", swatch: "bg-green-500" },
   admin: { label: "Adjustment", icon: "Shield", tone: "bg-slate-500/10 text-slate-400", swatch: "bg-slate-500" },
@@ -121,5 +130,5 @@ export const SOURCE_META: Record<SourceKey, SourceMeta> = {
 export const SOURCE_ORDER: SourceKey[] = [
   "task", "social", "referral", "affiliate", "course", "marketplace",
   "deposit", "convert", "withdraw", "bonus", "lottery", "checkin",
-  "adcredit", "taskcredit", "taskfee", "purchase", "refund", "admin", "other",
+  "adcredit", "taskcredit", "taskfee", "payroll", "purchase", "refund", "admin", "other",
 ];

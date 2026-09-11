@@ -126,6 +126,10 @@ export type Permission =
   | "referrals.configure"
   // Finance hub (aggregate financial reporting across every money flow)
   | "finance.view"
+  // Staff payroll — salaries and commissions for employees, not for users.
+  // Both live in FINANCE_PERMISSIONS, so a MANAGER can never be granted them.
+  | "payroll.view"
+  | "payroll.manage"
   // Lottery
   | "lottery.view"
   | "lottery.manage"
@@ -323,6 +327,8 @@ export const PERMISSION_CATALOG: { label: string; permissions: Permission[] }[] 
     label: "Finance & Wallet",
     permissions: [
       "finance.view",
+      "payroll.view",
+      "payroll.manage",
       "withdrawals.view",
       "withdrawals.process",
       "withdrawals.approve",
@@ -391,6 +397,7 @@ export const ALL_PERMISSIONS: Permission[] = PERMISSION_CATALOG.flatMap(
 // these to a lower admin, a MANAGER, or a custom role.
 export const FINANCE_PERMISSIONS: Permission[] = [
   "finance.view",
+  "payroll.view", "payroll.manage",
   "withdrawals.view", "withdrawals.process", "withdrawals.approve", "withdrawals.reject",
   "payment_methods.view", "payment_methods.manage",
   "packages.view", "packages.edit",
@@ -483,6 +490,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   FINANCE_ADMIN: [
     "dashboard.view",
     "finance.view",
+    "payroll.view", "payroll.manage",
     "users.view",
     "withdrawals.view", "withdrawals.process", "withdrawals.approve", "withdrawals.reject",
     "payment_methods.view", "payment_methods.manage",
@@ -887,6 +895,8 @@ export const PERMISSION_META: Partial<Record<Permission, { label: string; descri
 
   // ── Finance & Wallet ──
   "finance.view": { label: "Finance Hub", description: "Open the finance dashboard — income by source, payouts, wallet liabilities and reports." },
+  "payroll.view": { label: "View payroll", description: "See staff salaries, commissions earned, what is owed and what has been paid." },
+  "payroll.manage": { label: "Run payroll", description: "Set salary and commission rates, and pay a staff member for a period. Every payment credits their wallet and is audited." },
   "withdrawals.view": { label: "View withdrawals", description: "See users' withdrawal & deposit requests, amounts, methods and history." },
   "withdrawals.process": { label: "Process withdrawals", description: "Act on withdrawal requests and the deposits queue." },
   "withdrawals.approve": { label: "Approve withdrawals", description: "Move a request to Processing and mark it paid." },
@@ -1069,6 +1079,13 @@ export const ADMIN_MODULES: AdminModule[] = [
     href: "/admin/finance",
     icon: "Landmark",
     permissions: ["finance.view"],
+    category: "FINANCE",
+  },
+  {
+    name: "Payroll",
+    href: "/admin/finance/payroll",
+    icon: "BadgeDollarSign",
+    permissions: ["payroll.view"],
     category: "FINANCE",
   },
   {

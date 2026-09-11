@@ -23,6 +23,29 @@ import { toNum } from "@/lib/money";
  * after the fact, so there is no shape of request that returns another buyer's
  * tasks.
  */
+/**
+ * Credit actually spent per day over the last week.
+ *
+ * Module scope rather than inline in the component: the clock read has to
+ * happen outside render, and this reads better where the query lives anyway.
+ */
+async function recentBurnPerDay(userId: string): Promise<number> {
+  const weekAgo = new Date(Date.now() - 7 * 86_400_000);
+  const burn = (await prisma.transaction.aggregate({
+    where: {
+      userId,
+      createdAt: { gte: weekAgo },
+      OR: [
+        { reference: { startsWith: "taskspend_" } },
+        { reference: { startsWith: "task_fee_" } },
+      ],
+    },
+    _sum: { points: true },
+  })) as unknown as { _sum: { points: number | null } };
+  // Spend rows are stored negative; flip to a positive daily figure.
+  return Math.max(0, -(burn._sum.points ?? 0)) / 7;
+}
+
 export default async function BuyerHubPage() {
   const session = await getSession();
   if (!session?.user) redirect("/login");
@@ -138,25 +161,41 @@ export default async function BuyerHubPage() {
   };
   const taskRows = tasks as unknown as TaskRow[];
 
-  // Approved completions per task, in one grouped query rather than N.
+  // Submissions per task AND per status, in one grouped query rather than N.
   //
   // `_count.submissions` above counts every attempt including rejected and
   // pending ones. Showing that as "completed" would tell a buyer 40 people had
-  // done the job when 3 had, so the approved count is fetched separately.
-  const approved = (
+  // done the job when 3 had.
+  //
+  // Grouped by status rather than "total minus approved", which is what this
+  // used to do: that arithmetic counted every REJECTED attempt as one still
+  // "awaiting review", so a task whose fraud attempts had all been thrown out
+  // showed the buyer a review backlog that did not exist — and the same number
+  // fed the "awaiting" column on /admin/buyers.
+  const byStatus = (
     taskRows.length
       ? await prisma.taskSubmission.groupBy({
-          by: ["taskId"],
-          where: {
-            taskId: { in: taskRows.map((t) => t.id) },
-            status: { in: ["APPROVED", "AUTO_APPROVED"] },
-          },
+          by: ["taskId", "status"],
+          where: { taskId: { in: taskRows.map((t) => t.id) } },
           _count: { _all: true },
         })
       : []
-  ) as unknown as { taskId: string; _count: { _all: number } }[];
+  ) as unknown as {
+    taskId: string;
+    status: string;
+    _count: { _all: number };
+  }[];
+  const tally = (taskId: string, statuses: string[]) =>
+    byStatus
+      .filter(
+        (r) => r.taskId === taskId && statuses.includes(String(r.status))
+      )
+      .reduce((n, r) => n + r._count._all, 0);
   const approvedByTask = new Map(
-    approved.map((r) => [r.taskId, r._count._all])
+    taskRows.map((t) => [t.id, tally(t.id, ["APPROVED", "AUTO_APPROVED"])])
+  );
+  const pendingByTask = new Map(
+    taskRows.map((t) => [t.id, tally(t.id, ["PENDING"])])
   );
 
   const rows: BuyerTaskRow[] = taskRows.map((t) => ({
@@ -169,10 +208,7 @@ export default async function BuyerHubPage() {
     budgetPoints: t.budgetPoints,
     remainingBudget: t.remainingBudget,
     approvedCount: approvedByTask.get(t.id) ?? 0,
-    pendingCount: Math.max(
-      0,
-      t._count.submissions - (approvedByTask.get(t.id) ?? 0)
-    ),
+    pendingCount: pendingByTask.get(t.id) ?? 0,
     rejectionReason: t.rejectionReason,
     createdAt: new Date(t.createdAt).toISOString(),
     description: t.description,
@@ -234,9 +270,25 @@ export default async function BuyerHubPage() {
       ? Math.floor((me?.taskCreditPoints ?? 0) / perCompletion)
       : null;
 
+  // Burn rate — credit actually spent over the last 7 days, straight off the
+  // ledger rows that spent it.
+  //
+  // Runway in completions answers "how many more", which is only half the
+  // question a buyer with a campaign running is asking. "About four days left"
+  // is the half that tells them whether to top up before the weekend. Measured
+  // rather than projected from the task list: a paused task burns nothing, and
+  // a task nobody is doing burns nothing either.
+  const burnPerDay = await recentBurnPerDay(userId);
+  const daysOfCredit =
+    burnPerDay > 0
+      ? Math.floor((me?.taskCreditPoints ?? 0) / burnPerDay)
+      : null;
+
   return (
     <BuyerHubView
       runway={runway}
+      burnPerDay={burnPerDay}
+      daysOfCredit={daysOfCredit}
       cashBalance={toNum(me?.cashBalance ?? 0)}
       taskCredit={me?.taskCreditPoints ?? 0}
       pointsPerUsd={pointsPerUsd}

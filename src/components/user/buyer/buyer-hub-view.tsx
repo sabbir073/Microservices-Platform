@@ -21,11 +21,19 @@ import {
   Pencil,
   Trash2,
   Target,
+  Flag,
+  Globe,
+  CheckCircle2,
 } from "lucide-react";
 import { usd, pts, cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
 import { confirmDialog } from "@/lib/confirm";
 import { TASK_CREDIT } from "@/lib/task-credit-theme";
+import {
+  MAX_REPORT_REASON,
+  MIN_REPORT_REASON,
+  REPORT_WINDOW_DAYS,
+} from "@/lib/buyer-reports";
 import { Modal } from "@/components/user/profile/profile-ui";
 import type { BuyerPlatform } from "@/components/user/tasks/create-task-view";
 import {
@@ -77,6 +85,36 @@ interface ProofRow {
   proofImages: string[];
   pointsPaid: number;
   at: string;
+  /** Set once this buyer has flagged it; null while it can still be flagged. */
+  report: { status: string; reason: string; at: string } | null;
+  /** False when already reported, or older than the reporting window. */
+  reportable: boolean;
+}
+
+/**
+ * How a task is actually performing — the answer to "what did my money buy?".
+ *
+ * Every figure here is measured, not projected: the cost numbers are summed off
+ * the same ledger rows the invoice tab lists, so a buyer comparing the two
+ * cannot be shown two different stories about what they were charged.
+ */
+interface TaskStats {
+  approved: number;
+  pending: number;
+  rejected: number;
+  target: number;
+  acceptRate: number | null;
+  fillRate: number | null;
+  rewardPaid: number;
+  feePaid: number;
+  totalPaid: number;
+  costPerCompletion: number | null;
+  hoursToFirst: number | null;
+  perDay: number;
+  daysLeft: number | null;
+  countries: { country: string; count: number }[];
+  reportsUsed: number;
+  reportsAllowed: number;
 }
 
 export interface InvoiceRow {
@@ -145,6 +183,8 @@ export function BuyerHubView({
   cashBalance,
   taskCredit,
   runway,
+  burnPerDay,
+  daysOfCredit,
   pointsPerUsd,
   feePercent,
   canCreate,
@@ -164,6 +204,15 @@ export function BuyerHubView({
    * collapsed: "nothing running" is fine, "0 left" is urgent.
    */
   runway: number | null;
+  /** Credit actually spent per day over the last 7 days, measured off the ledger. */
+  burnPerDay: number;
+  /**
+   * Days of credit left at that rate, or null when nothing has been spent
+   * recently. "About 4 days" is the half of the runway question that tells a
+   * buyer whether to top up before the weekend; the completions figure alone
+   * does not.
+   */
+  daysOfCredit: number | null;
   pointsPerUsd: number;
   feePercent: number;
   canCreate: boolean;
@@ -182,7 +231,12 @@ export function BuyerHubView({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [proofFor, setProofFor] = useState<string | null>(null);
   const [proof, setProof] = useState<ProofRow[] | null>(null);
+  const [stats, setStats] = useState<TaskStats | null>(null);
   const [proofLoading, setProofLoading] = useState(false);
+  /** The submission a report is being written about, and the text so far. */
+  const [reportFor, setReportFor] = useState<string | null>(null);
+  const [reportText, setReportText] = useState("");
+  const [reporting, setReporting] = useState(false);
   const [editingTask, setEditingTask] = useState<BuyerTaskRow | null>(null);
 
   /** Retire a task for good. Nothing to refund — see the API note. */
@@ -217,17 +271,77 @@ export function BuyerHubView({
     }
     setProofFor(taskId);
     setProof(null);
+    setStats(null);
+    setReportFor(null);
     setProofLoading(true);
     try {
       const res = await fetch(`/api/tasks/mine/${taskId}/submissions`);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error || "Could not load the work");
       setProof(data.submissions ?? []);
+      setStats(data.stats ?? null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load the work");
       setProofFor(null);
     } finally {
       setProofLoading(false);
+    }
+  };
+
+  /**
+   * Flag ONE completion for an admin to look at again.
+   *
+   * Not a rejection, and the UI says so before the buyer types: the worker keeps
+   * their points either way. What this buys is a human second opinion and a
+   * record on the worker's account, which is where a repeat offender is
+   * actually stopped.
+   */
+  const sendReport = async (taskId: string, submissionId: string) => {
+    const reason = reportText.trim();
+    if (reason.length < MIN_REPORT_REASON) {
+      toast.error(
+        `Say what is wrong with it — at least ${MIN_REPORT_REASON} characters.`
+      );
+      return;
+    }
+    setReporting(true);
+    try {
+      const res = await fetch(`/api/tasks/mine/${taskId}/submissions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submissionId, reason }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not send the report");
+      toast.success("Sent — an admin will look at this one.");
+      // Reflect it locally rather than refetching: the row is already on screen
+      // and a full reload would collapse the panel the buyer is reading.
+      setProof((rows) =>
+        rows?.map((r) =>
+          r.id === submissionId
+            ? {
+                ...r,
+                reportable: false,
+                report: {
+                  status: "OPEN",
+                  reason,
+                  at: new Date().toISOString(),
+                },
+              }
+            : r
+        ) ?? rows
+      );
+      setStats((s) =>
+        s ? { ...s, reportsUsed: data.reportsUsed ?? s.reportsUsed + 1 } : s
+      );
+      setReportFor(null);
+      setReportText("");
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : "Could not send the report"
+      );
+    } finally {
+      setReporting(false);
     }
   };
 
@@ -313,7 +427,9 @@ export function BuyerHubView({
           sub={
             runway === null
               ? `${usd(taskCredit / (pointsPerUsd || 1000))} · nothing running`
-              : `about ${runway.toLocaleString()} more completion${runway === 1 ? "" : "s"}`
+              : daysOfCredit !== null
+                ? `about ${runway.toLocaleString()} more completion${runway === 1 ? "" : "s"} · ~${daysOfCredit}d at ${pts(Math.round(burnPerDay))}/day`
+                : `about ${runway.toLocaleString()} more completion${runway === 1 ? "" : "s"}`
           }
           tone={
             runway !== null && runway <= LOW_RUNWAY
@@ -398,10 +514,86 @@ export function BuyerHubView({
           Submissions are checked automatically and reviewed by our team — you
           are not asked to approve them. That is deliberate: it means nobody can
           refuse work that was done properly, and it means you are never the one
-          holding up someone&rsquo;s payment. Something wrong with a submission?
-          Contact support and an admin will look at it.
+          holding up someone&rsquo;s payment. Something wrong with one? Open
+          &ldquo;See the work&rdquo; and flag that completion — an admin looks at
+          it again. Flagging never takes a worker&rsquo;s payment back, and there
+          is a limit per task, so it cannot become a rejection queue.
         </p>
       </div>
+
+      {/*
+        Getting from "I have money" to "my task is live" without an admin
+        explaining it. Three things have to be true and they have to happen in
+        order — a buyer who tries to publish on an empty balance gets a 402 and
+        no idea which of the three steps they missed. Shown only while they have
+        no tasks: once one exists they have clearly worked it out.
+      */}
+      {tasks.length === 0 && (
+        <div className="glass rounded-xl p-4">
+          <h2 className="text-sm font-bold text-white">
+            Getting your first task live
+          </h2>
+          <p className="mt-0.5 text-[11px] text-gray-500">
+            Three steps. You are only ever charged as people complete the work.
+          </p>
+          <ol className="mt-3 space-y-2">
+            {(
+              [
+                {
+                  done: cashBalance > 0,
+                  title: "Put money in your wallet",
+                  body: `Deposit the amount you want to spend. You have ${usd(cashBalance)}.`,
+                  href: "/deposit",
+                  cta: "Deposit",
+                },
+                {
+                  done: taskCredit > 0,
+                  title: "Turn it into task credit",
+                  body: `Credit is what pays workers. It is kept apart from earned points and can't be withdrawn. You have ${pts(taskCredit)} pts.`,
+                  href: "/buy-points",
+                  cta: "Buy credit",
+                },
+                {
+                  done: false,
+                  title: "Create your task",
+                  body: "Pick what you want done and what one completion is worth. We'll show you how many people it can reach and how long it should take before you publish.",
+                  href: "/create-task",
+                  cta: "Create a task",
+                },
+              ] as const
+            ).map((step, i) => (
+              <li key={step.title} className="flex gap-2.5">
+                <span
+                  className={cn(
+                    "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+                    step.done
+                      ? "bg-emerald-500/15 text-emerald-400"
+                      : "bg-gray-800 text-gray-400"
+                  )}
+                >
+                  {step.done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-semibold text-white">
+                    {step.title}
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-gray-500">
+                    {step.body}
+                  </p>
+                </div>
+                {!step.done && (
+                  <Link
+                    href={step.href}
+                    className="h-fit shrink-0 rounded-lg border border-gray-700 px-2.5 py-1 text-[11px] font-bold text-gray-200 hover:text-white"
+                  >
+                    {step.cta}
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       <div className="flex gap-1 border-b border-gray-800">
         {(
@@ -609,6 +801,9 @@ export function BuyerHubView({
                             Loading…
                           </p>
                         )}
+                        {!proofLoading && stats && (
+                          <ResultsStrip stats={stats} />
+                        )}
                         {!proofLoading && proof && proof.length === 0 && (
                           <p className="text-xs text-gray-500">
                             Nothing approved yet.
@@ -658,11 +853,96 @@ export function BuyerHubView({
                                   ))}
                                 </div>
                               )}
+
+                              {/* The one judgement a buyer IS allowed to make:
+                                  ask for a second opinion. It changes nothing
+                                  by itself — see the copy below the button. */}
+                              {r.report ? (
+                                <p className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-amber-400/80">
+                                  <Flag className="h-3 w-3" />
+                                  {r.report.status === "OPEN"
+                                    ? "Reported — an admin is looking at it"
+                                    : r.report.status === "UPHELD"
+                                      ? "Reported — an admin agreed with you"
+                                      : "Reported — an admin found the work acceptable"}
+                                </p>
+                              ) : reportFor === r.id ? (
+                                <div className="mt-2 space-y-1.5 rounded-md border border-amber-500/25 bg-amber-500/5 p-2">
+                                  <textarea
+                                    rows={2}
+                                    autoFocus
+                                    maxLength={MAX_REPORT_REASON}
+                                    value={reportText}
+                                    onChange={(e) => setReportText(e.target.value)}
+                                    placeholder="What is wrong with this one? An admin reads this."
+                                    className="w-full resize-none rounded-md border border-gray-700 bg-gray-950 px-2 py-1.5 text-xs text-white focus:border-amber-500 focus:outline-none"
+                                  />
+                                  <p className="text-[10px] leading-relaxed text-gray-500">
+                                    This does not undo the payment and does not
+                                    reject the work — the worker keeps their
+                                    points either way. An admin looks at it, and
+                                    it goes on the record for that account.
+                                  </p>
+                                  <div className="flex justify-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      disabled={reporting}
+                                      onClick={() => {
+                                        setReportFor(null);
+                                        setReportText("");
+                                      }}
+                                      className="rounded-md border border-gray-700 px-2 py-1 text-[11px] font-semibold text-gray-400 hover:text-white disabled:opacity-50"
+                                    >
+                                      Never mind
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={reporting}
+                                      onClick={() => sendReport(t.id, r.id)}
+                                      className="inline-flex items-center gap-1 rounded-md bg-amber-500/90 px-2.5 py-1 text-[11px] font-bold text-gray-950 hover:bg-amber-400 disabled:opacity-50"
+                                    >
+                                      {reporting && (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      )}
+                                      Send to an admin
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                r.reportable &&
+                                (stats === null ||
+                                  stats.reportsUsed < stats.reportsAllowed) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReportFor(r.id);
+                                      setReportText("");
+                                    }}
+                                    className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-gray-500 hover:text-amber-400"
+                                  >
+                                    <Flag className="h-3 w-3" />
+                                    Something wrong with this one?
+                                  </button>
+                                )
+                              )}
                             </div>
                           ))}
                         <p className="text-[11px] leading-relaxed text-gray-600">
                           Approved work only, and without names — you are seeing
                           what was delivered, not who delivered it.
+                          {stats && stats.reportsAllowed > 0 && (
+                            <>
+                              {" "}
+                              You can report {stats.reportsAllowed -
+                                stats.reportsUsed}{" "}
+                              more completion
+                              {stats.reportsAllowed - stats.reportsUsed === 1
+                                ? ""
+                                : "s"}{" "}
+                              on this task, within {REPORT_WINDOW_DAYS} days of
+                              each one.
+                            </>
+                          )}
                         </p>
                       </div>
                     )}
@@ -1097,6 +1377,108 @@ function EditTaskModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * What the money bought, for one task.
+ *
+ * A buyer could see a progress bar and nothing else: no cost per completion, no
+ * accept rate, no sense of whether the task was moving or stuck. Those are the
+ * four numbers an advertiser judges any channel on, and without them "is this
+ * working?" could only be answered by feel.
+ *
+ * Cost figures come from the ledger rows that charged them, so this panel and
+ * the Invoices tab cannot disagree.
+ */
+function ResultsStrip({ stats }: { stats: TaskStats }) {
+  const cells: { label: string; value: string; sub?: string }[] = [
+    {
+      label: "Delivered",
+      value: `${stats.approved.toLocaleString()}${stats.target > 0 ? ` / ${stats.target.toLocaleString()}` : ""}`,
+      sub:
+        stats.fillRate !== null
+          ? `${Math.round(stats.fillRate * 100)}% of what you asked for`
+          : undefined,
+    },
+    {
+      label: "Cost per completion",
+      value:
+        stats.costPerCompletion !== null
+          ? `${pts(Math.round(stats.costPerCompletion))} pts`
+          : "—",
+      sub:
+        stats.feePaid > 0
+          ? `${pts(stats.rewardPaid)} reward + ${pts(stats.feePaid)} fee`
+          : "reward only — no fee charged",
+    },
+    {
+      label: "Accepted",
+      value:
+        stats.acceptRate !== null
+          ? `${Math.round(stats.acceptRate * 100)}%`
+          : "—",
+      sub:
+        stats.rejected > 0
+          ? `${stats.rejected.toLocaleString()} rejected, you paid for none of them`
+          : "nothing rejected",
+    },
+    {
+      label: "Pace",
+      value:
+        stats.perDay >= 1
+          ? `${stats.perDay.toFixed(1)}/day`
+          : stats.perDay > 0
+            ? `${(stats.perDay * 7).toFixed(1)}/week`
+            : "—",
+      sub:
+        stats.daysLeft !== null
+          ? `about ${stats.daysLeft} day${stats.daysLeft === 1 ? "" : "s"} to fill`
+          : stats.hoursToFirst !== null
+            ? `first one after ${stats.hoursToFirst < 1 ? "<1" : Math.round(stats.hoursToFirst)}h`
+            : undefined,
+    },
+  ];
+  return (
+    <div className="space-y-2 rounded-lg border border-gray-800 bg-gray-900/40 p-2.5">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+        {cells.map((c) => (
+          <div key={c.label}>
+            <p className="text-[10px] uppercase tracking-wide text-gray-500">
+              {c.label}
+            </p>
+            <p className="text-sm font-bold tabular-nums text-white">
+              {c.value}
+            </p>
+            {c.sub && (
+              <p className="text-[10px] leading-tight text-gray-500">{c.sub}</p>
+            )}
+          </div>
+        ))}
+      </div>
+      {/* Which audience actually delivered — aggregate only, no names. A buyer
+          targeting five countries has no other way to learn that one of them
+          did all the work. */}
+      {stats.countries.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-gray-800 pt-2">
+          <Globe className="h-3 w-3 shrink-0 text-gray-500" />
+          {stats.countries.map((c) => (
+            <span
+              key={c.country}
+              className="rounded-full bg-gray-800/80 px-2 py-0.5 text-[10px] font-semibold text-gray-300"
+            >
+              {c.country} {c.count}
+            </span>
+          ))}
+          {stats.pending > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] text-amber-400/80">
+              <Clock className="h-3 w-3" />
+              {stats.pending} still in review
+            </span>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

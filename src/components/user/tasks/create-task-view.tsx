@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Loader2,
@@ -10,6 +10,9 @@ import {
   Wallet,
   Target,
   PlayCircle,
+  Users,
+  Clock,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { usd, pts, cn } from "@/lib/utils";
@@ -116,6 +119,58 @@ export function CreateTaskView({
     feePercent,
   });
   const budget = quote.budgetPoints;
+
+  // ── Who will actually see this, and how long it should take ────────────────
+  //
+  // A buyer could pick a country, an age window and a minimum level and press
+  // Create with no idea whether that described forty thousand people or nobody.
+  // A task matching nobody looks exactly like a task nobody has got to yet, so
+  // the mistake stayed invisible until they gave up on it.
+  //
+  // Shape declared here rather than imported: `buyer-reach.ts` is `server-only`
+  // and importing it would drag Prisma into this bundle.
+  const [reach, setReach] = useState<{
+    eligible: number | null;
+    tooNarrow: boolean;
+    empty: boolean;
+    activeRecently: number | null;
+    perTaskPerDay: number | null;
+    sampleSize: number;
+    sampleMedianReward: number | null;
+    daysToFill: number | null;
+  } | null>(null);
+  const [reachLoading, setReachLoading] = useState(false);
+
+  useEffect(() => {
+    // Debounced: this runs on every keystroke in the reward and completion
+    // boxes, and it counts users.
+    const ctl = new AbortController();
+    const timer = setTimeout(() => {
+      setReachLoading(true);
+      fetch("/api/tasks/mine/reach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          minLevel,
+          targetCount,
+          pointsReward,
+          ...audience,
+        }),
+        signal: ctl.signal,
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setReach(d))
+        .catch(() => {
+          /* aborted, or offline — the panel simply shows nothing */
+        })
+        .finally(() => setReachLoading(false));
+    }, 500);
+    return () => {
+      clearTimeout(timer);
+      ctl.abort();
+    };
+  }, [type, minLevel, targetCount, pointsReward, audience]);
 
   // Admin bounds, surfaced before submit rather than as a server rejection.
   // What one completion costs — reward plus its share of the fee. This is the
@@ -466,6 +521,87 @@ export function CreateTaskView({
           <TaskAudienceTargeting value={audience} onChange={(patch) => setAudience((a) => ({ ...a, ...patch }))} />
         </div>
       )}
+
+      {/* Reach — who this can be shown to, and roughly how fast it will fill.
+          Measured, not modelled: the audience count uses the same STRICT rule
+          the serve query enforces, and the pace comes from what tasks of this
+          type have actually been completed at. */}
+      <div className="glass rounded-xl p-4">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10 ring-1 ring-emerald-500/20">
+            <Users className="h-5 w-5 text-emerald-400" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-white">
+              Who this can reach
+            </p>
+            <p className="text-[11px] text-gray-500">
+              {reachLoading
+                ? "Checking…"
+                : reach === null
+                  ? "We couldn't work this out right now."
+                  : reach.empty
+                    ? "Nobody matches this audience."
+                    : reach.tooNarrow
+                      ? "Fewer than 10 people match this audience."
+                      : `${(reach.eligible ?? 0).toLocaleString()} people match${
+                          reach.activeRecently !== null
+                            ? ` · ${reach.activeRecently.toLocaleString()} signed in this month`
+                            : ""
+                        }`}
+            </p>
+          </div>
+        </div>
+
+        {reach && (reach.empty || reach.tooNarrow) && (
+          <div className="mt-3 flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+            <p className="text-[11px] leading-relaxed text-amber-200/90">
+              {reach.empty
+                ? "Nobody on the platform matches every one of these filters, so this task would be published and shown to no one. Widen the targeting or lower the minimum level."
+                : "This audience is very small, so expect it to fill slowly or not at all. Widening one filter usually helps more than raising the reward."}
+            </p>
+          </div>
+        )}
+
+        {reach && !reach.empty && !reach.tooNarrow && (
+          <div className="mt-3 space-y-1.5 text-sm">
+            <div className="flex justify-between">
+              <span className="text-gray-400">
+                <Clock className="mr-1 inline h-3.5 w-3.5 text-gray-500" />
+                Should fill in
+              </span>
+              <span className="tabular-nums text-gray-200">
+                {reach.daysToFill === null
+                  ? "no history yet"
+                  : reach.daysToFill <= 1
+                    ? "about a day"
+                    : `about ${reach.daysToFill} days`}
+              </span>
+            </div>
+            {reach.sampleSize > 0 && (
+              <p className="text-[11px] leading-relaxed text-gray-500">
+                Based on {reach.sampleSize} task
+                {reach.sampleSize === 1 ? "" : "s"} of this kind over the last 30
+                days
+                {reach.sampleMedianReward !== null && (
+                  <>
+                    , where the typical reward was{" "}
+                    {reach.sampleMedianReward.toLocaleString()} pts
+                    {pointsReward < reach.sampleMedianReward && (
+                      <>
+                        {" "}
+                        — yours is lower, so expect it to be slower than this
+                      </>
+                    )}
+                  </>
+                )}
+                . It is an estimate, not a promise.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Invoice — what this task costs, itemised before you commit to it. */}
       <div className="glass rounded-xl p-4">

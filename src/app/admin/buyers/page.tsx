@@ -1,11 +1,13 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { Users, Sparkles, ListChecks, AlertTriangle } from "lucide-react";
+import { Users, Sparkles, ListChecks, AlertTriangle, Flag } from "lucide-react";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { pts, usd, cn } from "@/lib/utils";
 import { getPointsPerUsd } from "@/lib/economy";
+import { readBuyerReport } from "@/lib/buyer-reports";
+import { BuyerReportActions } from "./_components/report-actions";
 
 /**
  * Who is buying tasks, and how it is going for them.
@@ -130,6 +132,43 @@ export default async function AdminBuyersPage() {
     if (row) row.spent += Math.abs(s.points ?? 0);
   }
 
+  // Completions a buyer has flagged and nobody has answered yet.
+  //
+  // A buyer cannot reject work — that rule is not negotiable — so their only
+  // honest complaint used to be "contact support", which is not a queue anyone
+  // can measure. These are bounded per task (see `buyer-reports.ts`), so this
+  // list stays short by construction; if it does not, the bound is doing its
+  // job and the buyer generating them is the story.
+  const reported = (await prisma.taskSubmission.findMany({
+    where: {
+      metadata: { path: ["buyerReport", "status"], equals: "OPEN" },
+    },
+    orderBy: { reviewedAt: "desc" },
+    take: 50,
+    select: {
+      id: true,
+      proof: true,
+      proofImages: true,
+      metadata: true,
+      reviewedAt: true,
+      pointsEarned: true,
+      user: { select: { id: true, name: true } },
+      task: { select: { id: true, title: true } },
+    },
+  })) as unknown as {
+    id: string;
+    proof: string | null;
+    proofImages: string[];
+    metadata: unknown;
+    reviewedAt: Date | null;
+    pointsEarned: number | null;
+    user: { id: string; name: string | null };
+    task: { id: string; title: string } | null;
+  }[];
+  const reports = reported
+    .map((r) => ({ row: r, report: readBuyerReport(r.metadata) }))
+    .filter((r): r is { row: (typeof reported)[number]; report: NonNullable<ReturnType<typeof readBuyerReport>> } => r.report !== null);
+
   const rows = [...byId.values()].sort((a, b) => b.spent - a.spent);
   const stalled = rows.filter((r) => r.live > 0 && r.credit < r.cheapest);
 
@@ -181,6 +220,73 @@ export default async function AdminBuyersPage() {
             but a nudge from you is what turns it back into revenue.
           </p>
         </div>
+      )}
+
+      {reports.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="inline-flex items-center gap-2 text-sm font-bold text-white">
+            <Flag className="h-4 w-4 text-amber-400" />
+            Completions a buyer has flagged ({reports.length})
+          </h2>
+          <p className="text-[11px] leading-relaxed text-gray-500">
+            Buyers cannot reject work, and nothing here has taken anyone&rsquo;s
+            payment away. They are asking for a second opinion on one specific
+            completion. Marking one bad records it against that worker&rsquo;s
+            account — it does not reverse the payout, so act on the account if a
+            pattern shows up.
+          </p>
+          <div className="space-y-2">
+            {reports.map(({ row, report }) => (
+              <div
+                key={row.id}
+                className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <Link
+                    href={`/admin/tasks/${row.task?.id ?? ""}`}
+                    className="text-sm font-semibold text-white hover:text-indigo-300"
+                  >
+                    {row.task?.title ?? "Task"}
+                  </Link>
+                  <span className="text-[11px] text-gray-500">
+                    {new Date(report.at).toLocaleString()} ·{" "}
+                    <Link
+                      href={`/admin/users/${row.user.id}`}
+                      className="hover:text-indigo-300"
+                    >
+                      {row.user.name ?? "worker"}
+                    </Link>{" "}
+                    was paid {pts(row.pointsEarned ?? 0)} pts
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-amber-100/90">
+                  &ldquo;{report.reason}&rdquo;
+                </p>
+                {row.proof && (
+                  <p className="mt-1 wrap-break-word text-[11px] text-gray-400">
+                    Proof: {row.proof}
+                  </p>
+                )}
+                {row.proofImages.length > 0 && (
+                  <p className="mt-1 flex flex-wrap gap-2 text-[11px]">
+                    {row.proofImages.map((src) => (
+                      <a
+                        key={src}
+                        href={src}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-400 hover:text-indigo-300"
+                      >
+                        Screenshot
+                      </a>
+                    ))}
+                  </p>
+                )}
+                <BuyerReportActions submissionId={row.id} />
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {rows.length === 0 ? (

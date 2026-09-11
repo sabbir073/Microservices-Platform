@@ -233,8 +233,17 @@ async function main() {
     check("the codebase reads settings", readKeys.size > 30);
 
     // An "editor" is any admin page or component that names the key.
+    // The settings CATALOG counts as an editor surface too. It is not under
+    // /admin/, but it is what the admin screens render their controls and their
+    // search index from, so a key listed there is genuinely reachable. This
+    // matters for the leaderboard form, which builds its keys as `lb_${k}` and
+    // therefore contains no literal `"lb_auto_reset"` to match on — the control
+    // is real, the string simply never appears in the file.
     const adminFiles = files.filter(
-      (f) => f.includes("/admin/") || f.includes("components/admin")
+      (f) =>
+        f.includes("/admin/") ||
+        f.includes("components/admin") ||
+        f.includes("admin-settings-catalog")
     );
     const noEditor = [...readKeys].filter(
       (k) =>

@@ -40,7 +40,18 @@ function sourceWhere(source: SourceKey): Prisma.TransactionWhereInput | null {
         ],
       };
     case "refund": return { type: "REFUND" };
-    case "bonus": return { type: { in: ["BONUS", "GIFT"] } };
+    // Payroll is written as BONUS with a `payroll_` reference — there is no
+    // SALARY type — so the two cases have to be written as a pair. Without the
+    // NOT, picking "Bonus" would also list every wage payment, and the two chips
+    // would disagree with the classifier in `tx-sources.ts`, which already sends
+    // `payroll_` rows to their own bucket.
+    case "bonus":
+      return {
+        type: { in: ["BONUS", "GIFT"] },
+        NOT: { reference: { startsWith: "payroll_" } },
+      };
+    case "payroll":
+      return { type: "BONUS", reference: { startsWith: "payroll_" } };
     case "checkin":
       return { OR: [{ type: "CHECKIN" }, { type: "EARNING", reference: { startsWith: "daily_" } }] };
     case "social":

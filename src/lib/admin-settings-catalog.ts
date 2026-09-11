@@ -308,19 +308,46 @@ export const SETTINGS_ELSEWHERE: readonly ElsewhereEntry[] = [
   {
     label: "Leaderboard metric",
     description:
-      "Which number the leaderboards rank by. The other leaderboard switches on that page are saved but not yet honoured.",
+      "Which number the leaderboards rank by. Task earnings is the default — it is the one a buyer cannot inflate by trading with a second account.",
     href: "/admin/leaderboard",
     where: "Leaderboard → Settings",
     key: "lb_metric",
   },
   {
-    label: "Leaderboard master switch, auto-reset, gift items, XP distribution",
+    label: "Leaderboard on/off",
     description:
-      "Saved, but nothing reads them yet — the boards stay on, reset by hand, and pay no XP automatically",
+      "Off takes the board down for real — the page redirects, the API answers 403 and the nav entry disappears, so a bookmarked link is not a way back in",
     href: "/admin/leaderboard",
     where: "Leaderboard → Settings",
     key: "lb_enabled",
-    status: "not-active",
+    status: "live",
+  },
+  {
+    label: "Pay leaderboard prizes automatically",
+    description:
+      "An hourly job closes the finished day, week and month on UTC and pays the winners once. Windows that closed before this was switched on are never paid.",
+    href: "/admin/leaderboard",
+    where: "Leaderboard → Settings",
+    key: "lb_auto_reset",
+    status: "live",
+  },
+  {
+    label: "Leaderboard gift prizes",
+    description:
+      "A physical or digital prize per rank. The winner is told what they won and it appears in Gifts Owed for you to mark fulfilled — there is no shipping or tracking.",
+    href: "/admin/leaderboard",
+    where: "Leaderboard → Settings",
+    key: "lb_gift_items",
+    status: "live",
+  },
+  {
+    label: "Leaderboard XP prizes (daily / weekly / monthly)",
+    description:
+      "XP paid per rank alongside the points prize, in the same transaction. Leave a period empty and it awards no XP rather than a made-up amount.",
+    href: "/admin/leaderboard",
+    where: "Leaderboard → Settings",
+    key: "lb_monthly_xp_distribution",
+    status: "live",
   },
 ];
 

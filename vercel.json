@@ -7,6 +7,10 @@
     {
       "path": "/api/cron/recheck-submissions",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/cron/leaderboard-reset",
+      "schedule": "0 * * * *"
     }
   ]
 }
