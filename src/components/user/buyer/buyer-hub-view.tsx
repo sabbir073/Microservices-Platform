@@ -20,11 +20,18 @@ import {
   ExternalLink,
   Pencil,
   Trash2,
+  Target,
 } from "lucide-react";
 import { usd, pts, cn } from "@/lib/utils";
 import { toast } from "@/lib/toast";
-import { confirmDialog, promptDialog } from "@/lib/confirm";
+import { confirmDialog } from "@/lib/confirm";
 import { TASK_CREDIT } from "@/lib/task-credit-theme";
+import { Modal } from "@/components/user/profile/profile-ui";
+import type { BuyerPlatform } from "@/components/user/tasks/create-task-view";
+import {
+  TaskAudienceTargeting,
+  type TaskAudienceValue,
+} from "@/components/admin/tasks/task-audience-targeting";
 
 export interface BuyerTaskRow {
   id: string;
@@ -39,7 +46,29 @@ export interface BuyerTaskRow {
   pendingCount: number;
   rejectionReason: string | null;
   createdAt: string;
+  // Everything the edit form needs. Optional because nothing outside this
+  // file constructs a BuyerTaskRow without them, but a future caller that
+  // only needs the list view (no editing) shouldn't be forced to fetch them.
+  description?: string;
+  instructions?: string | null;
+  socialUrl?: string | null;
+  socialPlatform?: string | null;
+  socialAction?: string | null;
+  minLevel?: number;
+  countries?: string[];
+  genders?: string[];
+  regions?: string[];
+  divisions?: string[];
+  districts?: string[];
+  subDistricts?: string[];
+  postalCodes?: string[];
+  minAge?: number | null;
+  maxAge?: number | null;
 }
+
+/** Statuses the buyer may still edit. Mirrors `EDITABLE` in the PATCH route —
+ *  offering Edit on a finished task would show a control the server refuses. */
+const EDITABLE_STATUSES = new Set(["PENDING_REVIEW", "ACTIVE", "PAUSED"]);
 
 interface ProofRow {
   id: string;
@@ -121,6 +150,11 @@ export function BuyerHubView({
   canCreate,
   tasks,
   invoices,
+  platforms = [],
+  canTarget = false,
+  minPoints = 1,
+  maxPoints = 100000,
+  maxCompletions = 100000,
 }: {
   cashBalance: number;
   taskCredit: number;
@@ -135,6 +169,13 @@ export function BuyerHubView({
   canCreate: boolean;
   tasks: BuyerTaskRow[];
   invoices: InvoiceRow[];
+  /** Platforms this buyer may target — same scoped catalog the create form uses. */
+  platforms?: BuyerPlatform[];
+  /** Admin-granted `targetTasks` — gates the audience section, same as create. */
+  canTarget?: boolean;
+  minPoints?: number;
+  maxPoints?: number;
+  maxCompletions?: number;
 }) {
   const router = useRouter();
   const [tab, setTab] = useState<"tasks" | "invoices">("tasks");
@@ -142,44 +183,7 @@ export function BuyerHubView({
   const [proofFor, setProofFor] = useState<string | null>(null);
   const [proof, setProof] = useState<ProofRow[] | null>(null);
   const [proofLoading, setProofLoading] = useState(false);
-
-  /**
-   * Rename a task in place.
-   *
-   * A title typo used to mean building the whole task again, and since a buyer
-   * could not delete either, it meant asking an admin. Editing the CONTENT of a
-   * live task sends it back for review — what an admin approved has to be what
-   * users see — and the API says so when it happens.
-   */
-  const rename = async (taskId: string, current: string) => {
-    const title = await promptDialog({
-      title: "Rename this task",
-      description:
-        "Editing a live task sends it back to the review queue, because what was approved has to be what people see.",
-      defaultValue: current,
-      required: true,
-      confirmLabel: "Save",
-    });
-    if (title === null || title.trim() === current) return;
-    setBusyId(taskId);
-    try {
-      const res = await fetch(`/api/tasks/mine/${taskId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: title.trim() }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || "Could not save");
-      toast.success(
-        data.backToReview ? "Saved — back in the review queue" : "Saved"
-      );
-      router.refresh();
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Could not save");
-    } finally {
-      setBusyId(null);
-    }
-  };
+  const [editingTask, setEditingTask] = useState<BuyerTaskRow | null>(null);
 
   /** Retire a task for good. Nothing to refund — see the API note. */
   const cancel = async (taskId: string, title: string) => {
@@ -561,18 +565,16 @@ export function BuyerHubView({
                       </button>
                     )}
 
-                    {["ACTIVE", "PAUSED", "PENDING_REVIEW"].includes(
-                      t.status
-                    ) && (
+                    {EDITABLE_STATUSES.has(t.status) && (
                       <>
                         <button
                           type="button"
                           disabled={busyId === t.id}
-                          onClick={() => rename(t.id, t.title)}
+                          onClick={() => setEditingTask(t)}
                           className="ml-2 inline-flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:text-white disabled:opacity-50"
                         >
                           <Pencil className="h-3.5 w-3.5" />
-                          Rename
+                          Edit
                         </button>
                         <button
                           type="button"
@@ -735,7 +737,366 @@ export function BuyerHubView({
           })}
         </div>
       )}
+
+      {editingTask && (
+        <EditTaskModal
+          task={editingTask}
+          platforms={platforms}
+          canTarget={canTarget}
+          minPoints={minPoints}
+          maxPoints={maxPoints}
+          maxCompletions={maxCompletions}
+          onClose={() => setEditingTask(null)}
+          onSaved={() => {
+            setEditingTask(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * The full edit form — title, description, platform/action/link (SOCIAL
+ * only), extra instructions, minimum level, reward + completions, and
+ * audience targeting when granted. Same fields `/api/tasks/mine/[id]`
+ * (PATCH) accepts, and nothing this form offers is something that route
+ * would refuse.
+ *
+ * VIDEO tasks are editable here too, but only their title, description,
+ * instructions, min level, reward, completions and audience — the route has
+ * no way to change a video's link or watch-time (that lives in
+ * `videoConfig`, on the task-creation route only), so those two are
+ * deliberately not offered here; showing them would silently do nothing.
+ */
+function EditTaskModal({
+  task,
+  platforms,
+  canTarget,
+  minPoints,
+  maxPoints,
+  maxCompletions,
+  onClose,
+  onSaved,
+}: {
+  task: BuyerTaskRow;
+  platforms: BuyerPlatform[];
+  canTarget: boolean;
+  minPoints: number;
+  maxPoints: number;
+  maxCompletions: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  // Reward and completion count freeze the moment a task goes live — people
+  // picked it up on those terms. Mirrors the server's own `notYetLive` gate
+  // so the buyer is never shown an input the API will silently ignore.
+  const notYetLive = task.status === "PENDING_REVIEW";
+  const isSocial = task.type === "SOCIAL";
+
+  const [title, setTitle] = useState(task.title);
+  const [description, setDescription] = useState(task.description ?? "");
+  const [instructions, setInstructions] = useState(task.instructions ?? "");
+  const [socialPlatform, setSocialPlatform] = useState(task.socialPlatform ?? "");
+  const [socialAction, setSocialAction] = useState(task.socialAction ?? "");
+  const [socialUrl, setSocialUrl] = useState(task.socialUrl ?? "");
+  const [minLevel, setMinLevel] = useState(task.minLevel ?? 1);
+  const [pointsReward, setPointsReward] = useState(task.pointsReward);
+  const [targetCount, setTargetCount] = useState(task.targetCount);
+  const [audience, setAudience] = useState<TaskAudienceValue>({
+    countries: task.countries ?? [],
+    genders: task.genders ?? [],
+    minAge: task.minAge ?? null,
+    maxAge: task.maxAge ?? null,
+    regions: task.regions ?? [],
+    divisions: task.divisions ?? [],
+    districts: task.districts ?? [],
+    subDistricts: task.subDistricts ?? [],
+    postalCodes: task.postalCodes ?? [],
+  });
+  const [saving, setSaving] = useState(false);
+
+  const pickPlatform = (key: string) => {
+    setSocialPlatform(key);
+    setSocialAction("");
+  };
+  // A platform the buyer was allowed to pick when the task was created can
+  // later be closed globally or blocked on this account. Dropping it from
+  // the select would leave the field looking blank on an unchanged task, so
+  // the current value stays selectable even if it can no longer be chosen
+  // fresh.
+  const platformOptions =
+    socialPlatform && !platforms.some((p) => p.key === socialPlatform)
+      ? [
+          {
+            key: socialPlatform,
+            label: socialPlatform,
+            emoji: "🔗",
+            actions: socialAction
+              ? [{ key: socialAction, label: socialAction }]
+              : [],
+          },
+          ...platforms,
+        ]
+      : platforms;
+  const platformDef = platformOptions.find((p) => p.key === socialPlatform);
+
+  const save = async () => {
+    if (!title.trim() || !description.trim()) {
+      toast.error("Title and description are required");
+      return;
+    }
+    if (isSocial && (!socialUrl.trim() || !socialAction.trim())) {
+      toast.error("Social tasks need an action and a target URL");
+      return;
+    }
+    setSaving(true);
+    try {
+      const body: Record<string, unknown> = {
+        title: title.trim(),
+        description: description.trim(),
+        instructions: instructions.trim() || null,
+        minLevel: Math.max(1, Math.floor(minLevel)),
+      };
+      if (isSocial) {
+        body.socialPlatform = socialPlatform.trim() || null;
+        body.socialAction = socialAction.trim() || null;
+        body.socialUrl = socialUrl.trim() || null;
+      }
+      // Sent only while still awaiting review — the server ignores these
+      // once live, but omitting them entirely avoids a request that reads
+      // as though it is trying to change a frozen value.
+      if (notYetLive) {
+        body.pointsReward = Math.floor(pointsReward);
+        body.targetCount = Math.floor(targetCount);
+      }
+      if (canTarget) {
+        body.countries = audience.countries;
+        body.genders = audience.genders;
+        body.regions = audience.regions;
+        body.divisions = audience.divisions;
+        body.districts = audience.districts;
+        body.subDistricts = audience.subDistricts;
+        body.postalCodes = audience.postalCodes;
+        body.minAge = audience.minAge;
+        body.maxAge = audience.maxAge;
+      }
+      const res = await fetch(`/api/tasks/mine/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not save");
+      toast.success(
+        data.backToReview ? "Saved — back in the review queue" : "Saved"
+      );
+      onSaved();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Edit task" subtitle={task.title} onClose={saving ? undefined : onClose}>
+      <div className="space-y-3">
+        {!notYetLive && (
+          <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-300">
+            Saving sends this task back for review. It stops being shown to
+            workers until an admin approves it again — what was approved has
+            to be what people see.
+          </p>
+        )}
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-400">
+            Title *
+          </label>
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            maxLength={120}
+            className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-400">
+            Description *
+          </label>
+          <textarea
+            rows={3}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className="w-full resize-none rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+          />
+        </div>
+
+        {isSocial && (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-400">
+                  Platform *
+                </label>
+                <select
+                  value={socialPlatform}
+                  onChange={(e) => pickPlatform(e.target.value)}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+                >
+                  <option value="">Choose…</option>
+                  {platformOptions.map((p) => (
+                    <option key={p.key} value={p.key}>
+                      {p.emoji} {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-400">
+                  Action *
+                </label>
+                <select
+                  value={socialAction}
+                  onChange={(e) => setSocialAction(e.target.value)}
+                  disabled={!platformDef}
+                  className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+                >
+                  <option value="">
+                    {platformDef ? "Choose…" : "Pick a platform first"}
+                  </option>
+                  {platformDef?.actions.map((a) => (
+                    <option key={a.key} value={a.key}>
+                      {a.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-400">
+                Target URL *
+              </label>
+              <input
+                value={socialUrl}
+                onChange={(e) => setSocialUrl(e.target.value)}
+                placeholder="https://..."
+                className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+          </>
+        )}
+
+        {task.type === "VIDEO" && (
+          <p className="text-[11px] leading-relaxed text-gray-500">
+            The video link and watch time can&rsquo;t be changed here — pause
+            this task and create a new one to change either.
+          </p>
+        )}
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-400">
+            Additional instructions
+          </label>
+          <textarea
+            rows={3}
+            value={instructions}
+            onChange={(e) => setInstructions(e.target.value)}
+            placeholder="Optional — extra detail shown alongside the task"
+            className="w-full resize-none rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-400">
+              Points reward
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={pointsReward}
+              disabled={!notYetLive}
+              onChange={(e) => setPointsReward(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-400">
+              Completions
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={targetCount}
+              disabled={!notYetLive}
+              onChange={(e) => setTargetCount(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-400">
+              Min level
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={minLevel}
+              onChange={(e) => setMinLevel(Number(e.target.value))}
+              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            />
+          </div>
+        </div>
+        {notYetLive ? (
+          <p className="text-[11px] text-gray-500">
+            Reward: {minPoints.toLocaleString()}–{maxPoints.toLocaleString()}{" "}
+            pts · up to {maxCompletions.toLocaleString()} completions
+          </p>
+        ) : (
+          <p className="text-[11px] leading-relaxed text-gray-500">
+            Reward and completions are locked once a task is live — people
+            picked it up on those terms. Pause it and create a new one to
+            change either.
+          </p>
+        )}
+
+        {canTarget && (
+          <div className="space-y-2 border-t border-gray-800 pt-3">
+            <h3 className="inline-flex items-center gap-1.5 text-xs font-bold text-white">
+              <Target className="h-3.5 w-3.5 text-indigo-400" /> Audience
+              targeting
+            </h3>
+            <TaskAudienceTargeting
+              value={audience}
+              onChange={(patch) => setAudience((a) => ({ ...a, ...patch }))}
+            />
+          </div>
+        )}
+
+        <div className="flex justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="rounded-lg border border-gray-700 px-3 py-2 text-xs font-semibold text-gray-300 hover:text-white disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={save}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-600 disabled:opacity-50"
+          >
+            {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            Save
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 

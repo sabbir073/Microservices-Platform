@@ -139,7 +139,13 @@ export async function POST(request: NextRequest) {
   return withIdempotency(request, session.user.id, async () => {
   try {
     const body = await request.json();
-    const { amount } = body;
+    // Coerce ONCE, here, and reject anything that isn't a finite positive
+    // number. The raw body value was used directly in every comparison below,
+    // and a non-numeric one (an object, an array) makes each of them false —
+    // including `amount > 100`, which is the KYC gate. It ended in a Prisma
+    // type error rather than a payout, but a money route must not depend on a
+    // driver rejecting garbage that four of its own checks waved through.
+    const amount = Number(body.amount);
     let method = body.method;
     let accountDetails = body.accountDetails;
 
@@ -173,7 +179,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate amount
-    if (!amount || amount <= 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       return NextResponse.json(
         { error: "Invalid withdrawal amount" },
         { status: 400 }

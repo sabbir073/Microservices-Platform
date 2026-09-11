@@ -18,6 +18,7 @@ import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import type { VideoConfig } from "@/lib/video-tasks";
 import { formatDuration, engagementSteps } from "@/lib/video-tasks";
 import { VideoTaskPlayer } from "./video-task-player";
+import { TaskInstructions } from "./task-instructions";
 import { InlineVideoEmbed } from "@/components/user/primitives/inline-video-embed";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import {
@@ -323,23 +324,9 @@ export function VideoTaskDetailView({ taskId }: { taskId: string }) {
         </section>
       )}
 
-      {/* Instructions */}
-      {task.instructions && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-4">
-          <h2 className="text-[11px] uppercase tracking-wider text-gray-500 font-bold mb-2">
-            Steps
-          </h2>
-          <ol className="space-y-1.5 text-sm text-gray-200 list-decimal pl-5">
-            {task.instructions
-              .split("\n")
-              .map((s) => s.trim())
-              .filter(Boolean)
-              .map((step, i) => (
-                <li key={i}>{step}</li>
-              ))}
-          </ol>
-        </section>
-      )}
+      {/* Instructions — same renderer as every other task surface, so rich
+          text, sanitisation and the numbered-step styling all match. */}
+      <TaskInstructions value={task.instructions} />
 
       {/* Instruction video (separate from the task's main video) */}
       {task.instructionVideoUrl && (

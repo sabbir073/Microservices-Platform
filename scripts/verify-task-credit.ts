@@ -189,6 +189,37 @@ async function main() {
       "the purchase is a CAS too, so two buys cannot spend the same cash",
       /cashBalance:\s*\{\s*gte:/.test(code(CREDIT_LIB))
     );
+    // The advertised promise is drawn down atomically, not overwritten with a
+    // number computed from the snapshot the CALLER read. All three payout
+    // paths (submit auto-approve, admin review, social re-check) read the task
+    // first and pass `task.remainingBudget` in, so a `set` here let two
+    // concurrent approvals both write `snapshot - reward`: the task went on
+    // advertising completions the buyer never funded, and the buyer was
+    // charged for each one.
+    {
+      const lib = code(CREDIT_LIB);
+      check(
+        "remainingBudget is drawn down with a guarded decrement",
+        /remainingBudget:\s*\{\s*gte:/.test(lib) &&
+          /remainingBudget:\s*\{\s*decrement:/.test(lib),
+        "a plain `set` from the caller's snapshot is a lost update between two approvals"
+      );
+      check(
+        "…and it is never `set` from the caller's snapshot",
+        !/remainingBudget:\s*promiseLeft/.test(lib) &&
+          !/args\.remainingBudget\s*-\s*rewardPoints/.test(lib)
+      );
+      check(
+        "the close decision reads the promise back from the database",
+        /taskAfter\?\.remainingBudget/.test(lib),
+        "deciding on a stale snapshot re-opens the same race one line later"
+      );
+      check(
+        "the read-backs are sequential — `db` may be a transaction client",
+        !/Promise\.all\(\[[\s\S]*db\.task\.findUnique/.test(lib),
+        "an interactive transaction must not have two queries in flight"
+      );
+    }
   }
 
   /* ── 4b. Credit never moves without a record ── */

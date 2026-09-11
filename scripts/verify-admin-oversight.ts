@@ -253,6 +253,29 @@ check(
   /!isPrivileged/.test(feedApi)
 );
 
+// A donation moves points that were already counted as earned once. Crediting
+// the recipient's lifetime `totalEarnings` on top — with nothing decrementing
+// the donor — meant two accounts bouncing the same points between their posts
+// pumped `totalEarnings` without bound at zero cost. That column is what
+// /api/leaderboard ranks on, what the admin leaderboard reset pays prizes on,
+// and what the `total_earned` achievements (which pay real points) measure.
+const donateApi = code("src/app/api/feed/[id]/donate/route.ts");
+check(
+  "a donation does NOT inflate the recipient's lifetime earnings",
+  !/totalEarnings:\s*\{\s*increment/.test(donateApi),
+  "a transfer counted as an earning is a free leaderboard/achievement farm"
+);
+check(
+  "…but the donor is still debited with a CAS",
+  /pointsBalance:\s*\{\s*gte:\s*v\.data\.points\s*\}/.test(donateApi),
+  "the pre-check above it is check-then-act"
+);
+check(
+  "…and the recipient still gets a GIFT ledger row",
+  /TransactionType\.GIFT/.test(donateApi),
+  "money that moves without a row is money nobody can reconcile"
+);
+
 const composer = code("src/components/user/feed/create-post-composer.tsx");
 check(
   "the composer hides the tab rather than showing it disabled",

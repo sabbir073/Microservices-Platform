@@ -234,11 +234,25 @@ export async function chargeTaskCompletion(
   // Track the promise separately from the money: `remainingBudget` is how many
   // completions this task still advertises, and it is what tells a buyer "40 of
   // 100 left". It is not a reserved pool any more — nothing is held.
-  const promiseLeft = Math.max(0, args.remainingBudget - rewardPoints);
-  await db.task.update({
-    where: { id: args.taskId },
-    data: { remainingBudget: promiseLeft },
+  //
+  // Written as an atomic decrement, never as `set` to a value computed from the
+  // `remainingBudget` the CALLER read. All three payout paths read the task
+  // first and pass that snapshot in, so two approvals landing together both
+  // computed `snapshot - reward` and the second overwrote the first: the task
+  // kept advertising completions the buyer never agreed to fund, and the buyer
+  // was charged for every one of them. The guarded decrement lets only one of
+  // the two win the subtraction; the clamp handles the last completion, which
+  // can legitimately exceed what is left.
+  const drawn = await db.task.updateMany({
+    where: { id: args.taskId, remainingBudget: { gte: rewardPoints } },
+    data: { remainingBudget: { decrement: rewardPoints } },
   });
+  if (drawn.count === 0) {
+    await db.task.updateMany({
+      where: { id: args.taskId },
+      data: { remainingBudget: 0 },
+    });
+  }
 
   // The buyer's record of where their credit went.
   //
@@ -289,11 +303,21 @@ export async function chargeTaskCompletion(
   }
 
   // Can the buyer still cover one more? Read the balance back rather than
-  // assuming — another task of theirs may have drawn on it in between.
+  // assuming — another task of theirs may have drawn on it in between. Same for
+  // the promise: the decrement above is atomic, so the authoritative
+  // `remainingBudget` is the one the database now holds, not an arithmetic
+  // guess off the caller's snapshot.
+  // Sequential, not `Promise.all`: `db` may be an interactive-transaction
+  // client, and those must not have two queries in flight at once.
   const after = await db.user.findUnique({
     where: { id: args.buyerId },
     select: { taskCreditPoints: true },
   });
+  const taskAfter = await db.task.findUnique({
+    where: { id: args.taskId },
+    select: { remainingBudget: true },
+  });
+  const promiseLeft = taskAfter?.remainingBudget ?? 0;
   const oneMore =
     args.standardReward +
     (args.feePercent > 0

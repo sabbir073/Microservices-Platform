@@ -238,6 +238,13 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
           />
           <span className="text-white font-medium">Leaderboard enabled</span>
         </label>
+        {/* Saved, but nothing reads it yet — say so rather than let an admin
+            switch the leaderboard "off" and believe users stopped seeing it. */}
+        <p className="-mt-2 text-xs text-amber-400/80">
+          Not wired up yet — this switch is saved but the leaderboard stays
+          visible either way. To take it down today, remove the page from
+          navigation.
+        </p>
 
         <Field label="Ranking Metric">
           <select
@@ -372,8 +379,14 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
           </h2>
           <p className="text-sm text-slate-400">
             Optional physical/digital prizes per rank — mobile, gadget, tour
-            package, etc. Shown alongside point + XP rewards on the standings
-            page.
+            package, etc.
+          </p>
+          {/* Saved, but no surface reads them — the standings page shows points
+              and XP only. Promising them here would be promising the user a
+              prize they will never be shown. */}
+          <p className="text-xs text-amber-400/80">
+            Not wired up yet — these are saved for later but are not shown on
+            the standings page and are not handed out by a reset.
           </p>
         </div>
 
@@ -456,10 +469,16 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
               )}
             </span>
           </div>
-          <p className="text-sm text-slate-400 mt-1 mb-4">
-            When enabled, leaderboards reset on schedule (daily 00:00, weekly
-            Mon 00:00, monthly 1st 00:00) and prize distribution runs
-            automatically. Disable to require manual resets only.
+          <p className="text-sm text-slate-400 mt-1 mb-2">
+            The intent: leaderboards reset on schedule (daily 00:00, weekly Mon
+            00:00, monthly 1st 00:00) and prize distribution runs automatically.
+          </p>
+          {/* There is no scheduler reading this yet. An admin who leaves it on
+              and waits for prizes to go out would be waiting forever. */}
+          <p className="mb-4 text-xs text-amber-400/80">
+            Not wired up yet — no schedule runs on its own. Resets and prize
+            payouts happen only when you run them from this page, whatever this
+            switch says.
           </p>
 
           {/* Switch-style toggle */}

@@ -302,6 +302,13 @@ export function ReferralBonusConfigForm({
             >
               <Plus className="h-3.5 w-3.5" /> Add a step
             </button>
+            <p className="mt-2 text-[11px] leading-relaxed text-amber-400/80">
+              Each step is paid once per member, remembered by its referral
+              number. Changing that number on a step people have already passed
+              makes it a new step to them, and they are paid for it again —
+              including a second free subscription. Edit the label freely;
+              change the number only when you mean to pay again.
+            </p>
           </div>
 
           {/* What counts as "active" — the setting that decides whether this

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getBuyerSettings } from "@/lib/buyer-settings";
+import { getBuyerScope, platformRefusal } from "@/lib/buyer-scope";
 import { sanitizeTaskAudience, EMPTY_TASK_AUDIENCE } from "@/lib/task-targeting";
 import { userCanFeature } from "@/lib/packages";
 import { writeAudit } from "@/lib/audit";
@@ -80,6 +81,7 @@ export async function PATCH(
       title: true,
       status: true,
       type: true,
+      socialPlatform: true,
       pointsReward: true,
       totalLimit: true,
       budgetPoints: true,
@@ -108,6 +110,19 @@ export async function PATCH(
   }
   const d = parsed.data;
   const notYetLive = task.status === "PENDING_REVIEW";
+
+  // A platform this buyer is blocked from is blocked on EDIT too.
+  //
+  // Creation checks the scope; this route did not. That gap made the per-buyer
+  // suspension decorative: a buyer barred from one platform could create a task
+  // on a permitted one and then edit it across, which is the exact move the
+  // block exists to stop. Only checked when the platform is actually being
+  // changed, so a task that predates a new block can still have its typo fixed.
+  if (d.socialPlatform != null && d.socialPlatform !== task.socialPlatform) {
+    const scope = await getBuyerScope(userId);
+    const stop = platformRefusal(scope, d.socialPlatform);
+    if (stop) return NextResponse.json({ error: stop }, { status: 403 });
+  }
 
   // Reward and completion count are frozen once the task has been published.
   if (!notYetLive) {

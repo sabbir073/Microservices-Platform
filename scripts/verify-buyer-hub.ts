@@ -338,11 +338,43 @@ async function main() {
       "both verbs are audited",
       /TASK_EDITED/.test(api) && /TASK_CANCELLED/.test(api)
     );
+    check(
+      "a blocked platform is blocked on EDIT, not only on create",
+      /platformRefusal\(scope, d\.socialPlatform\)/.test(api),
+      "a buyer barred from one platform could otherwise create on a permitted one and edit across"
+    );
+    check(
+      "…and the check reads the task's current platform to compare against",
+      /socialPlatform: true/.test(api) &&
+        /d\.socialPlatform !== task\.socialPlatform/.test(api),
+      "without the current value every save looks like a platform change and an old task cannot be fixed"
+    );
 
     const hub = read(VIEW);
+    // Was "the hub exposes rename and cancel". Rename is gone: the button only
+    // ever PATCHed `title` while the route accepted the whole task, so a buyer
+    // fixing anything else still had to ask an admin. What matters now is that
+    // the form offers what the route accepts and refuses what it freezes.
     check(
-      "the hub exposes rename and cancel",
-      /Rename/.test(hub) && /cancel\(t\.id, t\.title\)/.test(hub)
+      "the hub exposes a real edit and a cancel",
+      /EditTaskModal/.test(hub) && /cancel\(t\.id, t\.title\)/.test(hub)
+    );
+    check(
+      "edit is offered on exactly the statuses the route will accept",
+      /EDITABLE_STATUSES = new Set\(\["PENDING_REVIEW", "ACTIVE", "PAUSED"\]\)/.test(
+        hub
+      ) && /EDITABLE_STATUSES\.has\(t\.status\)/.test(hub),
+      "offering edit on a finished task means a button that always errors"
+    );
+    check(
+      "reward and completions are disabled once the task is live",
+      (hub.match(/disabled=\{!notYetLive\}/g) ?? []).length >= 2,
+      "the server drops those two silently, so an enabled input would lie"
+    );
+    check(
+      "the buyer is told that editing a live task sends it back to review",
+      /notYetLive && \(/.test(hub) && /review/i.test(hub),
+      "a running task that quietly re-enters review reads as a bug"
     );
     check(
       "cancelling asks first",

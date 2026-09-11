@@ -544,11 +544,12 @@ export function SystemSettingsForm({
             )}
             <Section title="Buyer & task funding">
               <p className="-mt-1 mb-2 text-xs leading-relaxed text-slate-500">
-                A buyer funds a task from their wallet: the reward pool is held
-                against the task and paid out per approved completion, and the
-                fee below is the platform&rsquo;s cut. Unspent budget is
-                refunded if the task is rejected. Who may create tasks at all is
-                a per-user grant (Users &rarr; features), not a switch here.
+                A buyer funds a task from bought task credit: nothing is taken
+                up front, and each approved completion charges the buyer for
+                itself, plus the fee below as the platform&rsquo;s cut. A task
+                stops being shown the moment the buyer can no longer cover one
+                more completion. Who may create tasks at all is a per-user
+                grant (Users &rarr; features), not a switch here.
               </p>
               <Toggle
                 label="Allow buyers to fund tasks"
@@ -565,8 +566,8 @@ export function SystemSettingsForm({
                   const ppu = Math.max(1, Number(values.points_per_usd ?? 1000));
                   const example = (100 * 50) / ppu;
                   return pct > 0
-                    ? `e.g. 100 people x 50 pts = ${usd(example)} of rewards + ${usd((example * pct) / 100)} fee = ${usd(example * (1 + pct / 100))} charged`
-                    : "0 means buyers pay only the reward pool and the platform earns nothing on task funding";
+                    ? `e.g. 100 completions x 50 pts = ${usd(example)} of rewards + ${usd((example * pct) / 100)} fee = ${usd(example * (1 + pct / 100))} charged, as those completions happen`
+                    : "0 means buyers pay only the reward per completion and the platform earns nothing on task funding";
                 })()}
               >
                 <input

@@ -84,12 +84,24 @@ export async function POST(
       });
       if (debit.count === 0) throw new Error("INSUFFICIENT");
 
+      // Points move, lifetime EARNINGS do not.
+      //
+      // A donation is a peer-to-peer transfer of points that were already
+      // counted as earned once — by whoever earned them. Crediting the
+      // recipient's `totalEarnings` on top counted them a second time, and
+      // nothing decremented the donor, so the pair's combined lifetime
+      // earnings rose by the donated amount on every hop. Two accounts
+      // donating the same points back and forth therefore pumped
+      // `totalEarnings` without bound at zero cost — and `totalEarnings` is
+      // what `/api/leaderboard` ranks on, what the admin leaderboard reset
+      // pays prizes on, and what the `total_earned` achievements (which pay
+      // real points) are measured against.
+      //
+      // The GIFT ledger row below still records the receipt, so the donation
+      // remains fully visible in the recipient's history.
       await tx.user.update({
         where: { id: post.userId },
-        data: {
-          pointsBalance: { increment: v.data.points },
-          totalEarnings: { increment: v.data.points / pointsPerUsd },
-        },
+        data: { pointsBalance: { increment: v.data.points } },
       });
       await tx.transaction.create({
         data: {
@@ -103,8 +115,8 @@ export async function POST(
           metadata: { postId: id, recipientId: post.userId },
         },
       });
-      // Recipient-side ledger row so the received donation shows in THEIR history
-      // (their totalEarnings is already incremented above).
+      // Recipient-side ledger row so the received donation shows in THEIR
+      // history (it is a transfer, so it does NOT touch totalEarnings — see above).
       await tx.transaction.create({
         data: {
           userId: post.userId,

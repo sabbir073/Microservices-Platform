@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getEffectiveFeatures } from "@/lib/packages";
 import { getPointsPerUsd } from "@/lib/economy";
 import { getBuyerSettings } from "@/lib/buyer-settings";
+import { getBuyerScope } from "@/lib/buyer-scope";
+import { SOCIAL_PLATFORMS } from "@/lib/social-tasks";
 import { FeatureLock } from "@/components/user/primitives/feature-lock";
 import { BuyerHubView, type BuyerTaskRow, type InvoiceRow } from "@/components/user/buyer/buyer-hub-view";
 import { toNum } from "@/lib/money";
@@ -31,7 +33,7 @@ export default async function BuyerHubPage() {
     return <FeatureLock title="Buyer Hub" applyHref="/profile/become-creator" />;
   }
 
-  const [buyer, pointsPerUsd, me, tasks, ledger] = await Promise.all([
+  const [buyer, pointsPerUsd, me, tasks, ledger, scope] = await Promise.all([
     getBuyerSettings(),
     getPointsPerUsd(),
     prisma.user.findUnique({
@@ -53,6 +55,25 @@ export default async function BuyerHubPage() {
         remainingBudget: true,
         rejectionReason: true,
         createdAt: true,
+        // Everything the edit form needs to seed itself — the same shape
+        // `/api/tasks/mine/[id]` (PATCH) accepts. Fetched here rather than on
+        // open because that route has no GET; editing an entry the list
+        // never loaded would mean a second round trip for every open.
+        description: true,
+        instructions: true,
+        socialUrl: true,
+        socialPlatform: true,
+        socialAction: true,
+        minLevel: true,
+        countries: true,
+        genders: true,
+        regions: true,
+        divisions: true,
+        districts: true,
+        subDistricts: true,
+        postalCodes: true,
+        minAge: true,
+        maxAge: true,
         _count: { select: { submissions: true } },
       },
     }),
@@ -81,6 +102,7 @@ export default async function BuyerHubPage() {
         createdAt: true,
       },
     }),
+    getBuyerScope(userId),
   ]);
 
   // Accelerate's inference collapses a wide `select` to `{}` the moment a
@@ -97,6 +119,21 @@ export default async function BuyerHubPage() {
     remainingBudget: number;
     rejectionReason: string | null;
     createdAt: Date;
+    description: string;
+    instructions: string | null;
+    socialUrl: string | null;
+    socialPlatform: string | null;
+    socialAction: string | null;
+    minLevel: number;
+    countries: string[];
+    genders: string[];
+    regions: string[];
+    divisions: string[];
+    districts: string[];
+    subDistricts: string[];
+    postalCodes: string[];
+    minAge: number | null;
+    maxAge: number | null;
     _count: { submissions: number };
   };
   const taskRows = tasks as unknown as TaskRow[];
@@ -138,6 +175,32 @@ export default async function BuyerHubPage() {
     ),
     rejectionReason: t.rejectionReason,
     createdAt: new Date(t.createdAt).toISOString(),
+    description: t.description,
+    instructions: t.instructions,
+    socialUrl: t.socialUrl,
+    socialPlatform: t.socialPlatform,
+    socialAction: t.socialAction,
+    minLevel: t.minLevel,
+    countries: t.countries,
+    genders: t.genders,
+    regions: t.regions,
+    divisions: t.divisions,
+    districts: t.districts,
+    subDistricts: t.subDistricts,
+    postalCodes: t.postalCodes,
+    minAge: t.minAge,
+    maxAge: t.maxAge,
+  }));
+
+  // Same catalog + scope filter the create form uses, so the edit form never
+  // offers a platform this buyer is suspended from or the admin has closed.
+  const platforms = SOCIAL_PLATFORMS.filter((p) =>
+    scope.platforms.includes(p.key)
+  ).map((p) => ({
+    key: p.key,
+    label: p.label,
+    emoji: p.emoji,
+    actions: p.actions.map((a) => ({ key: a.key, label: a.label })),
   }));
 
   const invoices: InvoiceRow[] = ledger.map((r) => ({
@@ -181,6 +244,11 @@ export default async function BuyerHubPage() {
       canCreate={buyer.enabled && buyer.allowedTaskTypes.length > 0}
       tasks={rows}
       invoices={invoices}
+      platforms={platforms}
+      canTarget={enabled.has("targetTasks")}
+      minPoints={buyer.minPointsPerTask}
+      maxPoints={buyer.maxPointsPerTask}
+      maxCompletions={buyer.maxCompletions}
     />
   );
 }

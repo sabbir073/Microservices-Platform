@@ -112,7 +112,31 @@ export const bkash: PaymentProvider = {
       });
       const data = await res.json();
       const ok = data?.transactionStatus === "Completed" || data?.statusCode === "0000";
-      return { success: !!ok, gatewayRef: paymentID };
+      // Report what bKash says was actually paid, so the callback route can
+      // cross-check it against the deposit we recorded. Omitting it is not
+      // neutral: `amountOk` treats an absent amount as "nothing to compare"
+      // and credits the stored amount unverified, which silently switches off
+      // the one check standing between a tampered payment and a credited
+      // wallet.
+      //
+      // Converted back to USD at the SAME rate `initCheckout` charged in,
+      // because the route compares against the deposit's USD amount. Returning
+      // the raw taka figure would make every honest bKash deposit look like a
+      // ~123x overpayment and get rejected.
+      //
+      // If an admin changes `bkash.usdToBdtRate` between create and execute,
+      // the comparison fails and the deposit is rejected rather than credited.
+      // That is the right direction to fail: a rejected deposit can be fixed by
+      // hand, a wrongly credited one has already left.
+      const paidBdt = Number(data?.amount);
+      const rate = Number(await getSetting<number>("bkash.usdToBdtRate", 123)) || 123;
+      const paidUsd = paidBdt / rate;
+      return {
+        success: !!ok,
+        gatewayRef: paymentID,
+        amount: Number.isFinite(paidUsd) && paidUsd > 0 ? paidUsd : undefined,
+        currency: "USD",
+      };
     } catch {
       return { success: false, gatewayRef: paymentID };
     }
