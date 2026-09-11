@@ -28,6 +28,7 @@ import { EmptyState } from "@/components/user/primitives/empty-state";
 import { StatCard } from "@/components/user/primitives/stat-card";
 import { isCategoryVisible } from "@/lib/task-categories";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 // Reuse the Earn-hub tabs (single source of truth — /earn stays unchanged).
 import {
   LearnTab,
@@ -248,7 +249,11 @@ export function TasksHubView({
       </div>
 
       {/* Tab row */}
-      <nav className="flex gap-1 overflow-x-auto scrollbar-none -mx-1 px-1 pb-1 sticky top-0 z-10 bg-gray-950/80 backdrop-blur-sm">
+      <ScrollFadeRow
+        className="-mx-1 sticky top-0 z-10 bg-gray-950/80 backdrop-blur-sm"
+        innerClassName="flex gap-1 px-1 pb-1"
+        ariaLabel="Task tabs"
+      >
         {TABS.map((t) => {
           const isActive = t.key === tab;
           return (
@@ -256,7 +261,7 @@ export function TasksHubView({
               key={t.key}
               onClick={() => setTab(t.key)}
               className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors border",
+                "shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors border",
                 isActive
                   ? "bg-indigo-500/15 text-white border-indigo-500/40"
                   : "bg-gray-900 text-gray-400 border-gray-800 hover:text-white hover:bg-gray-800"
@@ -267,7 +272,7 @@ export function TasksHubView({
             </button>
           );
         })}
-      </nav>
+      </ScrollFadeRow>
 
       {/* Tasks tab — category grid (only non-empty categories) */}
       {tab === "tasks" &&

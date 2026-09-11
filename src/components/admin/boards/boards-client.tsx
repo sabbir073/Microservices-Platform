@@ -437,7 +437,7 @@ export function BoardsClient({ initialBoards, canManage }: Props) {
               {analyticsBoard.iconEmoji && (
                 <span className="text-2xl">{analyticsBoard.iconEmoji}</span>
               )}
-              <h2 className="text-lg font-semibold text-white truncate">
+              <h2 className="text-lg font-semibold text-white truncate min-w-0">
                 {analyticsBoard.title}
               </h2>
             </div>

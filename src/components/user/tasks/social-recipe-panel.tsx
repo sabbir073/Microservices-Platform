@@ -240,7 +240,7 @@ function ImageStep({
         <span className="shrink-0 w-5 h-5 rounded-full bg-indigo-500/15 border border-indigo-500/40 text-indigo-300 text-[10px] font-bold grid place-items-center">
           {step.serial}
         </span>
-        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold truncate">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold truncate min-w-0">
           {step.label}
         </p>
         {badge}

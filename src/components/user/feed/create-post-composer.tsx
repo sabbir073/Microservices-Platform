@@ -396,7 +396,7 @@ export function CreatePostComposer({
             size={44}
             className="shrink-0 ring-2 ring-indigo-500/30"
           />
-          <span className="flex-1 text-left rounded-full bg-gray-950/80 border border-gray-700 group-hover:border-indigo-500/50 px-4 py-2.5 text-sm text-gray-400 transition-colors truncate">
+          <span className="flex-1 min-w-0 text-left rounded-full bg-gray-950/80 border border-gray-700 group-hover:border-indigo-500/50 px-4 py-2.5 text-sm text-gray-400 transition-colors truncate">
             What&apos;s on your mind, {firstName}?
           </span>
           <span className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 text-white text-sm font-bold shrink-0">

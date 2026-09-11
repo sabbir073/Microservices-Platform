@@ -188,7 +188,7 @@ export function ActiveEventsCard({ className }: { className?: string }) {
               className="rounded-xl bg-gray-950/40 border border-gray-800 p-3"
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold text-white truncate flex-1">
+                <p className="text-sm font-semibold text-white truncate min-w-0 flex-1">
                   {ev.title}
                 </p>
                 <span className="text-[11px] text-gray-500 inline-flex items-center gap-1 shrink-0">
@@ -199,7 +199,7 @@ export function ActiveEventsCard({ className }: { className?: string }) {
               {/* Progress toward the (next tier's) target */}
               <div className="mt-2">
                 <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span className="text-gray-400 truncate">{meta.label}</span>
+                  <span className="text-gray-400 truncate min-w-0">{meta.label}</span>
                   <span className="text-white font-bold tabular-nums shrink-0">
                     {isUpload
                       ? ev.claimed

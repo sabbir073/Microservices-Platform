@@ -542,7 +542,7 @@ function ListingCardV2({ listing }: { listing: Listing }) {
             {ASSET_TYPE_LABEL[listing.assetType] ?? listing.assetType}
           </span>
           {listing.niche && (
-            <span className="text-[10px] text-gray-500 truncate">
+            <span className="text-[10px] text-gray-500 truncate min-w-0">
               {listing.niche}
             </span>
           )}

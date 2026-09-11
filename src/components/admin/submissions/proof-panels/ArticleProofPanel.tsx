@@ -39,7 +39,7 @@ export function ArticleProofPanel({ submission, task }: Props) {
                   title={l.url}
                 >
                   <FileText className="w-3 h-3 shrink-0" />
-                  <span className="truncate">{l.label || l.url}</span>
+                  <span className="truncate min-w-0">{l.label || l.url}</span>
                   <ExternalLink className="w-3 h-3 shrink-0 opacity-60" />
                 </a>
               ))}
@@ -57,7 +57,7 @@ export function ArticleProofPanel({ submission, task }: Props) {
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-sm text-indigo-400 hover:text-indigo-300 break-all max-w-full"
           >
             <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">{submission.proof}</span>
+            <span className="break-all min-w-0">{submission.proof}</span>
           </a>
         </div>
       )}

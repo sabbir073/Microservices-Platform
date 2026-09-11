@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
 
 import { csvCell } from "@/lib/csv";
+import { UNKNOWN_COUNTRY, countryLabel } from "@/lib/ad-geo";
 
 /**
  * `GET /api/admin/ads/report/export?days=N&scope=ad|placement|campaign|daily`
@@ -50,9 +51,14 @@ export async function GET(request: NextRequest) {
   const sp = new URL(request.url).searchParams;
   const days = Math.min(365, Math.max(1, Number(sp.get("days")) || 30));
   const scope = (sp.get("scope") ?? "ad").toLowerCase();
-  if (!["ad", "placement", "campaign", "daily"].includes(scope)) {
+  if (!["ad", "placement", "campaign", "daily", "country"].includes(scope)) {
     return NextResponse.json({ error: "Unknown scope" }, { status: 400 });
   }
+  // Same two narrowing filters the on-screen report takes, read the same way —
+  // an export that ignored them would answer a different question than the
+  // table the reader was looking at when they pressed the button.
+  const placementId = sp.get("placementId") || null;
+  const campaignId = sp.get("campaignId") || null;
 
   const since = new Date();
   since.setUTCHours(0, 0, 0, 0);
@@ -64,7 +70,30 @@ export async function GET(request: NextRequest) {
     orderBy: { date: "asc" },
   });
 
-  const adIds = [...new Set(stats.map((s) => s.adId))];
+  // Per-(ad, country) sums for the same window. Grouped by `adId` too, not by
+  // country alone, because the house/network revenue gate lives on the Ad row —
+  // grouping by country alone would have been one cheap query that reported
+  // stale HOUSE self-billing as revenue and disagreed with every other scope.
+  const countryStats =
+    scope === "country"
+      ? ((await prisma.adCountryDailyStat.groupBy({
+          by: ["adId", "country"],
+          where: { date: { gte: since } },
+          _sum: { impressions: true, clicks: true, spendUsd: true },
+        })) as unknown as Array<{
+          adId: string;
+          country: string;
+          _sum: {
+            impressions: number | null;
+            clicks: number | null;
+            spendUsd: unknown;
+          };
+        }>)
+      : [];
+
+  const adIds = [
+    ...new Set([...stats.map((s) => s.adId), ...countryStats.map((s) => s.adId)]),
+  ];
   const ads = adIds.length
     ? await prisma.ad.findMany({
         where: { id: { in: adIds } },
@@ -79,6 +108,10 @@ export async function GET(request: NextRequest) {
       })
     : [];
   const adMap = new Map(ads.map((a) => [a.id, a]));
+  const inFilter = (a: (typeof ads)[number] | undefined) =>
+    !!a &&
+    (!placementId || a.placement?.id === placementId) &&
+    (!campaignId || a.campaign?.id === campaignId);
 
   const rows: string[][] = [];
   let header: string[] = [];
@@ -94,7 +127,52 @@ export async function GET(request: NextRequest) {
   const n2 = (x: number) => x.toFixed(2);
   const n6 = (x: number) => x.toFixed(6);
 
-  if (scope === "daily") {
+  if (scope === "country") {
+    // The breakdown the screen shows, byte for byte the same numbers: the same
+    // window, the same filters, the same revenue gate, and the same explicit
+    // `ZZ` bucket. The CSV must not disagree with the panel it was exported from.
+    header = [
+      "country_code",
+      "country",
+      "impressions",
+      "clicks",
+      "ctr_pct",
+      "spend_usd",
+      "impression_share_pct",
+    ];
+    const agg = new Map<string, Agg>();
+    for (const r of countryStats) {
+      const a = adMap.get(r.adId);
+      if (!inFilter(a) || !a) continue;
+      const code = r.country || UNKNOWN_COUNTRY;
+      const cur = agg.get(code) ?? zero();
+      cur.impressions += r._sum.impressions ?? 0;
+      cur.clicks += r._sum.clicks ?? 0;
+      if (!a.campaign?.isHouse && !isNetworkType(a.type)) {
+        cur.spend += toNum(r._sum.spendUsd as Parameters<typeof toNum>[0]);
+      }
+      if (a.campaign?.isHouse) cur.houseImpressions += r._sum.impressions ?? 0;
+      if (isNetworkType(a.type)) cur.networkImpressions += r._sum.impressions ?? 0;
+      agg.set(code, cur);
+    }
+    const totalImpr = [...agg.values()].reduce((t, v) => t + v.impressions, 0);
+    for (const [code, g] of [...agg.entries()].sort(
+      (x, y) => y[1].impressions - x[1].impressions
+    )) {
+      rows.push([
+        code,
+        // "Unknown" spelled out, never blank — a blank cell in a spreadsheet
+        // reads as a missing row and gets filtered away, which is exactly the
+        // silent renormalisation this bucket exists to prevent.
+        countryLabel(code),
+        String(g.impressions),
+        String(g.clicks),
+        n2(ctr(g)),
+        n6(g.spend),
+        n2(totalImpr > 0 ? (g.impressions / totalImpr) * 100 : 0),
+      ]);
+    }
+  } else if (scope === "daily") {
     header = [
       "date_utc",
       "ad_id",
@@ -111,6 +189,7 @@ export async function GET(request: NextRequest) {
     ];
     for (const s of stats) {
       const a = adMap.get(s.adId);
+      if (!inFilter(a)) continue;
       rows.push([
         s.date.toISOString().slice(0, 10),
         s.adId,
@@ -130,7 +209,7 @@ export async function GET(request: NextRequest) {
     const groups = new Map<string, Agg & { label: string[] }>();
     for (const s of stats) {
       const a = adMap.get(s.adId);
-      if (!a) continue;
+      if (!inFilter(a) || !a) continue;
       let key: string;
       let label: string[];
       if (scope === "ad") {

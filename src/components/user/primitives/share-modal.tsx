@@ -101,7 +101,7 @@ export function ShareModal({
     <BottomSheet open={open} onOpenChange={onOpenChange} title={title}>
       <div className="space-y-4">
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700">
-          <span className="flex-1 text-xs text-gray-300 truncate">{url}</span>
+          <span className="flex-1 min-w-0 text-xs text-gray-300 break-all">{url}</span>
           <button
             onClick={copyLink}
             className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"

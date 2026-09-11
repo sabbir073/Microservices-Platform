@@ -941,7 +941,7 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
               className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5"
             >
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="text-sm text-white truncate">
+              <span className="text-sm text-white truncate min-w-0">
                 {def ? `${def.emoji} ${def.label}` : item.action}
               </span>
               <span className="ml-auto text-emerald-400 font-bold text-xs tabular-nums shrink-0">
@@ -957,7 +957,7 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
               className="flex items-center gap-2 rounded-xl border border-gray-800 bg-gray-900/60 px-3 py-2.5 opacity-60"
             >
               <Lock className="w-4 h-4 text-gray-500 shrink-0" />
-              <span className="text-sm text-gray-400 truncate">
+              <span className="text-sm text-gray-400 truncate min-w-0">
                 {def ? `${def.emoji} ${def.label}` : item.action}
               </span>
               <span className="ml-auto text-[10px] font-semibold uppercase text-gray-600 shrink-0">

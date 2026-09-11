@@ -214,7 +214,7 @@ export function AdminHeader({
           </Link>
 
           {/* Desktop page title */}
-          <h1 className="hidden lg:block text-lg font-semibold text-white truncate">
+          <h1 className="hidden lg:block text-lg font-semibold text-white truncate min-w-0">
             {pageTitle}
           </h1>
         </div>

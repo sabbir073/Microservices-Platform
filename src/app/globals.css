@@ -84,14 +84,20 @@ html[data-theme="light"] ::-webkit-calendar-picker-indicator:hover {
    data-theme override shim further below.
    ───────────────────────────────────────────────────────────────────────── */
 @theme {
-  /* Neutral ramp — subtle indigo undertone, richer near-blacks, readable mids. */
+  /* Neutral ramp — subtle indigo undertone, richer near-blacks, readable mids.
+     500 and 600 were measured against the surfaces they actually sit on and
+     failed: on bg-gray-900, 500 came to 3.9:1 and 600 to 1.8:1, where readable
+     body text needs 4.5:1. That is what made the app feel blurry rather than
+     dim — and text-*-500 alone is used 1,682 times, so it was most of the
+     screen. Lightened to 5.5:1 and 4.3:1, same hue family, so the 400/500/600
+     hierarchy still reads as three steps. */
   --color-gray-50: #f6f7fa;
   --color-gray-100: #eceef3;
   --color-gray-200: #e0e3ec;
   --color-gray-300: #c7ccdb;
   --color-gray-400: #99a0b6;
-  --color-gray-500: #6a7288;
-  --color-gray-600: #3b4055;
+  --color-gray-500: #828ba0;
+  --color-gray-600: #707990;
   --color-gray-700: #282c3c;
   --color-gray-800: #1a1d29;
   --color-gray-900: #10121b;
@@ -103,8 +109,8 @@ html[data-theme="light"] ::-webkit-calendar-picker-indicator:hover {
   --color-slate-200: #e0e3ec;
   --color-slate-300: #c7ccdb;
   --color-slate-400: #99a0b6;
-  --color-slate-500: #6a7288;
-  --color-slate-600: #3b4055;
+  --color-slate-500: #828ba0;
+  --color-slate-600: #707990;
   --color-slate-700: #282c3c;
   --color-slate-800: #1a1d29;
   --color-slate-900: #10121b;
@@ -731,7 +737,7 @@ html[data-theme="light"] .text-gray-200 { color: #1e293b !important; }
 html[data-theme="light"] .text-gray-300 { color: #334155 !important; }
 html[data-theme="light"] .text-gray-400 { color: #475569 !important; }
 html[data-theme="light"] .text-gray-500 { color: #5b6675 !important; }
-html[data-theme="light"] .text-gray-600 { color: #7a8598 !important; }
+html[data-theme="light"] .text-gray-600 { color: #616b7d !important; }
 html[data-theme="light"] .placeholder-gray-500::placeholder { color: #94a3b8 !important; }
 
 /* …but text on saturated colored fills / gradients MUST stay white. This wins
@@ -814,7 +820,7 @@ html[data-theme="light"] .text-slate-200 { color: #1e293b !important; }
 html[data-theme="light"] .text-slate-300 { color: #334155 !important; }
 html[data-theme="light"] .text-slate-400 { color: #475569 !important; }
 html[data-theme="light"] .text-slate-500 { color: #5b6675 !important; }
-html[data-theme="light"] .text-slate-600 { color: #7a8598 !important; }
+html[data-theme="light"] .text-slate-600 { color: #616b7d !important; }
 
 html[data-theme="light"] .border-slate-800 { border-color: #e6eaf2 !important; }
 html[data-theme="light"] .border-slate-700 { border-color: #dce1ea !important; }

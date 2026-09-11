@@ -316,7 +316,6 @@ function LocationTree({
 
   useEffect(() => {
     if (!topType) {
-      setTopRows([]);
       return;
     }
     let cancel = false;
@@ -564,7 +563,7 @@ function TreeRow({
             <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold w-20 shrink-0">
               {LOCATION_TYPE_LABEL[row.type as LocationType] ?? row.type}
             </span>
-            <span className="flex-1 text-sm text-white truncate">{row.name}</span>
+            <span className="flex-1 min-w-0 text-sm text-white truncate">{row.name}</span>
             {row.postalCode && (
               <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-500 font-mono">
                 <Hash className="w-2.5 h-2.5" />

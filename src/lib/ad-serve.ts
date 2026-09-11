@@ -9,6 +9,7 @@ import {
 import { matchesTargeting, type TargetableUser } from "@/lib/ad-targeting";
 import { getSetting } from "@/lib/system-settings";
 import { bufferImpression, bufferServeOutcome } from "@/lib/ad-counters";
+import { resolveEventCountry } from "@/lib/ad-geo";
 import { creativeUrl, isFirstPartyAdType } from "@/lib/ad-proxy";
 import {
   getNetworkGlobals,
@@ -304,7 +305,16 @@ async function serveAdInner(opts: {
   if (counted) {
     // Buffered — see src/lib/ad-counters.ts. This used to be two hot-row writes
     // per served ad, on the few rows currently in rotation.
-    bufferImpression(chosen.id);
+    //
+    // `viewer.country` is handed over rather than re-read: the targeting block
+    // above already selected it (VIEWER_SELECT), so the profile fallback costs
+    // nothing here. On Vercel the edge header wins anyway and the profile is
+    // never consulted — which matters, because only 18 of 48 accounts have a
+    // country set and an anonymous viewer has no profile at all.
+    bufferImpression(
+      chosen.id,
+      await resolveEventCountry({ userId, profileCountry: viewer.country })
+    );
   }
 
   return {

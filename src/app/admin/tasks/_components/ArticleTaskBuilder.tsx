@@ -370,7 +370,7 @@ function Stepper({
                 >
                   {isDone ? <CheckCircle2 className="w-3.5 h-3.5" /> : i + 1}
                 </span>
-                <span className="text-xs font-semibold truncate inline-flex items-center gap-1.5">
+                <span className="text-xs font-semibold truncate min-w-0 inline-flex items-center gap-1.5">
                   <Icon className="w-3 h-3 shrink-0" />
                   {s.label}
                 </span>

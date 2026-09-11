@@ -322,7 +322,7 @@ export function EditListingForm({ listing }: EditListingFormProps) {
                         e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Crect fill='%23374151' width='48' height='48'/%3E%3Ctext x='50%25' y='50%25' text-anchor='middle' dy='.3em' fill='%239CA3AF' font-family='sans-serif' font-size='12'%3ENo Image%3C/text%3E%3C/svg%3E";
                       }}
                     />
-                    <span className="flex-1 text-sm text-gray-400 truncate">{img}</span>
+                    <span className="flex-1 min-w-0 text-sm text-gray-400 truncate">{img}</span>
                     <button
                       type="button"
                       onClick={() => handleRemoveImage(index)}
@@ -379,7 +379,7 @@ export function EditListingForm({ listing }: EditListingFormProps) {
                     className="flex items-center gap-2 p-2 bg-gray-800 border border-gray-700 rounded-lg"
                   >
                     <Package className="w-4 h-4 text-gray-400" />
-                    <span className="flex-1 text-sm text-gray-400 truncate">{file}</span>
+                    <span className="flex-1 min-w-0 text-sm text-gray-400 truncate">{file}</span>
                     <button
                       type="button"
                       onClick={() => handleRemoveFile(index)}

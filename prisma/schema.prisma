@@ -790,6 +790,7 @@ model Ad {
   watchSeconds      Int            @default(15)
   views             AdView[]
   dailyStats        AdDailyStat[]
+  countryStats      AdCountryDailyStat[]
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
@@ -862,6 +863,48 @@ model AdDailyStat {
   // and the composite above cannot serve that. PageDailyStat — which the comment
   // there says was modelled on this table — has had this index all along.
   @@index([date])
+}
+
+/// Per-day, per-country, per-ad rollup of impressions, clicks and spend.
+///
+/// Nothing on the platform recorded WHERE an ad event came from. `AdEngagement`
+/// — the only per-event ad row — has no country column, and is pruned at 30
+/// days anyway, so even adding one there would answer "which country?" for the
+/// last month and never for a year. The owner sells inventory; "which country
+/// are my clicks and impressions coming from?" is a question about history.
+///
+/// So this is a rollup, not a raw log: one row per (ad, country, UTC day). It is
+/// keyed on `adId` rather than on placement/campaign so that every derived cut —
+/// per placement, per campaign, house vs network, and the REVENUE GATE that
+/// excludes both from spend — comes off the same `Ad` join the rest of the ad
+/// report already uses. A second, independently-keyed table is how two panels
+/// on one screen start disagreeing.
+///
+/// `country` is an ISO-3166-1 alpha-2 code, or the literal `ZZ` for "unknown"
+/// (see src/lib/ad-geo.ts). It is never null: a nullable column turns "we did
+/// not know" into a row that every `groupBy` and every chart quietly drops, and
+/// a country chart that silently discards its unknowns tells the owner his
+/// traffic is 100% from wherever happens to be tagged. `ZZ` is a real bucket
+/// with a real share, and the report states that share on screen.
+model AdCountryDailyStat {
+  id          String   @id @default(cuid())
+  adId        String
+  ad          Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  /// ISO-3166-1 alpha-2, uppercase, or `ZZ` when it could not be resolved.
+  country     String   @db.VarChar(2)
+  date        DateTime @db.Date
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  /// Billed click cost only. Read it through the same house/network gate the
+  /// rest of the ad report uses — this column is NOT safe to sum blind.
+  spendUsd    Decimal  @default(0) @db.Decimal(18, 6)
+
+  @@unique([adId, country, date])
+  /// The report scans a date window across every ad and then groups by country;
+  /// the unique index above is `adId`-first and cannot serve that.
+  @@index([date])
+  /// "How did ONE country trend?" — the drill-down the breakdown leads to.
+  @@index([country, date])
 }
 
 /// Per-day, per-placement record of ad REQUESTS, not impressions.

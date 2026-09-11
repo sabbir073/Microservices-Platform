@@ -208,7 +208,7 @@ export function BoardDetailClient({
                 <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
                   {t.type}
                 </span>
-                <span className="flex-1 text-sm text-white truncate">
+                <span className="flex-1 min-w-0 text-sm text-white truncate">
                   {t.title}
                 </span>
                 <span className="text-xs text-amber-400 font-bold tabular-nums shrink-0">
@@ -306,7 +306,7 @@ export function BoardDetailClient({
                     <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 shrink-0">
                       {t.type}
                     </span>
-                    <span className="flex-1 text-sm text-white truncate">
+                    <span className="flex-1 min-w-0 text-sm text-white truncate">
                       {t.title}
                     </span>
                     <span className="text-xs text-amber-400 font-bold tabular-nums shrink-0">

@@ -201,7 +201,7 @@ export function PaymentMethodsView() {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-gray-500 font-mono truncate">
+                  <p className="text-xs text-gray-500 font-mono break-all">
                     {m.accountNumber}
                     {m.accountName ? ` · ${m.accountName}` : ""}
                   </p>

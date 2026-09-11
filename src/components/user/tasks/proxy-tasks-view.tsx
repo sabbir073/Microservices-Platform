@@ -88,7 +88,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
         onClick={copy}
         className="w-full px-3 py-2 rounded-lg bg-gray-950 border border-gray-800 hover:border-indigo-500/40 transition-colors flex items-center gap-2 text-left"
       >
-        <span className="flex-1 text-sm text-white font-mono truncate">{value}</span>
+        <span className="flex-1 min-w-0 text-sm text-white font-mono truncate">{value}</span>
         {copied ? (
           <Check className="w-4 h-4 text-emerald-400 shrink-0" />
         ) : (

@@ -142,7 +142,7 @@ async function main() {
   {
     const s = code("lib/ad-serve.ts");
     const guard = s.indexOf("if (!network) return EMPTY;");
-    const count = s.indexOf("bufferImpression(chosen.id)");
+    const count = s.indexOf("bufferImpression(");
     check("the network guard exists", guard > 0);
     check(
       "the impression is counted AFTER every path that can still refuse",
@@ -151,7 +151,7 @@ async function main() {
     );
     check(
       "it is still counted exactly once",
-      (s.match(/bufferImpression\(chosen\.id\)/g) ?? []).length === 1
+      (s.match(/bufferImpression\(\s*chosen\.id/g) ?? []).length === 1
     );
   }
 
@@ -421,6 +421,185 @@ async function main() {
   console.log(
     `   ${impossible.length} daily row(s) still carry clicks > impressions (historic; the window fix stops new ones)`
   );
+
+  /* D1 — every ad event carries a country, and it is decided in ONE place.
+   *
+   * Nothing recorded a country on an ad event at all, so the owner's question
+   * ("which country are my clicks and impressions coming from?") had no answer.
+   * The risk in fixing it is not that the number is missing — it is that the
+   * impression path and the click path each resolve a country their own way and
+   * quietly disagree, which turns per-country CTR into a ratio of two different
+   * populations. These assert against code with comments stripped.
+   */
+  console.log("\nD1. Ad events record a country, resolved in one place");
+  {
+    const geo = code("lib/ad-geo.ts");
+    const events = code("lib/ad-events.ts");
+    const serve = code("lib/ad-serve.ts");
+    const counters = code("lib/ad-counters.ts");
+    const adStats = code("lib/ad-stats.ts");
+    const inRecordClick = events.split("export async function recordClick")[1] ?? "";
+
+    check(
+      "the edge country header is the primary source",
+      /x-vercel-ip-country/.test(geo)
+    );
+    check(
+      "unknown is an explicit stored value, not a null",
+      /UNKNOWN_COUNTRY\s*=\s*"ZZ"/.test(geo)
+    );
+    check(
+      "User.country is the FALLBACK, read only after the header",
+      geo.indexOf("headerCountry()") > -1 &&
+        geo.indexOf("const fromEdge") < geo.indexOf("user.findUnique"),
+      "the profile is a weak source — 18 of 48 accounts have one, anonymous viewers none"
+    );
+    check(
+      "both event paths resolve country through the shared resolver",
+      /resolveEventCountry/.test(events) && /resolveEventCountry/.test(serve)
+    );
+    check(
+      "the served-impression counter is given a country",
+      /bufferImpression\([\s\S]{0,200}resolveEventCountry/.test(serve)
+    );
+    check(
+      "the beacon impression path is given a country",
+      /bufferImpression\(adId, await resolveEventCountry/.test(events)
+    );
+    check(
+      "recordClick resolves the country ONCE, above every branch",
+      (inRecordClick.match(/resolveEventCountry/g) ?? []).length === 1,
+      "resolving per-branch is how an impression and its click end up in different buckets"
+    );
+    check(
+      "every rollup write in recordClick carries that country",
+      (inRecordClick.match(/bumpAdDailyStat\(/g) ?? []).length === 4 &&
+        (inRecordClick.match(/bumpAdDailyStat\([\s\S]{0,140}?country\s*\)/g) ?? [])
+          .length === 4,
+      "a bumpAdDailyStat call without it silently files the click under Unknown"
+    );
+    check(
+      "the impression buffer keys on ad AND country",
+      /KEY_SEP/.test(counters) && /\$\{adId\}\$\{KEY_SEP\}\$\{country/.test(counters)
+    );
+    check(
+      "the per-ad total is re-derived from the per-country buckets",
+      /perAd\.set\(adId, \(perAd\.get\(adId\) \?\? 0\) \+ count\)/.test(counters) &&
+        /adCountryDailyStat\.upsert/.test(counters),
+      "AdDailyStat and AdCountryDailyStat must come out of the same counts or the breakdown will not sum to the total"
+    );
+    check(
+      "the click rollup writes the country row too",
+      /export async function bumpAdCountryDailyStat/.test(adStats) &&
+        /await bumpAdCountryDailyStat\(adId, country, inc\)/.test(adStats)
+    );
+    check(
+      "the country rollup is NOT wrapped in a $transaction",
+      !/\$transaction/.test(adStats),
+      "Accelerate rejects a transaction over 15s (P6005), and this sits in front of a click bill"
+    );
+  }
+
+  /* D2 — the country panel must not disagree with the panel beside it.
+   *
+   * `AdDailyStat.spendUsd` carries $1.95 of stale HOUSE self-billing that is not
+   * revenue, and network (AdSense/GAM) revenue never reaches this database at
+   * all. The rest of the ad report already gates spend on earning inventory; a
+   * per-country panel that summed spend blind would sit on the same screen
+   * reporting a different number for the same money.
+   */
+  console.log(
+    "\nD2. The country breakdown uses the same revenue gate, and keeps its unknowns"
+  );
+  {
+    const report = code("app/api/admin/ads/report/route.ts");
+    const exp = code("app/api/admin/ads/report/export/route.ts");
+    const ui = code("components/admin/ads/ad-manager-view.tsx");
+
+    const gate = /!a\.campaign\?\.isHouse && !isNetworkType\(a\.type\)/;
+    check("the report's country spend passes the house/network gate", gate.test(report));
+    check("the CSV's country spend passes the same gate", gate.test(exp));
+    check(
+      "the country rollup is grouped by adId too, so the gate can be applied",
+      /by: \["adId", "country"\]/.test(report) && /by: \["adId", "country"\]/.test(exp),
+      "grouping by country alone makes the house/network gate impossible to apply"
+    );
+    check(
+      "groupBy rows are re-shaped and cast (Accelerate collapses them to {})",
+      /as unknown as/.test(report) && /as unknown as/.test(exp)
+    );
+    check(
+      "the report honours the date range and the placement/campaign filters",
+      /date: \{ gte: since \}/.test(report) &&
+        /a\.placement\?\.id === placementId/.test(report) &&
+        /a\.campaign\?\.id === campaignId/.test(report)
+    );
+    check(
+      "the CSV honours the same filters, so it cannot disagree with the screen",
+      /a\.placement\?\.id === placementId/.test(exp) &&
+        /a\.campaign\?\.id === campaignId/.test(exp)
+    );
+    check(
+      "the CSV exposes a country scope",
+      /"country"/.test(exp) && /country_code/.test(exp) && /impression_share_pct/.test(exp)
+    );
+    check(
+      "unknown traffic is a row, never dropped",
+      /r\.country \|\| UNKNOWN_COUNTRY/.test(report) && /unknownShare/.test(report),
+      "a country chart that drops unknowns reports certainty that does not exist"
+    );
+    check(
+      "the unknown share is stated on screen",
+      /unknownShare/.test(ui) && /unknownImpressions/.test(ui),
+      "the share of untagged traffic is itself the finding"
+    );
+    check(
+      "the admin can sort the breakdown",
+      /countrySort/.test(report) && /countrySort/.test(ui)
+    );
+  }
+
+  /* D3 — the stored data itself. */
+  console.log("\nD3. Recorded country data");
+  try {
+    const countryRows = (await prisma.adCountryDailyStat.groupBy({
+      by: ["country"],
+      _sum: { impressions: true, clicks: true },
+    })) as unknown as Array<{
+      country: string;
+      _sum: { impressions: number | null; clicks: number | null };
+    }>;
+    const totalImpr = countryRows.reduce((t, r) => t + (r._sum.impressions ?? 0), 0);
+    const unknownImpr =
+      countryRows.find((r) => r.country === "ZZ")?._sum.impressions ?? 0;
+    check(
+      "no country row is stored with a blank or non-ISO code",
+      countryRows.every((r) => /^[A-Z]{2}$/.test(r.country)),
+      countryRows.map((r) => r.country).join(",") || "(no rows yet)"
+    );
+    console.log(
+      `   ${countryRows.length} country bucket(s), ${totalImpr} impression(s); ` +
+        `${totalImpr > 0 ? ((unknownImpr / totalImpr) * 100).toFixed(1) : "0.0"}% unknown`
+    );
+    if (totalImpr === 0) {
+      console.log(
+        "   (nothing tagged yet — the rollup starts the day it ships; history is not backfillable)"
+      );
+    }
+  } catch (e) {
+    // P2021 = the table is not there yet. Applying the migration to the live DB
+    // is the owner'''s call, so a pending migration is a STATE, not a failure —
+    // but it must be said out loud rather than passing quietly.
+    const code2 = (e as { code?: string })?.code;
+    if (code2 === "P2021") {
+      console.log(
+        "   SKIPPED — AdCountryDailyStat does not exist in this database yet." +
+          " Apply it with: npx prisma migrate deploy"
+      );
+    } else {
+      check("the country rollup table is readable", false, String(code2 ?? e));
+    }
+  }
 
   console.log(
     `\n${passed} passed, ${failures.length} failed` +

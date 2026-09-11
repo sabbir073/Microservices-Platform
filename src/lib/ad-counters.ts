@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { todayUtc } from "@/lib/ad-stats";
+import { UNKNOWN_COUNTRY } from "@/lib/ad-geo";
 
 /**
  * Buffered ad impression counters.
@@ -30,8 +31,18 @@ import { todayUtc } from "@/lib/ad-stats";
  * nothing anyone would act on.
  */
 
-/** Pending impression deltas, keyed by ad id. */
+/**
+ * Pending impression deltas, keyed by `adId` + `|` + country.
+ *
+ * The country is part of the KEY rather than a second parallel map because the
+ * per-ad total and the per-country rows have to be derived from the same
+ * counts. Two maps would drift the moment one of them was flushed and the other
+ * was not, and the country breakdown would stop adding up to the impression
+ * total printed beside it.
+ */
 const buffer = new Map<string, number>();
+/** Separator that cannot occur in a cuid or an ISO-3166 alpha-2 code. */
+const KEY_SEP = "|";
 /** Pending serve outcomes, keyed by placement id: [requests, fills]. */
 const serveBuffer = new Map<string, [number, number]>();
 let oldestAt = 0;
@@ -57,10 +68,21 @@ export async function flushAdCounters(): Promise<void> {
   oldestAt = 0;
   try {
     const date = todayUtc();
+    // The per-ad total is re-derived by SUMMING the per-country buckets of the
+    // same flushed batch, never counted separately. That is the whole reason
+    // country is folded into the buffer key: `AdDailyStat.impressions` and the
+    // sum of `AdCountryDailyStat.impressions` for that ad and day are the same
+    // arithmetic on the same numbers, so the breakdown cannot come out short of
+    // the total it is broken down from.
+    const perAd = new Map<string, number>();
+    for (const [key, count] of batch) {
+      const adId = key.slice(0, key.indexOf(KEY_SEP));
+      perAd.set(adId, (perAd.get(adId) ?? 0) + count);
+    }
     // One transaction, one round-trip: N ad updates + N daily-stat upserts,
     // instead of 2 round-trips per impression.
     await prisma.$transaction([
-      ...batch.flatMap(([adId, count]) => [
+      ...[...perAd.entries()].flatMap(([adId, count]) => [
         prisma.ad.update({
           where: { id: adId },
           data: { impressions: { increment: count } },
@@ -71,6 +93,16 @@ export async function flushAdCounters(): Promise<void> {
           update: { impressions: { increment: count } },
         }),
       ]),
+      ...batch.map(([key, count]) => {
+        const i = key.indexOf(KEY_SEP);
+        const adId = key.slice(0, i);
+        const country = key.slice(i + 1) || UNKNOWN_COUNTRY;
+        return prisma.adCountryDailyStat.upsert({
+          where: { adId_country_date: { adId, country, date } },
+          create: { adId, country, date, impressions: count, clicks: 0, spendUsd: 0 },
+          update: { impressions: { increment: count } },
+        });
+      }),
       ...serveBatch.map(([placementId, [requests, fills]]) =>
         prisma.adServeDailyStat.upsert({
           where: { placementId_date: { placementId, date } },
@@ -94,8 +126,17 @@ export async function flushAdCounters(): Promise<void> {
  * Record one impression. Returns immediately; the write happens on a later call
  * once the buffer is full or stale.
  */
-export function bufferImpression(adId: string): void {
-  buffer.set(adId, (buffer.get(adId) ?? 0) + 1);
+export function bufferImpression(
+  adId: string,
+  /**
+   * Country from `resolveEventCountry` (src/lib/ad-geo.ts). Defaults to the
+   * explicit unknown bucket — never to "skip the country row" — so that the
+   * per-country rows always sum back to the per-ad total written beside them.
+   */
+  country: string = UNKNOWN_COUNTRY
+): void {
+  const key = `${adId}${KEY_SEP}${country || UNKNOWN_COUNTRY}`;
+  buffer.set(key, (buffer.get(key) ?? 0) + 1);
   maybeFlush();
 }
 

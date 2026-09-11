@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ExternalLink, ArrowRight, Sparkles, Share2 } from "lucide-react";
 import { FilterChips } from "@/components/user/primitives/filter-chips";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
@@ -106,8 +107,7 @@ export function SocialTasksView({
       />
 
       {/* Platform filter — bigger, clearer, brand-coloured when active */}
-      <div className="-mx-4 px-4 overflow-x-auto scrollbar-none">
-        <div className="flex items-center gap-2 pb-1 min-w-max">
+      <ScrollFadeRow className="-mx-4" innerClassName="flex items-center gap-2 px-4 pb-1 min-w-max" ariaLabel="Platform filter">
           <button
             onClick={() => setPlatformFilter("ALL")}
             className={cn(
@@ -134,8 +134,7 @@ export function SocialTasksView({
               {p.label}
             </button>
           ))}
-        </div>
-      </div>
+      </ScrollFadeRow>
 
       <AdRenderer placement="TASK_LIST" />
 

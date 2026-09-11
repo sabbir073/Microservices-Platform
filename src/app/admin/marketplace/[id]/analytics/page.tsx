@@ -354,7 +354,7 @@ export default async function MarketplaceAnalyticsPage({ params }: PageProps) {
                 >
                   <Link
                     href={`/admin/users/${b.bidder.id}`}
-                    className="text-slate-300 hover:text-white truncate flex-1"
+                    className="text-slate-300 hover:text-white truncate min-w-0 flex-1"
                   >
                     {b.bidder.name ?? b.bidder.username ?? "Anon"}
                   </Link>
@@ -398,7 +398,7 @@ export default async function MarketplaceAnalyticsPage({ params }: PageProps) {
                 >
                   <Link
                     href={`/admin/users/${o.buyer.id}`}
-                    className="text-slate-300 hover:text-white truncate flex-1"
+                    className="text-slate-300 hover:text-white truncate min-w-0 flex-1"
                   >
                     {o.buyer.name ?? o.buyer.username ?? "Anon"}
                   </Link>

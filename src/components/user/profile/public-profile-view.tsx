@@ -41,6 +41,7 @@ import {
   LifetimeStatsGroup,
 } from "@/components/user/profile/profile-stat-groups";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 interface LifetimeStats {
   totalEarnedPoints: number | null;
@@ -471,7 +472,7 @@ export function PublicProfileView({ userId, viewerId }: Props) {
                       <span className="text-xs font-semibold text-gray-200">
                         {a.platform.charAt(0) + a.platform.slice(1).toLowerCase()}
                       </span>
-                      <span className="text-xs text-gray-500 truncate max-w-32">
+                      <span className="text-xs text-gray-500 truncate min-w-0 max-w-32">
                         @{a.username}
                       </span>
                       {a.verified && (
@@ -507,7 +508,7 @@ export function PublicProfileView({ userId, viewerId }: Props) {
         </section>
       ) : null}
       {/* Tab nav */}
-      <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
+      <ScrollFadeRow innerClassName="flex gap-1 border-b border-gray-800" ariaLabel="Profile tabs">
         {(
           [
             { key: "posts", label: "Posts" },
@@ -519,7 +520,7 @@ export function PublicProfileView({ userId, viewerId }: Props) {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={cn(
-              "px-4 py-2 text-sm font-medium transition-colors",
+              "shrink-0 px-4 py-2 text-sm font-medium transition-colors",
               tab === t.key
                 ? "text-white border-b-2 border-indigo-500"
                 : "text-gray-400 hover:text-white"
@@ -528,7 +529,7 @@ export function PublicProfileView({ userId, viewerId }: Props) {
             {t.label}
           </button>
         ))}
-      </nav>
+      </ScrollFadeRow>
 
       {tab === "posts" && <PostsTab userId={userId} />}
       {tab === "followers" && <UserListTab endpoint={`/api/users/${userId}/followers`} viewerId={viewerId} />}

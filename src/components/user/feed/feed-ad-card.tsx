@@ -137,7 +137,7 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
           </p>
         )}
         <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-gray-500 truncate max-w-full">
-          <span className="truncate">{ad.author.name}</span>
+          <span className="truncate min-w-0">{ad.author.name}</span>
           {ad.author.isBlueVerified && (
             <CheckCircle className="w-3 h-3 shrink-0 text-blue-400 fill-blue-500/30" />
           )}

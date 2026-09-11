@@ -28,6 +28,7 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { runInterstitial } from "@/lib/reward-interstitial";
 import { ensureAdsAllowed } from "@/lib/adblock";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 interface Board {
   id: string;
@@ -600,7 +601,7 @@ export function BoardTasksView() {
       </div>
 
       {!loading && availableCategories.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none -mx-1 px-1">
+        <ScrollFadeRow className="-mx-1" innerClassName="flex items-center gap-2 px-1" ariaLabel="Category filter">
           <button
             onClick={() => setCategoryFilter(null)}
             className={cn(
@@ -628,7 +629,7 @@ export function BoardTasksView() {
               </button>
             )
           )}
-        </div>
+        </ScrollFadeRow>
       )}
 
       {loading && <ListSkeleton rows={3} />}

@@ -226,7 +226,7 @@ export function BecomeTutorForm() {
             {idDocumentUrl ? (
               <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-700 text-xs">
                 <ImageIcon className="w-4 h-4 text-emerald-300" />
-                <span className="text-slate-300 truncate flex-1">{idDocumentUrl}</span>
+                <span className="text-slate-300 break-all min-w-0 flex-1">{idDocumentUrl}</span>
                 <button
                   type="button"
                   onClick={() => setIdDocumentUrl("")}

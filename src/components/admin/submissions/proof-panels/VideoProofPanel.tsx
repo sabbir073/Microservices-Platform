@@ -68,10 +68,10 @@ export function VideoProofPanel({ submission, task }: Props) {
             href={videoUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 underline-offset-2 hover:underline truncate max-w-md"
+            className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 underline-offset-2 hover:underline max-w-md"
           >
             <ExternalLink className="w-3 h-3 shrink-0" />
-            <span className="truncate">{videoUrl}</span>
+            <span className="break-all min-w-0">{videoUrl}</span>
           </a>
         )}
       </div>
@@ -163,7 +163,7 @@ export function VideoProofPanel({ submission, task }: Props) {
                 >
                   <div className="flex items-center gap-2 text-xs">
                     <span>{meta.emoji}</span>
-                    <span className="text-white font-semibold truncate">
+                    <span className="text-white font-semibold truncate min-w-0">
                       {i + 1}. {cfgStep?.label || meta.label}
                     </span>
                     <span
@@ -184,7 +184,7 @@ export function VideoProofPanel({ submission, task }: Props) {
                       className="inline-flex items-center gap-1 text-xs text-indigo-400 hover:underline max-w-full"
                     >
                       <ExternalLink className="w-3 h-3 shrink-0" />
-                      <span className="truncate">{p.link}</span>
+                      <span className="break-all min-w-0">{p.link}</span>
                     </a>
                   )}
                   {p.screenshotUrl && (

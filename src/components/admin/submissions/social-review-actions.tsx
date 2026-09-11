@@ -112,7 +112,7 @@ export function SocialReviewActions({
           const dec = decisions[i] ?? "approved";
           return (
             <div key={i} className="flex items-center justify-between gap-2">
-              <span className="text-xs text-gray-300 truncate">
+              <span className="text-xs text-gray-300 truncate min-w-0">
                 {i + 1}. {def ? def.label : it.action}
                 <span className="text-amber-400/80 ml-1">+{it.points}</span>
               </span>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Search, X, Clock, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { SmartImage } from "./smart-image";
+import { ScrollFadeRow } from "./scroll-fade-row";
 
 interface GlobalSearchProps {
   open: boolean;
@@ -138,13 +139,13 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
             Cancel
           </button>
         </div>
-        <div className="max-w-3xl mx-auto flex items-center gap-1 mt-3 -mb-1 overflow-x-auto scrollbar-none">
+        <ScrollFadeRow className="max-w-3xl mx-auto mt-3 -mb-1" innerClassName="flex items-center gap-1" ariaLabel="Search category">
           {TABS.map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={cn(
-                "px-3 py-1.5 rounded-full text-xs font-semibold transition-colors whitespace-nowrap",
+                "shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors whitespace-nowrap",
                 tab === t
                   ? "bg-indigo-500 text-white"
                   : "bg-gray-800 text-gray-400 hover:bg-gray-700"
@@ -153,7 +154,7 @@ export function GlobalSearch({ open, onClose }: GlobalSearchProps) {
               {t}
             </button>
           ))}
-        </div>
+        </ScrollFadeRow>
       </div>
 
       <div className="flex-1 overflow-y-auto max-w-3xl mx-auto w-full px-4 py-4">

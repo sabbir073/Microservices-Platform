@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { clicksAreBillable, getPlacementClickCost } from "@/lib/ad-rate-card";
 import { bumpAdDailyStat } from "@/lib/ad-stats";
 import { bufferImpression } from "@/lib/ad-counters";
+import { resolveEventCountry } from "@/lib/ad-geo";
 // `ad-serve` does not import this module, so there is no cycle.
 import { servableCampaignWhere } from "@/lib/ad-serve";
 
@@ -93,7 +94,13 @@ export async function recordImpression(
   // Buffered (src/lib/ad-counters.ts) — the AdEngagement row above is already
   // the durable, deduped record of this view; the counters are a rollup and do
   // not need to be written synchronously on a hot row.
-  bufferImpression(adId);
+  //
+  // The country is resolved HERE, on the request, and not at flush time: by the
+  // time the buffer drains, the request that carried `x-vercel-ip-country` is
+  // long gone, and a later flush could even happen on a different invocation.
+  // This is also the ONLY server-side counting path for IN_FEED ads, which
+  // `serveFeedAds` deliberately does not count.
+  bufferImpression(adId, await resolveEventCountry({ userId: opts.userId }));
   return { counted: true };
 }
 
@@ -116,6 +123,14 @@ export async function recordClick(
   });
   if (!slot) return { billed: false };
 
+  // Resolved once, at the top, and threaded through every exit below.
+  //
+  // An impression and the click on it MUST land in the same bucket or the
+  // per-country CTR is a ratio of two different populations. Resolving it once
+  // here — rather than at each of the four `bumpAdDailyStat` calls below — is
+  // what makes that true no matter which branch this click takes.
+  const country = await resolveEventCountry({ userId });
+
   // The ad's OWN status matters, not just its campaign's. A PAUSED, PENDING,
   // REJECTED or CHANGES_REQUESTED ad must never bill: the advertiser was told it
   // had stopped.
@@ -135,7 +150,7 @@ export async function recordClick(
     .catch(() => null);
 
   if (!ad?.campaignId || ad.status !== "ACTIVE") {
-    await bumpAdDailyStat(adId, { clicks: 1 });
+    await bumpAdDailyStat(adId, { clicks: 1 }, country);
     return { billed: false };
   }
 
@@ -151,7 +166,7 @@ export async function recordClick(
     await prisma.ad
       .update({ where: { id: adId }, data: { clicks: { increment: 1 } } })
       .catch(() => null);
-    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 });
+    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 }, country);
     return { billed: false };
   }
 
@@ -163,7 +178,7 @@ export async function recordClick(
     await prisma.ad
       .update({ where: { id: adId }, data: { clicks: { increment: 1 } } })
       .catch(() => null);
-    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 });
+    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 }, country);
     return { billed: false };
   }
 
@@ -201,10 +216,11 @@ export async function recordClick(
       .catch(() => null);
   }
 
-  await bumpAdDailyStat(adId, {
-    clicks: 1,
-    spendUsd: billed.count > 0 ? cost : 0,
-  });
+  await bumpAdDailyStat(
+    adId,
+    { clicks: 1, spendUsd: billed.count > 0 ? cost : 0 },
+    country
+  );
 
   if (billed.count === 0) {
     // Out of budget — pause so it drops out of rotation.

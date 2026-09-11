@@ -969,19 +969,19 @@ export function UserEditForm({
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                   <div className="flex items-center gap-2">
                     <dt className="text-slate-500 shrink-0">Display ID:</dt>
-                    <dd className="text-white font-mono font-bold truncate">
+                    <dd className="text-white font-mono font-bold break-all min-w-0">
                       {userDisplayId(user.id)}
                     </dd>
                   </div>
                   <div className="flex items-center gap-2">
                     <dt className="text-slate-500 shrink-0">Internal ID:</dt>
-                    <dd className="text-slate-400 font-mono truncate text-[10px]">
+                    <dd className="text-slate-400 font-mono break-all min-w-0 text-[10px]">
                       {user.id}
                     </dd>
                   </div>
                   <div className="flex items-center gap-2">
                     <dt className="text-slate-500 shrink-0">Email:</dt>
-                    <dd className="text-slate-300 truncate">{user.email}</dd>
+                    <dd className="text-slate-300 break-all min-w-0">{user.email}</dd>
                   </div>
                   <div className="flex items-center gap-2">
                     <dt className="text-slate-500 shrink-0">Role:</dt>

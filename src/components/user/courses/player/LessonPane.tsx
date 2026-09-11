@@ -265,7 +265,7 @@ export function LessonPane({
                     className="flex items-center gap-2 p-2 rounded-lg border border-gray-800 hover:border-indigo-500/40 text-sm text-gray-200"
                   >
                     <Download className="w-4 h-4 text-indigo-300" />
-                    <span className="truncate flex-1">{r.label || r.url}</span>
+                    <span className="truncate min-w-0 flex-1">{r.label || r.url}</span>
                     {r.mimeType && (
                       <span className="text-[10px] text-gray-500 font-mono uppercase">
                         {r.mimeType}

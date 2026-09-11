@@ -32,6 +32,7 @@ import { BecomeTutorCard } from "@/components/user/profile/become-tutor-card";
 import type { ProfileResponse, EditTab, SocialAccount } from "./profile-view.types";
 import { COUNTRIES, LANGUAGES, PLATFORM_META } from "./profile-view.constants";
 import { Card, InfoRow, DataLine, VerifTile, CompletionRing } from "./profile-ui";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 import {
   PersonalTab,
   AddressTab,
@@ -161,7 +162,7 @@ export function ProfileTabBody({
                     className="w-full flex items-center gap-2 p-2 rounded-lg bg-gray-950 border border-gray-800 hover:border-indigo-500/40 text-left transition-colors"
                   >
                     <Circle className="w-3.5 h-3.5 text-gray-600 shrink-0" />
-                    <span className="text-xs text-gray-300 flex-1 truncate">{it.label}</span>
+                    <span className="text-xs text-gray-300 flex-1 min-w-0 truncate">{it.label}</span>
                     <ChevronRight className="w-3.5 h-3.5 text-gray-600" />
                   </button>
                 ))}
@@ -601,7 +602,7 @@ export function ProfileTabBody({
                 </div>
               </div>
             )}
-            <nav className="flex gap-1 overflow-x-auto -mx-2 px-2 pb-1 border-b border-gray-800 scrollbar-thin">
+            <ScrollFadeRow className="-mx-2" innerClassName="flex gap-1 px-2 pb-1 border-b border-gray-800" ariaLabel="Settings tabs">
               {(
                 [
                   { key: "personal", label: "Personal", icon: User },
@@ -617,7 +618,7 @@ export function ProfileTabBody({
                   key={t.key}
                   onClick={() => setEditTab(t.key)}
                   className={cn(
-                    "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
+                    "shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
                     editTab === t.key
                       ? "bg-indigo-500/15 text-white border border-indigo-500/40"
                       : "text-gray-400 hover:text-white hover:bg-gray-900"
@@ -627,7 +628,7 @@ export function ProfileTabBody({
                   {t.label}
                 </button>
               ))}
-            </nav>
+            </ScrollFadeRow>
 
             {editTab === "personal" && <PersonalTab data={data} patch={patch} />}
             {editTab === "address" && <AddressTab data={data} patch={patch} />}

@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { ScrollFadeRow } from "./scroll-fade-row";
 
 export interface FilterChip<T extends string> {
   value: T;
@@ -24,9 +25,12 @@ export function FilterChips<T extends string>({
   variant = "pill",
 }: FilterChipsProps<T>) {
   return (
-    <div className={cn("relative -mx-4", className)}>
-      <div className="flex items-center gap-2 overflow-x-auto scrollbar-none px-4">
-        {options.map((opt) => {
+    <ScrollFadeRow
+      className={cn("-mx-4", className)}
+      innerClassName="flex items-center gap-2 px-4"
+      ariaLabel="Filters"
+    >
+      {options.map((opt) => {
           const active = opt.value === value;
           if (variant === "underline") {
             return (
@@ -74,9 +78,6 @@ export function FilterChips<T extends string>({
             </button>
           );
         })}
-      </div>
-      {/* Right-edge fade — hints there's more to scroll without an ugly scrollbar */}
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-linear-to-l from-gray-950 to-transparent" />
-    </div>
+    </ScrollFadeRow>
   );
 }

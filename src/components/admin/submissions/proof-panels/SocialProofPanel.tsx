@@ -181,7 +181,7 @@ export function SocialProofPanel({ submission, task }: Props) {
                       className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-white truncate max-w-xs"
                     >
                       <ExternalLink className="w-3 h-3 shrink-0" />
-                      <span className="truncate">Target</span>
+                      <span className="truncate min-w-0">Target</span>
                     </a>
                   )}
                 </div>
@@ -194,7 +194,7 @@ export function SocialProofPanel({ submission, task }: Props) {
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-sm text-indigo-400 hover:text-indigo-300 break-all max-w-full"
                   >
                     <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">{proof.proofUrl}</span>
+                    <span className="break-all min-w-0">{proof.proofUrl}</span>
                   </a>
                 )}
 
@@ -304,11 +304,11 @@ function LegacyProof({
             href={targetUrl}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-white underline-offset-2 hover:underline truncate max-w-md"
+            className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-white underline-offset-2 hover:underline max-w-md"
             title="Target URL set by admin"
           >
             <ExternalLink className="w-3 h-3 shrink-0" />
-            <span className="truncate">Target: {targetUrl}</span>
+            <span className="break-all min-w-0">Target: {targetUrl}</span>
           </a>
         )}
       </div>
@@ -332,7 +332,7 @@ function LegacyProof({
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 text-sm text-indigo-400 hover:text-indigo-300 break-all max-w-full"
           >
             <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate">{submission.proof}</span>
+            <span className="break-all min-w-0">{submission.proof}</span>
           </a>
         </div>
       )}

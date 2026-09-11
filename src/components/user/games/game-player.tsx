@@ -250,7 +250,7 @@ export function GamePlayer({
   return (
     <div className="fixed inset-0 z-10000 bg-black flex flex-col">
       <div className="flex items-center gap-3 px-3 h-12 bg-gray-950 border-b border-gray-800 shrink-0">
-        <p className="text-sm font-bold text-white truncate flex-1">{game.title}</p>
+        <p className="text-sm font-bold text-white truncate min-w-0 flex-1">{game.title}</p>
 
         {reward?.enabled && (
           <span className="relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold tabular-nums">

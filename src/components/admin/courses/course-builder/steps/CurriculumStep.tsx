@@ -288,7 +288,7 @@ function LessonEditor({
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
-          className="flex-1 text-left text-sm text-white truncate hover:text-indigo-200"
+          className="flex-1 min-w-0 text-left text-sm text-white truncate hover:text-indigo-200"
         >
           {lesson.title || <span className="text-slate-500 italic">Untitled lesson</span>}
         </button>

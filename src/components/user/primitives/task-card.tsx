@@ -131,7 +131,7 @@ export function TaskCard({
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="text-sm font-semibold text-white truncate flex-1">
+            <h3 className="text-sm font-semibold text-white truncate flex-1 min-w-0">
               {title}
             </h3>
             {isDone && (

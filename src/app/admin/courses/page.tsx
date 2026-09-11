@@ -339,7 +339,7 @@ export default async function CoursesAdminPage({ searchParams }: PageProps) {
                           {(c.tutor.name ?? c.tutor.email ?? "?").slice(0, 1).toUpperCase()}
                         </div>
                       )}
-                      <span className="text-slate-300 truncate text-sm">
+                      <span className="text-slate-300 truncate text-sm min-w-0">
                         {c.tutor.name ?? c.tutor.email}
                       </span>
                     </div>

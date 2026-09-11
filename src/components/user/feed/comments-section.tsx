@@ -184,7 +184,7 @@ export function CommentsSection({
       {/* Input */}
       {replyTo && (
         <div className="flex items-center justify-between text-[11px] text-indigo-300 bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1.5 rounded-lg">
-          <span className="truncate">
+          <span className="truncate min-w-0">
             Replying to <strong>{replyTo.user?.name ?? "Anonymous"}</strong>
           </span>
           <button

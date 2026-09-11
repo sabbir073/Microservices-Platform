@@ -1327,6 +1327,32 @@ interface PlacementRow extends ReportRow {
   fillRate: number | null;
 }
 interface CampaignRow extends ReportRow { title: string }
+/** One country's slice of the window — see /api/admin/ads/report. */
+interface CountryRow {
+  code: string;
+  label: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  spend: number;
+  /** Share of the window's impressions, 0-100. */
+  share: number;
+}
+interface CountryTotals {
+  impressions: number;
+  clicks: number;
+  spend: number;
+  unknownImpressions: number;
+  unknownShare: number;
+  countries: number;
+}
+const COUNTRY_SORTS = [
+  { key: "impressions", label: "Impr" },
+  { key: "clicks", label: "Clicks" },
+  { key: "ctr", label: "CTR" },
+  { key: "spend", label: "Revenue" },
+] as const;
+type CountrySortKey = (typeof COUNTRY_SORTS)[number]["key"];
 const RANGES = [7, 14, 30, 90];
 
 /**
@@ -1384,13 +1410,18 @@ function AnalyticsTab() {
   const [perAd, setPerAd] = useState<AdRow[]>([]);
   const [perPlacement, setPerPlacement] = useState<PlacementRow[]>([]);
   const [perCampaign, setPerCampaign] = useState<CampaignRow[]>([]);
+  const [perCountry, setPerCountry] = useState<CountryRow[]>([]);
+  const [countryTotals, setCountryTotals] = useState<CountryTotals | null>(null);
+  const [countrySort, setCountrySort] = useState<CountrySortKey>("impressions");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     Promise.all([
       fetch(`/api/admin/ads/analytics?days=${days}`).then((r) => r.json()),
-      fetch(`/api/admin/ads/report?days=${days}`).then((r) => r.json()),
+      fetch(
+        `/api/admin/ads/report?days=${days}&countrySort=${countrySort}`
+      ).then((r) => r.json()),
     ])
       .then(([a, rep]) => {
         if (!active) return;
@@ -1400,13 +1431,15 @@ function AnalyticsTab() {
         setPerAd(rep.perAd ?? []);
         setPerPlacement(rep.perPlacement ?? []);
         setPerCampaign(rep.perCampaign ?? []);
+        setPerCountry(rep.perCountry ?? []);
+        setCountryTotals(rep.countryTotals ?? null);
       })
       .catch(() => {})
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [days]);
+  }, [days, countrySort]);
 
   const maxImp = Math.max(1, ...series.map((s) => s.impressions));
   const spend = series.reduce((s, d) => s + d.spendUsd, 0);
@@ -1419,7 +1452,7 @@ function AnalyticsTab() {
           {/* Ads were the one money domain with no export at all. */}
           <div className="inline-flex items-center gap-1">
             <span className="text-[11px] text-slate-500">Export</span>
-            {(["ad", "placement", "campaign", "daily"] as const).map((scope) => (
+            {(["ad", "placement", "campaign", "country", "daily"] as const).map((scope) => (
               <a
                 key={scope}
                 href={`/api/admin/ads/report/export?days=${days}&scope=${scope}`}
@@ -1528,6 +1561,18 @@ function AnalyticsTab() {
           ))}
         </ReportTable>
       </div>
+      <CountryBreakdown
+        rows={perCountry}
+        totals={countryTotals}
+        sort={countrySort}
+        onSort={(k) => {
+          setLoading(true);
+          setCountrySort(k);
+        }}
+        days={days}
+        loading={loading}
+      />
+
       <div className="space-y-1">
         <p className="text-[10px] text-slate-500">
           Network (AdSense / Ad Manager) ads show served impressions only — their clicks &amp; revenue are in the network&apos;s own console.
@@ -1723,6 +1768,137 @@ function CampaignDetailModal({
         </div>
       )}
     </ModalShell>
+  );
+}
+
+/**
+ * Where the impressions and clicks actually came from.
+ *
+ * Nothing recorded a country on an ad event until this shipped, so the honest
+ * part of this panel is the "Unknown" disclosure, not the table: every row
+ * counted before the rollup existed, plus anything served without an edge
+ * country header, sits in one bucket and it is stated on screen as a share.
+ * Hiding it would turn "I could only identify 4% of my traffic" into "100% of
+ * my traffic is from Bangladesh", which is the kind of number an owner sells
+ * inventory on.
+ */
+function CountryBreakdown({
+  rows,
+  totals,
+  sort,
+  onSort,
+  days,
+  loading,
+}: {
+  rows: CountryRow[];
+  totals: CountryTotals | null;
+  sort: CountrySortKey;
+  onSort: (k: CountrySortKey) => void;
+  days: number;
+  loading: boolean;
+}) {
+  const max = Math.max(1, ...rows.map((r) => r.impressions));
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">
+          By country · last {days} days
+          {totals ? ` · ${totals.countries} identified` : ""}
+        </p>
+        <div className="inline-flex items-center gap-1">
+          <span className="text-[10px] text-slate-500">Sort</span>
+          {COUNTRY_SORTS.map((o) => (
+            <button
+              key={o.key}
+              onClick={() => onSort(o.key)}
+              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold ${sort === o.key ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-slate-500 py-6 text-center">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-slate-500 py-6 text-center">
+          No country-tagged ad events in this window yet. Countries are recorded
+          from the moment an ad is served or clicked — history before that is not
+          backfillable.
+        </p>
+      ) : (
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider text-slate-500">
+                <th className="text-left pb-1.5">Country</th>
+                <th className="text-right pb-1.5">Impr</th>
+                <th className="text-right pb-1.5">Share</th>
+                <th className="text-right pb-1.5">Clicks</th>
+                <th className="text-right pb-1.5">CTR</th>
+                <th className="text-right pb-1.5">Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const unknown = r.code === "ZZ";
+                return (
+                  <tr key={r.code} className="border-t border-slate-800">
+                    <td className="py-1.5 pr-2 truncate max-w-40">
+                      <span className={unknown ? "text-amber-300" : "text-white"}>
+                        {r.label}
+                      </span>{" "}
+                      <span className="text-[10px] text-slate-500">{r.code}</span>
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      {r.impressions.toLocaleString()}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      <span className="inline-flex items-center gap-1.5 justify-end">
+                        <span className="hidden sm:block h-1.5 w-10 rounded-full bg-slate-800 overflow-hidden">
+                          <span
+                            className={`block h-full rounded-full ${unknown ? "bg-amber-500" : "bg-blue-500"}`}
+                            style={{ width: `${(r.impressions / max) * 100}%` }}
+                          />
+                        </span>
+                        {r.share.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      {r.clicks.toLocaleString()}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      {r.ctr.toFixed(2)}%
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      {usd(r.spend)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {totals && totals.impressions > 0 && (
+        <p className="text-[10px] text-amber-300/90">
+          <b>{totals.unknownShare.toFixed(1)}%</b> of impressions in this window
+          ({totals.unknownImpressions.toLocaleString()} of{" "}
+          {totals.impressions.toLocaleString()}) have no country. Countries are
+          read from the request at the edge; anything recorded before country
+          tracking shipped, and any request that arrives without it, counts as
+          Unknown. It is listed above rather than dropped — the remaining shares
+          would otherwise renormalise and read as certainty you do not have.
+        </p>
+      )}
+      <p className="text-[10px] text-slate-500">
+        <b>Revenue</b> here uses the same gate as the tables above: house and
+        network impressions earn nothing into this database, so they add
+        impressions and clicks to a country but never spend.
+      </p>
+    </div>
   );
 }
 

@@ -10,6 +10,7 @@ import { useMobileNav } from "@/lib/stores/mobile-nav-store";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { useAppRefresh } from "@/hooks/use-app-refresh";
 import { Avatar } from "@/components/user/primitives/avatar";
+import { ThemeSwitch } from "@/components/dashboard/theme-switch";
 
 interface HeaderProps {
   user: {
@@ -179,6 +180,9 @@ export function Header({ user, avatar }: HeaderProps) {
 
           {/* Right: Actions */}
           <div className="flex items-center gap-2 sm:gap-4">
+            {/* Light/dark, in reach on every screen — it was only in Settings. */}
+            <ThemeSwitch />
+
             {/* View Reports Button (desktop) */}
             <Link
               href="/wallet"

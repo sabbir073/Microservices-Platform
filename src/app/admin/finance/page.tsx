@@ -485,7 +485,7 @@ function SourcesTab({
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-800 hover:border-slate-600 text-xs text-slate-300 hover:text-white"
             >
               <r.icon className="w-4 h-4 shrink-0 text-slate-400" />
-              <span className="truncate">{r.label}</span>
+              <span className="truncate min-w-0">{r.label}</span>
             </Link>
           ))}
         </div>

@@ -302,7 +302,7 @@ export function BidPanel({
                       : "bg-gray-950 border border-gray-800"
                   )}
                 >
-                  <span className="text-gray-300 truncate flex-1">
+                  <span className="text-gray-300 truncate min-w-0 flex-1">
                     {b.bidder.name}
                   </span>
                   <span className="text-white font-bold tabular-nums">

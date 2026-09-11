@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
+import { UNKNOWN_COUNTRY, countryLabel } from "@/lib/ad-geo";
 
 // GET /api/admin/ads/report?days=N — per-ad / per-placement / per-campaign
 // breakdown from AdDailyStat over the last N days (impressions, clicks, CTR,
@@ -27,39 +28,199 @@ const EMPTY: Agg = {
 
 const isNetworkType = (t: string) => t === "ADSENSE" || t === "GAM";
 
+/** One country's slice of the window. */
+export interface CountryRow {
+  code: string;
+  label: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  spend: number;
+  /** Share of the window's impressions, 0–100. Drives the "Unknown" disclosure. */
+  share: number;
+}
+
+/**
+ * Fold the per-(ad, country) sums into a per-country breakdown.
+ *
+ * Two things this must get right, and both were easy to get wrong:
+ *
+ *  - **Spend passes the same revenue gate as every other panel.** House
+ *    inventory bills nothing by design and its daily rows still carry $1.95 of
+ *    historical self-billing from before `recordClick` exempted it; network
+ *    (AdSense/GAM) revenue is reported in Google's console and never reaches
+ *    this database. Summing `spendUsd` blind here would make the country panel
+ *    disagree with the placement panel next to it on the same screen.
+ *  - **Unknown is a row, not a gap.** Events recorded before this shipped, and
+ *    any request that arrives without an edge country header, are stored as
+ *    `ZZ`. They stay in the output with their real share, because a country
+ *    chart that quietly drops its unknowns tells the owner his traffic is 100%
+ *    from wherever happens to be tagged.
+ */
+function buildPerCountry<
+  A extends { type: string; campaign: { isHouse: boolean } | null },
+>(
+  rows: Array<{
+    adId: string;
+    country: string;
+    _sum: { impressions: number | null; clicks: number | null; spendUsd: unknown };
+  }>,
+  // Generic over the ad shape so the caller's `inFilter` — which reads
+  // placement/campaign ids this function has no business knowing about — is the
+  // SAME predicate the per-ad/per-placement/per-campaign loops use. Two
+  // predicates would be two filters, and the country panel would eventually be
+  // describing a different slice of traffic than the table beside it.
+  adMap: Map<string, A>,
+  inFilter: (a: A | undefined) => boolean,
+  sort: "impressions" | "clicks" | "ctr" | "spend"
+): {
+  perCountry: CountryRow[];
+  countrySort: string;
+  countryTotals: {
+    impressions: number;
+    clicks: number;
+    spend: number;
+    /** Impressions with no resolvable country, and their share of the window. */
+    unknownImpressions: number;
+    unknownShare: number;
+    countries: number;
+  };
+} {
+  const agg = new Map<string, { impressions: number; clicks: number; spend: number }>();
+  for (const r of rows) {
+    const a = adMap.get(r.adId);
+    if (!inFilter(a) || !a) continue;
+    const code = r.country || UNKNOWN_COUNTRY;
+    const cur = agg.get(code) ?? { impressions: 0, clicks: 0, spend: 0 };
+    cur.impressions += r._sum.impressions ?? 0;
+    cur.clicks += r._sum.clicks ?? 0;
+    // Same gate as `perAd`/`perPlacement`/`perCampaign` above and as the CSV.
+    if (!a.campaign?.isHouse && !isNetworkType(a.type)) {
+      cur.spend += toNum(r._sum.spendUsd as Parameters<typeof toNum>[0]);
+    }
+    agg.set(code, cur);
+  }
+
+  const totalImpr = [...agg.values()].reduce((s, v) => s + v.impressions, 0);
+  const perCountry: CountryRow[] = [...agg.entries()].map(([code, v]) => ({
+    code,
+    label: countryLabel(code),
+    impressions: v.impressions,
+    clicks: v.clicks,
+    ctr: v.impressions > 0 ? (v.clicks / v.impressions) * 100 : 0,
+    spend: v.spend,
+    share: totalImpr > 0 ? (v.impressions / totalImpr) * 100 : 0,
+  }));
+  perCountry.sort((a, b) => b[sort] - a[sort] || b.impressions - a.impressions);
+
+  const unknown = agg.get(UNKNOWN_COUNTRY);
+  return {
+    perCountry,
+    countrySort: sort,
+    countryTotals: {
+      impressions: totalImpr,
+      clicks: [...agg.values()].reduce((s, v) => s + v.clicks, 0),
+      spend: [...agg.values()].reduce((s, v) => s + v.spend, 0),
+      unknownImpressions: unknown?.impressions ?? 0,
+      unknownShare: totalImpr > 0 ? ((unknown?.impressions ?? 0) / totalImpr) * 100 : 0,
+      // Real, identified countries — the unknown bucket is not one of them.
+      countries: [...agg.keys()].filter((c) => c !== UNKNOWN_COUNTRY).length,
+    },
+  };
+}
+
 export async function GET(req: NextRequest) {
   const session = await auth();
   if (!session?.user || !(await can(session.user.id, "ads.view"))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const days = Math.min(
-    90,
-    Math.max(1, Number(new URL(req.url).searchParams.get("days")) || 14)
-  );
+  const sp = new URL(req.url).searchParams;
+  const days = Math.min(90, Math.max(1, Number(sp.get("days")) || 14));
+  // Narrowing filters. Every section below — including the country breakdown —
+  // reads the SAME two values, so the country panel can never be describing a
+  // different slice of traffic than the placement table beside it.
+  const placementId = sp.get("placementId") || null;
+  const campaignId = sp.get("campaignId") || null;
+  const COUNTRY_SORTS = ["impressions", "clicks", "ctr", "spend"] as const;
+  type CountrySort = (typeof COUNTRY_SORTS)[number];
+  const countrySortRaw = (sp.get("countrySort") ?? "impressions") as CountrySort;
+  const countrySort: CountrySort = COUNTRY_SORTS.includes(countrySortRaw)
+    ? countrySortRaw
+    : "impressions";
   const since = new Date();
   since.setUTCHours(0, 0, 0, 0);
   since.setUTCDate(since.getUTCDate() - (days - 1));
 
-  const stats = await prisma.adDailyStat.findMany({
-    where: { date: { gte: since } },
-    select: { adId: true, impressions: true, clicks: true, spendUsd: true },
-  });
-  if (stats.length === 0) {
-    return NextResponse.json({ days, perAd: [], perPlacement: [], perCampaign: [] });
-  }
+  const [stats, countryStats] = await Promise.all([
+    prisma.adDailyStat.findMany({
+      where: { date: { gte: since } },
+      select: { adId: true, impressions: true, clicks: true, spendUsd: true },
+    }),
+    // Grouped in the database: one row per (ad, country) for the window, so the
+    // API never holds a row per ad per country per DAY.
+    //
+    // Grouped by `adId` as well as `country` — NOT by country alone — because
+    // spend has to pass the same house/network revenue gate the rest of this
+    // report applies, and that gate lives on the Ad row. A `groupBy(["country"])`
+    // would have been one cheap query that silently reported $1.95 of stale
+    // HOUSE self-billing as revenue.
+    prisma.adCountryDailyStat.groupBy({
+      by: ["adId", "country"],
+      where: { date: { gte: since } },
+      _sum: { impressions: true, clicks: true, spendUsd: true },
+    }) as unknown as Promise<
+      Array<{
+        adId: string;
+        country: string;
+        _sum: {
+          impressions: number | null;
+          clicks: number | null;
+          spendUsd: unknown;
+        };
+      }>
+    >,
+  ]);
 
-  const adIds = [...new Set(stats.map((s) => s.adId))];
-  const ads = await prisma.ad.findMany({
-    where: { id: { in: adIds } },
-    select: {
-      id: true,
-      type: true,
-      campaign: { select: { id: true, title: true, isHouse: true } },
-      placement: { select: { id: true, name: true } },
-    },
-  });
+  const adIds = [
+    ...new Set([
+      ...stats.map((s) => s.adId),
+      ...countryStats.map((s) => s.adId),
+    ]),
+  ];
+  const ads = adIds.length
+    ? await prisma.ad.findMany({
+        where: { id: { in: adIds } },
+        select: {
+          id: true,
+          type: true,
+          campaign: { select: { id: true, title: true, isHouse: true } },
+          placement: { select: { id: true, name: true } },
+        },
+      })
+    : [];
   const adMap = new Map(ads.map((a) => [a.id, a]));
+  /** Does this ad fall inside the caller's placement/campaign filter? */
+  const inFilter = (a: (typeof ads)[number] | undefined) =>
+    !!a &&
+    (!placementId || a.placement?.id === placementId) &&
+    (!campaignId || a.campaign?.id === campaignId);
+
+  // Built before the empty-window short-circuit: a window with no AdDailyStat
+  // rows still has to return a well-formed (empty) country section, or the UI
+  // renders a panel that looks broken rather than a panel that says "nothing
+  // here yet".
+  const perCountry = buildPerCountry(countryStats, adMap, inFilter, countrySort);
+
+  if (stats.length === 0) {
+    return NextResponse.json({
+      days,
+      perAd: [],
+      perPlacement: [],
+      perCampaign: [],
+      ...perCountry,
+    });
+  }
 
   const perAd = new Map<string, Agg & { type: string; campaign: string; placement: string }>();
   const perPlacement = new Map<string, Agg & { name: string }>();
@@ -67,7 +228,7 @@ export async function GET(req: NextRequest) {
 
   for (const s of stats) {
     const a = adMap.get(s.adId);
-    if (!a) continue;
+    if (!inFilter(a) || !a) continue;
     const spend = toNum(s.spendUsd);
     const house = !!a.campaign?.isHouse;
     const network = isNetworkType(a.type);
@@ -143,7 +304,7 @@ export async function GET(req: NextRequest) {
   // so it lines up with `perPlacement` above.
   const serveRows = await prisma.adServeDailyStat.groupBy({
     by: ["placementId"],
-    where: { date: { gte: since } },
+    where: { date: { gte: since }, ...(placementId ? { placementId } : {}) },
     _sum: { requests: true, fills: true },
   });
   const fillBy = new Map(
@@ -173,5 +334,6 @@ export async function GET(req: NextRequest) {
       };
     }).sort((a, b) => b.impressions - a.impressions),
     perCampaign: shape(perCampaign, 50),
+    ...perCountry,
   });
 }

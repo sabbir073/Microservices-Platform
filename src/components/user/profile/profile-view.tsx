@@ -50,6 +50,7 @@ import { AnalyticsTab } from "./analytics-tab";
 import { TagModal } from "./tag-modal";
 import { PhotoModal } from "./photo-modal";
 import { ConnectSocialModal } from "./connect-social-modal";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 export function ProfileView() {
   const [data, setData] = useState<ProfileResponse | null>(null);
@@ -447,7 +448,7 @@ export function ProfileView() {
 
       {/* Sticky Facebook-style primary tabs */}
       <nav className="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 glass-strong rounded-none border-0 border-y border-gray-800/60">
-        <div className="flex gap-1 overflow-x-auto scrollbar-thin py-1">
+        <ScrollFadeRow innerClassName="flex gap-1 py-1" ariaLabel="Profile tabs">
           {(
             [
               { key: "profile", label: "Profile", icon: User },
@@ -461,7 +462,7 @@ export function ProfileView() {
               key={t.key}
               onClick={() => setPrimaryTab(t.key)}
               className={cn(
-                "inline-flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors relative",
+                "shrink-0 inline-flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors relative",
                 primaryTab === t.key
                   ? "text-indigo-400"
                   : "text-gray-400 hover:text-white"
@@ -474,7 +475,7 @@ export function ProfileView() {
               )}
             </button>
           ))}
-        </div>
+        </ScrollFadeRow>
       </nav>
 
       {/* Tab content */}

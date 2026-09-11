@@ -58,7 +58,13 @@ interface ActivityRow {
  */
 interface FormState {
   enabled: boolean;
+  poster_mode_enabled: boolean;
+  engager_mode_enabled: boolean;
   daily_cap_per_user: number;
+  poster_daily_cap_per_user: number;
+  engager_daily_cap_per_user: number;
+  pair_daily_cap_per_user: number;
+  min_level_to_earn: number;
   daily_xp_cap_per_user: number;
   cap_per_post: number;
   min_account_age_hours: number;
@@ -181,7 +187,13 @@ function countChanges(a: FormState, b: FormState): number {
   let n = 0;
   const scalars = [
     "enabled",
+    "poster_mode_enabled",
+    "engager_mode_enabled",
     "daily_cap_per_user",
+    "poster_daily_cap_per_user",
+    "engager_daily_cap_per_user",
+    "pair_daily_cap_per_user",
+    "min_level_to_earn",
     "daily_xp_cap_per_user",
     "cap_per_post",
     "min_account_age_hours",
@@ -346,6 +358,63 @@ export function SocialEarningForm({ initial, canEdit }: Props) {
         />
       </div>
 
+      {/* The two earning modes. Both ship OFF — nothing in the feed pays until
+          one of these is switched on, whatever the per-activity rates say. */}
+      <div className="mb-5 grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <Toggle
+            tone={form.poster_mode_enabled ? "emerald" : "red"}
+            checked={form.poster_mode_enabled}
+            disabled={!canEdit || !form.enabled}
+            onChange={(v) => setForm({ ...form, poster_mode_enabled: v })}
+            label={
+              <span className="inline-flex items-center gap-2 text-sm font-bold">
+                Poster earns —{" "}
+                <span
+                  className={
+                    form.poster_mode_enabled ? "text-emerald-400" : "text-red-400"
+                  }
+                >
+                  {form.poster_mode_enabled ? "ON" : "OFF"}
+                </span>
+              </span>
+            }
+            description="The author is paid for the likes, comments and shares their post receives. This is every “Author” block on the Activity rates tab."
+          />
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+          <Toggle
+            tone={form.engager_mode_enabled ? "emerald" : "red"}
+            checked={form.engager_mode_enabled}
+            disabled={!canEdit || !form.enabled}
+            onChange={(v) => setForm({ ...form, engager_mode_enabled: v })}
+            label={
+              <span className="inline-flex items-center gap-2 text-sm font-bold">
+                Engager earns —{" "}
+                <span
+                  className={
+                    form.engager_mode_enabled ? "text-emerald-400" : "text-red-400"
+                  }
+                >
+                  {form.engager_mode_enabled ? "ON" : "OFF"}
+                </span>
+              </span>
+            }
+            description="The person who likes, comments or shares is paid for doing it. This is every “Engager” block on the Activity rates tab."
+          />
+        </div>
+      </div>
+
+      {form.enabled &&
+        !form.poster_mode_enabled &&
+        !form.engager_mode_enabled && (
+          <div className="mb-5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-200">
+            Social earning is ON but <strong>both modes are off</strong>, so the
+            feed pays nobody. Set your rates below, then switch on the mode you
+            want. Each mode has its own daily cap on the Caps &amp; limits tab.
+          </div>
+        )}
+
       <div className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden">
         {/* Tab strip */}
         <div
@@ -502,6 +571,10 @@ function CapsPanel({
   // `activities` and replace the whole object with a number.
   type CapKey =
     | "daily_cap_per_user"
+    | "poster_daily_cap_per_user"
+    | "engager_daily_cap_per_user"
+    | "pair_daily_cap_per_user"
+    | "min_level_to_earn"
     | "daily_xp_cap_per_user"
     | "cap_per_post"
     | "min_account_age_hours";
@@ -527,6 +600,58 @@ function CapsPanel({
           danger={
             form.daily_cap_per_user === 0
               ? "0 does not mean unlimited — it blocks every social point payout. For effectively no limit, enter a large number."
+              : undefined
+          }
+        />
+        <NumberField
+          id="cap-poster-daily"
+          label="Poster mode — daily points cap"
+          hint="Most one author can earn in a day from engagement on their posts"
+          value={form.poster_daily_cap_per_user}
+          disabled={!canEdit}
+          onChange={(v) => setInt("poster_daily_cap_per_user", v)}
+          danger={
+            form.poster_daily_cap_per_user === 0
+              ? "0 does not mean unlimited — it blocks poster-mode payouts entirely. For effectively no limit, enter a large number."
+              : undefined
+          }
+        />
+        <NumberField
+          id="cap-engager-daily"
+          label="Engager mode — daily points cap"
+          hint="Most one user can earn in a day for liking, commenting and sharing"
+          value={form.engager_daily_cap_per_user}
+          disabled={!canEdit}
+          onChange={(v) => setInt("engager_daily_cap_per_user", v)}
+          danger={
+            form.engager_daily_cap_per_user === 0
+              ? "0 does not mean unlimited — it blocks engager-mode payouts entirely. For effectively no limit, enter a large number."
+              : undefined
+          }
+        />
+        <NumberField
+          id="cap-pair-daily"
+          label="Max daily points from one other account"
+          hint="Anti-farming: stops two accounts engaging each other all day"
+          value={form.pair_daily_cap_per_user}
+          disabled={!canEdit}
+          onChange={(v) => setInt("pair_daily_cap_per_user", v)}
+          note={
+            form.pair_daily_cap_per_user === 0
+              ? "0 switches the pair limit OFF — two accounts can then farm each other up to the full daily cap."
+              : undefined
+          }
+        />
+        <NumberField
+          id="cap-min-level"
+          label="Minimum level to earn"
+          hint="Accounts below this level earn nothing from the feed. 0 = no gate"
+          value={form.min_level_to_earn}
+          disabled={!canEdit}
+          onChange={(v) => setInt("min_level_to_earn", v)}
+          note={
+            form.min_level_to_earn === 0
+              ? "0 lets any account earn as soon as it is old enough."
               : undefined
           }
         />

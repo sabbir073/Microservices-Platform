@@ -309,7 +309,7 @@ export function DepositView({ from }: { from?: string } = {}) {
                   >
                     <span className="inline-flex items-center gap-1.5 max-w-full">
                       <BrandIcon brand={m.key} colored className="w-4 h-4 shrink-0" />
-                      <span className="truncate">{m.label}</span>
+                      <span className="truncate min-w-0">{m.label}</span>
                     </span>
                     <span
                       className={`text-[10px] font-bold ${

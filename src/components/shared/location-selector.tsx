@@ -639,7 +639,7 @@ function CountryCombobox({
           ) : selected ? (
             <>
               <span className="text-base shrink-0">{selected.flag ?? "🏳️"}</span>
-              <span className="flex-1 truncate">{selected.name}</span>
+              <span className="flex-1 min-w-0 truncate">{selected.name}</span>
               {selected.phoneCode && (
                 <span className="text-slate-500 text-xs">
                   {selected.phoneCode}
@@ -722,7 +722,7 @@ function CountryCombobox({
                   )}
                 >
                   <span className="text-base shrink-0">{c.flag ?? "🏳️"}</span>
-                  <span className="flex-1 truncate">{c.name}</span>
+                  <span className="flex-1 min-w-0 truncate">{c.name}</span>
                   <span className="text-[10px] text-slate-500 font-mono shrink-0">
                     {c.iso2}
                   </span>

@@ -122,7 +122,7 @@ export function LandingEditor({ initial, canEdit }: Props) {
                   )}
                 >
                   <Icon className="w-4 h-4 shrink-0" />
-                  <span className="flex-1 truncate font-medium">{s.label}</span>
+                  <span className="flex-1 min-w-0 truncate font-medium">{s.label}</span>
                   {isDirty && (
                     <span
                       className="w-1.5 h-1.5 rounded-full bg-amber-400"

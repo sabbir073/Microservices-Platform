@@ -838,7 +838,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                   className="rounded-lg border border-slate-800 bg-slate-950/50 p-4 hover:border-blue-500/50 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-white font-medium truncate">
+                    <p className="text-white font-medium truncate min-w-0">
                       {c.category}
                     </p>
                     <span className="px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 text-xs tabular-nums">

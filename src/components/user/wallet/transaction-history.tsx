@@ -8,6 +8,7 @@ import { History } from "lucide-react";
 import { cn, usd } from "@/lib/utils";
 import { SOURCE_META, SOURCE_ORDER, type SourceKey } from "@/lib/tx-sources";
 import { DateField } from "@/components/ui/date-field";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 interface HistoryTx {
   id: string;
@@ -189,7 +190,7 @@ export function TransactionHistory({
       )}
 
       {/* Source filter chips */}
-      <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-1">
+      <ScrollFadeRow innerClassName="flex gap-1.5 pb-1" ariaLabel="Transaction source filter">
         <button
           onClick={() => changeSource("all")}
           className={cn(
@@ -216,7 +217,7 @@ export function TransactionHistory({
             {SOURCE_META[s].label}
           </button>
         ))}
-      </div>
+      </ScrollFadeRow>
 
       {/* Income by source over the selected range */}
       {(() => {

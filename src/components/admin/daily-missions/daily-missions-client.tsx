@@ -410,7 +410,7 @@ export function DailyMissionsClient({ initial, canManage }: Props) {
                         )}
                       >
                         <div className="flex items-center justify-between gap-2 mb-2">
-                          <h3 className="text-sm font-bold text-white truncate">
+                          <h3 className="text-sm font-bold text-white truncate min-w-0">
                             {m.name}
                           </h3>
                           <span

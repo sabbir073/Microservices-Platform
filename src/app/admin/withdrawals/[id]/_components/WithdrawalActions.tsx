@@ -109,7 +109,7 @@ export function WithdrawalActions({
           {existingTransactionId && (
             <div className="flex justify-between gap-2">
               <span className="text-slate-400">Transaction Ref</span>
-              <span className="text-white font-mono text-xs truncate">
+              <span className="text-white font-mono text-xs break-all min-w-0">
                 {existingTransactionId}
               </span>
             </div>

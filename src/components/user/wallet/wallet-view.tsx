@@ -35,6 +35,7 @@ import { deriveSource } from "@/lib/tx-sources";
 import { History } from "lucide-react";
 import { cn, usd } from "@/lib/utils";
 import { runInterstitial } from "@/lib/reward-interstitial";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 export interface WalletTransaction {
   id: string;
@@ -163,7 +164,7 @@ export function WalletView(props: WalletViewProps) {
       </div>
 
       {/* Tabs */}
-      <nav className="flex gap-1 border-b border-gray-800 overflow-x-auto scrollbar-none">
+      <ScrollFadeRow innerClassName="flex gap-1 border-b border-gray-800" ariaLabel="Wallet tabs">
         {(
           [
             { key: "balance", label: "Balance", icon: Coins },
@@ -179,7 +180,7 @@ export function WalletView(props: WalletViewProps) {
               key={t.key}
               onClick={() => setTab(t.key)}
               className={cn(
-                "inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors",
+                "shrink-0 inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-semibold border-b-2 -mb-px transition-colors",
                 isActive
                   ? "text-white border-indigo-500"
                   : "text-gray-500 border-transparent hover:text-white"
@@ -190,7 +191,7 @@ export function WalletView(props: WalletViewProps) {
             </button>
           );
         })}
-      </nav>
+      </ScrollFadeRow>
 
       {tab === "balance" && (
         <BalanceTab

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 interface Wall {
   provider: string;
@@ -14,7 +15,7 @@ export function OfferwallsView({ walls }: { walls: Wall[] }) {
   return (
     <div className="space-y-3">
       {walls.length > 1 && (
-        <div className="flex gap-2 overflow-x-auto scrollbar-none">
+        <ScrollFadeRow innerClassName="flex gap-2" ariaLabel="Offerwall provider">
           {walls.map((w, i) => (
             <button
               key={w.provider}
@@ -28,7 +29,7 @@ export function OfferwallsView({ walls }: { walls: Wall[] }) {
               {w.provider.replace(/_/g, " ")}
             </button>
           ))}
-        </div>
+        </ScrollFadeRow>
       )}
 
       <div className="w-full h-[75vh] rounded-xl overflow-hidden border border-gray-800 bg-black">

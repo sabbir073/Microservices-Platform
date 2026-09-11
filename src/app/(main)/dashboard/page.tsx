@@ -281,7 +281,7 @@ export default async function DashboardPage() {
               className="group card card-interactive flex items-center gap-2 p-2.5"
             >
               <e.icon className={`w-4 h-4 shrink-0 ${e.tone}`} />
-              <span className="text-[11px] font-medium text-gray-300 group-hover:text-white truncate">
+              <span className="text-[11px] font-medium text-gray-300 group-hover:text-white truncate min-w-0">
                 {e.label}
               </span>
             </Link>

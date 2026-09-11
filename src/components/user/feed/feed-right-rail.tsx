@@ -443,7 +443,7 @@ export function FeedRightRail({
                       COLOR_CLASSES[q.color] ?? "text-indigo-400"
                     )}
                   />
-                  <span className="truncate">{q.label}</span>
+                  <span className="truncate min-w-0">{q.label}</span>
                 </Link>
               );
             })}
@@ -525,7 +525,7 @@ export function FeedRightRail({
               <li key={h.tag} className="flex items-center justify-between">
                 <Link
                   href={`/hashtag/${encodeURIComponent(h.tag.replace(/^#/, ""))}`}
-                  className="text-sm font-semibold text-indigo-300 hover:text-indigo-200 hover:underline truncate"
+                  className="text-sm font-semibold text-indigo-300 hover:text-indigo-200 hover:underline truncate min-w-0"
                 >
                   {h.tag}
                 </Link>
