@@ -389,7 +389,7 @@ function PayButton({
       onClick={onClick}
       className={`ml-1.5 inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold ${
         paid
-          ? "bg-emerald-950/40 text-emerald-500 border border-emerald-900/60"
+          ? "bg-emerald-500/10 text-emerald-500 border border-emerald-500/25"
           : disabled
             ? "bg-slate-800 text-slate-600 border border-slate-800"
             : "bg-emerald-600 hover:bg-emerald-500 text-white"

@@ -36,26 +36,26 @@ const PLATFORMS: Array<{
   {
     key: "facebook",
     name: "Facebook",
-    color: "bg-[#1877f2] text-white",
+    color: "bg-[#1877f2] text-(--app-on-accent)",
     build: (u) => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(u)}`,
   },
   {
     key: "whatsapp",
     name: "WhatsApp",
-    color: "bg-[#25d366] text-white",
+    color: "bg-[#25d366] text-(--app-on-bright)",
     build: (u, t) => `https://wa.me/?text=${encodeURIComponent(`${t} ${u}`)}`,
   },
   {
     key: "telegram",
     name: "Telegram",
-    color: "bg-[#0088cc] text-white",
+    color: "bg-[#0088cc] text-(--app-on-accent)",
     build: (u, t) =>
       `https://t.me/share/url?url=${encodeURIComponent(u)}&text=${encodeURIComponent(t)}`,
   },
   {
     key: "linkedin",
     name: "LinkedIn",
-    color: "bg-[#0a66c2] text-white",
+    color: "bg-[#0a66c2] text-(--app-on-accent)",
     build: (u) =>
       `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(u)}`,
   },

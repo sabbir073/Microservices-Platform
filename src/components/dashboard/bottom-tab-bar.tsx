@@ -164,7 +164,7 @@ export function BottomTabBar({
           <span className="relative">
             <Menu className="w-5.5 h-5.5" />
             {unread > 0 && (
-              <span className="absolute -top-1.5 -right-2 px-1 min-w-4.5 h-4.5 rounded-full bg-(--app-out) text-white text-[10px] font-extrabold leading-4.5 text-center ring-2 ring-(--shell-bg)">
+              <span className="absolute -top-1.5 -right-2 px-1 min-w-4.5 h-4.5 rounded-full bg-(--app-badge) text-(--app-on-accent) text-[10px] font-extrabold leading-4.5 text-center ring-2 ring-(--shell-bg)">
                 {unread > 9 ? "9+" : unread}
               </span>
             )}

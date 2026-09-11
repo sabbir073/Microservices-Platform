@@ -33,7 +33,7 @@ import {
 import { toast } from "@/lib/toast";
 import { cn, pct, pts } from "@/lib/utils";
 import { profileHref } from "@/lib/user-href";
-import { missionItemLabel } from "@/lib/mission-labels";
+import { missionItemLabel, TYPE_TO_ROUTE } from "@/lib/mission-labels";
 import { notifyCenter } from "@/lib/notify-center";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 import { BalanceSkeleton } from "@/components/user/primitives/skeleton";
@@ -256,7 +256,7 @@ function EarnStreakCard({
           <button
             onClick={claim}
             disabled={claiming}
-            className="app-press app-tap-row inline-flex items-center gap-1.5 px-4 rounded-full bg-white text-gray-950 text-xs font-extrabold disabled:opacity-60"
+            className="app-press app-tap-row inline-flex items-center gap-1.5 px-4 rounded-full bg-(--app-bright) text-(--app-on-bright) text-xs font-extrabold disabled:opacity-60"
           >
             {claiming ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -432,6 +432,28 @@ export function FeedRightRail({
                   <span className="w-12 inline-flex items-center justify-end gap-0.5 text-gray-300 font-bold tabular-nums shrink-0">
                     <Coins className="w-3 h-3 shrink-0" />+{it.points}
                   </span>
+                  {/* Start — beside the points, because that is where someone
+                      is looking when they decide a row is worth doing.
+                      It goes to the page for THAT task type rather than the
+                      mission page: the row already says what the job is, so
+                      landing on a list and having to find it again is a step
+                      nobody needs. `TYPE_TO_ROUTE` already exists and is what
+                      the mission page itself uses, so the two cannot disagree.
+                      A finished row gets a tick instead — an enabled Start on
+                      something already done is an invitation to waste a trip. */}
+                  {it.done ? (
+                    <span className="w-14 shrink-0 text-right t-meta font-bold text-(--app-in)">
+                      Done
+                    </span>
+                  ) : (
+                    <Link
+                      href={TYPE_TO_ROUTE[it.taskType] ?? "/daily-mission"}
+                      aria-label={`Start: ${missionItemLabel(it.taskType, it.description)}`}
+                      className="app-press w-14 shrink-0 inline-flex h-7 items-center justify-center rounded-(--app-r-chip) border border-(--app-line) t-meta font-extrabold text-(--app-info) hover:bg-(--app-info-soft)"
+                    >
+                      Start
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>

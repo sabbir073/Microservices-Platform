@@ -114,7 +114,7 @@ function AnswerValue({ q, value }: { q: SurveyQuestion; value: unknown }) {
           <Star
             key={n}
             className={`w-4 h-4 ${
-              value >= n ? "text-amber-400 fill-amber-400" : "text-gray-700"
+              value >= n ? "text-amber-400 fill-amber-400" : "text-(--app-glyph)"
             }`}
           />
         ))}

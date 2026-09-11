@@ -113,7 +113,7 @@ export function SocialTasksView({
             className={cn(
               "shrink-0 px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors",
               platformFilter === "ALL"
-                ? "bg-white text-gray-900"
+                ? "bg-(--app-bright) text-(--app-on-bright)"
                 : "bg-gray-800 text-gray-300 hover:bg-gray-700"
             )}
           >

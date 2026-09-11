@@ -130,7 +130,7 @@ export function SupportInboxView() {
             className={cn(
               "px-3.5 py-1.5 rounded-full text-xs font-bold transition-colors inline-flex items-center gap-1.5",
               tab === t.value
-                ? "bg-white text-slate-900"
+                ? "bg-(--app-bright) text-(--app-on-bright)"
                 : "bg-slate-800 text-slate-300 hover:bg-slate-700"
             )}
           >
@@ -164,7 +164,7 @@ export function SupportInboxView() {
         </div>
       ) : messages.length === 0 ? (
         <div className="py-16 text-center">
-          <Inbox className="w-10 h-10 mx-auto text-slate-700 mb-3" />
+          <Inbox className="w-10 h-10 mx-auto text-(--app-glyph) mb-3" />
           <p className="text-sm text-slate-400">
             {tab === "NEW"
               ? "No new messages — you're all caught up."

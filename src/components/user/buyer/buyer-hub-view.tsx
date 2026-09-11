@@ -909,7 +909,7 @@ export function BuyerHubView({
                                       type="button"
                                       disabled={reporting}
                                       onClick={() => sendReport(t.id, r.id)}
-                                      className="inline-flex items-center gap-1 rounded-md bg-amber-500/90 px-2.5 py-1 text-[11px] font-bold text-gray-950 hover:bg-amber-400 disabled:opacity-50"
+                                      className="inline-flex items-center gap-1 rounded-md bg-amber-500/90 px-2.5 py-1 text-[11px] font-bold text-(--app-on-bright) hover:bg-amber-400 disabled:opacity-50"
                                     >
                                       {reporting && (
                                         <Loader2 className="h-3 w-3 animate-spin" />

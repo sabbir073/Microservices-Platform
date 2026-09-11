@@ -248,29 +248,39 @@ export function Header({ user, avatar }: HeaderProps) {
               <Search className="w-5 h-5" />
             </button>
 
-            {/* Wallet balance — the one figure in the shell, and the only thing
-                in this row set above 14px. The label is 11px and the number is
-                16px/800 tabular, so the eye lands on the money and not on the
-                word "PTS" beside it. */}
+            {/* Wallet balance — the one figure in the shell.
+                ONE line, not two. A stacked 11px label over a 16px number has
+                to fit 29px of text plus padding inside a 44px bar, and it read
+                as squeezed. The number still leads: it is 16px/800 tabular and
+                the unit beside it is 11px and muted, so the eye lands on the
+                money rather than on "PTS". */}
             <Link
               href="/wallet"
               aria-label={`Wallet balance: ${walletBalance.toLocaleString()} points`}
-              className="app-press app-tap-row hidden sm:flex items-center gap-2 pl-2.5 pr-3 rounded-(--app-r-control) bg-(--app-surface-2) border border-(--app-line) hover:border-(--app-line-strong)"
+              className="app-press app-tap-row hidden sm:flex items-center gap-2 px-3 rounded-(--app-r-control) bg-(--app-surface-2) border border-(--app-line) hover:border-(--app-line-strong)"
             >
               <Wallet className="w-4 h-4 shrink-0 text-gray-400" />
-              <span className="flex flex-col leading-none">
-                <span className="t-eyebrow text-gray-500">Points</span>
+              <span className="flex items-baseline gap-1">
                 <span
                   key={tick}
                   className={cn(
-                    "mt-0.5 text-base font-extrabold tabular-nums tracking-tight text-white",
+                    "text-base font-extrabold tabular-nums tracking-tight text-white",
                     tick > 0 && "app-tick"
                   )}
                 >
                   {walletBalance.toLocaleString()}
                 </span>
+                <span className="t-eyebrow text-gray-400">PTS</span>
               </span>
             </Link>
+
+            {/* Light/dark, back in the row.
+                It was moved into the account menu to thin out a crowded header,
+                but the owner went looking for it here and could not find it —
+                and a control people reach for by reflex is one that has to be
+                where the reflex goes. The menu row is gone so there is only one
+                of them. */}
+            <ThemeSwitch />
 
             {/* Notifications */}
             <div className="relative">
@@ -290,7 +300,7 @@ export function Header({ user, avatar }: HeaderProps) {
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-1.5 right-1.5 min-w-4.5 h-4.5 flex items-center justify-center px-1 text-[10px] font-extrabold text-white bg-(--app-out) rounded-full ring-2 ring-(--shell-bg)">
+                  <span className="absolute top-1.5 right-1.5 min-w-4.5 h-4.5 flex items-center justify-center px-1 text-[10px] font-extrabold text-(--app-on-accent) bg-(--app-badge) rounded-full ring-2 ring-(--shell-bg)">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
@@ -438,7 +448,6 @@ export function Header({ user, avatar }: HeaderProps) {
                         beside the things people press every day. Still one tap
                         from every screen — this menu is always in the bar. */}
                     <div className="border-t border-(--app-line) p-1.5">
-                      <ThemeSwitch className="app-nav-item app-press w-full" withLabel />
                       <button
                         onClick={handleSignOut}
                         className="app-nav-item app-press w-full hover:text-(--app-out)"

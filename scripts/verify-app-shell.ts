@@ -12,6 +12,16 @@ import {
   withEarnCardLinks,
   withRequiredNavLinks,
 } from "../src/lib/landing-content";
+import {
+  auditLightTheme,
+  conflictingOverrides,
+  contrast,
+  lstar,
+  paletteTable,
+  redundantOverrides,
+  toHex,
+  type Finding,
+} from "./verify-light-theme";
 
 /**
  * App shell: the rail scrolls, and there is one definition of "home".
@@ -348,7 +358,26 @@ function main() {
     const darkShell = varsIn(
       shellStart < 0 ? "" : css.slice(shellStart, css.indexOf("}", shellStart))
     );
-    const lightShell = varsIn(block('html[data-theme="light"] {\n  /* Text ramp'));
+    // EVERY `html[data-theme="light"] { … }` block, not one identified by the
+    // comment that happens to open it. Anchoring on prose ("/* Text ramp") is
+    // how this check silently reported all five shell tokens as missing from
+    // light the first time the block was re-commented: the selector had not
+    // moved, only the sentence under it.
+    const lightShell = new Set<string>();
+    {
+      const sel = 'html[data-theme="light"]';
+      let from = 0;
+      for (;;) {
+        const at = css.indexOf(sel, from);
+        if (at < 0) break;
+        from = at + sel.length;
+        const open = css.slice(from).match(/^\s*\{/);
+        if (!open) continue;
+        const start = from + open[0].length;
+        for (const v of varsIn(css.slice(start, css.indexOf("}", start))))
+          lightShell.add(v);
+      }
+    }
     const shellOnlyDark = [...darkShell].filter(
       (v) => v.startsWith("--shell") && !lightShell.has(v)
     );
@@ -845,10 +874,19 @@ function main() {
       "--app-out-line",
       "--app-warn-line",
       "--app-info-line",
+      "--app-page",
       "--app-surface",
       "--app-surface-2",
       "--app-line",
       "--app-line-strong",
+      // The semantic ink layer. These exist so a call site can say "dark, in
+      // both themes" — which a ramp step cannot, because the ramp is the thing
+      // that flips. A value here in only one theme would be worse than the bug
+      // it replaces, so they are asserted per theme like everything else.
+      "--app-ink",
+      "--app-ink-2",
+      "--app-ink-3",
+      "--app-glyph",
       "--app-accent-edge",
       "--app-rail-a",
       "--app-rail-b",
@@ -883,6 +921,13 @@ function main() {
       "--app-pad",
       "--app-pad-lg",
       "--app-ease",
+      // Theme-INDEPENDENT on purpose: these three name a ground rather than a
+      // theme. A label on a bright fill is near-black whichever theme is on,
+      // and a label on the accent gradient is white whichever theme is on.
+      "--app-on-bright",
+      "--app-on-accent",
+      "--app-bright",
+      "--app-badge",
     ]) {
       check(`${t} is declared`, rootDecls.has(t));
     }
@@ -994,15 +1039,20 @@ function main() {
 
     // The surfaces text actually sits on, per theme.
     const SURF = {
+      // The chrome bar is read from the token, not typed here. It used to be
+      // the literal "#ffffff", which stopped being true the moment the light
+      // theme got a real surface scale and gave the chrome its own plane —
+      // and a contrast check measured against a colour the app does not paint
+      // is worse than no check.
       dark: {
         card: hexOf("--app-surface", "dark"),
         tile: hexOf("--app-surface-2", "dark"),
-        chrome: "#15171f",
+        chrome: hexOf("--shell-bg", "dark"),
       },
       light: {
         card: hexOf("--app-surface", "light"),
         tile: hexOf("--app-surface-2", "light"),
-        chrome: "#ffffff",
+        chrome: hexOf("--shell-bg", "light"),
       },
     };
     check(
@@ -1407,13 +1457,54 @@ function main() {
       /@media \(hover: hover\) and \(pointer: fine\)[\s\S]*?\.app-lift/.test(css)
     );
 
+    /* ── 7f-bis. White stays white where the ground is dark ───────────────
+       `html[data-theme="light"] .text-white { color: #0f172a !important }` is
+       right for a neutral surface and wrong for one that is dark in BOTH
+       themes. In light mode it was painting the balance figure, every ad
+       headline over a creative and every brand chip near-black on a dark
+       ground — the owner's "black text inside the blue".
+       Asserted on the surfaces, not on a list of components, because the next
+       dark panel someone adds has to inherit this rather than repeat it. */
+    const themeCss = read("src/app/globals.css");
+    check(
+      "white text on the accent gradient is not inverted in light mode",
+      /html\[data-theme="light"\][\s\S]{0,400}\.app-accent \.text-white/.test(themeCss) &&
+        /color: #ffffff !important/.test(themeCss),
+      "the generic .text-white override turns a gradient card's own text near-black"
+    );
+    check(
+      "…and the same holds over a creative or a scrim",
+      /html\[data-theme="light"\][\s\S]{0,400}\.on-media/.test(themeCss)
+    );
+    check(
+      "the media well is dark in BOTH themes",
+      (themeCss.match(/--app-media-well:/g) ?? []).length === 2,
+      "a pale well in light mode would put the white overlay text on near-white"
+    );
+    for (const f of [
+      "src/components/user/feed/feed-ad-card.tsx",
+      "src/components/user/primitives/ad-renderer.tsx",
+    ]) {
+      const src = read(f);
+      check(
+        `${f.split("/").pop()} marks its creative well as on-media`,
+        src.includes("on-media") && !src.includes('overflow-hidden bg-black"'),
+        "bg-black made a letterboxed ad a black slab across the card"
+      );
+    }
+
     /* ── 7g. Nothing became unreachable ───────────────────────────────────
        Two header controls moved into the account menu. Moved is fine; gone
        is not, and the difference is one `git grep` nobody runs. */
     const header = code("src/components/dashboard/header.tsx");
+    // It moved into the account menu to thin out a seven-control header, and
+    // then back into the row: the owner went looking for it where his hand
+    // already goes and could not find it. Assert it is in the shell and that
+    // there is exactly ONE of it — two controls doing the same thing is the
+    // failure this replaced, not a belt-and-braces win.
     check(
-      "the theme toggle is still in the shell (now a row in the account menu)",
-      /<ThemeSwitch[^>]*withLabel/.test(header)
+      "the theme toggle is in the shell, exactly once",
+      (header.match(/<ThemeSwitch/g) ?? []).length === 1
     );
     check(
       "Reports is still reachable from the account menu",
@@ -1585,6 +1676,131 @@ function main() {
         /NO LONGER RENDERED/.test(read("src/lib/feed-quick-earn.ts"))
       );
     }
+  }
+
+  /* ── 8. Light mode is a THEME, not an inversion shim ────────────────────
+     The light theme is produced by flipping the neutral ramp upside down
+     (`--color-gray-50` becomes dark ink, `--color-gray-950` becomes a light
+     surface), which means any `bg-X text-Y` pair a developer picks while
+     looking at the dark screen can invert into nonsense. `bg-white
+     text-gray-950` reads as "white button, near-black label" and resolves in
+     light to near-white on white.
+
+     None of that is visible in code review — the class names still say the
+     right thing — so it is checked by computing it. scripts/verify-light-theme.ts
+     rebuilds the real cascade (Tailwind's shipped oklch ramp, the `@theme`
+     retune, the light variable flip, the per-class patches and the hue-family
+     rules, in that order), resolves every pairing the app actually writes, and
+     measures it. The assertions below are its conclusions; run that script
+     directly for the full table and the file list behind any failure. */
+  console.log("\n8. Light theme — inversion hazards, measured");
+  {
+    const audit = auditLightTheme();
+
+    check(
+      `${audit.pairings.length} bg/text pairings resolved and measured in both themes`,
+      audit.measured > 500,
+      `${audit.measured} measurements`
+    );
+
+    const byKind = (k: Finding["kind"]) =>
+      audit.live.filter((f) => f.kind === k);
+
+    // The two failure modes the inversion creates, and the only two that are
+    // unarguable: text you cannot see at all, and a surface painted with ink.
+    for (const [kind, label] of [
+      ["collapse", "no pairing collapses (same-on-same, under 2:1)"],
+      ["inverted-text", "no ramp step is used as ink on the wrong side of the flip"],
+      ["inverted-bg", "no ink colour is used as a surface"],
+    ] as const) {
+      const rows = byKind(kind);
+      check(
+        label,
+        rows.length === 0,
+        rows
+          .slice(0, 5)
+          .map((f) => `${f.theme} ${f.label} ${f.ratio.toFixed(2)}:1 (${f.files[0]})`)
+          .join("; ")
+      );
+    }
+
+    const under = byKind("contrast");
+    check(
+      "every remaining pairing clears 4.5:1 for body text in BOTH themes",
+      under.length === 0,
+      under
+        .slice(0, 5)
+        .map((f) => `${f.theme} ${f.label} ${f.ratio.toFixed(2)}:1`)
+        .join("; ")
+    );
+    check("no hard failures at all", audit.hardFailures === 0, String(audit.hardFailures));
+
+    /* The light block may not restate what the ramp flip already does. Two
+       copies of one colour is how `.text-gray-600` ended up painting #616b7d
+       while `--color-gray-600` said #7a8598 — one class, two colours,
+       depending on which rule an element happened to match. */
+    const dup = redundantOverrides(audit.cascade);
+    check(
+      "no per-class light override merely restates the ramp flip",
+      dup.length === 0,
+      dup.map((d) => `.${d.cls} duplicates ${d.viaVar}`).join(", ")
+    );
+    const clash = conflictingOverrides(audit.cascade);
+    check(
+      "no neutral class has two different light values",
+      clash.length === 0,
+      clash.map((k) => `.${k.cls}: ${k.patch} vs ${k.varName} ${k.viaVar}`).join(", ")
+    );
+
+    /* ── The light surface scale is a SCALE ──────────────────────────────
+       The complaint that started this was that light mode "doesn't look
+       good", and the mechanical reason was that the page, the cards and the
+       chrome were 94.0 / 100.0 / 100.0 in L* — the chrome and the cards were
+       the identical white, so the sidebar, the feed and the rail merged into
+       one flat field and a drop shadow was the only thing suggesting depth.
+       Four planes, each a real step from the next, in both directions. */
+    const { planes } = paletteTable(audit.cascade);
+    for (const theme of ["dark", "light"] as const) {
+      const ordered = planes(theme)
+        .filter(([n]) => n !== "line")
+        .sort((a, b) => lstar(a[1]) - lstar(b[1]));
+      const steps = ordered
+        .slice(1)
+        .map(([, rgb], i) => lstar(rgb) - lstar(ordered[i][1]));
+      check(
+        `${theme}: the four planes are four distinct surfaces (min step ≥ 2 L*)`,
+        steps.every((s) => s >= 2),
+        ordered
+          .map(([n, rgb]) => `${n} ${toHex(rgb)} L*${lstar(rgb).toFixed(1)}`)
+          .join(" < ")
+      );
+      check(
+        `${theme}: chrome and card are not the same colour`,
+        toHex(planes(theme).find(([n]) => n === "chrome")![1]) !==
+          toHex(planes(theme).find(([n]) => n === "card")![1])
+      );
+    }
+
+    /* ── Every ink on every plane, both themes ───────────────────────────
+       The whole table, recomputed. A glyph is non-text and answers to 3:1;
+       everything else is body text at 4.5:1. */
+    const { inks } = paletteTable(audit.cascade);
+    console.log("\n   theme  floor  ratio  ink on plane");
+    let paletteFails = 0;
+    for (const theme of ["light", "dark"] as const) {
+      const ps = planes(theme).filter(([n]) => n !== "line");
+      for (const [inkName, ink, floor] of inks(theme)) {
+        for (const [planeName, plane] of ps) {
+          const r = contrast(ink, plane);
+          if (r < floor) paletteFails++;
+          console.log(
+            `   ${theme.padEnd(6)} ${String(floor).padStart(4)}  ${r.toFixed(2).padStart(5)}  ` +
+              `${inkName} on ${planeName} (${toHex(ink)} on ${toHex(plane)})`
+          );
+        }
+      }
+    }
+    check("every ink clears its floor on every plane, in both themes", paletteFails === 0);
   }
 
   console.log(

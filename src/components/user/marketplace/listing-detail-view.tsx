@@ -309,7 +309,7 @@ export function ListingDetailView({
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <ImageOff className="w-12 h-12 text-gray-700" />
+                <ImageOff className="w-12 h-12 text-(--app-glyph)" />
               </div>
             )}
             <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
@@ -928,8 +928,8 @@ function Pill({
   children: React.ReactNode;
 }) {
   const tones = {
-    amber: "bg-amber-500/90 text-white",
-    emerald: "bg-emerald-500/90 text-white",
+    amber: "bg-amber-500 text-white",
+    emerald: "bg-emerald-500 text-white",
     purple: "bg-purple-500/90 text-white",
     slate: "bg-slate-700/90 text-white",
   };

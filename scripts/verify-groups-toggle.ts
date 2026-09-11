@@ -174,9 +174,13 @@ async function main() {
     );
     check(
       "the page reads it server-side and passes it down",
-      /const groupsEnabled = await isGroupsEnabled\(\)/.test(
-        code("src/app/(main)/social/page.tsx")
-      ) && /groupsEnabled=\{groupsEnabled\}/.test(code("src/app/(main)/social/page.tsx"))
+      // `isGroupsEnabled()` moved into the page's single Promise.all when six
+      // sequential awaits were collapsed into one — it is destructured now
+      // rather than assigned on its own line. Still read on the server, still
+      // passed down; that is the rule, and the await shape is not.
+      /isGroupsEnabled\(\)/.test(code("src/app/(main)/social/page.tsx")) &&
+        /groupsEnabled,/.test(code("src/app/(main)/social/page.tsx")) &&
+        /groupsEnabled=\{groupsEnabled\}/.test(code("src/app/(main)/social/page.tsx"))
     );
   }
 

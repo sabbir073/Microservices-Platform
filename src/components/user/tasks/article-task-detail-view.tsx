@@ -966,7 +966,7 @@ function ManualKeySubmitCard({
           <button
             disabled={busy}
             onClick={submit}
-            className="w-full py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
+            className="w-full py-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-(--app-on-bright) text-sm font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
           >
             {busy ? (
               <Loader2 className="w-4 h-4 animate-spin" />

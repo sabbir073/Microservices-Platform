@@ -712,9 +712,9 @@ function ReferralTab({ stats }: { stats: ReferralStats }) {
             amber: "border-amber-500/30 bg-amber-500/10",
           } as const;
           const dotTones = {
-            emerald: "bg-emerald-500 text-emerald-100",
-            purple: "bg-purple-500 text-purple-100",
-            amber: "bg-amber-500 text-amber-100",
+            emerald: "bg-emerald-500 text-(--app-on-bright)",
+            purple: "bg-purple-500 text-(--app-on-bright)",
+            amber: "bg-amber-500 text-(--app-on-bright)",
           } as const;
           return (
             <div

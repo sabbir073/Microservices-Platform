@@ -660,12 +660,12 @@ function PostsTab({ userId }: { userId: string }) {
 
               {/* More than one photo — the same marker every gallery uses. */}
               {p.images.length > 1 && (
-                <span className="absolute top-2 right-2 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                <span className="absolute top-2 right-2 on-media rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-white">
                   +{p.images.length - 1}
                 </span>
               )}
               {p.isPinned && (
-                <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
+                <span className="absolute top-2 left-2 inline-flex items-center gap-1 on-media rounded-md bg-black/60 px-1.5 py-0.5 text-[10px] font-bold text-amber-300">
                   <Pin className="w-2.5 h-2.5" />
                   Pinned
                 </span>

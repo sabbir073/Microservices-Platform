@@ -5,7 +5,6 @@ import {
   CalendarCheck,
   ListTodo,
   Store,
-  Wallet,
   Users,
   Trophy,
 } from "lucide-react";
@@ -41,8 +40,8 @@ import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 const LINKS = [
   {
     href: "/daily-mission",
-    label: "Daily Mission",
-    short: "Daily",
+    label: "Mission",
+    short: "Mission",
     icon: CalendarCheck,
   },
   { href: "/tasks", label: "Tasks", short: "Tasks", icon: ListTodo },
@@ -52,7 +51,6 @@ const LINKS = [
     short: "Market",
     icon: Store,
   },
-  { href: "/wallet", label: "Wallet", short: "Wallet", icon: Wallet },
   { href: "/referrals", label: "My Team", short: "Team", icon: Users },
   {
     href: "/leaderboard",

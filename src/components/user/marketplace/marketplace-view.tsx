@@ -493,20 +493,20 @@ function ListingCardV2({ listing }: { listing: Listing }) {
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
-            <ShoppingBag className="w-10 h-10 text-gray-700" />
+            <ShoppingBag className="w-10 h-10 text-(--app-glyph)" />
           </div>
         )}
         {/* Top-left flags */}
         <div className="absolute top-2 left-2 flex flex-wrap gap-1">
           {listing.isFeatured && (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/90 text-white text-[10px] font-extrabold uppercase tracking-wider">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500 text-white text-[10px] font-extrabold uppercase tracking-wider">
               <Sparkles className="w-2.5 h-2.5" />
               Featured
             </span>
           )}
           {listing.verifiedMetrics && (
             <span
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/90 text-white text-[10px] font-extrabold uppercase tracking-wider"
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[10px] font-extrabold uppercase tracking-wider"
               title="Admin-verified metrics"
             >
               <ShieldCheck className="w-2.5 h-2.5" />

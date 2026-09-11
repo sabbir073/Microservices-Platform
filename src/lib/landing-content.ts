@@ -237,15 +237,16 @@ export function isSectionKey(s: string): s is SectionKey {
 
 export const DEFAULT_LANDING_CONTENT: LandingContent = {
   navbar: {
+    // Features, Pricing and FAQ were removed from the bar at the owner's
+    // request. Their SECTIONS are untouched and still on the page — only the
+    // menu entries are gone, so the anchors still work if something links to
+    // them. What is left is six destinations, all of them real pages.
     nav_links: [
-      { label: "Features", href: "#features" },
       { label: "MicroTask", href: "/microtask" },
       { label: "Advertise", href: "/advertise" },
       { label: "Marketplace", href: "/features/marketplace" },
       { label: "Courses", href: "/features/courses" },
       { label: "Affiliate", href: "/features/affiliate" },
-      { label: "Pricing", href: "#pricing" },
-      { label: "FAQ", href: "#faq" },
     ],
     cta_signin_label: "Sign In",
     cta_signin_href: "/login",
@@ -778,8 +779,9 @@ export function withRequiredNavLinks(navbar: NavbarContent): NavbarContent {
   const have = new Set(navbar.nav_links.map((l) => l.href));
   const missing = REQUIRED_NAV_LINKS.filter((l) => !have.has(l.href));
   if (missing.length === 0) return navbar;
-  // Before "Pricing" if there is one, so the product pages stay grouped and the
-  // commercial links stay at the end. Otherwise append.
+  // Before "Pricing" if a stored navbar still has one — the owner removed it
+  // from the default bar, but a customised navbar saved earlier may keep it, and
+  // the grouping should still hold there. Otherwise append.
   const at = navbar.nav_links.findIndex((l) => l.href === "#pricing");
   const links = [...navbar.nav_links];
   links.splice(at === -1 ? links.length : at, 0, ...missing);

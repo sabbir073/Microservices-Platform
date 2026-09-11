@@ -187,13 +187,21 @@ export function SocialFeedView({
           {/* Sort — Feed tab only, because it sorts posts and the Groups tab has
               none. It used to render on both and do nothing on one of them. */}
           {activeTab === "feed" && (
-            /* The "For You" pill was a solid indigo-500 chip — white text on it
-               measures 4.47:1, under the floor — sitting beside a violet
-               avatar, an orange streak and an emerald wallet figure. A segmented
-               control does not need a fill to say which half is chosen: the
-               selected side is the raised surface and the bolder text, which is
-               how a native segmented control works. */
-            <div className="inline-flex shrink-0 overflow-hidden rounded-(--app-r-chip) border border-(--app-line) bg-(--app-surface-2) p-0.5">
+            /* It has to LOOK switchable, and the quiet version did not.
+               A raised surface for the chosen half and gray-400 for the other
+               read as a heading beside a disabled word — the owner's report was
+               that he could not tell "For You" was changeable at all.
+               So: the chosen half takes the accent (6.46:1 with white, measured
+               — the old indigo-500 pill was 4.47:1, which is why it had been
+               removed), and the other half is gray-200, not gray-400. Grey that
+               dim on a dark track is the universal look of "you cannot press
+               this". Both halves also keep their label at every width; hiding
+               the text below `sm` left two bare icons with nothing to compare. */
+            <div
+              role="group"
+              aria-label="Sort posts"
+              className="inline-flex shrink-0 overflow-hidden rounded-(--app-r-chip) border border-(--app-line) bg-(--app-surface-2) p-0.5"
+            >
               {(["recent", "trending"] as const).map((s) => (
                 <button
                   key={s}
@@ -202,8 +210,8 @@ export function SocialFeedView({
                   className={cn(
                     "app-press inline-flex h-10 items-center gap-1.5 rounded-[calc(var(--app-r-chip)-2px)] px-3 text-xs font-bold",
                     sort === s
-                      ? "bg-(--app-surface) text-white shadow-(--app-e1)"
-                      : "text-gray-400 hover:text-white"
+                      ? "app-accent shadow-(--app-e1)"
+                      : "text-gray-200 hover:bg-(--app-surface)"
                   )}
                 >
                   {s === "recent" ? (
@@ -211,9 +219,7 @@ export function SocialFeedView({
                   ) : (
                     <Flame className="h-3.5 w-3.5" />
                   )}
-                  <span className="hidden sm:inline">
-                    {s === "recent" ? "For You" : "Trending"}
-                  </span>
+                  <span>{s === "recent" ? "For You" : "Trending"}</span>
                 </button>
               ))}
             </div>

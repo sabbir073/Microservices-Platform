@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, Megaphone, X } from "lucide-react";
+import { ArrowUpRight, ExternalLink, MoreVertical, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { resolveAdSize } from "@/lib/ad-sizes";
 import type { NetworkSlotConfig } from "@/lib/ad-network";
@@ -30,6 +30,15 @@ export interface AdResponse {
   ctaUrl?: string;
   html?: string;
   sponsor?: string;
+  /**
+   * Optional brand mark, already first-party proxied by the server
+   * (`/api/spaces/media/[id]?f=logo`, the same shape `/api/ads/feed` returns).
+   * The panel payload does not carry it today; when it starts to, the round
+   * avatar below the creative picks it up with no change here. Until then the
+   * monogram stands in — deliberately CSS, because a placeholder image would be
+   * a second network request on 27 placements.
+   */
+  logoUrl?: string;
   size?: string;
   width?: number;
   height?: number;
@@ -57,6 +66,84 @@ interface AdRendererProps {
 // auto-rotation cycle evenly across the pool instead of bouncing A→B→A.
 const RECENT_KEEP = 4;
 
+/**
+ * The floor on how often a slot may re-ask for a creative, in ms.
+ *
+ * A dev-server capture of 973 requests found `/api/spaces/panel` was 398 of
+ * them — 41% of everything the app asks for, and 185s of 400s of render time —
+ * from roughly seven mounted slots each rotating every ~12s. Each of those also
+ * costs one `RateLimitHit` upsert, which is how that table became the largest
+ * on the platform.
+ *
+ * This is a CLIENT floor over the server's `rotateMs`, not a change to it: the
+ * per-space `rotateSeconds` an admin sets is still the setting, and a space
+ * configured slower than this keeps its own value. Nobody perceives a banner
+ * changing every 25s rather than every 12s, and the slower cadence gives each
+ * impression a longer chance of being seen instead of scrolled past.
+ */
+const MIN_ROTATE_MS = 25_000;
+
+/* ── Presentation pieces shared by the three layouts ────────────────────────
+   All of these are pure string work on the payload that is already on screen.
+   None of them fetches anything: the renderer is mounted on 27 spaces and a
+   single extra request per render would be 27 extra requests per page view. */
+
+/**
+ * Text over a photo has no measurable backdrop, so it gets its own.
+ *
+ * Two stops rather than a long fade: the fade is decorative and lives ABOVE the
+ * text, while the band the text actually sits on never drops below 0.86 alpha.
+ * A single gradient tall enough to look good put the second line of a headline
+ * at roughly 0.43 alpha on a short creative, which is where white-on-photo
+ * stops being readable. Measured against this band (worst case: a pure white
+ * creative behind it) in scripts/verify-ads-coverage.ts.
+ */
+const TEXT_BAND = "linear-gradient(to top, rgba(8,9,14,0.95), rgba(8,9,14,0.86))";
+/** The decorative half — blends the band into the creative above it. */
+const TEXT_BAND_FADE = "linear-gradient(to top, rgba(8,9,14,0.86), rgba(8,9,14,0))";
+/** The brand pill, same family, one step lighter because it carries less text. */
+const CHIP_BG = "rgba(8,9,14,0.78)";
+/**
+ * The accented word, lightened off the accent rail so it clears 4.5:1 on the
+ * band in every accent AND in both themes. Mixing 65% white into any hue floors
+ * the result well above the band; `--app-rail-a` alone measured 4.49:1 on
+ * indigo, which is under the floor by a hair.
+ */
+const ACCENT_ON_MEDIA = "color-mix(in srgb, var(--app-rail-a) 35%, #ffffff)";
+
+/** Hostname of a destination, for when the payload carries no brand name. */
+function hostOf(u?: string): string | null {
+  if (!u) return null;
+  try {
+    return new URL(u).hostname.replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+/** Who is paying for this. Falls back to the destination, then to "Sponsored". */
+function brandOf(ad: AdResponse): string {
+  return ad.sponsor?.trim() || hostOf(ad.ctaUrl) || "Sponsored";
+}
+
+/** One letter for the monogram avatar / chip mark. */
+function monogramOf(label: string): string {
+  return (label.trim().charAt(0) || "S").toUpperCase();
+}
+
+/**
+ * Split a headline so the LAST word can take the accent colour, which is the
+ * shape of the reference. A single-word headline keeps its whole self in the
+ * accent rather than losing the effect.
+ */
+function splitHeadline(title?: string): { lead: string; accent: string } {
+  const t = (title ?? "").trim();
+  if (!t) return { lead: "", accent: "" };
+  const i = t.lastIndexOf(" ");
+  if (i <= 0) return { lead: "", accent: t };
+  return { lead: t.slice(0, i), accent: t.slice(i + 1) };
+}
+
 export function AdRenderer({
   placement,
   className,
@@ -68,11 +155,51 @@ export function AdRenderer({
   const [error, setError] = useState(false);
   const [fading, setFading] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+  // The ⋮ affordance on the card layout. Deliberately NOT a navigation control:
+  // it never opens the destination and never records a click, which is why it is
+  // drawn as a grey glyph and not as a button.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [showWhy, setShowWhy] = useState(false);
   // Reserve space during the first fetch (no SSR ad) so the slot doesn't jump.
   const [loading, setLoading] = useState(!initialAd);
   // Rotation interval (ms) reported by the server; 0 = don't auto-rotate
   // (single-ad space or ad-free viewer). Seeded from the SSR value when present.
-  const rotateMsRef = useRef(initialRotateMs);
+  // The SSR seed takes the same floor as the fetched value; otherwise an
+  // SSR-injected slot would keep the old 12s cadence for its whole life.
+  const rotateMsRef = useRef(
+    initialRotateMs > 0 ? Math.max(initialRotateMs, MIN_ROTATE_MS) : 0
+  );
+  // Is this slot actually on screen? Rotation is gated on it.
+  //
+  // Starts true so nothing is suppressed before the observer has reported; the
+  // callback fires on observe, so an off-screen slot corrects itself in the
+  // first frame. The FIRST load is deliberately NOT gated — every mounted slot
+  // still fetches once and counts exactly the one impression it always did.
+  // Only rotations are gated, and a rotation for a slot nobody could see was an
+  // impression billed to an advertiser for a creative that was never on screen.
+  const onScreenRef = useRef(true);
+  const ioRef = useRef<IntersectionObserver | null>(null);
+  /**
+   * Ref callback on whichever root this render produced (there are five). A
+   * callback rather than an effect because the root ELEMENT changes when the ad
+   * type changes and when the skeleton is replaced by the real card — an effect
+   * keyed on the usual deps would keep observing a node that had been thrown
+   * away.
+   */
+  const attachRoot = useCallback((el: HTMLElement | null) => {
+    ioRef.current?.disconnect();
+    ioRef.current = null;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        onScreenRef.current = entries.some((e) => e.isIntersecting);
+      },
+      { threshold: 0 }
+    );
+    io.observe(el);
+    ioRef.current = io;
+  }, []);
+  useEffect(() => () => ioRef.current?.disconnect(), []);
 
   // Fetch an ad, excluding the recently-shown ids kept in sessionStorage. On
   // success it records the new id and updates the rotation interval.
@@ -108,7 +235,7 @@ export function AdRenderer({
         }
         rotateMsRef.current =
           data.poolSize > 1 && typeof data.rotateMs === "number"
-            ? data.rotateMs
+            ? Math.max(data.rotateMs, MIN_ROTATE_MS)
             : 0;
         // Smoothly swap when this is a rotation (not the first paint).
         if (opts?.rotate) {
@@ -140,7 +267,12 @@ export function AdRenderer({
     const startTimer = () => {
       if (timer || rotateMsRef.current <= 0) return;
       timer = setInterval(() => {
-        if (!document.hidden) void loadAd({ rotate: true });
+        // Three gates, all cheap, all checked at fire time rather than at
+        // schedule time: a backgrounded tab, and a slot scrolled out of view,
+        // both stop asking. Neither changes HOW an impression is recorded —
+        // they stop asking for creatives nobody is looking at.
+        if (document.hidden || !onScreenRef.current) return;
+        void loadAd({ rotate: true });
       }, rotateMsRef.current);
     };
     const stopTimer = () => {
@@ -154,8 +286,13 @@ export function AdRenderer({
     const onVisibility = () => {
       if (document.hidden) {
         stopTimer();
-      } else {
+      } else if (onScreenRef.current) {
+        // Only a slot that is actually in view refetches on return. This used
+        // to fire for every mounted slot on every tab focus — seven requests
+        // (and seven rate-limit upserts) for one glance at the tab bar.
         void loadAd({ rotate: true }).then(() => !cancelled && startTimer());
+      } else {
+        startTimer();
       }
     };
 
@@ -286,8 +423,52 @@ export function AdRenderer({
   //
   // `object-contain` (already on both elements) letterboxes rather than crops,
   // so a tall creative is shown whole at a smaller size instead of being cut.
-  const mediaStyle = {
-    ...(dim ? { aspectRatio: `${dim.w} / ${dim.h}` } : {}),
+  //
+  // The ratio is ALWAYS set, which it was not before.
+  //
+  // `Ad.size` defaults to "responsive" and 43 rows resolve to no dimensions at
+  // all, so `dim` is null for them and the media rendered `h-auto`: the box was
+  // whatever the creative turned out to be, discovered only once the bytes
+  // arrived, and everything under it moved. The fallback walks down to the
+  // space's own preset and then to 16/9, so a creative that says nothing about
+  // itself still reserves a box before it loads. `object-contain` (below) keeps
+  // it whole inside that box rather than cropping it to fit.
+  // Reserve the space, but only SHAPE it when the creative told us its shape.
+  //
+  // Two true things pull opposite ways here, and both were fixed once:
+  //
+  //  - A creative that declares no size used to render `h-auto`, so the box was
+  //    whatever the bytes turned out to be and everything under it jumped.
+  //  - Forcing the SLOT's ratio onto such a creative is the older bug: a
+  //    600x200 image inside a 728x90 box gets contained down to ~270px wide —
+  //    smaller than it was before anyone tried to help.
+  //
+  // So: the creative's own ratio when it has one, and otherwise a `minHeight`
+  // instead. Height is all that is needed to stop the jump; constraining the
+  // WIDTH as well is what shrank the creative, and a min-height reserves the
+  // row without deciding anything about the shape of a picture we have not
+  // seen yet. Capped by the space's own ceiling so the reservation can never
+  // be taller than the thing it reserves for.
+  // NO forced aspect ratio, in either branch.
+  //
+  // A box plus `object-contain` letterboxes: the creative sits in the middle
+  // and the rest is a dark slab. That is what the owner saw as "black bars", and
+  // it happens to almost every creative, because almost none matches the shape
+  // we picked for it. Even the creative's OWN ratio is not worth forcing — it
+  // only ever equals what the image would do by itself.
+  //
+  // So the image sets its own height (`h-auto`) and `minHeight` reserves the row
+  // so nothing jumps while the bytes are in flight. Reserving height does not
+  // decide shape, which is the entire difference between the two.
+  const mediaStyle: React.CSSProperties = {
+    minHeight: Math.min(
+      spec.maxHeightPx,
+      dim
+        ? Math.round(spec.maxHeightPx * 0.5)
+        : slotDim
+          ? slotDim.h
+          : Math.round(spec.maxHeightPx * 0.75)
+    ),
     maxHeight: spec.maxHeightPx,
   };
   // A STRIP space is one that is meant to be a thin bar, not a card.
@@ -304,6 +485,128 @@ export function AdRenderer({
   // VIDEO_OVERLAY (72) and FEED_POST_BELOW (72) qualify; the leaderboard (120)
   // and rectangle (300) spaces keep the stacked card.
   const isStrip = spec.maxHeightPx <= 96;
+  // A BANNER space is one that is tall enough to show a creative but not tall
+  // enough to carry the full card underneath it.
+  //
+  // The reference card is creative + description + brand line + two buttons.
+  // Under the rule this file has always used — the ceiling bounds the MEDIA,
+  // the chrome stacks below it — putting that card on a 120px leaderboard space
+  // would land a ~280px block on the top of sixteen pages. So these spaces get
+  // the half of the reference that is free: the creative itself, with the brand
+  // chip, the accented headline and the arrow overlaid ON it. Same language, no
+  // extra height. Derived from the ceiling rather than a second list of names,
+  // exactly like `isStrip`, so a new space picks its layout up automatically.
+  const isBanner = !isStrip && spec.maxHeightPx <= 160;
+
+  const brand = brandOf(ad);
+  const monogram = monogramOf(brand);
+  const { lead, accent } = splitHeadline(ad.title);
+  // Everything that navigates goes through this one anchor shape, so there is
+  // exactly one place a click is recorded from and no control can drift out of
+  // it. `ad.ctaUrl ?? "#"` is deliberately unchanged from before — the creative
+  // has always been clickable whether or not the campaign supplied a
+  // destination, and the billed event is the same event it has always been.
+  const linkProps = {
+    href: ad.ctaUrl ?? "#",
+    target: "_blank",
+    rel: "noopener sponsored noreferrer",
+    onClick: trackClick,
+  } as const;
+  // The buttons, by contrast, are only drawn when there IS somewhere to go. A
+  // pair of full-width buttons on a campaign with no destination would be two
+  // controls that look like the primary action and navigate nowhere.
+  const hasUrl = !!ad.ctaUrl;
+
+  /** The creative itself. Same element in all three layouts, same ceiling. */
+  const media = (cls: string) =>
+    ad.videoUrl ? (
+      <video
+        src={ad.videoUrl}
+        autoPlay
+        muted
+        loop
+        playsInline
+        className={cn("block h-auto w-full", cls)}
+        style={mediaStyle}
+      />
+    ) : ad.imageUrl ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={ad.imageUrl}
+        alt={ad.title ?? "Ad"}
+        className={cn("block h-auto w-full", cls)}
+        style={mediaStyle}
+      />
+    ) : (
+      // No creative at all — the accent surface plus the monogram, so the space
+      // still reserves its box instead of collapsing to a hairline.
+      <div
+        className={cn("grid place-items-center", cls)}
+        style={{ ...mediaStyle, backgroundImage: "var(--app-grad)" }}
+      >
+        <span className="t-figure text-white/90">{monogram}</span>
+      </div>
+    );
+
+  /**
+   * The brand chip + headline + arrow, laid over the lower part of the
+   * creative. Every child is `pointer-events-none`: the whole overlay lives
+   * inside the one anchor, so a tap on the headline or on the arrow is the same
+   * recorded click as a tap on the creative. Nothing here is a second control.
+   */
+  const overlay = (big: boolean) => (
+    <>
+      <span
+        className="on-media pointer-events-none absolute left-2 top-2 z-20 inline-flex max-w-[75%] items-center gap-1.5 rounded-full px-2 py-1 backdrop-blur-sm"
+        style={{ backgroundColor: CHIP_BG }}
+      >
+        <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-white text-[9px] font-black text-black">
+          {monogram}
+        </span>
+        <span className="truncate text-[11px] font-semibold text-white">
+          {brand}
+        </span>
+      </span>
+      <span className="on-media pointer-events-none absolute inset-x-0 bottom-0 z-10 block">
+        {/* The decorative half sits directly on top of the band rather than at
+            a guessed offset, so the two can never separate on a short
+            creative. */}
+        <span
+          className="block h-10"
+          style={{ backgroundImage: TEXT_BAND_FADE }}
+        />
+        <span
+          className="flex items-end gap-2 px-3 py-2.5"
+          style={{ backgroundImage: TEXT_BAND }}
+        >
+        <span
+          className={cn(
+            "min-w-0 flex-1 font-extrabold leading-tight text-white",
+            big ? "text-lg line-clamp-2" : "text-sm line-clamp-1"
+          )}
+        >
+          {lead}
+          {accent ? (
+            <span style={{ color: ACCENT_ON_MEDIA }}>
+              {lead ? " " : ""}
+              {accent}
+            </span>
+          ) : null}
+        </span>
+        {hasUrl ? (
+          <span
+            className={cn(
+              "grid shrink-0 place-items-center rounded-full bg-white text-black shadow-lg",
+              big ? "h-11 w-11" : "h-9 w-9"
+            )}
+          >
+            <ArrowUpRight className={big ? "h-5 w-5" : "h-4 w-4"} />
+          </span>
+        ) : null}
+        </span>
+      </span>
+    </>
+  );
   // Merge the rotation fade into the outer style.
   const outerStyle = {
     // `fillsColumn` spaces skip the width cap — see the note on PlacementSpec.
@@ -325,7 +628,7 @@ export function AdRenderer({
   // leaving a hole. Without it every unsold impression is simply lost.
   if ((ad.type === "ADSENSE" || ad.type === "GAM") && ad.network) {
     return (
-      <div className={cn("relative mx-auto", className)} style={outerStyle}>
+      <div ref={attachRoot} className={cn("relative mx-auto", className)} style={outerStyle}>
         <NetworkAdSlot
           config={ad.network}
           maxHeightPx={spec.maxHeightPx}
@@ -339,7 +642,7 @@ export function AdRenderer({
   // actually executes (dangerouslySetInnerHTML never does).
   if (ad.type === "HTML" && ad.html) {
     return (
-      <div className={cn("relative mx-auto", className)} style={outerStyle}>
+      <div ref={attachRoot} className={cn("relative mx-auto", className)} style={outerStyle}>
         {dismissible && (
           <button
             type="button"
@@ -374,13 +677,13 @@ export function AdRenderer({
   if (isStrip) {
     return (
       <a
-        href={ad.ctaUrl ?? "#"}
-        target="_blank"
-        rel="noopener sponsored noreferrer"
-        onClick={trackClick}
+        ref={attachRoot}
+        {...linkProps}
         style={{ ...outerStyle, maxHeight: spec.maxHeightPx }}
         className={cn(
-          "relative flex items-stretch gap-3 overflow-hidden rounded-xl border border-gray-800 bg-gray-900 hover:border-indigo-500/40 transition-colors group mx-auto",
+          "app-tap-row app-press group relative mx-auto flex items-stretch gap-3 overflow-hidden",
+          "rounded-(--app-r-control) border border-(--app-line) bg-(--app-surface)",
+          "hover:border-(--app-accent-edge)",
           className
         )}
       >
@@ -395,7 +698,7 @@ export function AdRenderer({
             muted
             loop
             playsInline
-            className="h-full w-auto shrink-0 object-contain bg-black"
+            className="h-full w-auto shrink-0 object-contain"
           />
         ) : (
           ad.imageUrl && (
@@ -409,15 +712,21 @@ export function AdRenderer({
         )}
         <div className="min-w-0 flex-1 self-center py-1.5">
           {ad.title && (
-            <p className="text-xs font-bold text-white truncate">{ad.title}</p>
+            <p className="t-card-title truncate text-gray-100">
+              {lead}
+              {accent ? (
+                <span style={{ color: "var(--app-rail-a)" }}>
+                  {lead ? " " : ""}
+                  {accent}
+                </span>
+              ) : null}
+            </p>
           )}
-          <p className="text-[10px] text-gray-500 truncate">
-            {ad.sponsor ? `by ${ad.sponsor}` : "Sponsored"}
-          </p>
+          <p className="t-meta truncate text-gray-400">Sponsored · {brand}</p>
         </div>
-        <span className="self-center shrink-0 inline-flex items-center gap-1 mr-2 px-2.5 py-1 rounded-lg bg-indigo-500/15 text-[11px] font-bold text-indigo-300 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+        <span className="app-accent-soft mr-2 inline-flex shrink-0 items-center gap-1 self-center rounded-(--app-r-chip) px-2.5 py-1 text-[11px] font-bold">
           {ad.ctaLabel || "Learn More"}
-          <ExternalLink className="w-3 h-3" />
+          <ExternalLink className="h-3 w-3" />
         </span>
         {dismissible && (
           <button
@@ -437,82 +746,193 @@ export function AdRenderer({
     );
   }
 
+  // The 1×1 third-party impression pixel. Unchanged: same element, same
+  // position, same zero-opacity, still fired by being in the document.
+  const pixel = ad.impressionPixel ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={ad.impressionPixel}
+      alt=""
+      width={1}
+      height={1}
+      className="pointer-events-none absolute bottom-0 right-0 opacity-0"
+    />
+  ) : null;
+
+  // 44px of hit area, 28px of paint. `app-tap` is written on the button itself,
+  // not on a child selector: the thing the finger has to find is the button,
+  // not the glyph inside it.
+  const hideButton = dismissible ? (
+    <button
+      type="button"
+      aria-label="Hide ad"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDismissed(true);
+      }}
+      className="app-tap absolute right-0 top-0 z-30 grid place-items-center"
+    >
+      <span className="grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white/80 backdrop-blur-sm hover:bg-black/80 hover:text-white">
+        <X className="h-3.5 w-3.5" />
+      </span>
+    </button>
+  ) : null;
+
+  // ── Banner layout ──────────────────────────────────────────────────────────
+  // The creative, with the chip / headline / arrow laid over it. One anchor, so
+  // every pixel of it is the same recorded click.
+  if (isBanner) {
+    return (
+      <a
+        ref={attachRoot}
+        {...linkProps}
+        style={outerStyle}
+        className={cn(
+          "app-press group relative mx-auto block overflow-hidden",
+          "rounded-(--app-r-card) border border-(--app-line) bg-(--app-surface)",
+          "hover:border-(--app-accent-edge)",
+          className
+        )}
+      >
+        {pixel}
+        {media("w-full")}
+        {overlay(false)}
+        {hideButton}
+      </a>
+    );
+  }
+
+  // ── Card layout ────────────────────────────────────────────────────────────
+  // The full reference shape, for the spaces with the height to carry it
+  // (everything on RECTANGLE_SPEC: Task Complete, Profile, Feed Sidebar, Browse
+  // & Earn). Creative + overlay on top, then the brand row, the Sponsored line
+  // and the two buttons.
+  //
+  // This is an <article>, not one giant <a>: the buttons and the ⋮ are real
+  // elements and nesting them inside an anchor is invalid HTML that browsers
+  // reflow into something none of this markup describes. The creative keeps its
+  // own anchor, and the buttons carry the same one.
   return (
-    <a
-      href={ad.ctaUrl ?? "#"}
-      target="_blank"
-      rel="noopener sponsored noreferrer"
-      onClick={trackClick}
+    <article
+      ref={attachRoot}
       style={outerStyle}
       className={cn(
-        "relative block rounded-2xl overflow-hidden border border-gray-800 bg-gray-900 hover:border-indigo-500/40 hover:shadow-lg hover:shadow-indigo-500/5 transition-all group mx-auto",
+        "app-card relative mx-auto overflow-hidden p-0",
         className
       )}
     >
-      <span className="absolute top-2 right-2 z-10 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/60 backdrop-blur text-[9px] font-bold uppercase tracking-wider text-white/90">
-        <Megaphone className="w-2.5 h-2.5" />
-        Sponsored
-      </span>
-      {dismissible && (
-        <button
-          type="button"
-          aria-label="Hide ad"
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setDismissed(true);
-          }}
-          className="absolute top-2 left-2 z-20 w-6 h-6 grid place-items-center rounded-full bg-black/60 backdrop-blur text-white/70 hover:text-white hover:bg-black/80"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
-      )}
-      {ad.impressionPixel ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={ad.impressionPixel} alt="" width={1} height={1} className="absolute bottom-0 right-0 opacity-0 pointer-events-none" />
-      ) : null}
-      {ad.videoUrl ? (
-        <video
-          src={ad.videoUrl}
-          autoPlay
-          muted
-          loop
-          playsInline
-          className={cn("w-full object-contain bg-black", !dim && "h-auto")}
-          style={mediaStyle}
-        />
-      ) : (
-        ad.imageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={ad.imageUrl}
-            alt={ad.title ?? "Ad"}
-            className={cn("w-full object-contain", !dim && "h-auto")}
-            style={mediaStyle}
-          />
-        )
-      )}
-      <div className="p-3.5">
-        {ad.title && (
-          <p className="text-sm font-bold text-white line-clamp-1">
-            {ad.title}
+      {pixel}
+      <a
+        {...linkProps}
+        className="app-press group relative block"
+        aria-label={ad.title ? `${ad.title} — ${brand}` : `Open ${brand}`}
+      >
+        {media("w-full")}
+        {overlay(true)}
+      </a>
+      {hideButton}
+
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          {ad.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={ad.logoUrl}
+              alt=""
+              className="h-10 w-10 shrink-0 rounded-full object-cover"
+            />
+          ) : (
+            <span
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-black text-white"
+              style={{ backgroundImage: "var(--app-grad)" }}
+            >
+              {monogram}
+            </span>
+          )}
+          <p className="t-body line-clamp-2 min-w-0 flex-1 text-gray-300">
+            {ad.body || ad.title || brand}
           </p>
-        )}
-        {ad.body && (
-          <p className="text-xs text-gray-400 line-clamp-2 mt-0.5">
-            {ad.body}
-          </p>
-        )}
-        <div className="flex items-center justify-between mt-2.5">
-          <span className="text-[10px] text-gray-500">
-            {ad.sponsor ? `by ${ad.sponsor}` : "Sponsored"}
-          </span>
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 text-xs font-bold text-indigo-300 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
-            {ad.ctaLabel || "Learn More"}
-            <ExternalLink className="w-3 h-3" />
-          </span>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-label="Ad options"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+              className="app-tap app-press -mr-2 -mt-2 grid place-items-center rounded-full text-gray-400 hover:text-gray-100"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+            {menuOpen && (
+              <>
+                <span
+                  className="fixed inset-0 z-30"
+                  onClick={() => setMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-9 z-40 w-44 overflow-hidden rounded-(--app-r-control) border border-(--app-line) bg-(--app-surface) shadow-lg">
+                  {/* Hiding is offered only where the space already allows it.
+                      On Browse & Earn the viewer is being PAID per rotation, so
+                      a hide control there would break the loop it belongs to. */}
+                  {dismissible && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setDismissed(true);
+                      }}
+                      className="app-tap-row w-full px-3 text-left text-xs text-gray-300 hover:bg-(--app-surface-2)"
+                    >
+                      Hide this ad
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShowWhy(true);
+                    }}
+                    className="app-tap-row w-full px-3 text-left text-xs text-gray-300 hover:bg-(--app-surface-2)"
+                  >
+                    Why this ad?
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
+
+        <p className="t-meta mt-2 text-gray-400">Sponsored · {brand}</p>
+        {showWhy && (
+          <p className="t-meta mt-1 text-gray-400">
+            Ads like this keep the platform free to use.
+          </p>
+        )}
+
+        {/* Two full-width buttons, and BOTH of them bill.
+            The reference reads "Watch" and "Visit site". "Watch" there is a
+            rewarded-video play, which ships off — and a button that looks like
+            the primary action while recording nothing is worse than one button,
+            so the secondary carries the advertiser's own CTA label and opens the
+            same destination through the same handler. Two labels, one billed
+            event each, no decoration. */}
+        {hasUrl && (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <a
+              {...linkProps}
+              className="app-tap-row app-press flex items-center justify-center rounded-(--app-r-control) border border-(--app-line) bg-(--app-surface-2) px-3 text-center text-sm font-bold text-gray-100"
+            >
+              {ad.ctaLabel || "Learn More"}
+            </a>
+            <a
+              {...linkProps}
+              className="app-tap-row app-press flex items-center justify-center gap-1.5 rounded-(--app-r-control) bg-(--app-bright) px-3 text-sm font-bold text-(--app-on-bright)"
+            >
+              Visit site
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
+        )}
       </div>
-    </a>
+    </article>
   );
 }

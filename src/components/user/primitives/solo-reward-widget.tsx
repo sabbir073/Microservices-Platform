@@ -173,7 +173,7 @@ export function SoloRewardWidget({
               )}
               <button
                 onClick={() => setShowModal(true)}
-                className="w-full py-2.5 rounded-lg bg-linear-to-r from-amber-500 to-yellow-500 text-gray-900 font-bold text-sm hover:opacity-90"
+                className="w-full py-2.5 rounded-lg bg-linear-to-r from-amber-500 to-yellow-500 text-(--app-on-bright) font-bold text-sm hover:opacity-90"
               >
                 🎁 CLAIM REWARD
               </button>
@@ -223,7 +223,7 @@ export function SoloRewardWidget({
               <button
                 disabled={claiming}
                 onClick={claim}
-                className="flex-1 py-2.5 rounded-lg bg-linear-to-r from-amber-500 to-yellow-500 text-gray-900 text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
+                className="flex-1 py-2.5 rounded-lg bg-linear-to-r from-amber-500 to-yellow-500 text-(--app-on-bright) text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50"
               >
                 {claiming ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

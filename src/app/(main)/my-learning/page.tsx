@@ -317,12 +317,12 @@ function EnrollmentList({
                   className="object-cover"
                 />
               ) : (
-                <div className="absolute inset-0 grid place-items-center text-gray-700">
+                <div className="absolute inset-0 grid place-items-center text-(--app-glyph)">
                   <GraduationCap className="w-10 h-10" />
                 </div>
               )}
               {e.completedAt && (
-                <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-emerald-500 text-emerald-950 text-[10px] font-bold">
+                <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-emerald-500 text-(--app-on-bright) text-[10px] font-bold">
                   Completed
                 </span>
               )}
@@ -407,7 +407,7 @@ function WishlistList({
                     className="object-cover"
                   />
                 ) : (
-                  <div className="absolute inset-0 grid place-items-center text-gray-700">
+                  <div className="absolute inset-0 grid place-items-center text-(--app-glyph)">
                     <GraduationCap className="w-10 h-10" />
                   </div>
                 )}

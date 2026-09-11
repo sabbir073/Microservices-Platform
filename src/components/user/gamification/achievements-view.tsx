@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Lock, Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, Lock, Loader2 } from "lucide-react";
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { cn, pts } from "@/lib/utils";
 import { toast } from "@/lib/toast";
+import { runInterstitial } from "@/lib/reward-interstitial";
 
 /**
  * Mirrors what `GET /api/achievements` actually returns.
@@ -63,6 +64,16 @@ export function AchievementsView() {
     void load();
   }, [load]);
 
+  // Claimable first (there's a reward waiting), then still-in-progress /
+  // locked (something to work toward), and claimed last — it's a record of
+  // what you've already done, not something that needs your attention.
+  // `Array.prototype.sort` is stable, so each bucket keeps the API's own
+  // type/threshold order.
+  const sorted = useMemo(() => {
+    const rank = (a: Achievement) => (a.canClaim ? 0 : !a.isUnlocked ? 1 : 2);
+    return [...items].sort((x, y) => rank(x) - rank(y));
+  }, [items]);
+
   const claim = async (a: Achievement) => {
     setClaiming(a.id);
     try {
@@ -76,6 +87,11 @@ export function AchievementsView() {
           d.xpAwarded > 0 ? `${d.xpAwarded} XP` : null,
         ].filter(Boolean);
         toast.success(`Claimed ${a.name} — ${parts.join(" + ")}`);
+        // Gate AFTER the credit lands, never before: the reward is already
+        // banked, so a slow or missing ad cannot cost the user anything.
+        // Resolves instantly when there's no ad configured or the plan is
+        // ad-free. Mirrors the milestones claim flow — one shared mechanism.
+        await runInterstitial();
         setActive(null);
       }
       await load();
@@ -101,9 +117,9 @@ export function AchievementsView() {
       </p>
 
       {summary && summary.pointsClaimable > 0 && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-200">
+        <div className="rounded-(--app-r-control) border border-(--app-info-line) bg-(--app-info-soft) px-3 py-2.5 t-body text-(--app-info)">
           You have <strong>{pts(summary.pointsClaimable)} points</strong> waiting.
-          Tap an unlocked badge to collect it.
+          Tap a claimable badge above to collect it.
         </div>
       )}
 
@@ -116,29 +132,35 @@ export function AchievementsView() {
       )}
 
       {!loading && items.length > 0 && (
-        <div className="grid grid-cols-3 gap-2">
-          {items.map((a) => (
+        <div className="grid grid-cols-4 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 gap-2">
+          {sorted.map((a) => (
             <button
               key={a.id}
               onClick={() => setActive(a)}
               className={cn(
-                "relative aspect-square rounded-xl border flex flex-col items-center justify-center gap-1 p-2 transition-colors",
-                a.isUnlocked
-                  ? "border-amber-500/30 bg-linear-to-br from-amber-500/10 to-orange-500/5"
-                  : "border-gray-800 bg-gray-900 opacity-60"
+                "app-tap app-press app-lift relative aspect-square rounded-(--app-r-control) border flex flex-col items-center justify-center gap-0.5 p-1.5 text-center",
+                a.canClaim
+                  ? "bg-(--app-info-soft) border-(--app-info-line)"
+                  : a.isUnlocked
+                    ? "bg-(--app-surface-2) border-(--app-line) opacity-80"
+                    : "bg-(--app-surface-2) border-(--app-line) opacity-60"
               )}
             >
-              <div className="text-3xl">
+              <div className="text-xl leading-none">
                 {a.isUnlocked ? (
                   "🏆"
                 ) : (
-                  <Lock className="w-6 h-6 text-gray-600" />
+                  <Lock className="w-4 h-4 text-gray-500" />
                 )}
               </div>
               <p
                 className={cn(
-                  "text-[10px] font-bold text-center line-clamp-2",
-                  a.isUnlocked ? "text-white" : "text-gray-500"
+                  "t-meta font-bold text-center line-clamp-2",
+                  a.canClaim
+                    ? "text-(--app-info)"
+                    : a.isUnlocked
+                      ? "text-gray-300"
+                      : "text-gray-500"
                 )}
               >
                 {a.name}
@@ -146,19 +168,17 @@ export function AchievementsView() {
               {/* Locked badges show how far along you are, so the grid says what
                   to do next instead of only what you have not got. */}
               {!a.isUnlocked && (
-                <span className="text-[9px] text-gray-500 tabular-nums">
+                <span className="text-[10px] text-gray-500 tabular-nums">
                   {a.progress.current}/{a.progress.target}
                 </span>
               )}
               {a.canClaim && (
-                <span className="absolute top-1 right-1 px-1 py-0.5 rounded bg-amber-500 text-black text-[8px] font-black">
-                  CLAIM
+                <span className="absolute top-1 right-1 app-chip-info px-1 py-0 text-[8px] leading-tight">
+                  Claim
                 </span>
               )}
               {a.isClaimed && (
-                <span className="absolute top-1 right-1 text-[10px] text-emerald-400">
-                  ✓
-                </span>
+                <Check className="absolute top-1 right-1 w-3.5 h-3.5 text-(--app-in)" />
               )}
             </button>
           ))}
@@ -172,50 +192,50 @@ export function AchievementsView() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="glass rounded-2xl p-6 max-w-sm w-full text-center"
+            className="app-panel max-w-sm w-full text-center"
           >
             <div className="text-6xl mb-3">{active.isUnlocked ? "🏆" : "🔒"}</div>
-            <h2 className="text-xl font-bold text-white">{active.name}</h2>
+            <h2 className="t-section text-white">{active.name}</h2>
             {active.description && (
-              <p className="text-sm text-gray-400 mt-1 mb-3">
+              <p className="t-body text-gray-400 mt-1 mb-3">
                 {active.description}
               </p>
             )}
 
             <div className="mb-4">
-              <div className="h-1.5 rounded-full bg-gray-800 overflow-hidden">
+              <div className="h-1.5 rounded-full bg-(--app-surface-2) overflow-hidden">
                 <div
-                  className="h-full bg-linear-to-r from-amber-500 to-orange-500"
+                  className="h-full bg-(--app-info)"
                   style={{ width: `${active.progress.percentage}%` }}
                 />
               </div>
-              <p className="text-xs text-gray-500 mt-1.5 tabular-nums">
+              <p className="t-meta text-gray-500 mt-1.5 tabular-nums">
                 {active.progress.current.toLocaleString()} /{" "}
                 {active.progress.target.toLocaleString()} {active.typeLabel}
               </p>
             </div>
 
             {(active.pointsReward > 0 || active.xpReward > 0) && (
-              <p className="text-sm text-amber-400 font-bold">
+              <p className="t-body font-bold text-(--app-info)">
                 Reward: {active.pointsReward > 0 && `+${pts(active.pointsReward)} pts`}
                 {active.pointsReward > 0 && active.xpReward > 0 && " · "}
                 {active.xpReward > 0 && `+${active.xpReward} XP`}
               </p>
             )}
             {active.completedAt && (
-              <p className="text-[11px] text-emerald-400 mt-2">
+              <p className="t-meta text-(--app-in) mt-2">
                 Unlocked on {new Date(active.completedAt).toLocaleDateString()}
               </p>
             )}
             {active.isClaimed && (
-              <p className="text-[11px] text-gray-500 mt-1">Reward collected.</p>
+              <p className="t-meta text-gray-500 mt-1">Reward collected.</p>
             )}
 
             {active.canClaim && (
               <button
                 onClick={() => claim(active)}
                 disabled={claiming === active.id}
-                className="mt-4 w-full py-2.5 rounded-lg bg-amber-500 text-black text-sm font-bold disabled:opacity-60 inline-flex items-center justify-center gap-2"
+                className="app-press app-tap mt-4 w-full rounded-(--app-r-control) app-accent text-sm font-bold disabled:opacity-60 inline-flex items-center justify-center gap-2"
               >
                 {claiming === active.id && (
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -226,10 +246,10 @@ export function AchievementsView() {
             <button
               onClick={() => setActive(null)}
               className={cn(
-                "w-full py-2.5 rounded-lg text-sm font-bold",
+                "app-press app-tap w-full rounded-(--app-r-control) text-sm font-bold",
                 active.canClaim
-                  ? "mt-2 bg-gray-800 text-gray-300"
-                  : "mt-4 bg-indigo-500 text-white"
+                  ? "mt-2 bg-(--app-surface-2) border border-(--app-line) text-gray-300"
+                  : "mt-4 app-accent"
               )}
             >
               Close

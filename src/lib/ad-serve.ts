@@ -189,6 +189,28 @@ async function serveAdInner(opts: {
   // `serveFeedAds` below already does it this way and always filters; this is
   // that behaviour, applied to the banner path too. `matchesTargeting({}, {})`
   // correctly passes an untargeted ad and rejects a targeted one.
+  // The space and its click price depend on the PLACEMENT only — not on who is
+  // looking — so they are started here and awaited after the viewer block
+  // instead of queued behind it.
+  //
+  // This path runs on 41% of all requests in the app (every rotating ad slot,
+  // measured over a real session), and it was six Accelerate round-trip layers
+  // deep: viewer → country → placement → price → creatives → booking. Both of
+  // these are cached reads with no side effects, so starting them early changes
+  // nothing about what is served — it only stops them waiting their turn.
+  const placementRowPromise = prisma.adPlacement.findFirst({
+    where: { name: placement, isActive: true },
+    cacheStrategy: { ttl: 30, swr: 60 },
+  });
+  // Per-space click price, falling back to the global one. This is the budget
+  // FLOOR here, not a charge — an ad may only serve if its campaign can afford
+  // a click on this particular space.
+  const costPromise = getPlacementClickCost(placement);
+  // An early `return` below leaves these unawaited; attach a no-op catch so a
+  // failed read can never surface as an unhandled rejection.
+  placementRowPromise.catch(() => {});
+  costPromise.catch(() => {});
+
   let viewer: TargetableUser = {};
   let houseOnly = false;
   if (userId && !preview) {
@@ -222,36 +244,42 @@ async function serveAdInner(opts: {
     if (!slot.allowed) return SUPPRESSED;
   }
 
-  const placementRow = await prisma.adPlacement.findFirst({
-    where: { name: placement, isActive: true },
-    cacheStrategy: { ttl: 30, swr: 60 },
-  });
+  const [placementRow, cost] = await Promise.all([
+    placementRowPromise,
+    costPromise,
+  ]);
   if (!placementRow) return EMPTY;
 
-  // Per-space click price, falling back to the global one. This is the budget
-  // FLOOR here, not a charge — an ad may only serve if its campaign can afford
-  // a click on this particular space.
-  const cost = await getPlacementClickCost(placement);
   const now = new Date();
   // The eligible pool is IDENTICAL for every viewer of a placement, so it is a
   // textbook shared read: cache it. Targeting and the weighted pick still run
   // per request in JS below, so rotation variety is unchanged. `take` also caps
   // the response so a placement with many ads can't hit Accelerate's payload
   // limit (P6009), which is explicitly non-retryable.
-  const allAds = await prisma.ad.findMany({
-    where: {
-      placementId: placementRow.id,
-      status: "ACTIVE",
-      // Admin preview (ads.view-gated, never counts an impression) is the only
-      // path allowed to look past the campaign gate, so an admin can still see
-      // what a space renders while a campaign is paused.
-      ...(preview ? {} : { campaign: servableCampaignWhere(cost, now, houseOnly) }),
-      ...(opts.ownInventoryOnly ? { type: { notIn: ["ADSENSE", "GAM"] } } : {}),
-    },
-    include: { campaign: { select: { title: true } } },
-    take: 50,
-    ...(preview ? {} : { cacheStrategy: { ttl: 30, swr: 120 } }),
-  });
+  // The creative pool and the space's booking both key off `placementRow.id`
+  // and nothing else, so they go together rather than one behind the other.
+  // `getActiveBooking` is a memoised read with no side effects; issuing it for a
+  // space that turns out to have no targeted ads costs nothing and saves a
+  // round-trip on every space that does.
+  const [allAds, booking] = await Promise.all([
+    prisma.ad.findMany({
+      where: {
+        placementId: placementRow.id,
+        status: "ACTIVE",
+        // Admin preview (ads.view-gated, never counts an impression) is the only
+        // path allowed to look past the campaign gate, so an admin can still see
+        // what a space renders while a campaign is paused.
+        ...(preview
+          ? {}
+          : { campaign: servableCampaignWhere(cost, now, houseOnly) }),
+        ...(opts.ownInventoryOnly ? { type: { notIn: ["ADSENSE", "GAM"] } } : {}),
+      },
+      include: { campaign: { select: { title: true } } },
+      take: 50,
+      ...(preview ? {} : { cacheStrategy: { ttl: 30, swr: 120 } }),
+    }),
+    preview ? Promise.resolve(null) : getActiveBooking(placementRow.id, now),
+  ]);
 
   // Always filter. See the note on `viewer` above.
   const targeted = allAds.filter((a) => matchesTargeting(a.targeting, viewer));
@@ -267,7 +295,6 @@ async function serveAdInner(opts: {
   // Previews skip this: an admin looking at a space must see what it holds.
   let pool = targeted;
   if (!preview) {
-    const booking = await getActiveBooking(placementRow.id, now);
     if (booking?.exclusive) {
       const booked = targeted.filter((a) => a.campaignId === booking.campaignId);
       if (booked.length > 0) pool = booked;

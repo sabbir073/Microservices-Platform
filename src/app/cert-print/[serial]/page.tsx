@@ -18,7 +18,7 @@ export default async function CertificatePrintPage({
   if (!cert) notFound();
 
   return (
-    <div className="fixed inset-0 z-100 bg-white text-gray-900 overflow-auto flex items-center justify-center p-6 print:p-0">
+    <div className="fixed inset-0 z-100 bg-white text-(--app-on-bright) overflow-auto flex items-center justify-center p-6 print:p-0">
       <AutoPrint />
       <style>{`@media print { @page { margin: 0; size: landscape; } }`}</style>
       <div className="w-full max-w-3xl border-[10px] border-amber-500/70 rounded-2xl px-12 py-14 text-center">

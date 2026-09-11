@@ -181,8 +181,11 @@ async function main() {
     // was fine.
     check(
       "the route batches reactions and saves for the whole page",
-      /myReactions = new Map\(likes\.map/.test(feed) &&
-        /savedSet = new Set\(saved\.map/.test(feed)
+      // Matched across newlines: flattening the hydration waterfall into one
+      // Promise.all reformatted these onto several lines. One bulk map per
+      // relation is the property; where the line breaks fall is not.
+      /myReactions = new Map\([\s\S]{0,160}likes[\s\S]{0,80}\.map\(/.test(feed) &&
+        /savedSet = new Set\([\s\S]{0,160}saved[\s\S]{0,80}\.map\(/.test(feed)
     );
     check(
       "the route hands those maps to the formatter",

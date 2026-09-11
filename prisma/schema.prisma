@@ -2080,6 +2080,17 @@ model Transaction {
   @@index([type, createdAt])
   // Wallet history filtered by source type.
   @@index([userId, type, createdAt])
+  // "Today's earnings" on the feed's right rail — GET /api/feed/rail-widgets,
+  // which every feed mount calls:
+  //   _sum(points) where { userId, status: COMPLETED, type: in [EARNING, BONUS],
+  //                        createdAt: { gte: localMidnight } }
+  // [userId, type, createdAt] above leaves `status` out, so the planner walks
+  // every EARNING/BONUS row the user has ever had in the window and re-checks
+  // status per row. Equality (userId, status) → IN list (type) → range
+  // (createdAt) is the order that lets all four predicates be satisfied by the
+  // one scan. Transaction is the fastest-growing table on the platform, so this
+  // one matters more with every payment rather than less.
+  @@index([userId, status, type, createdAt])
 }
 
 // Client-driven request idempotency. A money POST may send an `Idempotency-Key`
@@ -3412,6 +3423,34 @@ model Post {
   // The existing [isPublic, isHidden, lastActivityAt] omits isPinned, so Postgres
   // had to sort every matching row instead of walking an index.
   @@index([isPublic, isHidden, isAnnouncement, isPromoted, isPinned, lastActivityAt])
+  // The index above stopped matching the query it was built for.
+  //
+  // `isPublic` was dropped from the feed predicate when it became the author's
+  // internet-audience choice rather than in-platform visibility — both Public
+  // and Members-only posts belong in the signed-in feed. A B-tree cannot skip
+  // its leading column, so every composite that starts with `isPublic` became
+  // unusable for the main feed the moment that filter went away, and the pool
+  // query fell back to a sequential scan plus a sort (Post: 11,406 sequential
+  // scans against 986 index scans in pg_stat_user_tables).
+  //
+  // Serves GET /api/feed's pool read:
+  //   where  { isHidden: false, groupId: null, isAnnouncement: false, isPromoted: false }
+  //   order  [{ isPinned: desc }, { lastActivityAt: desc }]  take 500
+  // Four equality columns first, then the two sort keys in sort order, so
+  // Postgres walks it backwards and never sorts.
+  // Named explicitly: Prisma's generated name for six columns overflows
+  // Postgres' 63-byte identifier limit and gets truncated mid-column, which
+  // makes the hand-written migration SQL easy to get subtly wrong. `map:` pins
+  // both sides to the same name.
+  @@index([isHidden, groupId, isAnnouncement, isPromoted, isPinned, lastActivityAt], map: "Post_feedPool_idx")
+  // Serves GET /api/feed/pulse: _max(lastActivityAt) over
+  //   { isHidden: false, isAnnouncement: false, isPromoted: false }.
+  // Deliberately separate from the index above rather than sharing its prefix:
+  // pulse does NOT constrain `groupId`, so with groupId sitting between the
+  // equalities and lastActivityAt the planner would have to scan every matching
+  // row to find the maximum. Here lastActivityAt directly follows the three
+  // equality columns, so the max is the first entry of a backward index scan.
+  @@index([isHidden, isAnnouncement, isPromoted, lastActivityAt])
   // Profile timelines + the per-day post-limit count on every new post.
   @@index([userId, createdAt])
   @@index([userId, isPublic, isHidden, createdAt])

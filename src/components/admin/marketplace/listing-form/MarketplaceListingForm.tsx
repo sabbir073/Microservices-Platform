@@ -354,7 +354,7 @@ function Stepper({ currentStep }: { currentStep: number }) {
               {s.label}
             </span>
             {i < STEPS.length - 1 && (
-              <ChevronRight className="w-3.5 h-3.5 text-slate-700 shrink-0" />
+              <ChevronRight className="w-3.5 h-3.5 text-(--app-glyph) shrink-0" />
             )}
           </li>
         );

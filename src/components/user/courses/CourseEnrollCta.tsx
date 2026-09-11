@@ -203,7 +203,7 @@ export function CourseEnrollCta({
             className="object-cover"
           />
         ) : (
-          <div className="absolute inset-0 grid place-items-center text-gray-700">
+          <div className="absolute inset-0 grid place-items-center text-(--app-glyph)">
             <PlayCircle className="w-12 h-12" />
           </div>
         )}

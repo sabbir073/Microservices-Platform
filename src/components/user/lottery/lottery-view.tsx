@@ -372,7 +372,7 @@ function FeaturedLotteryCard({
                 "rounded-xl px-3 py-3 text-center transition-all border-2",
                 isActive && lottery.canBuyTicket
                   ? "bg-white/10 hover:bg-white/15 border-white/30 hover:scale-105 text-white"
-                  : "bg-white/5 border-white/10 text-white/50 cursor-not-allowed"
+                  : "on-media bg-white/5 border-white/10 text-white/50 cursor-not-allowed"
               )}
             >
               {busyId === busyKey ? (

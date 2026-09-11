@@ -579,7 +579,7 @@ function PreviousWinnersSection({
         </div>
       ) : cycles.length === 0 ? (
         <div className="p-8 text-center">
-          <Trophy className="w-8 h-8 text-slate-700 mx-auto mb-2" />
+          <Trophy className="w-8 h-8 text-(--app-glyph) mx-auto mb-2" />
           <p className="text-sm text-slate-400 font-semibold">
             No past {currentPeriod} cycles yet
           </p>

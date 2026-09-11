@@ -84,9 +84,9 @@ export function LeaderboardView({ currentUserId }: { currentUserId: string }) {
   // Podium display order: 2nd, 1st, 3rd (1st raised in the middle).
   const podium = [rows[1], rows[0], rows[2]];
   const podiumMeta = [
-    { ring: "ring-gray-300/60", badge: "bg-gray-300 text-gray-900", icon: Medal, rank: 2 },
-    { ring: "ring-amber-400/70", badge: "bg-amber-400 text-amber-950", icon: Crown, rank: 1 },
-    { ring: "ring-orange-500/60", badge: "bg-orange-500 text-orange-950", icon: Medal, rank: 3 },
+    { ring: "ring-gray-300/60", badge: "bg-[#c7ccdb] text-(--app-on-bright)", icon: Medal, rank: 2 },
+    { ring: "ring-amber-400/70", badge: "bg-amber-400 text-(--app-on-bright)", icon: Crown, rank: 1 },
+    { ring: "ring-orange-500/60", badge: "bg-orange-500 text-(--app-on-bright)", icon: Medal, rank: 3 },
   ];
 
   // Rank chip colour for the list (top 3 tinted, rest neutral).

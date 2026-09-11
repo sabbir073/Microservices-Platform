@@ -185,7 +185,7 @@ export function ReferralsView({
                 dailyClaim.claimed
                   ? "inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/15 text-emerald-400 text-sm font-bold cursor-default"
                   : dailyClaim.canClaim
-                  ? "inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-900 text-sm font-bold disabled:opacity-50"
+                  ? "inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-(--app-on-bright) text-sm font-bold disabled:opacity-50"
                   : "inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-700 text-slate-300 text-sm font-bold cursor-not-allowed"
               }
               title={

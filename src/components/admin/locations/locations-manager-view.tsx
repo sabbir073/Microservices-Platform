@@ -155,7 +155,7 @@ export function LocationsManagerView({ canEdit }: Props) {
             />
           ) : (
             <div className="bg-gray-900 rounded-xl border border-dashed border-gray-700 p-12 text-center">
-              <Globe className="w-10 h-10 text-gray-700 mx-auto mb-3" />
+              <Globe className="w-10 h-10 text-(--app-glyph) mx-auto mb-3" />
               <p className="text-sm text-gray-500">
                 Pick a country on the left to manage its locations.
               </p>

@@ -623,7 +623,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
             <t.icon className="w-4 h-4" />
             {t.label}
             {t.id === "approvals" && pendingCount > 0 && (
-              <span className="ml-0.5 min-w-4.5 px-1 h-4.5 grid place-items-center rounded-full bg-amber-500 text-slate-950 text-[10px] font-bold">
+              <span className="ml-0.5 min-w-4.5 px-1 h-4.5 grid place-items-center rounded-full bg-amber-500 text-(--app-on-bright) text-[10px] font-bold">
                 {pendingCount}
               </span>
             )}

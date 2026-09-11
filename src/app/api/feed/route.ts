@@ -295,86 +295,97 @@ export async function GET(request: NextRequest) {
     // for them too.
     const allPosts = [...announcements, ...posts, ...promoted];
 
-    // Get post users
     const userIds = [...new Set(allPosts.map((p) => p.userId))];
-    const users = await prisma.user.findMany({
-      where: { id: { in: userIds } },
-      select: FEED_AUTHOR_SELECT,
-    });
-    const userMap = new Map(users.map((u) => [u.id, u]));
-
     // Which reaction did the viewer leave, and what does the post's cluster look
     // like? Both are answered for the WHOLE page in one query each — a per-post
     // lookup would be a query per card.
     const pageIds = allPosts.map((p) => p.id);
 
-    // Per-type totals for the little emoji cluster. Deliberately computed rather
-    // than denormalised onto Post: at this size the grouping is cheap, and a
-    // cached counter is the kind of thing that drifts away from the rows.
-    const reactionCounts: Record<string, Record<string, number>> = {};
-    if (pageIds.length > 0) {
-      const grouped = await prisma.like.groupBy({
-        by: ["postId", "type"],
-        where: { postId: { in: pageIds } },
-        _count: { _all: true },
-      });
-      for (const g of grouped as Array<{
-        postId: string;
-        type: string;
-        _count: { _all: number };
-      }>) {
-        (reactionCounts[g.postId] ??= {})[g.type] = g._count._all;
-      }
-    }
-
-    // Check if current user has liked each post
-    let userLikes: Set<string> = new Set();
-    let myReactions = new Map<string, string>();
-    let savedSet: Set<string> = new Set();
-    let followingSet: Set<string> = new Set();
-    if (session?.user?.id) {
-      const likes = await prisma.like.findMany({
-        where: {
-          userId: session.user.id,
-          postId: { in: pageIds },
-        },
-        select: { postId: true, type: true },
-      });
-      userLikes = new Set(likes.map((l) => l.postId));
-      myReactions = new Map(likes.map((l) => [l.postId, l.type]));
-
+    // ONE round-trip layer for the whole hydration step.
+    //
+    // These six reads — authors, reaction totals, the viewer's likes, saves,
+    // follows and poll votes — used to be six sequential `await`s. Every one of
+    // them depends only on `allPosts`, which is already resolved here, so none
+    // of them was ever waiting on the one before it: the waterfall was
+    // accidental. On Accelerate each `await` is a full proxy round-trip
+    // (measured at 85–190ms from the dev machine), so the page paid five extra
+    // trips it had no reason to.
+    //
+    // The guards are preserved exactly as they were — an empty page skips the
+    // grouping, an anonymous viewer skips the four per-viewer reads, and a page
+    // with no authors skips the follow lookup — so the queries that actually run
+    // are the same set as before. Only their arrangement changed.
+    const viewerId = session?.user?.id ?? null;
+    const [users, grouped, likes, saved, follows, votes] = await Promise.all([
+      prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: FEED_AUTHOR_SELECT,
+      }),
+      // Per-type totals for the little emoji cluster. Deliberately computed
+      // rather than denormalised onto Post: at this size the grouping is cheap,
+      // and a cached counter is the kind of thing that drifts away from the rows.
+      pageIds.length > 0
+        ? prisma.like.groupBy({
+            by: ["postId", "type"],
+            where: { postId: { in: pageIds } },
+            _count: { _all: true },
+          })
+        : Promise.resolve([]),
+      viewerId
+        ? prisma.like.findMany({
+            where: { userId: viewerId, postId: { in: pageIds } },
+            select: { postId: true, type: true },
+          })
+        : Promise.resolve([]),
       // Saved posts — same batching as likes, one query for the page.
-      const saved = await prisma.savedPost.findMany({
-        where: { userId: session.user.id, postId: { in: pageIds } },
-        select: { postId: true },
-      });
-      savedSet = new Set(saved.map((x) => x.postId));
-
+      viewerId
+        ? prisma.savedPost.findMany({
+            where: { userId: viewerId, postId: { in: pageIds } },
+            select: { postId: true },
+          })
+        : Promise.resolve([]),
       // Which post-authors does the viewer already follow?
-      if (userIds.length > 0) {
-        const follows = await prisma.follow.findMany({
-          where: {
-            followerId: session.user.id,
-            followingId: { in: userIds },
-          },
-          select: { followingId: true },
-        });
-        followingSet = new Set(follows.map((f) => f.followingId));
-      }
+      viewerId && userIds.length > 0
+        ? prisma.follow.findMany({
+            where: { followerId: viewerId, followingId: { in: userIds } },
+            select: { followingId: true },
+          })
+        : Promise.resolve([]),
+      viewerId
+        ? prisma.vote.findMany({
+            where: { userId: viewerId, postId: { in: pageIds } },
+            select: { postId: true, optionId: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const reactionCounts: Record<string, Record<string, number>> = {};
+    for (const g of grouped as Array<{
+      postId: string;
+      type: string;
+      _count: { _all: number };
+    }>) {
+      (reactionCounts[g.postId] ??= {})[g.type] = g._count._all;
     }
 
-    // Capture user's votes for polls
-    let userVoteMap = new Map<string, string>();
-    if (session?.user?.id) {
-      const votes = await prisma.vote.findMany({
-        where: {
-          userId: session.user.id,
-          postId: { in: allPosts.map((p) => p.id) },
-        },
-        select: { postId: true, optionId: true },
-      });
-      userVoteMap = new Map(votes.map((v) => [v.postId, v.optionId]));
-    }
+    const userLikes = new Set((likes as { postId: string }[]).map((l) => l.postId));
+    const myReactions = new Map(
+      (likes as { postId: string; type: string }[]).map((l) => [l.postId, l.type])
+    );
+    const savedSet = new Set(
+      (saved as { postId: string }[]).map((x) => x.postId)
+    );
+    const followingSet = new Set(
+      (follows as { followingId: string }[]).map((f) => f.followingId)
+    );
+    const userVoteMap = new Map(
+      (votes as { postId: string; optionId: string }[]).map((v) => [
+        v.postId,
+        v.optionId,
+      ])
+    );
 
     type FormattablePost = (typeof allPosts)[number];
     // Everything per-viewer is looked up in bulk above; the shared formatter
