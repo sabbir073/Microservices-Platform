@@ -722,7 +722,10 @@ html[data-theme="light"] {
    ───────────────────────────────────────────────────────────────────────── */
 /* In `components` so a Tailwind utility written on the same element still wins
    — an unlayered rule beats every layered utility and would silently override
-   any bg-*/border-* class put on the chrome later. */
+   any background or border utility put on the chrome later.
+   (Do not write those class names with a star here: the star-slash inside
+   `bg-<star>/border-<star>` closes this comment early and the rest of the line
+   is then parsed as CSS.) */
 @layer components {
   .app-chrome {
     background-color: var(--shell-bg);
