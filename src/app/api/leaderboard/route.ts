@@ -6,9 +6,9 @@ import {
   computeCombinedTopUsers,
   computeCombinedUserRank,
   getEligiblePackages,
+  taskEarningsFor,
+  topTaskEarners,
 } from "@/lib/leaderboard";
-import { getPointsPerUsd } from "@/lib/economy";
-import { toNum } from "@/lib/money";
 import { NON_STAFF_WHERE, isStaffRole } from "@/lib/staff";
 
 // The combined board is identical for every viewer — cache it for 60s so the
@@ -99,8 +99,6 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const pointsPerUsd = await getPointsPerUsd();
-
     let leaderboard: Array<{
       rank: number;
       userId: string;
@@ -120,10 +118,14 @@ export async function GET(request: NextRequest) {
     };
 
     if (type === "points") {
+      // Earnings FROM TASKS, ranked by the sum itself. This board used to order
+      // by `totalEarnings`, which a marketplace sale also increments — two
+      // accounts trading the same item back and forth both climbed, for the
+      // price of the platform fee per lap. `topTaskEarners` is the same basis
+      // the prize-paying reset uses, so the board and the payout agree.
+      const earners = await topTaskEarners(limit);
       const usersRaw = await prisma.user.findMany({
-        where: NON_STAFF_WHERE,
-        orderBy: { totalEarnings: "desc" },
-        take: limit,
+        where: { id: { in: earners.map((e) => e.userId) }, ...NON_STAFF_WHERE },
         // SHARED board, polled every 30s by every viewer. 60s of staleness on a
         // leaderboard is invisible; nobody transacts on it.
         cacheStrategy: { ttl: 60, swr: 300 },
@@ -133,20 +135,26 @@ export async function GET(request: NextRequest) {
           avatar: true,
           level: true,
           package: { select: { slug: true, name: true } },
-          totalEarnings: true,
         },
       });
-      const users = usersRaw as unknown as Array<LBUser & { totalEarnings: number }>;
+      const users = usersRaw as unknown as LBUser[];
+      const byId = new Map(users.map((u) => [u.id, u]));
 
-      leaderboard = users.map((u, idx) => ({
-        rank: idx + 1,
-        userId: u.id,
-        name: u.name || "Anonymous",
-        avatar: u.avatar,
-        level: u.level,
-        packageTier: u.package?.slug ?? "default",
-        value: Math.round(toNum(u.totalEarnings) * pointsPerUsd),
-      }));
+      leaderboard = earners.flatMap((e, idx) => {
+        const u = byId.get(e.userId);
+        if (!u) return [];
+        return [
+          {
+            rank: idx + 1,
+            userId: u.id,
+            name: u.name || "Anonymous",
+            avatar: u.avatar,
+            level: u.level,
+            packageTier: u.package?.slug ?? "default",
+            value: e.points,
+          },
+        ];
+      });
     } else if (type === "xp") {
       const usersRaw = await prisma.user.findMany({
         where: NON_STAFF_WHERE,
@@ -274,7 +282,6 @@ export async function GET(request: NextRequest) {
         const user = await prisma.user.findUnique({
           where: { id: session.user.id },
           select: {
-            totalEarnings: true,
             xp: true,
           },
         });
@@ -282,7 +289,10 @@ export async function GET(request: NextRequest) {
         if (user) {
           let userValue = 0;
           if (type === "points") {
-            userValue = Math.round(toNum(user.totalEarnings) * pointsPerUsd);
+            // Same basis as the board above — task earnings, not `totalEarnings`.
+            userValue =
+              (await taskEarningsFor([session.user.id])).get(session.user.id) ??
+              0;
           } else if (type === "xp") {
             userValue = user.xp;
           } else if (type === "referrals") {

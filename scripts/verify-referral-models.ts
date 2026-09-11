@@ -5,6 +5,7 @@ import { prisma } from "./_q";
 import {
   REFERRAL_BONUS_DEFAULTS,
   normaliseMilestones,
+  newMilestoneId,
 } from "../src/lib/referral-config";
 
 /**
@@ -119,10 +120,8 @@ async function main() {
       /export async function awardReferralMilestones/.test(lib)
     );
     check(
-      "each step is idempotent on its own threshold",
-      /reference: `refbonus_milestone_\$\{referrerId\}_\$\{m\.referrals\}`/.test(
-        lib
-      ),
+      "each step is idempotent on its own stable id",
+      /reference: `refbonus_milestone_\$\{referrerId\}_\$\{m\.id\}`/.test(lib),
       "one reference for the whole ladder would pay only the first step ever reached"
     );
     check(
@@ -203,8 +202,8 @@ async function main() {
       /export async function awardReferralMoneyBonus/.test(lib)
     );
     check(
-      "it is a percentage of the amount, converted at the current rate",
-      /amountUsd \* \(pct \/ 100\)\) \* pointsPerUsd/.test(lib)
+      "it is a percentage of the ELIGIBLE amount, converted at the current rate",
+      /eligibleUsd \* \(pct \/ 100\) \* pointsPerUsd/.test(lib)
     );
     check(
       "deposit and withdrawal have separate switches and percentages",
@@ -462,6 +461,110 @@ async function main() {
       `   ${n} referral payout(s) so far, ${(paid[0]?._sum.points ?? 0).toLocaleString()} points`
     );
     check("the live audit ran", true);
+  }
+
+  /* ── 6. The deposit→withdraw farm ── */
+  console.log("\n6. Deposit→withdraw cannot be farmed");
+  {
+    const lib = code(LIB);
+    const cfg = code("src/lib/referral-config.ts");
+    const form = code(FORM);
+
+    check(
+      "the withdrawal cut is capped by what the invitee actually EARNED",
+      /withdrawalBonusEarnedOnly/.test(lib) &&
+        /toNum\(referred\.totalEarnings/.test(lib),
+      "totalEarnings never moves on a deposit, so returned money is worth nothing out"
+    );
+    check(
+      "…less what has already been paid on this pair, so one $100 pays once",
+      /h\.kind === "WITHDRAWAL"/.test(lib) &&
+        /earnedUsd - alreadyCounted/.test(lib)
+    );
+    check(
+      "there is a rolling per-invitee ceiling, which bounds the DEPOSIT leg too",
+      /moneyBonusMaxPointsPerUser/.test(lib) &&
+        /moneyBonusWindowDays/.test(lib) &&
+        /headroom/.test(lib)
+    );
+    check(
+      "a user near the ceiling is paid the headroom, not cut off",
+      /points = Math\.min\(points, headroom\)/.test(lib),
+      "refusing outright would punish an honest heavy depositor"
+    );
+    check(
+      "the bonus records the amount it was COMPUTED on, not the raw movement",
+      /amountUsd: eligibleUsd, movedUsd: amountUsd/.test(lib),
+      "recording the gross would let one genuine payout eat the whole allowance"
+    );
+    check(
+      "a failed history read skips the bonus instead of paying unguarded",
+      /Number\.MAX_SAFE_INTEGER/.test(lib),
+      "an empty history on error reads as 'nothing paid yet' — the open door"
+    );
+    check(
+      "the guards ship on by default",
+      REFERRAL_BONUS_DEFAULTS.withdrawalBonusEarnedOnly === true &&
+        REFERRAL_BONUS_DEFAULTS.moneyBonusMaxPointsPerUser > 0 &&
+        REFERRAL_BONUS_DEFAULTS.moneyBonusWindowDays > 0,
+      `earnedOnly=${REFERRAL_BONUS_DEFAULTS.withdrawalBonusEarnedOnly} cap=${REFERRAL_BONUS_DEFAULTS.moneyBonusMaxPointsPerUser}`
+    );
+    check(
+      "…and are tunable from the admin form (both ends of every key)",
+      /set\("withdrawalBonusEarnedOnly"/.test(form) &&
+        /set\("moneyBonusMaxPointsPerUser"/.test(form) &&
+        /set\("moneyBonusWindowDays"/.test(form) &&
+        /cfg\.withdrawalBonusEarnedOnly/.test(form)
+    );
+    check(
+      "the form says out loud what happens with both legs on",
+      /cfg\.depositEnabled && cfg\.withdrawalEnabled/.test(form),
+      "the owner intends to turn these on — the risk has to be where he'll see it"
+    );
+  }
+
+  /* ── 7. Editing a milestone threshold does not re-pay it ── */
+  console.log("\n7. A milestone keeps its identity across an edit");
+  {
+    const lib = code(LIB);
+    const form = code(FORM);
+
+    check(
+      "the payout reference is keyed on the step's id, not its threshold",
+      /reference: `refbonus_milestone_\$\{referrerId\}_\$\{m\.id\}`/.test(lib) &&
+        !/refbonus_milestone_\$\{referrerId\}_\$\{m\.referrals\}/.test(lib),
+      "the threshold as identity is what minted a new key and re-paid everyone"
+    );
+    check(
+      "the form gives a NEW step a fresh stable id",
+      /id: newMilestoneId\(\)/.test(form)
+    );
+
+    // Legacy entries must land on the id that reproduces the OLD reference, or
+    // the first load after this change re-pays every step ever paid.
+    const legacy = normaliseMilestones([
+      { referrals: 10, rewardType: "POINTS", points: 500, label: "Bronze" },
+    ]);
+    check(
+      "a legacy step (no id) derives the id from its current threshold",
+      legacy[0]?.id === "10",
+      `id = ${JSON.stringify(legacy[0]?.id)} — must be "10" to match refbonus_milestone_<referrer>_10`
+    );
+
+    // The same step, threshold moved 10 → 12, id carried over.
+    const edited = normaliseMilestones([
+      { id: "10", referrals: 12, rewardType: "POINTS", points: 500, label: "Bronze" },
+    ]);
+    check(
+      "moving that step's threshold keeps the id, so nobody is paid twice",
+      edited[0]?.id === "10" && edited[0]?.referrals === 12,
+      `id = ${JSON.stringify(edited[0]?.id)}, referrals = ${edited[0]?.referrals}`
+    );
+    check(
+      "a generated id can never collide with a legacy numeric one",
+      /^ms_[a-z0-9]+$/.test(newMilestoneId()) &&
+        newMilestoneId() !== newMilestoneId()
+    );
   }
 
   console.log(

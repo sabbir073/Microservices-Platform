@@ -13,6 +13,22 @@
  * points. Paid ONCE per referrer per threshold.
  */
 export interface ReferralMilestone {
+  /**
+   * Stable identity of this step, and the ONLY thing the payout reference is
+   * keyed on.
+   *
+   * The reference used to be `refbonus_milestone_<referrerId>_<threshold>`.
+   * That made the threshold the identity: an admin editing "Bronze" from 10
+   * referrals to 12 minted a brand-new key, so the ledger's unique constraint
+   * saw a bonus it had never paid and paid everyone who had already passed the
+   * step a second time — free subscription months included.
+   *
+   * Legacy entries have no `id`. `normaliseMilestones` gives them
+   * `String(referrals)`, which reproduces the old reference EXACTLY, so steps
+   * already paid stay paid and are not re-paid on the first load after this
+   * change. New steps get a random id that cannot collide with a numeric one.
+   */
+  id: string;
   /** ACTIVE referrals needed to reach this step — see `milestoneActivity`. */
   referrals: number;
   /**
@@ -113,6 +129,42 @@ export interface ReferralBonusConfig {
   withdrawalEnabled: boolean;
   withdrawalPercent: number;
 
+  // ── Anti-farm guard for the two money bonuses above ──
+  /**
+   * THE ATTACK, stated plainly so nobody removes this without replacing it:
+   *
+   * With `depositEnabled` and `withdrawalEnabled` both on, an invitee deposits
+   * $100, withdraws $100, deposits it again, and repeats. The money never
+   * leaves the attacker — only the withdrawal fee does — but the referrer is
+   * paid `depositPercent + withdrawalPercent` of $100 on every lap. One person
+   * with two accounts mints referral points for as long as they keep clicking.
+   *
+   * Two rules stop it, and neither touches an honest user:
+   *
+   *   1. EARNED-ONLY WITHDRAWALS (`withdrawalBonusEarnedOnly`). The withdrawal
+   *      bonus is paid only on the part of a payout the invitee actually EARNED
+   *      on the platform — lifetime `totalEarnings`, which deposits never
+   *      increment — less whatever has already been bonus-paid. Money that was
+   *      merely deposited and sent back is worth nothing on the way out, so the
+   *      loop pays the withdrawal leg exactly once and then zero forever.
+   *   2. A PER-INVITEE CEILING (`moneyBonusMaxPointsPerUser` over
+   *      `moneyBonusWindowDays`). Caps what ONE referred user's deposits and
+   *      withdrawals can ever be worth to their referrer in a rolling window,
+   *      which bounds the deposit leg too. A partially-available cap pays the
+   *      remaining headroom rather than nothing, so a real user near the limit
+   *      is not silently cut off.
+   */
+  /** Rolling window, in days, the per-invitee ceiling is measured over. */
+  moneyBonusWindowDays: number;
+  /**
+   * Most points ONE referred user's money movements can earn their referrer
+   * inside that window. 0 disables the ceiling — which re-opens the deposit
+   * leg of the loop above, so it is not the default.
+   */
+  moneyBonusMaxPointsPerUser: number;
+  /** Rule 1 above. Off means a round-trip deposit pays a withdrawal bonus. */
+  withdrawalBonusEarnedOnly: boolean;
+
   // ── Month-end activity bonus ──
   monthlyEnabled: boolean;
   /** Month-end points if the referred user completed daily missions enough days. */
@@ -154,6 +206,9 @@ export const REFERRAL_BONUS_DEFAULTS: ReferralBonusConfig = {
   depositPercent: 0,
   withdrawalEnabled: false,
   withdrawalPercent: 0,
+  moneyBonusWindowDays: 30,
+  moneyBonusMaxPointsPerUser: 10000,
+  withdrawalBonusEarnedOnly: true,
   monthlyEnabled: true,
   monthlyPoints: 0,
   monthlyMinMissionDays: 20,
@@ -178,6 +233,17 @@ export function normaliseMilestones(input: unknown): ReferralMilestone[] {
     const referrals = Math.floor(Number(m?.referrals));
     if (!Number.isFinite(referrals) || referrals < 1) continue;
 
+    // The step's identity, kept across an edit of its threshold. A stored id
+    // wins. A legacy entry (no id) gets `String(referrals)` — deliberately the
+    // threshold it has RIGHT NOW, because that reproduces the old reference
+    // `refbonus_milestone_<referrerId>_<threshold>` byte for byte and so the
+    // first load after this change re-pays nobody. From then on the id is
+    // frozen in the saved config and the threshold can move freely.
+    const id =
+      typeof m?.id === "string" && m.id.trim() !== ""
+        ? m.id.trim().slice(0, 40)
+        : String(referrals);
+
     const rewardType = m?.rewardType === "SUBSCRIPTION" ? "SUBSCRIPTION" : "POINTS";
     const points = Math.floor(Number(m?.points)) || 0;
     const months = Math.min(24, Math.max(1, Math.floor(Number(m?.months)) || 1));
@@ -189,6 +255,7 @@ export function normaliseMilestones(input: unknown): ReferralMilestone[] {
     if (rewardType === "SUBSCRIPTION" && !packageId) continue;
 
     byThreshold.set(referrals, {
+      id,
       referrals,
       rewardType,
       points,
@@ -198,4 +265,19 @@ export function normaliseMilestones(input: unknown): ReferralMilestone[] {
     });
   }
   return [...byThreshold.values()].sort((a, b) => a.referrals - b.referrals);
+}
+
+/**
+ * Identity for a milestone the admin is adding right now.
+ *
+ * Prefixed and non-numeric on purpose: a legacy step's derived id is the bare
+ * threshold ("10"), so nothing generated here can ever collide with one and
+ * accidentally claim a payout that was already made.
+ */
+export function newMilestoneId(): string {
+  const rnd =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().replace(/-/g, "").slice(0, 12)
+      : Math.random().toString(36).slice(2, 14);
+  return `ms_${rnd}`;
 }

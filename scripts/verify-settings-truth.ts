@@ -279,6 +279,55 @@ async function main() {
     );
   }
 
+  /* ── The marketplace fee is one admin-set number, not four ───────────── */
+  console.log("\nMarketplace fee — admin-set, and only in one place");
+  {
+    const code = (p: string) =>
+      read(p)
+        .replace(/\{\/\*[\s\S]*?\*\/\}/g, "")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/^\s*\/\/.*$/gm, "");
+
+    const orders = code("src/app/api/marketplace/orders/route.ts");
+    const commission = code("src/lib/marketplace-commission.ts");
+    const form = code(FORM);
+
+    check(
+      "orders/route.ts no longer carries its own fee constant",
+      !/PLATFORM_FEE_PERCENT\s*=/.test(orders),
+      "a second hardcoded fee is a second source of truth"
+    );
+    check(
+      "orders/route.ts resolves the fee the way the other checkout paths do",
+      /resolveCommissionBps\(\{/.test(orders) && /splitPrice\(/.test(orders)
+    );
+    check(
+      "the commission default is read from marketplace.fee_percent",
+      /getSetting<number>\(\s*FEE_PERCENT_KEY/.test(commission) &&
+        /FEE_PERCENT_KEY\s*=\s*"marketplace\.fee_percent"/.test(commission)
+    );
+    check(
+      "saving the advanced commission editor writes that SAME key",
+      /upsert\(\{\s*where:\s*\{\s*key:\s*FEE_PERCENT_KEY/.test(commission),
+      "otherwise the two admin screens disagree about the fee"
+    );
+    check(
+      "the settings form binds a control to the same key (both ends match)",
+      /set\("marketplace\.fee_percent"/.test(form) &&
+        /values\["marketplace\.fee_percent"\]/.test(form)
+    );
+    check(
+      "…and files it under the financial group",
+      /"marketplace\.fee_percent":\s*"financial"/.test(form)
+    );
+    check(
+      "the fee is clamped to a percentage",
+      /"marketplace\.fee_percent":\s*\{[\s\S]{0,120}min:\s*0,[\s\S]{0,60}max:\s*100/.test(
+        code("src/lib/setting-guards.ts")
+      )
+    );
+  }
+
   console.log(
     `\n${failures.length === 0 ? "COMPLETE" : "FAILED"}: ${passed} passed, ${failures.length} failed`
   );

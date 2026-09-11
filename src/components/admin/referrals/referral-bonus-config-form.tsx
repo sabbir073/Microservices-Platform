@@ -8,6 +8,7 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import {
   REFERRAL_BONUS_DEFAULTS,
+  newMilestoneId,
   type ReferralBonusConfig,
   type ReferralMilestone,
 } from "@/lib/referral-config";
@@ -78,6 +79,11 @@ export function ReferralBonusConfigForm({
     set("milestones", [
       ...cfg.milestones,
       {
+        // A fresh, stable identity. The payout reference is keyed on this and
+        // not on the threshold, so editing "10 referrals" to "12" later is an
+        // edit of the same step rather than a brand-new one that re-pays
+        // everybody who already passed it.
+        id: newMilestoneId(),
         referrals: 0,
         rewardType: "POINTS",
         points: 0,
@@ -302,12 +308,12 @@ export function ReferralBonusConfigForm({
             >
               <Plus className="h-3.5 w-3.5" /> Add a step
             </button>
-            <p className="mt-2 text-[11px] leading-relaxed text-amber-400/80">
-              Each step is paid once per member, remembered by its referral
-              number. Changing that number on a step people have already passed
-              makes it a new step to them, and they are paid for it again —
-              including a second free subscription. Edit the label freely;
-              change the number only when you mean to pay again.
+            <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+              Each step is paid once per member, remembered by the step itself
+              rather than by its referral number. You can change the number, the
+              label and the reward on a step people have already passed without
+              paying any of them a second time. Deleting a step and adding a new
+              one in its place <em>is</em> a new step, and will pay again.
             </p>
           </div>
 
@@ -409,6 +415,51 @@ export function ReferralBonusConfigForm({
               onChange={(v) => set("withdrawalPercent", v)}
               cls={inp}
             />
+          </div>
+
+          {cfg.depositEnabled && cfg.withdrawalEnabled && (
+            <p className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] leading-relaxed text-amber-300">
+              <strong>Both legs are on.</strong> Someone with two accounts can
+              deposit $100, withdraw it, deposit it again, and be paid{" "}
+              {(Number(cfg.depositPercent) || 0) +
+                (Number(cfg.withdrawalPercent) || 0)}
+              % of $100 on every lap. The money never actually leaves them — only
+              the withdrawal fee does. The two guards below are what make that
+              loop stop paying; do not turn them off while both legs are on.
+            </p>
+          )}
+
+          <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 p-2.5">
+            <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Anti-farm guards
+            </p>
+            <Switch
+              label="Only pay the withdrawal cut on money the invitee EARNED here"
+              description="On: a payout is worth a bonus only up to what that member has actually earned on the platform. Money that was deposited and sent straight back out is worth nothing on the way out, so a deposit→withdraw loop pays this leg once and then never again. Off re-opens it."
+              checked={cfg.withdrawalBonusEarnedOnly}
+              onChange={(v) => set("withdrawalBonusEarnedOnly", v)}
+            />
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <Num
+                label="Max points one invitee can earn their referrer"
+                value={cfg.moneyBonusMaxPointsPerUser}
+                onChange={(v) => set("moneyBonusMaxPointsPerUser", v)}
+                cls={inp}
+              />
+              <Num
+                label="…over this many days"
+                value={cfg.moneyBonusWindowDays}
+                onChange={(v) => set("moneyBonusWindowDays", v)}
+                cls={inp}
+              />
+            </div>
+            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+              A ceiling on what ONE member&apos;s deposits and withdrawals can
+              ever be worth to whoever invited them, which is what bounds the
+              deposit half of the loop. Near the limit the referrer is paid the
+              remaining headroom rather than nothing, so a genuinely heavy user
+              is not cut off silently. 0 removes the ceiling entirely.
+            </p>
           </div>
         </Model>
 

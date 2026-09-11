@@ -3,6 +3,7 @@ import { getSetting } from "@/lib/system-settings";
 import { creditPoints } from "@/lib/ledger";
 import { isDuplicateLedgerError } from "@/lib/idempotency";
 import { getPointsPerUsd } from "@/lib/economy";
+import { toNum } from "@/lib/money";
 import { getEffectivePackage } from "@/lib/packages";
 import { getUserDayContext } from "@/lib/user-day";
 import { notifyUser } from "@/lib/notify";
@@ -386,7 +387,7 @@ export async function awardReferralMilestones(
         referredUserId: referrerId,
         points: 0,
         allowZero: true,
-        reference: `refbonus_milestone_${referrerId}_${m.referrals}`,
+        reference: `refbonus_milestone_${referrerId}_${m.id}`,
         sourceType: "MILESTONE",
         description: `Referral milestone — ${m.label}`,
         notifyTitle: `Milestone reached: ${m.label}`,
@@ -418,7 +419,7 @@ export async function awardReferralMilestones(
       // there is no single referred user to attribute it to.
       referredUserId: referrerId,
       points: m.points,
-      reference: `refbonus_milestone_${referrerId}_${m.referrals}`,
+      reference: `refbonus_milestone_${referrerId}_${m.id}`,
       sourceType: "MILESTONE",
       description: `Referral milestone — ${m.label}`,
       notifyTitle: `Milestone reached: ${m.label}`,
@@ -476,6 +477,27 @@ export async function awardReferralPurchaseBonus(
  *
  * Idempotent per movement: the deposit or withdrawal id is the reference, so a
  * webhook replay or an admin re-approving pays once.
+ *
+ * ── THE ATTACK THIS GUARDS ──────────────────────────────────────────────────
+ * Both legs on, and an invitee deposits $100, withdraws $100, deposits it
+ * again, forever. Nothing leaves the attacker's pocket except the withdrawal
+ * fee, but the referrer is paid depositPercent + withdrawalPercent of $100 on
+ * every lap. Two accounts, one person, unbounded referral points.
+ *
+ * Two rules, and neither of them touches a real user:
+ *
+ *   1. EARNED-ONLY WITHDRAWALS. A payout is only worth a bonus to the extent
+ *      the invitee EARNED that money here. `User.totalEarnings` is the lifetime
+ *      earned figure and an approved deposit never increments it, so money that
+ *      was deposited and sent straight back out is worth exactly zero on the
+ *      way out. Prior withdrawal bonuses for this pair are subtracted, so the
+ *      same $100 of genuine earnings cannot be cashed for a bonus twice.
+ *   2. A PER-INVITEE CEILING over a rolling window, which bounds the deposit
+ *      leg as well. Over the ceiling pays nothing; partly under it pays the
+ *      headroom rather than refusing outright, because an honest heavy user
+ *      brushing the limit should not silently stop earning their referrer
+ *      anything at all.
+ * ────────────────────────────────────────────────────────────────────────────
  */
 export async function awardReferralMoneyBonus(
   referredUserId: string,
@@ -494,19 +516,50 @@ export async function awardReferralMoneyBonus(
   const referred = await prisma.user
     .findUnique({
       where: { id: referredUserId },
-      select: { referredById: true },
+      select: { referredById: true, totalEarnings: true },
     })
     .catch(() => null);
   if (!referred?.referredById) return;
-  if (!(await referrerQualifies(referred.referredById, cfg))) return;
+  const referrerId = referred.referredById;
+  if (!(await referrerQualifies(referrerId, cfg))) return;
+
+  // Every money bonus this referrer has already been paid FOR THIS INVITEE.
+  // One ledger read serves both rules below. Bounded by `take` because a busy
+  // pair over a long window is still only a few hundred rows.
+  const history = await moneyBonusHistory(referrerId, referredUserId);
+
+  // ── Rule 1: only the earned part of a withdrawal is worth anything ──
+  let eligibleUsd = amountUsd;
+  if (kind === "WITHDRAWAL" && cfg.withdrawalBonusEarnedOnly) {
+    const earnedUsd = toNum(referred.totalEarnings ?? 0);
+    const alreadyCounted = history
+      .filter((h) => h.kind === "WITHDRAWAL")
+      .reduce((sum, h) => sum + h.amountUsd, 0);
+    eligibleUsd = Math.min(amountUsd, Math.max(0, earnedUsd - alreadyCounted));
+    if (!(eligibleUsd > 0)) return;
+  }
 
   const pointsPerUsd = await getPointsPerUsd();
-  const points = Math.floor((amountUsd * (pct / 100)) * pointsPerUsd);
+  let points = Math.floor(eligibleUsd * (pct / 100) * pointsPerUsd);
   if (points <= 0) return;
+
+  // ── Rule 2: the rolling per-invitee ceiling ──
+  const cap = Math.max(0, Math.floor(cfg.moneyBonusMaxPointsPerUser));
+  if (cap > 0) {
+    const windowDays = Math.max(1, Math.floor(cfg.moneyBonusWindowDays));
+    const since = Date.now() - windowDays * 86_400_000;
+    const spent = history
+      .filter((h) => h.at >= since)
+      .reduce((sum, h) => sum + h.points, 0);
+    const headroom = cap - spent;
+    if (headroom <= 0) return;
+    points = Math.min(points, headroom);
+    if (points <= 0) return;
+  }
 
   const verb = kind === "DEPOSIT" ? "deposited" : "withdrew";
   await awardBonus({
-    referrerId: referred.referredById,
+    referrerId,
     referredUserId,
     points,
     reference: `refbonus_${kind.toLowerCase()}_${sourceRef}`,
@@ -514,8 +567,62 @@ export async function awardReferralMoneyBonus(
     description: `Referral ${kind.toLowerCase()} bonus (${pct}%)`,
     notifyTitle: "Referral bonus!",
     notifyMessage: `Someone you invited ${verb} funds — you earned ${points.toLocaleString()} points.`,
-    meta: { kind, pct, amountUsd },
+    // `eligibleUsd` is what the bonus was actually computed on, and it is what
+    // rule 1 reads back on the next withdrawal. Recording `amountUsd` instead
+    // would let a single genuine payout consume the whole earned allowance.
+    meta: { kind, pct, amountUsd: eligibleUsd, movedUsd: amountUsd },
   });
+}
+
+/**
+ * Every deposit/withdrawal bonus this referrer has been paid for this one
+ * invitee, newest first.
+ *
+ * Read off the ledger rather than a counter column: the rows are already
+ * written, already idempotent, and a counter would be a second source of truth
+ * for the same fact. `metadata` carries `referredUserId`, `kind` and the
+ * `amountUsd` the bonus was computed on — the reference cannot, because it has
+ * to stay keyed on the movement for idempotency.
+ */
+async function moneyBonusHistory(
+  referrerId: string,
+  referredUserId: string
+): Promise<Array<{ kind: string; points: number; amountUsd: number; at: number }>> {
+  try {
+    const rows = await prisma.transaction.findMany({
+      where: {
+        userId: referrerId,
+        type: TransactionType.REFERRAL,
+        OR: [
+          { reference: { startsWith: "refbonus_deposit_" } },
+          { reference: { startsWith: "refbonus_withdrawal_" } },
+        ],
+      },
+      select: { points: true, metadata: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    });
+    const out: Array<{ kind: string; points: number; amountUsd: number; at: number }> = [];
+    for (const r of rows) {
+      const meta = (r.metadata ?? {}) as Record<string, unknown>;
+      if (meta.referredUserId !== referredUserId) continue;
+      out.push({
+        kind: String(meta.kind ?? ""),
+        points: Number(r.points) || 0,
+        amountUsd: Number(meta.amountUsd) || 0,
+        at: r.createdAt.getTime(),
+      });
+    }
+    return out;
+  } catch {
+    // A failed read must not hand out an UNGUARDED bonus. Reporting "nothing
+    // paid yet" would do exactly that, so the caller sees a full history and
+    // the bonus is skipped this round instead.
+    return [
+      { kind: "DEPOSIT", points: Number.MAX_SAFE_INTEGER, amountUsd: Number.MAX_SAFE_INTEGER, at: Date.now() },
+      { kind: "WITHDRAWAL", points: Number.MAX_SAFE_INTEGER, amountUsd: Number.MAX_SAFE_INTEGER, at: Date.now() },
+    ];
+  }
 }
 
 /** Bonus when a referred user buys a package/subscription. */

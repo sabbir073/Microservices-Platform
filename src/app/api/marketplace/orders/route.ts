@@ -11,9 +11,7 @@ import {
 } from "@/generated/prisma";
 import { getPointsPerUsd } from "@/lib/economy";
 import { toNum } from "@/lib/money";
-
-// Platform fee percentage
-const PLATFORM_FEE_PERCENT = 5;
+import { resolveCommissionBps, splitPrice } from "@/lib/marketplace-commission";
 
 // GET /api/marketplace/orders - Get user's orders
 export async function GET(request: NextRequest) {
@@ -172,8 +170,14 @@ export async function POST(request: NextRequest) {
     const pointsPerUsd = await getPointsPerUsd();
     const priceNum = toNum(listing.price);
     const totalCost = Math.ceil(priceNum * pointsPerUsd); // Convert to points
-    const fee = priceNum * (PLATFORM_FEE_PERCENT / 100);
-    const sellerAmount = priceNum - fee;
+    // The fee is admin-set, resolved at ORDER time through the same path the
+    // other three checkout routes use. This one carried its own hardcoded 5%,
+    // so the admin's fee applied everywhere except here.
+    const bps = await resolveCommissionBps({
+      assetType: listing.assetType,
+      perListingOverride: listing.commissionRateBps,
+    });
+    const { fee, sellerAmount } = splitPrice(priceNum, bps);
 
     if (!buyer || buyer.pointsBalance < totalCost) {
       return NextResponse.json(

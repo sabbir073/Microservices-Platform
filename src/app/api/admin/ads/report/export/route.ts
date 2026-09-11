@@ -157,7 +157,13 @@ export async function GET(request: NextRequest) {
       const cur = groups.get(key) ?? { ...zero(), label };
       cur.impressions += s.impressions;
       cur.clicks += s.clicks;
-      cur.spend += toNum(s.spendUsd);
+      // Revenue only — house and network rows bill nothing into this database,
+      // and house daily rows still carry historical self-billed spend from
+      // before `recordClick` exempted house inventory. Matches the aggregation
+      // in /api/admin/ads/report; the CSV must not disagree with the screen.
+      if (!a.campaign?.isHouse && !isNetworkType(a.type)) {
+        cur.spend += toNum(s.spendUsd);
+      }
       if (a.campaign?.isHouse) cur.houseImpressions += s.impressions;
       if (isNetworkType(a.type)) cur.networkImpressions += s.impressions;
       groups.set(key, cur);

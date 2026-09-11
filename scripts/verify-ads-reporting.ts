@@ -347,6 +347,81 @@ async function main() {
     String(houseSpend._sum.spentTotal)
   );
 
+  /* C — the daily rollup is not a revenue column.
+   *
+   * `AdCampaign.spentTotal` was corrected when house inventory stopped billing
+   * itself; `AdDailyStat.spendUsd` never was, and still holds $1.95 of demo/house
+   * self-billing against $1.15 of real advertiser spend. Every surface that sums
+   * that column was therefore reporting ad revenue at ~2.7x — next to
+   * `revenue.lifetime`, which is derived from `spentTotal` and was right. The
+   * check above only looked at `spentTotal`, so it stayed green throughout.
+   */
+  console.log("\nC. House spend never counts as revenue in the rollup");
+  for (const [file, label] of [
+    ["app/api/admin/ads/analytics/route.ts", "the dashboard"],
+    ["app/api/admin/ads/report/route.ts", "the report"],
+    ["app/api/admin/ads/report/export/route.ts", "the CSV"],
+  ] as const) {
+    const c = code(file);
+    // The spend accumulator must sit behind a house/network guard, not sum blind.
+    const guarded =
+      /if\s*\(\s*!\s*(?:a\.campaign\?\.)?(?:house|isHouse)[\s\S]{0,120}?spend/.test(c) ||
+      /if\s*\(earning\.has\([\s\S]{0,60}?spendUsd/.test(c);
+    check(`${label} gates spend on earning inventory`, guarded);
+  }
+
+  const allStats = await prisma.adDailyStat.findMany({
+    select: { adId: true, clicks: true, impressions: true, spendUsd: true },
+  });
+  const allAds = await prisma.ad.findMany({
+    select: {
+      id: true,
+      type: true,
+      clicks: true,
+      impressions: true,
+      campaign: { select: { isHouse: true } },
+    },
+  });
+  const adById = new Map(allAds.map((a) => [a.id, a]));
+  const earningSpend = allStats.reduce((sum, s) => {
+    const a = adById.get(s.adId);
+    if (!a || a.campaign?.isHouse || a.type === "ADSENSE" || a.type === "GAM") return sum;
+    return sum + Number(s.spendUsd);
+  }, 0);
+  const paidSpentTotal = await prisma.adCampaign.aggregate({
+    where: { isHouse: false },
+    _sum: { spentTotal: true },
+  });
+  const lifetime = Number(paidSpentTotal._sum.spentTotal ?? 0);
+  check(
+    "rollup revenue, filtered, reconciles with lifetime billed spend",
+    Math.abs(earningSpend - lifetime) < 0.01,
+    `rollup ${earningSpend.toFixed(4)} vs spentTotal ${lifetime.toFixed(4)}`
+  );
+  const blindSpend = allStats.reduce((s, r) => s + Number(r.spendUsd), 0);
+  console.log(
+    `   unfiltered rollup would report $${blindSpend.toFixed(4)} against $${lifetime.toFixed(4)} of real revenue`
+  );
+
+  /* C2 — CTR cannot exceed 100%.
+   *
+   * A click is deduped per (ad, viewer, bucket) and so is an impression. When the
+   * click window was the SHORTER of the two, a returning viewer banked a second
+   * billed click inside one impression's window — 4 clicks on 3 impressions, live.
+   */
+  const ev = code("lib/ad-events.ts");
+  const clickMs = Number(/CLICK_COOLDOWN_MS\s*=\s*([\d_]+)/.exec(ev)?.[1]?.replace(/_/g, ""));
+  const viewMs = Number(/VIEW_COOLDOWN_MS\s*=\s*([\d_]+)/.exec(ev)?.[1]?.replace(/_/g, ""));
+  check(
+    "the click dedup window is at least as long as the view window",
+    Number.isFinite(clickMs) && Number.isFinite(viewMs) && clickMs >= viewMs,
+    `click ${clickMs}ms vs view ${viewMs}ms`
+  );
+  const impossible = allStats.filter((s) => s.clicks > s.impressions);
+  console.log(
+    `   ${impossible.length} daily row(s) still carry clicks > impressions (historic; the window fix stops new ones)`
+  );
+
   console.log(
     `\n${passed} passed, ${failures.length} failed` +
       (failures.length ? `\n\n${failures.map((f) => `  - ${f}`).join("\n")}\n` : "\n")

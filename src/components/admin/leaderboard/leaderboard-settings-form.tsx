@@ -256,12 +256,15 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
             <option value="COMBINED">
               Combined (mix of all 4 — recommended)
             </option>
-            <option value="POINTS_EARNED">Points Earned</option>
+            <option value="POINTS_EARNED">Points Earned (from tasks)</option>
             <option value="TASKS_COMPLETED">Tasks Completed</option>
             <option value="REFERRALS">Referrals</option>
             <option value="XP_EARNED">XP Earned</option>
           </select>
           <p className="text-[11px] text-slate-500 mt-1">
+            Points means points EARNED FROM TASKS, on this board and in the
+            payout. Marketplace sales are deliberately not counted: two accounts
+            selling the same item back and forth would otherwise both climb.
             Combined ranks each user by the average of their percentile across
             Points, XP, Tasks, and Team — so being well-rounded matters.
           </p>

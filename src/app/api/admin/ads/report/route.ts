@@ -74,7 +74,16 @@ export async function GET(req: NextRequest) {
     const bump = (cur: Agg) => {
       cur.impressions += s.impressions;
       cur.clicks += s.clicks;
-      cur.spend += spend;
+      // Spend is REVENUE here, so only inventory that can actually bill counts.
+      //
+      // `AdDailyStat.spendUsd` is not safe to sum blind: house rows carry
+      // historical spend from before `recordClick` learned to skip house
+      // inventory (the demo campaign billed itself down from its seeded budget),
+      // and those rows are still in the table. `AdCampaign.spentTotal` was
+      // corrected; the daily rollup never was — which is why this report and
+      // /admin/finance disagreed. Network ads bill nothing into this database
+      // either. Same rule, same set, as the eCPM denominator below.
+      if (!house && !network) cur.spend += spend;
       if (house) cur.houseImpressions += s.impressions;
       if (network) cur.networkImpressions += s.impressions;
     };

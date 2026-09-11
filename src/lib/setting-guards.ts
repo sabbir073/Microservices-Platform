@@ -55,6 +55,12 @@ export const NUMERIC_SETTING_BOUNDS: Record<string, SettingBound> = {
     label: "Withdrawal fee",
     why: "It is a percentage.",
   },
+  "marketplace.fee_percent": {
+    min: 0,
+    max: 100,
+    label: "Marketplace fee",
+    why: "It is a percentage. Above 100 the seller would owe money on a sale.",
+  },
   vat_pct: { min: 0, max: 100, label: "VAT", why: "It is a percentage." },
   "ads.credit_bonus_pct": {
     min: 0,

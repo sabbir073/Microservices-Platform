@@ -71,6 +71,7 @@ const DEFAULTS: SettingsBag = {
   // Buyer & task funding
   "buyer.enabled": true,
   "buyer.fee_percent": 0,
+  "marketplace.fee_percent": 5,
   "buyer.min_points_per_task": 1,
   "buyer.max_points_per_task": 100000,
   "buyer.max_completions": 100000,
@@ -155,6 +156,7 @@ const CATEGORY_FOR_KEY: Record<string, string> = {
   "bkash.usdToBdtRate": "financial",
   vat_enabled: "financial", vat_pct: "financial",
   "buyer.enabled": "financial", "buyer.fee_percent": "financial",
+  "marketplace.fee_percent": "financial",
   "buyer.min_points_per_task": "financial",
   "buyer.max_points_per_task": "financial",
   "buyer.max_completions": "financial",
@@ -418,6 +420,23 @@ export function SystemSettingsForm({
                 value={Number(values.withdrawal_fee_percent ?? 5)}
                 onChange={(e) =>
                   set("withdrawal_fee_percent", parseFloat(e.target.value))
+                }
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
+            <Field
+              label="Marketplace fee (%)"
+              hint="The platform's cut of every marketplace sale — taken out of the seller's payout, not added to the buyer's price. Per-listing and per-asset-type overrides on the Marketplace commission screen still win over this."
+            >
+              <input
+                type="number"
+                step={0.1}
+                min={0}
+                max={100}
+                value={Number(values["marketplace.fee_percent"] ?? 5)}
+                onChange={(e) =>
+                  set("marketplace.fee_percent", parseFloat(e.target.value))
                 }
                 disabled={!canEdit}
                 className={inp}

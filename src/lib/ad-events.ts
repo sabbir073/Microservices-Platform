@@ -17,7 +17,21 @@ import { servableCampaignWhere } from "@/lib/ad-serve";
  * inflate/dilute any ad's impressions.
  */
 
-const CLICK_COOLDOWN_MS = 30_000;
+/**
+ * Click dedup window. MUST NOT be shorter than `VIEW_COOLDOWN_MS`.
+ *
+ * It was 30s against a 60s view window, and the two windows are what CTR is
+ * made of: one impression is counted per (ad, viewer, minute), but two clicks
+ * could be counted inside that same minute. A viewer who clicks, comes back and
+ * clicks again 31 seconds later produced 2 clicks against 1 impression — a
+ * CTR above 100%, which is not a rounding artefact but an impossible number,
+ * and the advertiser was billed for the second click as well.
+ *
+ * That was live: ad cmt7d8f5y0407g8mg8eqqt5gu on PACKAGES_TOP sat at 4 clicks
+ * against 3 impressions. Aligning the windows makes a billed click impossible
+ * without an impression to hang it on.
+ */
+const CLICK_COOLDOWN_MS = 60_000;
 const VIEW_COOLDOWN_MS = 60_000;
 
 /** Stable, non-identifying subject key for an anonymous viewer. */

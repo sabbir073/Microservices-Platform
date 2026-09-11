@@ -11,9 +11,9 @@ import { z } from "zod";
 import {
   computeCombinedTopUsers,
   getEligiblePackages,
+  topTaskEarners,
 } from "@/lib/leaderboard";
 import { getPointsPerUsd } from "@/lib/economy";
-import { toNum } from "@/lib/money";
 import { invalidateSettingsCache } from "@/lib/system-settings";
 import { isDuplicateLedgerError } from "@/lib/idempotency";
 import { NON_STAFF_WHERE } from "@/lib/staff";
@@ -126,28 +126,39 @@ async function topUsers(metric: Metric, take: number, eligibleSet: Set<string>) 
   ) => rows.filter((u) => u.package?.slug && eligibleSet.has(u.package.slug.toUpperCase())).slice(0, take);
 
   if (metric === "POINTS_EARNED") {
-    const pointsPerUsd = await getPointsPerUsd();
+    // POINTS EARNED means points earned FROM TASKS, and it is the exact same
+    // `topTaskEarners` the public board ranks on. It used to be
+    // `User.totalEarnings` DESC — a counter a marketplace sale also bumps, so a
+    // pair of accounts trading with each other could buy their way into a prize
+    // that this route then paid out in real balance.
+    //
+    // The board and the payout must agree; a leaderboard that ranks one way and
+    // pays another is worse than either one on its own.
+    const earners = await topTaskEarners(POOL);
     const usersRaw = await prisma.user.findMany({
-      where: NON_STAFF_WHERE,
-      orderBy: { totalEarnings: "desc" },
-      take: POOL,
+      where: { id: { in: earners.map((e) => e.userId) }, ...NON_STAFF_WHERE },
       select: {
         id: true,
         name: true,
-        totalEarnings: true,
         package: { select: { slug: true } },
       },
     });
     const users = usersRaw as unknown as Array<{
       id: string;
       name: string | null;
-      totalEarnings: number;
       package: { slug: string } | null;
     }>;
-    return filterByEligibility(users).map((u) => ({
+    const byId = new Map(users.map((u) => [u.id, u]));
+    // Re-ordered by the aggregate, not by whatever order the hydrate came back
+    // in, then trimmed to the eligible top N.
+    const ordered = earners.flatMap((e) => {
+      const u = byId.get(e.userId);
+      return u ? [{ ...u, value: e.points }] : [];
+    });
+    return filterByEligibility(ordered).map((u) => ({
       userId: u.id,
       name: u.name,
-      value: Math.round(toNum(u.totalEarnings) * pointsPerUsd),
+      value: u.value,
     }));
   }
   if (metric === "XP_EARNED") {

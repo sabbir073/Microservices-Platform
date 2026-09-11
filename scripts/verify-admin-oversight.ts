@@ -442,5 +442,57 @@ check(
   "the type is fixed there — the URL step only makes sense while creating"
 );
 
+/* ────────────────────────────────────────────────────────────────
+   A deposit can be corrected to the amount that actually arrived
+   ──────────────────────────────────────────────────────────────── */
+console.log("\nDeposits — the admin credits what arrived, visibly");
+
+const dep = code("src/app/api/admin/deposits/[id]/route.ts");
+const depUi = code("src/components/admin/deposits/admin-deposits-view.tsx");
+
+check(
+  "the route accepts a corrected amount at all",
+  /body\.amount/.test(dep) && /correctedAmount/.test(dep),
+  "the user-typed amount was the only number the admin could credit"
+);
+check(
+  "a nonsense amount is refused rather than credited",
+  /rawCorrected\s*<=\s*0/.test(dep) && /Number\.isFinite\(rawCorrected\)/.test(dep)
+);
+check(
+  "the CORRECTED amount is what reaches the balance and the ledger",
+  /cashBalance:\s*\{\s*increment:\s*creditedAmount\s*\}/.test(dep) &&
+    /amount:\s*creditedAmount,/.test(dep),
+  "crediting one number and recording another is how a ledger stops reconciling"
+);
+check(
+  "…and what the referral cut is computed from",
+  /awardReferralMoneyBonus\(\s*deposit\.userId,\s*"DEPOSIT",\s*creditedAmount/.test(dep),
+  "paying a percentage of a number nobody actually sent is free money"
+);
+check(
+  "the original survives the correction on the record itself",
+  /Amount corrected from \$\{usd\(requestedAmount\)\} to/.test(dep) &&
+    /requestedAmount,/.test(dep),
+  "a silently altered amount is worse than no correction at all"
+);
+check(
+  "the correction is audited against the affected account",
+  /action: "DEPOSIT_AMOUNT_CORRECTED"/.test(dep) &&
+    /DEPOSIT_AMOUNT_CORRECTED"[\s\S]{0,400}targetUserId: deposit\.userId/.test(dep),
+  "a blank targetUserId makes the action invisible on that user's activity"
+);
+check(
+  "idempotency is untouched — the status CAS and the ledger reference stand",
+  /updateMany\(\{\s*where:\s*\{\s*id,\s*status:\s*"PENDING"\s*\}/.test(dep) &&
+    /reference: `deposit_\$\{deposit\.id\}`/.test(dep),
+  "a deposit already credited must not credit again at any amount"
+);
+check(
+  "the admin UI actually sends it",
+  /setAmounts\(/.test(depUi) && /\{ amount: received \}/.test(depUi),
+  "a route nobody can reach is the same as no route"
+);
+
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed === 0 ? 0 : 1);
