@@ -299,7 +299,7 @@ function SingleFileField({
       )}
       {value && !isImage && (
         <div className="flex items-center gap-2 p-2.5 rounded-lg border border-gray-800 bg-gray-950">
-          <span className="text-xs text-gray-300 truncate flex-1 font-mono">
+          <span className="text-xs text-gray-300 truncate flex-1 min-w-0 font-mono">
             {value}
           </span>
           <button

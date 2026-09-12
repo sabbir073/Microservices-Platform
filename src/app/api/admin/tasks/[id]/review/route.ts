@@ -3,10 +3,8 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
-import { usd } from "@/lib/utils";
 import { notifyUser } from "@/lib/notify";
-import { getPointsPerUsd } from "@/lib/economy";
-import { TransactionType, TransactionStatus, NotificationType } from "@/generated/prisma/client";
+import { NotificationType } from "@/generated/prisma/client";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -44,15 +42,40 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     );
   }
 
+  // A rejection without a reason is one the buyer cannot act on: they paid for
+  // this, and "rejected" alone tells them nothing to change. Required on the
+  // server too, so it holds for any caller, not just the admin UI.
+  if (action === "reject" && reason.length < 5) {
+    return NextResponse.json(
+      { error: "Give the buyer a reason — they see it in their Buyer Hub." },
+      { status: 400 }
+    );
+  }
+
   if (action === "approve") {
-    await prisma.task.update({ where: { id }, data: { status: "ACTIVE" } });
+    // The admin may narrow who sees a buyer's task to a plan tier as they
+    // approve it. Deliberately admin-only: the buyer's create endpoint does not
+    // accept `requiredAccessLevel` at all, so a buyer can neither restrict
+    // their task to premium members nor widen it past what was approved.
+    const rawLevel = Number(body.requiredAccessLevel);
+    const requiredAccessLevel = Number.isFinite(rawLevel)
+      ? Math.max(0, Math.min(100, Math.floor(rawLevel)))
+      : null;
+
+    await prisma.task.update({
+      where: { id },
+      data: {
+        status: "ACTIVE",
+        ...(requiredAccessLevel === null ? {} : { requiredAccessLevel }),
+      },
+    });
     if (task.fundedByUserId) {
       await notifyUser({
         userId: task.fundedByUserId,
         type: NotificationType.SYSTEM,
         title: "Task approved ✅",
         message: `Your task "${task.title}" is approved and now live.`,
-        link: "/create-task",
+        link: "/buyer",
       }).catch(() => {});
     }
     await writeAudit({
@@ -61,42 +84,34 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       entity: "Task",
       entityId: id,
       targetUserId: task.fundedByUserId ?? null,
-      summary: `Approved "${task.title}" — now live`,
-      meta: { decision: "approve", title: task.title },
+      summary: `Approved "${task.title}" — now live${
+        requiredAccessLevel ? ` (plans at level ${requiredAccessLevel}+)` : ""
+      }`,
+      meta: {
+        decision: "approve",
+        title: task.title,
+        requiredAccessLevel,
+      },
     });
     return NextResponse.json({ success: true, status: "ACTIVE" });
   }
 
-  // Reject → refund the remaining budget to the creator's wallet.
-  const pointsPerUsd = await getPointsPerUsd();
-  const refundUsd =
-    task.fundedByUserId && task.remainingBudget > 0
-      ? task.remainingBudget / pointsPerUsd
-      : 0;
-
+  // Reject -> there is nothing to refund, and that is the point.
+  //
+  // Credit is charged one completion at a time, so a task that never went live
+  // has never cost its buyer anything. Under the old reserve-up-front model
+  // this route had to hand back the pool AND the fee, and every other way a
+  // task can end — expired, paused, archived, closed early — needed the same
+  // refund or it silently kept the buyer's points. Charging on use removes the
+  // whole class of bug rather than adding a fifth place to remember.
+  //
+  // `remainingBudget` is zeroed anyway: it is the task's outstanding PROMISE,
+  // and a rejected task promises nothing.
   await prisma.$transaction(async (tx) => {
     await tx.task.update({
       where: { id },
-      data: { status: "REJECTED", remainingBudget: 0, rejectionReason: reason || "Not approved." },
+      data: { status: "REJECTED", remainingBudget: 0, rejectionReason: reason },
     });
-    if (task.fundedByUserId && refundUsd > 0) {
-      await tx.user.update({
-        where: { id: task.fundedByUserId },
-        data: { cashBalance: { increment: refundUsd } },
-      });
-      await tx.transaction.create({
-        data: {
-          userId: task.fundedByUserId,
-          type: TransactionType.REFUND,
-          status: TransactionStatus.COMPLETED,
-          amount: refundUsd,
-          points: 0,
-          description: `Task budget refund — "${task.title}"`,
-          reference: `task_refund_${task.id}`,
-          metadata: { taskId: task.id, kind: "task_refund" },
-        },
-      });
-    }
   });
 
   if (task.fundedByUserId) {
@@ -104,8 +119,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
       userId: task.fundedByUserId,
       type: NotificationType.SYSTEM,
       title: "Task rejected",
-      message: `Your task "${task.title}" was rejected${reason ? `: ${reason}` : ""}. Your budget was refunded.`,
-      link: "/create-task",
+      message: `Your task "${task.title}" was rejected${reason ? `: ${reason}` : ""}. No credit was charged — you are only ever charged for completions.`,
+      link: "/buyer",
     }).catch(() => {});
   }
   await writeAudit({
@@ -114,8 +129,8 @@ export async function POST(req: NextRequest, { params }: RouteParams) {
     entity: "Task",
     entityId: id,
     targetUserId: task.fundedByUserId ?? null,
-    summary: `Rejected "${task.title}"${reason ? ` — ${reason}` : ""} · refunded ${usd(refundUsd)}`,
-    meta: { decision: "reject", reason: reason ?? null, refundUsd, title: task.title },
+    summary: `Rejected "${task.title}"${reason ? ` — ${reason}` : ""} · nothing was charged`,
+    meta: { decision: "reject", reason: reason ?? null, title: task.title },
   });
-  return NextResponse.json({ success: true, status: "REJECTED", refundUsd });
+  return NextResponse.json({ success: true, status: "REJECTED" });
 }

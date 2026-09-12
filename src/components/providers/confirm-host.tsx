@@ -42,7 +42,7 @@ const TONE: Record<
     icon: AlertTriangle,
     accent: "text-amber-400",
     ring: "bg-amber-500/10 ring-1 ring-amber-500/20",
-    confirmBtn: "bg-amber-500 hover:bg-amber-600 text-gray-900",
+    confirmBtn: "bg-amber-500 hover:bg-amber-600 text-(--app-on-bright)",
   },
   danger: {
     icon: AlertTriangle,

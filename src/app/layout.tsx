@@ -30,6 +30,7 @@ import { RewardInterstitialHost } from "@/components/providers/reward-interstiti
 import { AdblockHost } from "@/components/providers/adblock-host";
 import { PageViewTracker } from "@/components/analytics/page-view-tracker";
 import { getUiToggles } from "@/lib/ui-toggles-server";
+import { kickScheduler } from "@/lib/scheduler/run";
 import "./globals.css";
 
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://earngpt.app";
@@ -119,6 +120,11 @@ export default async function RootLayout({
   // reads. When the CMP is enabled it owns consent and ours stands down;
   // `src/lib/ad-consent.ts` keeps reading the stored preference either way, so
   // nothing regresses for non-EEA traffic.
+  // The platform's own traffic is the scheduler. This registers the tick to run
+  // AFTER this response is flushed (see `lib/scheduler/run`) — it awaits
+  // nothing, it cannot throw, and nobody looking at a page ever waits for it.
+  kickScheduler();
+
   const [ui, googleCmp] = await Promise.all([
     getUiToggles(),
     getSetting<boolean>("ads.google_cmp_enabled", false),

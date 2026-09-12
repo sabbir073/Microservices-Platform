@@ -298,7 +298,7 @@ function MultiSelect({
                   >
                     {on && <Check className="w-3 h-3 text-white" />}
                   </span>
-                  <span className="text-xs text-white flex-1 truncate">{o.label}</span>
+                  <span className="text-xs text-white flex-1 min-w-0 truncate">{o.label}</span>
                   {o.count !== undefined && (
                     <span className="text-[10px] text-slate-500 tabular-nums">{o.count.toLocaleString()}</span>
                   )}

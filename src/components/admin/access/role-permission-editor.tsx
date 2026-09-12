@@ -11,6 +11,7 @@ import {
   Save,
   Check,
   Minus,
+  Search,
 } from "lucide-react";
 
 type PermCategory = { label: string; permissions: string[] };
@@ -46,6 +47,7 @@ export function RolePermissionEditor({
   const [sets, setSets] = useState<Record<string, Set<string>>>(seed);
   const [selected, setSelected] = useState(editableRoles[0]?.role ?? "");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [query, setQuery] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -54,8 +56,23 @@ export function RolePermissionEditor({
   // Hide permissions this role may never hold (finance for non-finance roles,
   // admins.manage for all editable roles) — never-offered, not just stripped.
   const hidden = new Set(hiddenPermsByRole?.[selected] ?? []);
+  // Search across key, label AND description. There are ~100 permissions in 15
+  // groups; without this the only way to answer "which toggle lets them approve
+  // a withdrawal?" is to open every group and read. Matching the description
+  // too is what makes plain-language search work — "payout" finds
+  // withdrawals.approve even though the word is not in the key.
+  const needle = query.trim().toLowerCase();
+  const matches = (p: string) =>
+    !needle ||
+    p.toLowerCase().includes(needle) ||
+    permissionLabel(p).toLowerCase().includes(needle) ||
+    (permissionDescription(p) ?? "").toLowerCase().includes(needle);
+
   const visibleCategories = categories
-    .map((c) => ({ ...c, permissions: c.permissions.filter((p) => !hidden.has(p)) }))
+    .map((c) => ({
+      ...c,
+      permissions: c.permissions.filter((p) => !hidden.has(p) && matches(p)),
+    }))
     .filter((c) => c.permissions.length > 0);
 
   const mutate = (fn: (s: Set<string>) => void) => {
@@ -178,11 +195,29 @@ export function RolePermissionEditor({
         ))}
       </div>
 
+      {/* Permission search */}
+      <div className="relative mt-4">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search permissions — name or what it does…"
+          className="w-full rounded-lg border border-slate-700 bg-slate-950 py-2 pl-9 pr-3 text-sm text-white placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+      {needle && visibleCategories.length === 0 && (
+        <p className="mt-4 text-center text-sm text-slate-500">
+          No permission matches “{query}” for this role.
+        </p>
+      )}
+
       {/* Category toggles + advanced */}
       <div className="mt-5 space-y-3">
         {visibleCategories.map((cat) => {
           const state = catState(cat);
-          const open = expanded[cat.label] ?? false;
+          // A search result that stays collapsed is not a search result.
+          const open = needle ? true : expanded[cat.label] ?? false;
           return (
             <div
               key={cat.label}

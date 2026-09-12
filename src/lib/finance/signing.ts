@@ -54,6 +54,13 @@ const INTERNAL_SOURCES = new Set<SourceKey>([
   "marketplace", // buyer pays seller; the house fee is on MarketplacePurchase
   "convert", // points → cash, same money in a different unit
   "adcredit", // wallet cash → ad credit; revenue lands when the credit is SPENT
+  // Buying task credit is wallet cash becoming task points — exactly the same
+  // shape change as ad credit, and it was being counted as REVENUE because
+  // `taskcredit` rows are typed PURCHASE. That inflated income by the entire
+  // amount every buyer topped up, and then AGAIN by the `taskspend_` row when
+  // the credit was used. The platform's take on a funded task is the separate
+  // `taskfee` bucket below, which is the only part that is real income.
+  "taskcredit",
 ]);
 
 /**
@@ -83,6 +90,8 @@ export function direction(row: LedgerRow): Direction {
     case "LOTTERY_WIN":
     case "CHECKIN":
     case "GIFT":
+      // BONUS also carries staff payroll (`payroll_` reference). It is a cost
+      // either way — the difference is only which bucket it lands in.
       return "cost";
 
     // Users paying the platform.
@@ -170,4 +179,20 @@ export function sourceOf(row: LedgerRow): SourceKey {
  */
 export function amountIsUserValue(row: LedgerRow): boolean {
   return !(row.reference ?? "").toLowerCase().startsWith("offerwall");
+}
+
+/**
+ * Rows whose money lives in `points`, with `amount` left at zero.
+ *
+ * The buyer task fee is written as `ADMIN_FEE` with `amount: 0` and
+ * `points: -feePoints` — the points were bought with real cash, so the platform
+ * keeping them IS income, but a report that reads `amount` sees `$0.00`. That
+ * is the console's founding bug wearing a new hat: a revenue stream recorded and
+ * never summed. The same is true of the `taskspend_` mirror row.
+ *
+ * Detected by shape rather than by reference prefix, so the next points-only
+ * ledger row is counted without anyone having to remember this function.
+ */
+export function pointsDenominated(row: LedgerRow): boolean {
+  return Math.abs(Number(row.amount ?? 0)) < 1e-9 && Math.abs(Number(row.points ?? 0)) > 0;
 }

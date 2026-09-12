@@ -172,7 +172,7 @@ export default async function MarketplaceDetailPage({ params }: PageProps) {
                     className="p-3 bg-gray-800/50 rounded-lg flex items-center gap-3"
                   >
                     <FileText className="w-5 h-5 text-gray-400" />
-                    <span className="text-sm text-gray-300 truncate flex-1">{file}</span>
+                    <span className="text-sm text-gray-300 truncate min-w-0 flex-1">{file}</span>
                   </div>
                 ))}
               </div>

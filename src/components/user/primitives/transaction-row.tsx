@@ -2,7 +2,9 @@ import { cn } from "@/lib/utils";
 import {
   ArrowUpRight,
   ArrowDownToLine,
+  BadgeDollarSign,
   Coins,
+  Receipt,
   Gift,
   ShoppingBag,
   ShoppingCart,
@@ -29,6 +31,9 @@ const ICONS: Record<string, LucideIcon> = {
   ListChecks, MessageSquare, Users, Handshake, GraduationCap, ShoppingBag,
   ArrowDownToLine, ArrowUpRight, Repeat, Sparkles, Trophy, CalendarCheck,
   Megaphone, ShoppingCart, Undo2, Shield, Coins, Gift,
+  // `taskfee` and `payroll` name these in SOURCE_META; without them both fell
+  // through to the generic Coins fallback.
+  Receipt, BadgeDollarSign,
 };
 
 interface TransactionRowProps {
@@ -44,10 +49,10 @@ interface TransactionRowProps {
 }
 
 const STATUS_TONE: Record<TxStatus, string> = {
-  PENDING: "bg-amber-500/10 text-amber-400",
-  COMPLETED: "bg-emerald-500/10 text-emerald-400",
-  FAILED: "bg-red-500/10 text-red-400",
-  CANCELLED: "bg-gray-700 text-gray-400",
+  PENDING: "app-chip-warn",
+  COMPLETED: "app-chip-in",
+  FAILED: "app-chip-out",
+  CANCELLED: "",
 };
 
 export function TransactionRow({
@@ -69,43 +74,36 @@ export function TransactionRow({
   return (
     <div
       className={cn(
-        "flex items-center gap-3 py-3 border-b border-gray-800/60 last:border-b-0",
+        "flex items-center gap-3 py-3 border-b border-(--app-line) last:border-b-0",
         className
       )}
     >
-      <div
-        className={cn(
-          "w-9 h-9 rounded-full flex items-center justify-center shrink-0",
-          meta.tone
-        )}
-      >
+      {/* `meta.tone` gave every transaction source its own hue, so a ledger of
+          twelve rows was a column of twelve different circles. A ledger has
+          exactly two meanings worth a colour and they are on the right-hand
+          figure: money in, money out. */}
+      <div className="app-icon rounded-full">
         <Icon className="w-4 h-4" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-sm text-white truncate">{description}</p>
-        <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
-          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-gray-800 text-gray-400 shrink-0">
-            {meta.label}
-          </span>
-          <span className="text-[10px] text-gray-500 truncate" title={format(dt, "PPp")}>
+        <p className="t-body font-medium text-white truncate">{description}</p>
+        <div className="flex items-center gap-1.5 mt-1 min-w-0">
+          <span className="app-chip uppercase shrink-0">{meta.label}</span>
+          <span className="t-meta text-gray-500 truncate" title={format(dt, "PPp")}>
             {formatDistanceToNow(dt, { addSuffix: true })}
           </span>
           {status && status !== "COMPLETED" && (
-            <span
-              className={cn(
-                "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0",
-                STATUS_TONE[status]
-              )}
-            >
+            <span className={cn("app-chip uppercase shrink-0", STATUS_TONE[status])}>
               {status}
             </span>
           )}
         </div>
       </div>
+      {/* The one genuinely semantic colour pair in the product. */}
       <div
         className={cn(
-          "text-sm font-bold tabular-nums shrink-0",
-          isOutflow ? "text-red-400" : "text-emerald-400"
+          "t-figure-sm shrink-0",
+          isOutflow ? "t-out" : "t-in"
         )}
       >
         {sign}

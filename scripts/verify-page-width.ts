@@ -70,11 +70,22 @@ function main() {
       /(^|\s)w-full(\s|$)/.test(mainTag)
     );
     // The paddings and the anchor-ad allowance must survive the edit.
+    // The floor is what matters, not the spelling. `px-4` became
+    // `px-(--app-pad)` when the app got a spacing scale; `--app-pad` clamps at
+    // 1rem, which IS px-4, and grows from there. So accept either, but prove
+    // the token really does floor at 1rem rather than trusting its name.
+    const padFloorOk =
+      mainTag.includes("px-4") ||
+      (mainTag.includes("px-(--app-pad)") &&
+        /--app-pad:\s*clamp\(\s*1rem/.test(
+          read("src/app/globals.css")
+        ));
     check(
       "the existing padding and anchor-ad allowance are intact",
-      /px-4/.test(mainTag) &&
+      padFloorOk &&
         /lg:px-8/.test(mainTag) &&
-        /--anchor-ad-h/.test(mainTag)
+        /--anchor-ad-h/.test(mainTag),
+      "a page that loses its horizontal padding puts text against the screen edge"
     );
   }
 
@@ -139,10 +150,27 @@ function main() {
     // Width only. Forcing the slot's aspect ratio onto a creative that does not
     // declare one would contain a 600x200 demo down to ~270px inside a 728x90
     // box — smaller than before the fix.
+    // No forced ratio AT ALL on a loaded creative now — not the slot's, not the
+    // creative's own. A box plus `object-contain` letterboxes, and the dark slab
+    // that leaves is what the owner reported as black bars. The image sets its
+    // own height; `minHeight` reserves the row so nothing jumps. Reserving
+    // height does not decide shape, which is the whole distinction.
     check(
-      "the fallback does NOT force the slot's aspect ratio",
-      s.includes("aspectRatio: `${dim.w} / ${dim.h}`") &&
-        !s.includes("aspectRatio: `${slotDim")
+      "a loaded creative is never letterboxed into a fixed box",
+      !/aspectRatio:\s*`\$\{(dim|slotDim|reserve)/.test(s) &&
+        /block h-auto w-full/.test(s),
+      "object-contain inside a forced ratio is what put black bars on every card"
+    );
+    check(
+      "…but it still reserves height, so the page does not jump",
+      /minHeight: Math\.min\(/.test(s) && /maxHeight: spec\.maxHeightPx/.test(s),
+      "43 rows resolve to no dimensions at all; h-auto alone moved everything under them"
+    );
+    // The SKELETON keeps a ratio on purpose — it has no picture to distort, and
+    // reserving a shaped box is exactly its job.
+    check(
+      "the skeleton still reserves a shaped box",
+      /aspectRatio: reserved \?/.test(s)
     );
 
     // The behaviour that fix depends on, asserted against the real tables

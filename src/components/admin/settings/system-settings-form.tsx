@@ -4,6 +4,7 @@ import { confirmDialog } from "@/lib/confirm";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   Settings as SettingsIcon,
   DollarSign,
@@ -17,68 +18,102 @@ import {
   Save,
   Send,
   MonitorSmartphone,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
-import { cn } from "@/lib/utils";
-import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
-import { Section, Toggle } from "@/components/admin/shared/controls";
+import { cn, usd } from "@/lib/utils";
+import {
+  NotActiveBadge,
+  Section,
+  Toggle,
+} from "@/components/admin/shared/controls";
+import { BUYER_TASK_TYPES } from "@/lib/buyer-task-types";
+import {
+  CATEGORY_FOR_KEY,
+  SETTING_GROUPS,
+  settingDomId,
+  settingEntry,
+  type SettingGroupId,
+} from "@/lib/admin-settings-catalog";
+import { SettingsSearch } from "./settings-search";
 
 export type SettingsBag = Record<string, unknown>;
 
 interface SystemSettingsFormProps {
   initial: SettingsBag;
   canEdit: boolean;
+  /**
+   * The social platform catalog, for the buyer allow-list. Passed as data
+   * because `social-tasks.ts` is ~3,000 lines and this is a client component.
+   */
+  platformList?: { key: string; label: string; emoji: string }[];
 }
 
-const TABS = [
-  { id: "general", label: "General", icon: SettingsIcon },
-  { id: "financial", label: "Financial", icon: DollarSign },
-  { id: "security", label: "Security", icon: Shield },
-  { id: "email", label: "Email", icon: Mail },
-  { id: "notifications", label: "Notifications", icon: Bell },
-  { id: "integrations", label: "Integrations", icon: Plug },
-  { id: "limits", label: "Limits", icon: SlidersHorizontal },
-  { id: "ui_toggles", label: "Toggles", icon: MonitorSmartphone },
-] as const;
+const TAB_ICONS: Record<SettingGroupId, typeof SettingsIcon> = {
+  general: SettingsIcon,
+  financial: DollarSign,
+  limits: SlidersHorizontal,
+  security: Shield,
+  ui_toggles: MonitorSmartphone,
+  notifications: Bell,
+  email: Mail,
+  integrations: Plug,
+};
 
-type TabId = (typeof TABS)[number]["id"];
+/**
+ * The tab strip. Names, order and the one-line blurb under each tab all come
+ * from `SETTING_GROUPS`, so the tab an admin clicks and the group a key is
+ * filed under are the same fact stated once. Only the icon is chosen here.
+ */
+const TABS = [...SETTING_GROUPS]
+  .sort((a, b) => a.order - b.order)
+  .map((g) => ({ ...g, icon: TAB_ICONS[g.id] }));
+
+type TabId = SettingGroupId;
 
 const DEFAULTS: SettingsBag = {
   // General
   platform_name: "EarnGPT",
-  platform_url: "https://earngpt.com",
-  support_email: "support@earngpt.com",
-  logo_url: "/logo.png",
-  favicon_url: "/favicon.ico",
-  timezone: "UTC",
-  language: "en",
-  workspace_locked: false,
   maintenance_mode: false,
+  maintenance_message: "",
   // Financial
   currency: "USD",
+  // The global click price every ad space falls back to. Not a new default —
+  // 0.05 is the value `getAdClickCost()` has always used when the row is absent;
+  // it is stated here so the form shows what is actually in force.
+  "ads.cpcUsd": 0.05,
   min_withdrawal: 5,
   max_withdrawal: 10000,
-  withdrawal_fee_pct: 2.5,
-  referral_l1_pct: 10,
-  referral_l2_pct: 5,
-  referral_l3_pct: 2,
-  task_reward_multiplier: 1.0,
+  withdrawal_fee_percent: 5,
+  allow_withdrawals: true,
+  withdrawal_requires_subscription: false,
+  withdrawal_payout_time_message: "1-3 business days",
   points_per_usd: 1000,
+  points_convert_threshold: 1000,
+  "bkash.usdToBdtRate": 123,
   vat_enabled: false,
   vat_pct: 15,
+  // Buyer & task funding
+  "buyer.enabled": true,
+  "buyer.fee_percent": 0,
+  "marketplace.fee_percent": 5,
+  "buyer.min_points_per_task": 1,
+  "buyer.max_points_per_task": 100000,
+  "buyer.max_completions": 100000,
+  "buyer.min_purchase_points": 1000,
+  "buyer.max_purchase_points": 10000000,
+  "buyer.max_active_tasks": 0,
+  "buyer.allowed_task_types": ["SOCIAL", "VIDEO", "CUSTOM"],
+  "buyer.require_kyc": false,
+  "buyer.auto_approve_tasks": false,
+  "buyer.refund_fee_on_reject": true,
   // Security
-  session_timeout_seconds: 3600,
-  max_login_attempts: 5,
   password_min_length: 8,
-  require_kyc: true,
-  require_2fa: false,
   require_strong_passwords: true,
-  ip_whitelist_enabled: false,
-  fraud_detection_enabled: true,
-  require_full_profile_for_withdraw: false,
   "kyc.autoEnabled": true,
   "kyc.faceMinSimilarity": 88,
   "kyc.ocrMinConfidence": 0.7,
+  "kyc.ocrRejectBelow": 0.2,
   // Email
   smtp_host: "smtp.gmail.com",
   smtp_port: 587,
@@ -89,31 +124,27 @@ const DEFAULTS: SettingsBag = {
   email_notifications_enabled: true,
   // Notifications
   push_notifications_enabled: true,
-  sms_notifications_enabled: false,
   notify_new_task: true,
   notify_withdrawal: true,
   notify_referral: true,
   notify_level_up: true,
   // Integrations
   gemini_api_key: "",
-  stripe_public_key: "",
-  stripe_secret_key: "",
-  twilio_sid: "",
-  twilio_token: "",
-  google_analytics_id: "",
-  facebook_pixel_id: "",
+  "bkash.appKey": "",
+  "bkash.appSecret": "",
+  "bkash.username": "",
+  "bkash.password": "",
+  "sslcommerz.storeId": "",
+  "sslcommerz.storePasswd": "",
   "integrations.telegram_bot_token": "",
   "integrations.telegram_bot_username": "",
   "integrations.discord_client_id": "",
   "integrations.discord_client_secret": "",
   "integrations.discord_bot_token": "",
   // Limits
-  max_tasks_per_day: 50,
-  max_withdrawals_per_day: 3,
-  max_referrals_per_user: 1000,
-  max_active_listings: 10,
-  file_upload_max_mb: 5,
-  api_rate_limit_per_min: 100,
+  max_withdrawals_per_day: 1,
+  max_referrals_per_user: 0,
+  max_active_listings: 0,
   "ai.daily_limit_per_user": 50,
   "social.ai_regenerate_limit": 2,
   "tasks.sequential_unlock": false,
@@ -134,72 +165,14 @@ const DEFAULTS: SettingsBag = {
   "ui.require_profile_completion": false,
   "ui.require_kyc_for_withdrawal": true,
   "ui.groups_enabled": false,
+  analytics_pageviews_enabled: true,
 };
 
-const CATEGORY_FOR_KEY: Record<string, string> = {
-  // General
-  platform_name: "general", platform_url: "general", support_email: "general",
-  logo_url: "general", favicon_url: "general", timezone: "general",
-  language: "general", workspace_locked: "general", maintenance_mode: "general",
-  // Financial
-  currency: "financial", min_withdrawal: "financial", max_withdrawal: "financial",
-  withdrawal_fee_pct: "financial", referral_l1_pct: "financial",
-  referral_l2_pct: "financial", referral_l3_pct: "financial",
-  task_reward_multiplier: "financial", points_per_usd: "financial",
-  vat_enabled: "financial", vat_pct: "financial",
-  // Security
-  session_timeout_seconds: "security", max_login_attempts: "security",
-  password_min_length: "security", require_kyc: "security", require_2fa: "security",
-  require_strong_passwords: "security", ip_whitelist_enabled: "security",
-  fraud_detection_enabled: "security", require_full_profile_for_withdraw: "security",
-  "kyc.autoEnabled": "security", "kyc.faceMinSimilarity": "security",
-  "kyc.ocrMinConfidence": "security",
-  // Email
-  smtp_host: "email", smtp_port: "email", smtp_username: "email",
-  smtp_password: "email", email_from_address: "email", email_from_name: "email",
-  email_notifications_enabled: "email",
-  // Notifications
-  push_notifications_enabled: "notifications", sms_notifications_enabled: "notifications",
-  notify_new_task: "notifications", notify_withdrawal: "notifications",
-  notify_referral: "notifications", notify_level_up: "notifications",
-  // Integrations
-  gemini_api_key: "integrations", stripe_public_key: "integrations",
-  stripe_secret_key: "integrations", twilio_sid: "integrations",
-  twilio_token: "integrations", google_analytics_id: "integrations",
-  facebook_pixel_id: "integrations",
-  "integrations.telegram_bot_token": "integrations",
-  "integrations.telegram_bot_username": "integrations",
-  "integrations.discord_client_id": "integrations",
-  "integrations.discord_client_secret": "integrations",
-  "integrations.discord_bot_token": "integrations",
-  // Limits
-  max_tasks_per_day: "limits", max_withdrawals_per_day: "limits",
-  max_referrals_per_user: "limits", max_active_listings: "limits",
-  file_upload_max_mb: "limits", api_rate_limit_per_min: "limits",
-  "ai.daily_limit_per_user": "limits", "social.ai_regenerate_limit": "limits",
-  "tasks.sequential_unlock": "limits",
-  "antifraud.auto_approve_min_trust": "limits",
-  "antifraud.spot_check_percent": "limits",
-  "antifraud.block_duplicate_proof": "limits",
-  "antifraud.max_users_per_ip": "limits",
-  "antifraud.vpn_block_enabled": "limits",
-  "antifraud.vpn_ranges": "limits",
-  "antifraud.adblock_gate_enabled": "limits",
-  "antifraud.adblock_reminder_minutes": "limits",
-  retention_days: "limits",
-  // Popups / install
-  "ui.cookies_popup_enabled": "ui_toggles",
-  "ui.notification_popup_enabled": "ui_toggles",
-  "ui.pwa_install_prompt_enabled": "ui_toggles",
-  "ui.require_profile_completion": "ui_toggles",
-  "ui.require_kyc_for_withdrawal": "ui_toggles",
-  "ui.require_email_verification": "ui_toggles",
-  "ui.groups_enabled": "ui_toggles",
-};
 
 export function SystemSettingsForm({
   initial,
   canEdit,
+  platformList = [],
 }: SystemSettingsFormProps) {
   const router = useRouter();
   const [tab, setTab] = useState<TabId>("general");
@@ -274,8 +247,33 @@ export function SystemSettingsForm({
     }
   };
 
+  /**
+   * Jump to a control the search box found.
+   *
+   * The tab has to change before the element exists, so the scroll waits a
+   * frame. The ring is applied to the DOM directly rather than held in state:
+   * it is a two-second visual cue, not a fact about the form.
+   */
+  const jumpTo = (group: SettingGroupId, key: string) => {
+    setTab(group);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(settingDomId(key));
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-blue-500/70", "rounded-lg");
+      window.setTimeout(
+        () => el.classList.remove("ring-2", "ring-blue-500/70", "rounded-lg"),
+        2200
+      );
+    });
+  };
+
+  const activeGroup = TABS.find((t) => t.id === tab);
+
   return (
     <div className="bg-slate-900 rounded-xl border border-slate-800">
+      <SettingsSearch onPick={jumpTo} />
+
       {/* Tab strip */}
       <div className="border-b border-slate-800 flex gap-1 overflow-x-auto px-3 pt-3">
         {TABS.map((t) => {
@@ -300,9 +298,15 @@ export function SystemSettingsForm({
       </div>
 
       <div className="p-6 space-y-4">
+        {activeGroup && (
+          <p className="-mt-1 mb-1 text-xs text-slate-500">
+            {activeGroup.blurb}
+          </p>
+        )}
         {tab === "general" && (
           <div className="space-y-4">
-            <Field label="Platform Name">
+            <Field settingKey="platform_name"
+            >
               <input
                 value={(values.platform_name as string) || ""}
                 onChange={(e) => set("platform_name", e.target.value)}
@@ -310,96 +314,43 @@ export function SystemSettingsForm({
                 className={inp}
               />
             </Field>
-            <Field label="Platform URL">
-              <input
-                value={(values.platform_url as string) || ""}
-                onChange={(e) => set("platform_url", e.target.value)}
-                disabled={!canEdit}
-                className={inp}
-                placeholder="https://earngpt.com"
-              />
-            </Field>
-            <Field label="Support Email">
-              <input
-                type="email"
-                value={(values.support_email as string) || ""}
-                onChange={(e) => set("support_email", e.target.value)}
-                disabled={!canEdit}
-                className={inp}
-              />
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Logo">
-                <ImageUploadField
-                  value={(values.logo_url as string) || ""}
-                  onChange={(url) => set("logo_url", url)}
-                  title="Select Logo"
-                  previewSize="square"
-                />
-              </Field>
-              <Field label="Favicon">
-                <ImageUploadField
-                  value={(values.favicon_url as string) || ""}
-                  onChange={(url) => set("favicon_url", url)}
-                  title="Select Favicon"
-                  previewSize="sm"
-                />
-              </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Timezone">
-                <select
-                  value={(values.timezone as string) || "UTC"}
-                  onChange={(e) => set("timezone", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                >
-                  <option>UTC</option>
-                  <option value="America/New_York">Eastern (US)</option>
-                  <option value="America/Chicago">Central (US)</option>
-                  <option value="America/Los_Angeles">Pacific (US)</option>
-                  <option value="Europe/London">London</option>
-                  <option value="Asia/Dhaka">Dhaka</option>
-                  <option value="Asia/Tokyo">Tokyo</option>
-                </select>
-              </Field>
-              <Field label="Language">
-                <select
-                  value={(values.language as string) || "en"}
-                  onChange={(e) => set("language", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                >
-                  <option value="en">English</option>
-                  <option value="es">Español</option>
-                  <option value="fr">Français</option>
-                  <option value="de">Deutsch</option>
-                  <option value="bn">বাংলা</option>
-                </select>
-              </Field>
-            </div>
-            <Toggle
-              label="Workspace Locked"
-              description="Restricts all earning activities (use during incidents)"
-              checked={!!values.workspace_locked}
-              onChange={(v) => set("workspace_locked", v)}
-              disabled={!canEdit}
-              tone="amber"
+            <NotWired
+              items={[
+                {
+                  label: "Platform URL, Logo, Favicon, Support email",
+                  why: "The page title, social cards, logo, favicon and the support address are compile-time values (app/layout.tsx, config/company.ts). Changing them is a rebrand \u2014 canonical URLs, the PWA manifest and the legal pages all have to move together \u2014 not a settings row.",
+                },
+                {
+                  label: "Timezone & Language",
+                  why: "Dates render in each visitor's own locale and the app ships in English only. Neither box has anything to change yet.",
+                },
+              ]}
             />
-            <Toggle
-              label="Maintenance Mode"
-              description="Show maintenance page to all users"
+            <Toggle settingKey="maintenance_mode"
               checked={!!values.maintenance_mode}
               onChange={(v) => set("maintenance_mode", v)}
               disabled={!canEdit}
               tone="red"
             />
+            {!!values.maintenance_mode && (
+              <Field settingKey="maintenance_message"
+              >
+                <textarea
+                  rows={3}
+                  value={(values.maintenance_message as string) || ""}
+                  onChange={(e) => set("maintenance_message", e.target.value)}
+                  disabled={!canEdit}
+                  className={inp}
+                  placeholder="We are performing scheduled maintenance. Please check back shortly."
+                />
+              </Field>
+            )}
           </div>
         )}
 
         {tab === "financial" && (
           <div className="space-y-4">
-            <Field label="Currency">
+            <Field settingKey="currency">
               <select
                 value={(values.currency as string) || "USD"}
                 onChange={(e) => set("currency", e.target.value)}
@@ -414,7 +365,7 @@ export function SystemSettingsForm({
               </select>
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Min Withdrawal ($)">
+              <Field settingKey="min_withdrawal">
                 <input
                   type="number"
                   step={0.01}
@@ -424,7 +375,7 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-              <Field label="Max Withdrawal ($)">
+              <Field settingKey="max_withdrawal">
                 <input
                   type="number"
                   step={0.01}
@@ -435,67 +386,75 @@ export function SystemSettingsForm({
                 />
               </Field>
             </div>
-            <Field label="Withdrawal Fee (%)">
+            <Field settingKey="withdrawal_fee_percent"
+            >
               <input
                 type="number"
                 step={0.1}
-                value={Number(values.withdrawal_fee_pct ?? 0)}
+                min={0}
+                max={100}
+                value={Number(values.withdrawal_fee_percent ?? 5)}
                 onChange={(e) =>
-                  set("withdrawal_fee_pct", parseFloat(e.target.value))
+                  set("withdrawal_fee_percent", parseFloat(e.target.value))
                 }
                 disabled={!canEdit}
                 className={inp}
               />
             </Field>
-            <div className="grid grid-cols-3 gap-3">
-              <Field label="Referral L1 (%)">
-                <input
-                  type="number"
-                  value={Number(values.referral_l1_pct ?? 0)}
-                  onChange={(e) =>
-                    set("referral_l1_pct", parseFloat(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="Referral L2 (%)">
-                <input
-                  type="number"
-                  value={Number(values.referral_l2_pct ?? 0)}
-                  onChange={(e) =>
-                    set("referral_l2_pct", parseFloat(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="Referral L3 (%)">
-                <input
-                  type="number"
-                  value={Number(values.referral_l3_pct ?? 0)}
-                  onChange={(e) =>
-                    set("referral_l3_pct", parseFloat(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-            </div>
-            <Field label="Task Reward Multiplier">
+            <Field settingKey="marketplace.fee_percent"
+            >
               <input
                 type="number"
                 step={0.1}
-                value={Number(values.task_reward_multiplier ?? 1)}
+                min={0}
+                max={100}
+                value={Number(values["marketplace.fee_percent"] ?? 5)}
                 onChange={(e) =>
-                  set("task_reward_multiplier", parseFloat(e.target.value))
+                  set("marketplace.fee_percent", parseFloat(e.target.value))
                 }
                 disabled={!canEdit}
                 className={inp}
               />
             </Field>
-            <Field
-              label="Points per $1 (USD)"
+            <Toggle settingKey="allow_withdrawals"
+              checked={values.allow_withdrawals !== false}
+              onChange={(v) => set("allow_withdrawals", v)}
+              disabled={!canEdit}
+              tone="amber"
+            />
+            <Toggle settingKey="withdrawal_requires_subscription"
+              checked={!!values.withdrawal_requires_subscription}
+              onChange={(v) => set("withdrawal_requires_subscription", v)}
+              disabled={!canEdit}
+            />
+            <Field settingKey="withdrawal_payout_time_message"
+            >
+              <input
+                type="text"
+                value={
+                  (values.withdrawal_payout_time_message as string) ??
+                  "1-3 business days"
+                }
+                onChange={(e) =>
+                  set("withdrawal_payout_time_message", e.target.value)
+                }
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
+            <ManagedElsewhere
+              label="Referral commission %"
+              href="/admin/referrals/settings"
+              linkLabel="Referral Settings"
+              why="Commission is per level and there can be up to 10 of them, so it lives in its own table — three boxes here could never describe it."
+            />
+            <ManagedElsewhere
+              label="Task reward multiplier"
+              href="/admin/packages"
+              linkLabel="Packages"
+              why="The multiplier is a property of the user's package, not one global number — that is what task approval actually reads."
+            />
+            <Field settingKey="points_per_usd"
               /* eslint-disable-next-line no-restricted-syntax -- a per-point
                  RATE shown at 4dp, not a currency amount; usd() would round it
                  to $0.00. */
@@ -515,16 +474,42 @@ export function SystemSettingsForm({
                 className={inp}
               />
             </Field>
-            <Toggle
-              label="Charge VAT on deposits"
-              description="Add VAT on top of the deposit amount (shown on the deposit page)"
+            <Field settingKey="points_convert_threshold"
+            >
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={Number(values.points_convert_threshold ?? 1000)}
+                onChange={(e) =>
+                  set("points_convert_threshold", parseInt(e.target.value))
+                }
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
+            <Field settingKey="bkash.usdToBdtRate"
+            >
+              <input
+                type="number"
+                min={1}
+                step={0.01}
+                value={Number(values["bkash.usdToBdtRate"] ?? 123)}
+                onChange={(e) =>
+                  set("bkash.usdToBdtRate", parseFloat(e.target.value))
+                }
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
+            <Toggle settingKey="vat_enabled"
               checked={!!values.vat_enabled}
               onChange={(v) => set("vat_enabled", v)}
               disabled={!canEdit}
               tone="amber"
             />
             {!!values.vat_enabled && (
-              <Field label="VAT (%)" hint="Applied to the deposit amount + method charge">
+              <Field settingKey="vat_pct">
                 <input
                   type="number"
                   step={0.5}
@@ -537,61 +522,260 @@ export function SystemSettingsForm({
                 />
               </Field>
             )}
+            <Section title="Advertising">
+              <p className="-mt-1 mb-2 text-xs leading-relaxed text-slate-500">
+                The default price an advertiser pays for one click, used by any
+                ad space that has no price of its own. Today that is every space:
+                none of the 29 has a per-space rate set, so this one number
+                prices a click on the withdrawal page — the longest-dwell screen
+                on the platform — exactly the same as a click on a banner nobody
+                scrolls to. Per-space prices live in{" "}
+                <Link href="/admin/ads" className="text-blue-400 hover:underline">
+                  Ad Manager &rarr; Spaces
+                </Link>
+                , and anything set there overrides this.
+              </p>
+              <Field settingKey="ads.cpcUsd"
+              >
+                <input
+                  type="number"
+                  min={0.001}
+                  max={100}
+                  step={0.01}
+                  value={Number(values["ads.cpcUsd"] ?? 0.05)}
+                  onChange={(e) => set("ads.cpcUsd", parseFloat(e.target.value))}
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+            </Section>
+            <Section title="Buyer & task funding">
+              <p className="-mt-1 mb-2 text-xs leading-relaxed text-slate-500">
+                A buyer funds a task from bought task credit: nothing is taken
+                up front, and each approved completion charges the buyer for
+                itself, plus the fee below as the platform&rsquo;s cut. A task
+                stops being shown the moment the buyer can no longer cover one
+                more completion. Who may create tasks at all is a per-user
+                grant (Users &rarr; features), not a switch here.
+              </p>
+              <Toggle settingKey="buyer.enabled"
+                checked={values["buyer.enabled"] !== false}
+                onChange={(v) => set("buyer.enabled", v)}
+                disabled={!canEdit}
+                tone="amber"
+              />
+              <Field settingKey="buyer.fee_percent"
+                hint={(() => {
+                  const pct = Number(values["buyer.fee_percent"] ?? 0);
+                  const ppu = Math.max(1, Number(values.points_per_usd ?? 1000));
+                  const example = (100 * 50) / ppu;
+                  return pct > 0
+                    ? `e.g. 100 completions x 50 pts = ${usd(example)} of rewards + ${usd((example * pct) / 100)} fee = ${usd(example * (1 + pct / 100))} charged, as those completions happen`
+                    : "0 means buyers pay only the reward per completion and the platform earns nothing on task funding";
+                })()}
+              >
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={Number(values["buyer.fee_percent"] ?? 0)}
+                  onChange={(e) =>
+                    set("buyer.fee_percent", parseFloat(e.target.value))
+                  }
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field settingKey="buyer.min_points_per_task">
+                  <input
+                    type="number"
+                    min={1}
+                    value={Number(values["buyer.min_points_per_task"] ?? 1)}
+                    onChange={(e) =>
+                      set("buyer.min_points_per_task", parseInt(e.target.value))
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field settingKey="buyer.max_points_per_task">
+                  <input
+                    type="number"
+                    min={1}
+                    value={Number(values["buyer.max_points_per_task"] ?? 100000)}
+                    onChange={(e) =>
+                      set("buyer.max_points_per_task", parseInt(e.target.value))
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+              </div>
+              <Field settingKey="buyer.max_active_tasks"
+              >
+                <input
+                  type="number"
+                  min={0}
+                  value={Number(values["buyer.max_active_tasks"] ?? 0)}
+                  onChange={(e) =>
+                    set("buyer.max_active_tasks", parseInt(e.target.value))
+                  }
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+              <Field settingKey="buyer.max_completions"
+              >
+                <input
+                  type="number"
+                  min={1}
+                  value={Number(values["buyer.max_completions"] ?? 100000)}
+                  onChange={(e) =>
+                    set("buyer.max_completions", parseInt(e.target.value))
+                  }
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field settingKey="buyer.min_purchase_points"
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    value={Number(values["buyer.min_purchase_points"] ?? 1000)}
+                    onChange={(e) =>
+                      set("buyer.min_purchase_points", parseInt(e.target.value))
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field settingKey="buyer.max_purchase_points"
+                >
+                  <input
+                    type="number"
+                    min={1}
+                    value={Number(values["buyer.max_purchase_points"] ?? 10000000)}
+                    onChange={(e) =>
+                      set("buyer.max_purchase_points", parseInt(e.target.value))
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+              </div>
+              <Field settingKey="buyer.allowed_task_types"
+              >
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {BUYER_TASK_TYPES.map((t) => {
+                    const list = Array.isArray(values["buyer.allowed_task_types"])
+                      ? (values["buyer.allowed_task_types"] as string[])
+                      : [];
+                    const on = list.includes(t);
+                    return (
+                      <button
+                        key={t}
+                        type="button"
+                        disabled={!canEdit}
+                        onClick={() =>
+                          set(
+                            "buyer.allowed_task_types",
+                            on ? list.filter((x) => x !== t) : [...list, t]
+                          )
+                        }
+                        className={cn(
+                          "rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50",
+                          on
+                            ? "border-blue-500/50 bg-blue-500/15 text-blue-300"
+                            : "border-slate-700 text-slate-500 hover:text-slate-300"
+                        )}
+                      >
+                        {t}
+                      </button>
+                    );
+                  })}
+                </div>
+              </Field>
+              <Field settingKey="buyer.allowed_platforms"
+                hint={(() => {
+                  const list = Array.isArray(values["buyer.allowed_platforms"])
+                    ? (values["buyer.allowed_platforms"] as string[])
+                    : [];
+                  return list.length === 0
+                    ? `all ${platformList.length} · a platform added later is included automatically`
+                    : `${list.length} of ${platformList.length} selected`;
+                })()}
+              >
+                <PlatformAllowList
+                  all={platformList}
+                  value={
+                    Array.isArray(values["buyer.allowed_platforms"])
+                      ? (values["buyer.allowed_platforms"] as string[])
+                      : []
+                  }
+                  onChange={(v) => set("buyer.allowed_platforms", v)}
+                  disabled={!canEdit}
+                />
+              </Field>
+
+              <Toggle settingKey="buyer.require_kyc"
+                checked={!!values["buyer.require_kyc"]}
+                onChange={(v) => set("buyer.require_kyc", v)}
+                disabled={!canEdit}
+              />
+              <Toggle settingKey="buyer.auto_approve_tasks"
+                checked={!!values["buyer.auto_approve_tasks"]}
+                onChange={(v) => set("buyer.auto_approve_tasks", v)}
+                disabled={!canEdit}
+                tone="red"
+              />
+              <Toggle settingKey="buyer.refund_fee_on_reject"
+                checked={values["buyer.refund_fee_on_reject"] !== false}
+                onChange={(v) => set("buyer.refund_fee_on_reject", v)}
+                disabled={!canEdit}
+              />
+            </Section>
           </div>
         )}
 
         {tab === "security" && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Session Timeout (seconds)">
+            <Section title="Passwords">
+              <Field settingKey="password_min_length"
+              >
                 <input
                   type="number"
-                  value={Number(values.session_timeout_seconds ?? 3600)}
+                  min={6}
+                  max={64}
+                  value={Number(values.password_min_length ?? 8)}
                   onChange={(e) =>
-                    set("session_timeout_seconds", parseInt(e.target.value))
+                    set("password_min_length", parseInt(e.target.value))
                   }
                   disabled={!canEdit}
                   className={inp}
                 />
               </Field>
-              <Field label="Max Login Attempts">
-                <input
-                  type="number"
-                  value={Number(values.max_login_attempts ?? 5)}
-                  onChange={(e) =>
-                    set("max_login_attempts", parseInt(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-            </div>
-            <Field label="Password Min Length">
-              <input
-                type="number"
-                min={6}
-                value={Number(values.password_min_length ?? 8)}
-                onChange={(e) =>
-                  set("password_min_length", parseInt(e.target.value))
-                }
+              <Toggle settingKey="require_strong_passwords"
+                checked={values.require_strong_passwords !== false}
+                onChange={(v) => set("require_strong_passwords", v)}
                 disabled={!canEdit}
-                className={inp}
               />
-            </Field>
-            <Toggle
-              label="Require KYC Verification"
-              checked={!!values.require_kyc}
-              onChange={(v) => set("require_kyc", v)}
-              disabled={!canEdit}
+            </Section>
+            <ManagedElsewhere
+              label="Require KYC for withdrawals"
+              href="/admin/settings"
+              linkLabel="Toggles tab"
+              why="There were two switches for this and only the one on the Toggles tab (ui.require_kyc_for_withdrawal) was ever read by the withdrawal gate."
             />
-            <Toggle
-              label="Instant (auto) KYC verification"
-              description="Let users verify instantly via AI OCR + selfie face-match. Uncertain cases still go to manual review."
+            <Toggle settingKey="kyc.autoEnabled"
               checked={values["kyc.autoEnabled"] !== false}
               onChange={(v) => set("kyc.autoEnabled", v)}
               disabled={!canEdit}
             />
-            <Field label="Auto KYC — min face-match %">
+            <Field settingKey="kyc.faceMinSimilarity">
               <input
                 type="number"
                 min={50}
@@ -602,7 +786,7 @@ export function SystemSettingsForm({
                 className={inp}
               />
             </Field>
-            <Field label="Auto KYC — min OCR confidence (0–1)">
+            <Field settingKey="kyc.ocrMinConfidence">
               <input
                 type="number"
                 min={0}
@@ -614,39 +798,52 @@ export function SystemSettingsForm({
                 className={inp}
               />
             </Field>
-            <Toggle
-              label="Two-Factor Authentication"
-              description="Require 2FA for all admin accounts"
-              checked={!!values.require_2fa}
-              onChange={(v) => set("require_2fa", v)}
-              disabled={!canEdit}
+            <Field settingKey="kyc.ocrRejectBelow"
+            >
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={Number(values["kyc.ocrRejectBelow"] ?? 0.2)}
+                onChange={(e) =>
+                  set("kyc.ocrRejectBelow", parseFloat(e.target.value) || 0.2)
+                }
+                disabled={!canEdit}
+                className={inp}
+              />
+            </Field>
+            <ManagedElsewhere
+              label="Fraud detection"
+              href="/admin/settings"
+              linkLabel="Limits tab"
+              why="The switches that actually run — accounts per IP, duplicate-proof blocking, VPN ranges, spot-check rate, the ad-block gate — are the antifraud group on the Limits tab."
             />
-            <Toggle
-              label="Require Strong Passwords"
-              checked={!!values.require_strong_passwords}
-              onChange={(v) => set("require_strong_passwords", v)}
-              disabled={!canEdit}
+            <ManagedElsewhere
+              label="Require full profile before withdrawing"
+              href="/admin/settings"
+              linkLabel="Toggles tab"
+              why="Enforced by ui.require_profile_completion on the Toggles tab. The duplicate here was never read."
             />
-            <Toggle
-              label="IP Whitelist (Admin)"
-              checked={!!values.ip_whitelist_enabled}
-              onChange={(v) => set("ip_whitelist_enabled", v)}
-              disabled={!canEdit}
-            />
-            <Toggle
-              label="Fraud Detection"
-              description="Auto-flag suspicious activity"
-              checked={!!values.fraud_detection_enabled}
-              onChange={(v) => set("fraud_detection_enabled", v)}
-              disabled={!canEdit}
-            />
-            <Toggle
-              label="Require 100% Profile Completion for Withdrawals"
-              description="Users must complete every profile field before withdrawing"
-              checked={!!values.require_full_profile_for_withdraw}
-              onChange={(v) => set("require_full_profile_for_withdraw", v)}
-              disabled={!canEdit}
-              tone="purple"
+            <NotWired
+              items={[
+                {
+                  label: "Session timeout",
+                  why: "Session lifetime is fixed in the Auth.js config and applied when the process boots, so it cannot be changed from a settings row without a redeploy.",
+                },
+                {
+                  label: "Max login attempts / lockout",
+                  why: "There is no lockout store yet. Login is rate-limited per IP (10/min) but failures are not counted per account.",
+                },
+                {
+                  label: "Admin IP whitelist",
+                  why: "Nothing checks a source IP against a list. Restrict admin access at the firewall for now.",
+                },
+                {
+                  label: "Force 2FA for admins",
+                  why: "2FA can be enrolled voluntarily (/api/2fa/setup) but nothing requires it at login.",
+                },
+              ]}
             />
           </div>
         )}
@@ -654,7 +851,7 @@ export function SystemSettingsForm({
         {tab === "email" && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <Field label="SMTP Host">
+              <Field settingKey="smtp_host">
                 <input
                   value={(values.smtp_host as string) || ""}
                   onChange={(e) => set("smtp_host", e.target.value)}
@@ -662,7 +859,7 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-              <Field label="SMTP Port">
+              <Field settingKey="smtp_port">
                 <input
                   type="number"
                   value={Number(values.smtp_port ?? 587)}
@@ -672,7 +869,7 @@ export function SystemSettingsForm({
                 />
               </Field>
             </div>
-            <Field label="SMTP Username">
+            <Field settingKey="smtp_username">
               <input
                 value={(values.smtp_username as string) || ""}
                 onChange={(e) => set("smtp_username", e.target.value)}
@@ -680,7 +877,7 @@ export function SystemSettingsForm({
                 className={inp}
               />
             </Field>
-            <Field label="SMTP Password">
+            <Field settingKey="smtp_password">
               <input
                 type="password"
                 value={(values.smtp_password as string) || ""}
@@ -691,7 +888,7 @@ export function SystemSettingsForm({
               />
             </Field>
             <div className="grid grid-cols-2 gap-3">
-              <Field label="From Email">
+              <Field settingKey="email_from_address">
                 <input
                   type="email"
                   value={(values.email_from_address as string) || ""}
@@ -700,7 +897,7 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-              <Field label="From Name">
+              <Field settingKey="email_from_name">
                 <input
                   value={(values.email_from_name as string) || ""}
                   onChange={(e) => set("email_from_name", e.target.value)}
@@ -709,8 +906,7 @@ export function SystemSettingsForm({
                 />
               </Field>
             </div>
-            <Toggle
-              label="Enable Email Notifications"
+            <Toggle settingKey="email_notifications_enabled"
               checked={!!values.email_notifications_enabled}
               onChange={(v) => set("email_notifications_enabled", v)}
               disabled={!canEdit}
@@ -733,45 +929,37 @@ export function SystemSettingsForm({
 
         {tab === "notifications" && (
           <div className="space-y-3">
-            <Toggle
-              label="Push Notifications"
-              description="Mobile push via OneSignal"
-              checked={!!values.push_notifications_enabled}
+            <Toggle settingKey="push_notifications_enabled"
+              checked={values.push_notifications_enabled !== false}
               onChange={(v) => set("push_notifications_enabled", v)}
-              disabled={!canEdit}
-            />
-            <Toggle
-              label="SMS Notifications"
-              description="SMS via Twilio"
-              checked={!!values.sms_notifications_enabled}
-              onChange={(v) => set("sms_notifications_enabled", v)}
               disabled={!canEdit}
             />
             <div className="border-t border-slate-800 pt-3 mt-3 space-y-3">
               <p className="text-xs uppercase tracking-wider text-slate-500 font-bold">
                 Auto-notify users on
               </p>
-              <Toggle
-                label="New Task Available"
-                checked={!!values.notify_new_task}
+              <p className="text-xs text-slate-500">
+                Off means the email and push are not sent. The in-app
+                notification is still recorded either way — muting a channel
+                should not erase the record of what happened to a user.
+              </p>
+              <Toggle settingKey="notify_new_task"
+                checked={values.notify_new_task !== false}
                 onChange={(v) => set("notify_new_task", v)}
                 disabled={!canEdit}
               />
-              <Toggle
-                label="Withdrawal Status Updates"
-                checked={!!values.notify_withdrawal}
+              <Toggle settingKey="notify_withdrawal"
+                checked={values.notify_withdrawal !== false}
                 onChange={(v) => set("notify_withdrawal", v)}
                 disabled={!canEdit}
               />
-              <Toggle
-                label="New Referral"
-                checked={!!values.notify_referral}
+              <Toggle settingKey="notify_referral"
+                checked={values.notify_referral !== false}
                 onChange={(v) => set("notify_referral", v)}
                 disabled={!canEdit}
               />
-              <Toggle
-                label="Level Up"
-                checked={!!values.notify_level_up}
+              <Toggle settingKey="notify_level_up"
+                checked={values.notify_level_up !== false}
                 onChange={(v) => set("notify_level_up", v)}
                 disabled={!canEdit}
               />
@@ -782,7 +970,7 @@ export function SystemSettingsForm({
         {tab === "integrations" && (
           <div className="space-y-4">
             <Section title="AI & Machine Learning">
-              <Field label="Gemini API Key">
+              <Field settingKey="gemini_api_key">
                 <input
                   type="password"
                   value={(values.gemini_api_key as string) || ""}
@@ -793,65 +981,84 @@ export function SystemSettingsForm({
                 />
               </Field>
             </Section>
-            <Section title="Payments — Stripe">
-              <Field label="Public Key">
-                <input
-                  value={(values.stripe_public_key as string) || ""}
-                  onChange={(e) => set("stripe_public_key", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                  placeholder="pk_live_…"
-                />
-              </Field>
-              <Field label="Secret Key">
-                <input
-                  type="password"
-                  value={(values.stripe_secret_key as string) || ""}
-                  onChange={(e) => set("stripe_secret_key", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                  placeholder="sk_live_…"
-                />
-              </Field>
+            <Section title="Payment gateway credentials">
+              <p className="text-xs text-slate-500 -mt-1 mb-2">
+                Used by the bKash and SSLCommerz deposit flows. The matching
+                environment variables win when they are set, so these boxes are
+                for deployments that cannot set env vars. Which methods are
+                offered to users is configured under Payment Methods.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field settingKey="bkash.appKey">
+                  <input
+                    type="password"
+                    value={(values["bkash.appKey"] as string) || ""}
+                    onChange={(e) => set("bkash.appKey", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field settingKey="bkash.appSecret">
+                  <input
+                    type="password"
+                    value={(values["bkash.appSecret"] as string) || ""}
+                    onChange={(e) => set("bkash.appSecret", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field settingKey="bkash.username">
+                  <input
+                    value={(values["bkash.username"] as string) || ""}
+                    onChange={(e) => set("bkash.username", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field settingKey="bkash.password">
+                  <input
+                    type="password"
+                    value={(values["bkash.password"] as string) || ""}
+                    onChange={(e) => set("bkash.password", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field settingKey="sslcommerz.storeId">
+                  <input
+                    value={(values["sslcommerz.storeId"] as string) || ""}
+                    onChange={(e) => set("sslcommerz.storeId", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+                <Field settingKey="sslcommerz.storePasswd">
+                  <input
+                    type="password"
+                    value={(values["sslcommerz.storePasswd"] as string) || ""}
+                    onChange={(e) =>
+                      set("sslcommerz.storePasswd", e.target.value)
+                    }
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+              </div>
             </Section>
-            <Section title="SMS — Twilio">
-              <Field label="Account SID">
-                <input
-                  value={(values.twilio_sid as string) || ""}
-                  onChange={(e) => set("twilio_sid", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="Auth Token">
-                <input
-                  type="password"
-                  value={(values.twilio_token as string) || ""}
-                  onChange={(e) => set("twilio_token", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-            </Section>
-            <Section title="Analytics">
-              <Field label="Google Analytics ID">
-                <input
-                  value={(values.google_analytics_id as string) || ""}
-                  onChange={(e) => set("google_analytics_id", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                  placeholder="G-XXXXXXXX"
-                />
-              </Field>
-              <Field label="Facebook Pixel ID">
-                <input
-                  value={(values.facebook_pixel_id as string) || ""}
-                  onChange={(e) => set("facebook_pixel_id", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-            </Section>
+            <ManagedElsewhere
+              label="Payment gateways"
+              href="/admin/payment-methods"
+              linkLabel="Payment Methods"
+              why="Deposits and payouts run on the payment methods you configure there (bKash, SSLCommerz and the manual methods). There is no Stripe or Twilio integration in the platform, so those key boxes stored text nothing could ever use."
+            />
+            <NotWired
+              items={[
+                {
+                  label: "Google Analytics / Facebook Pixel",
+                  why: "No third-party tracking script is injected. Page and traffic analytics are first-party (/admin/analytics), and adding a tag also has to pass the cookie-consent gate — so it needs building, not just an ID.",
+                },
+              ]}
+            />
             <Section title="Social task verification (bots)">
               <p className="text-xs text-slate-500 -mt-1 mb-2">
                 Powers auto-verified Telegram/Discord JOIN tasks. Create a bot,
@@ -859,7 +1066,7 @@ export function SystemSettingsForm({
                 tokens here. Feature stays dormant until set.
               </p>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Telegram bot token">
+                <Field settingKey="integrations.telegram_bot_token">
                   <input
                     type="password"
                     value={(values["integrations.telegram_bot_token"] as string) || ""}
@@ -868,7 +1075,7 @@ export function SystemSettingsForm({
                     className={inp}
                   />
                 </Field>
-                <Field label="Telegram bot username (@handle)">
+                <Field settingKey="integrations.telegram_bot_username">
                   <input
                     value={(values["integrations.telegram_bot_username"] as string) || ""}
                     onChange={(e) => set("integrations.telegram_bot_username", e.target.value)}
@@ -878,7 +1085,7 @@ export function SystemSettingsForm({
                 </Field>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Discord client ID">
+                <Field settingKey="integrations.discord_client_id">
                   <input
                     value={(values["integrations.discord_client_id"] as string) || ""}
                     onChange={(e) => set("integrations.discord_client_id", e.target.value)}
@@ -886,7 +1093,7 @@ export function SystemSettingsForm({
                     className={inp}
                   />
                 </Field>
-                <Field label="Discord client secret">
+                <Field settingKey="integrations.discord_client_secret">
                   <input
                     type="password"
                     value={(values["integrations.discord_client_secret"] as string) || ""}
@@ -896,7 +1103,7 @@ export function SystemSettingsForm({
                   />
                 </Field>
               </div>
-              <Field label="Discord bot token">
+              <Field settingKey="integrations.discord_bot_token">
                 <input
                   type="password"
                   value={(values["integrations.discord_bot_token"] as string) || ""}
@@ -911,22 +1118,19 @@ export function SystemSettingsForm({
 
         {tab === "limits" && (
           <div className="space-y-4">
+            <ManagedElsewhere
+              label="Max tasks per day"
+              href="/admin/packages"
+              linkLabel="Packages"
+              why="The daily task limit is per package (Daily Task Limit), which is what the task list actually enforces. One global number here would override nothing."
+            />
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Max Tasks Per Day">
+              <Field settingKey="max_withdrawals_per_day"
+              >
                 <input
                   type="number"
-                  value={Number(values.max_tasks_per_day ?? 50)}
-                  onChange={(e) =>
-                    set("max_tasks_per_day", parseInt(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="Max Withdrawals Per Day">
-                <input
-                  type="number"
-                  value={Number(values.max_withdrawals_per_day ?? 3)}
+                  min={0}
+                  value={Number(values.max_withdrawals_per_day ?? 1)}
                   onChange={(e) =>
                     set("max_withdrawals_per_day", parseInt(e.target.value))
                   }
@@ -934,12 +1138,12 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Max Referrals Per User">
+              <Field settingKey="max_referrals_per_user"
+              >
                 <input
                   type="number"
-                  value={Number(values.max_referrals_per_user ?? 1000)}
+                  min={0}
+                  value={Number(values.max_referrals_per_user ?? 0)}
                   onChange={(e) =>
                     set("max_referrals_per_user", parseInt(e.target.value))
                   }
@@ -947,10 +1151,14 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-              <Field label="Max Active Marketplace Listings">
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Field settingKey="max_active_listings"
+              >
                 <input
                   type="number"
-                  value={Number(values.max_active_listings ?? 10)}
+                  min={0}
+                  value={Number(values.max_active_listings ?? 0)}
                   onChange={(e) =>
                     set("max_active_listings", parseInt(e.target.value))
                   }
@@ -958,31 +1166,7 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="File Upload Max Size (MB)">
-                <input
-                  type="number"
-                  value={Number(values.file_upload_max_mb ?? 5)}
-                  onChange={(e) =>
-                    set("file_upload_max_mb", parseInt(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="API Rate Limit (per min)">
-                <input
-                  type="number"
-                  value={Number(values.api_rate_limit_per_min ?? 100)}
-                  onChange={(e) =>
-                    set("api_rate_limit_per_min", parseInt(e.target.value))
-                  }
-                  disabled={!canEdit}
-                  className={inp}
-                />
-              </Field>
-              <Field label="AI Generations / User / Day">
+              <Field settingKey="ai.daily_limit_per_user">
                 <input
                   type="number"
                   min={-1}
@@ -994,16 +1178,36 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
+              {/*
+                Read by `api/tasks/[id]/ai-recipe` since the day it shipped and
+                editable nowhere: the key sat in DEFAULTS and in the category
+                map, which was enough to satisfy the "every setting has an
+                editor" check without any admin ever being able to change it.
+                A default that can only be changed in code is not a setting.
+              */}
+              <Field settingKey="social.ai_regenerate_limit">
+                <input
+                  type="number"
+                  min={0}
+                  value={Number(values["social.ai_regenerate_limit"] ?? 2)}
+                  onChange={(e) =>
+                    set(
+                      "social.ai_regenerate_limit",
+                      Math.max(0, parseInt(e.target.value) || 0)
+                    )
+                  }
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
             </div>
-            <Toggle
-              label="Sequential task unlock"
-              description="Lock every task behind the previous one — users must finish tasks one-by-one in the admin-set Sequence Order. Resets daily; admins are never locked."
+            <Toggle settingKey="tasks.sequential_unlock"
               checked={values["tasks.sequential_unlock"] === true}
               onChange={(v) => set("tasks.sequential_unlock", v)}
               disabled={!canEdit}
             />
             <div className="grid grid-cols-2 gap-3">
-              <Field label="Auto-approve min trust (0 = off)">
+              <Field settingKey="antifraud.auto_approve_min_trust">
                 <input
                   type="number"
                   min={0}
@@ -1019,7 +1223,7 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-              <Field label="Spot-check % of auto-approvals">
+              <Field settingKey="antifraud.spot_check_percent">
                 <input
                   type="number"
                   min={0}
@@ -1036,9 +1240,7 @@ export function SystemSettingsForm({
                 />
               </Field>
             </div>
-            <Toggle
-              label="Block duplicate proof"
-              description="Reject a task submission whose proof (post/profile URL, username, or re-uploaded screenshot) already matches another user's. Off = flag for review only. Public links can legitimately repeat, so leave off unless abuse is high."
+            <Toggle settingKey="antifraud.block_duplicate_proof"
               checked={values["antifraud.block_duplicate_proof"] === true}
               onChange={(v) => set("antifraud.block_duplicate_proof", v)}
               disabled={!canEdit}
@@ -1046,7 +1248,7 @@ export function SystemSettingsForm({
 
             <Section title="Network anti-abuse">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Max accounts per IP (0 = off)">
+                <Field settingKey="antifraud.max_users_per_ip">
                   <input
                     type="number"
                     min={0}
@@ -1058,7 +1260,7 @@ export function SystemSettingsForm({
                     className={inp}
                   />
                 </Field>
-                <Field label="Ad-blocker reminder every N minutes (0 = off)">
+                <Field settingKey="antifraud.adblock_reminder_minutes">
                   <input
                     type="number"
                     min={0}
@@ -1074,14 +1276,12 @@ export function SystemSettingsForm({
                   />
                 </Field>
               </div>
-              <Toggle
-                label="Block VPN / proxy (best-effort)"
-                description="Block task work from IPs that match the datacenter/VPN prefix list below. Heuristic only — catches roughly 50–70%, not 100%. For full accuracy, integrate a detection provider later."
+              <Toggle settingKey="antifraud.vpn_block_enabled"
                 checked={values["antifraud.vpn_block_enabled"] === true}
                 onChange={(v) => set("antifraud.vpn_block_enabled", v)}
                 disabled={!canEdit}
               />
-              <Field label="VPN/datacenter IP prefixes (space or comma separated, e.g. 45.83. 2607:5300:)">
+              <Field settingKey="antifraud.vpn_ranges">
                 <input
                   type="text"
                   value={String(values["antifraud.vpn_ranges"] ?? "")}
@@ -1091,19 +1291,25 @@ export function SystemSettingsForm({
                   className={inp}
                 />
               </Field>
-              <Toggle
-                label="Ad-blocker gate on tasks"
-                description="Block opening a task while an ad-blocker is detected (a re-check overlay is shown). Turn off to allow tasks with an ad-blocker on."
+              <Toggle settingKey="antifraud.adblock_gate_enabled"
                 checked={values["antifraud.adblock_gate_enabled"] !== false}
                 onChange={(v) => set("antifraud.adblock_gate_enabled", v)}
                 disabled={!canEdit}
               />
             </Section>
 
-            <Section title="Log retention (days)">
+            {/*
+              Four inputs, one key: `retention_days` is a single JSON row. The
+              anchor goes on the section so the search box can still land on it.
+            */}
+            <Section
+              title="Log retention (days)"
+              id={settingDomId("retention_days")}
+              settingKey="retention_days"
+            >
               <p className="text-xs text-slate-500 -mt-1 mb-2">
-                The daily pruning job deletes rows older than these windows.
-                Higher = keep longer. Unread notifications are never deleted.
+                {settingEntry("retention_days")?.description}. Higher = keep
+                longer. Unread notifications are never deleted.
               </p>
               {(() => {
                 const r = {
@@ -1147,55 +1353,46 @@ export function SystemSettingsForm({
               Site-wide switches. These apply to every user immediately
               (within a minute — the values are memoised server-side).
             </p>
-            <Toggle
-              label="Cookie consent popup"
-              description="Show the cookie consent banner to visitors"
+            <Toggle settingKey="analytics_pageviews_enabled"
+              checked={values.analytics_pageviews_enabled !== false}
+              onChange={(v) => set("analytics_pageviews_enabled", v)}
+              disabled={!canEdit}
+            />
+            <Toggle settingKey="ui.cookies_popup_enabled"
               checked={values["ui.cookies_popup_enabled"] !== false}
               onChange={(v) => set("ui.cookies_popup_enabled", v)}
               disabled={!canEdit}
             />
-            <Toggle
-              label="Notification permission popup"
-              description="Show the “Enable notifications” prompt"
+            <Toggle settingKey="ui.notification_popup_enabled"
               checked={values["ui.notification_popup_enabled"] !== false}
               onChange={(v) => set("ui.notification_popup_enabled", v)}
               disabled={!canEdit}
             />
-            <Toggle
-              label="PWA install prompt"
-              description="Prompt users who haven't installed the app (Android & iOS); hidden once installed"
+            <Toggle settingKey="ui.pwa_install_prompt_enabled"
               checked={values["ui.pwa_install_prompt_enabled"] !== false}
               onChange={(v) => set("ui.pwa_install_prompt_enabled", v)}
               disabled={!canEdit}
               tone="purple"
             />
-            <Toggle
-              label="Require profile completion for Tasks & Missions"
-              description="Users must fill their core profile (photo, name, DOB, gender, country, phone) before accessing Tasks and Daily Missions"
+            <Toggle settingKey="ui.require_profile_completion"
               checked={values["ui.require_profile_completion"] === true}
               onChange={(v) => set("ui.require_profile_completion", v)}
               disabled={!canEdit}
               tone="amber"
             />
-            <Toggle
-              label="Require KYC for withdrawals"
-              description="Users must be KYC-verified to withdraw. When off, only withdrawals over $100 require KYC."
+            <Toggle settingKey="ui.require_kyc_for_withdrawal"
               checked={values["ui.require_kyc_for_withdrawal"] !== false}
               onChange={(v) => set("ui.require_kyc_for_withdrawal", v)}
               disabled={!canEdit}
               tone="red"
             />
-            <Toggle
-              label="Groups"
-              description="Show the Groups tab on the social feed. When off the tab is hidden AND the group pages and API are blocked, so the feature is genuinely off. Existing groups and their members are kept and come back when you turn this on."
+            <Toggle settingKey="ui.groups_enabled"
               checked={values["ui.groups_enabled"] === true}
               onChange={(v) => set("ui.groups_enabled", v)}
               disabled={!canEdit}
               tone="purple"
             />
-            <Toggle
-              label="Require email verification to log in"
-              description="Users must verify their email before they can sign in. When off, unverified accounts can log in (Google accounts are always verified)."
+            <Toggle settingKey="ui.require_email_verification"
               checked={values["ui.require_email_verification"] === true}
               onChange={(v) => set("ui.require_email_verification", v)}
               disabled={!canEdit}
@@ -1236,20 +1433,222 @@ export function SystemSettingsForm({
 const inp =
   "w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 disabled:opacity-60";
 
+/**
+ * A control that used to live here and does not any more.
+ *
+ * Several boxes on this form wrote a `SystemSetting` row that **nothing on the
+ * platform ever read** — `task_reward_multiplier`, `referral_l*_pct`,
+ * `max_tasks_per_day`. The real value was always somewhere else (the package
+ * row, the `ReferralLevel` table). An admin who typed a number here and pressed
+ * Save got a success toast and no change in behaviour, which is worse than
+ * having no control at all.
+ *
+ * Rather than delete them silently — an admin looking for "referral %" would
+ * then find nothing — each one is replaced by a pointer to where the value
+ * really lives.
+ */
+function ManagedElsewhere({
+  label,
+  href,
+  linkLabel,
+  why,
+}: {
+  label: string;
+  href: string;
+  linkLabel: string;
+  why: string;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-medium text-slate-300">{label}</p>
+        <Link
+          href={href}
+          className="inline-flex items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-1 text-xs font-medium text-blue-300 hover:bg-blue-500/20"
+        >
+          {linkLabel}
+          <ExternalLink className="h-3 w-3" />
+        </Link>
+      </div>
+      <p className="mt-1.5 text-xs leading-relaxed text-slate-500">{why}</p>
+    </div>
+  );
+}
+
+/**
+ * Controls this screen used to offer that the platform cannot yet honour.
+ *
+ * The honest alternative to a switch that silently does nothing is not to
+ * delete the idea — an owner who goes looking for "force 2FA" and finds no
+ * mention of it assumes they missed it, and may assume it is on. It is to say
+ * plainly that it is not built, and why, so the gap is a known one.
+ *
+ * An entry here is a promise to either build it or drop it, not a permanent
+ * home. `scripts/verify-settings-truth.ts` keeps the list honest from the other
+ * direction: a key that IS wired must not sit here.
+ */
+function NotWired({
+  items,
+}: {
+  items: { label: string; why: string }[];
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-700 bg-slate-950/40 p-4">
+      <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+        Not built yet
+      </p>
+      <p className="mt-1 text-xs text-slate-500">
+        These used to be switches here that saved successfully and changed
+        nothing. They are listed rather than hidden so the gap is visible.
+      </p>
+      <ul className="mt-3 space-y-2">
+        {items.map((it) => (
+          <li key={it.label} className="text-xs leading-relaxed">
+            <span className="font-medium text-slate-400">{it.label}</span>
+            <span className="text-slate-600"> — {it.why}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * Which of the 40 social platforms buyers may target.
+ *
+ * EMPTY MEANS ALL, deliberately. An allow-list that starts empty and means
+ * "none" would silently close buyer social tasks the moment anyone opened this
+ * screen; and if it meant "the ones ticked today", every platform added to the
+ * catalog later would be invisible to buyers until somebody remembered to come
+ * back here. Empty = everything current and future; tick some to narrow it.
+ */
+function PlatformAllowList({
+  all,
+  value,
+  onChange,
+  disabled,
+}: {
+  all: { key: string; label: string; emoji: string }[];
+  value: string[];
+  onChange: (v: string[]) => void;
+  disabled?: boolean;
+}) {
+  const [q, setQ] = useState("");
+  const allowAll = value.length === 0;
+  const shown = q.trim()
+    ? all.filter((p) => p.label.toLowerCase().includes(q.trim().toLowerCase()))
+    : all;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange([])}
+          className={cn(
+            "rounded-lg border px-2.5 py-1 text-xs font-semibold",
+            allowAll
+              ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-300"
+              : "border-slate-700 text-slate-400 hover:text-white"
+          )}
+        >
+          All platforms
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(all.map((p) => p.key))}
+          className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-400 hover:text-white"
+        >
+          Select each
+        </button>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search…"
+          className="ml-auto w-32 rounded border border-slate-700 bg-slate-950 px-2 py-1 text-[11px] text-white focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+
+      <div
+        className={cn(
+          "flex max-h-40 flex-wrap gap-1.5 overflow-y-auto",
+          allowAll && "opacity-50"
+        )}
+      >
+        {shown.map((p) => {
+          const on = allowAll || value.includes(p.key);
+          return (
+            <button
+              key={p.key}
+              type="button"
+              disabled={disabled}
+              onClick={() =>
+                onChange(
+                  // Coming out of "all", the first click means "everything
+                  // except this one" — which is what unticking one of a full
+                  // set has to mean.
+                  allowAll
+                    ? all.map((x) => x.key).filter((k) => k !== p.key)
+                    : value.includes(p.key)
+                      ? value.filter((k) => k !== p.key)
+                      : [...value, p.key]
+                )
+              }
+              className={cn(
+                "rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+                on
+                  ? "border-blue-500/50 bg-blue-500/15 text-blue-300"
+                  : "border-slate-700 text-slate-500 hover:text-slate-300"
+              )}
+            >
+              {p.emoji} {p.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One labelled control.
+ *
+ * Pass `settingKey` and nothing else: the name and the plain-language
+ * description come from `admin-settings-catalog.ts`, which is also what the
+ * search box indexes and what `CATEGORY_FOR_KEY` is derived from. One row in
+ * one file describes a setting completely, so the label and the key cannot
+ * drift apart — which is exactly how users once got charged a 5% withdrawal
+ * fee from a box the owner had set to 2.5%.
+ *
+ * `label`/`hint` remain for the handful of controls that are not one setting
+ * each (the retention-window grid writes four fields of one JSON key).
+ */
 function Field({
   label,
   hint,
+  settingKey,
   children,
 }: {
-  label: string;
+  label?: string;
   hint?: string;
+  settingKey?: string;
   children: React.ReactNode;
 }) {
+  const entry = settingKey ? settingEntry(settingKey) : undefined;
+  const shownLabel = label ?? entry?.label ?? settingKey;
+  const shownHint = hint ?? entry?.description;
   return (
-    <div>
+    <div
+      id={settingKey ? settingDomId(settingKey) : undefined}
+      data-setting-key={settingKey}
+      className="scroll-mt-28"
+    >
       <label className="block text-xs font-medium text-slate-400 mb-1.5">
-        {label}
-        {hint && <span className="text-slate-600 ml-2">{hint}</span>}
+        {shownLabel}
+        {entry?.status === "not-active" && <NotActiveBadge />}
+        {shownHint && <span className="text-slate-600 ml-2">{shownHint}</span>}
       </label>
       {children}
     </div>

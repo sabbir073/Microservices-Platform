@@ -56,7 +56,7 @@ export function CourseReviews({
                 className={
                   n <= Math.round(avgRating)
                     ? "w-4 h-4 fill-amber-300 text-amber-300"
-                    : "w-4 h-4 text-gray-700"
+                    : "w-4 h-4 text-(--app-glyph)"
                 }
               />
             ))}
@@ -118,7 +118,7 @@ export function CourseReviews({
                       className={
                         n <= r.rating
                           ? "w-3 h-3 fill-amber-300 text-amber-300"
-                          : "w-3 h-3 text-gray-700"
+                          : "w-3 h-3 text-(--app-glyph)"
                       }
                     />
                   ))}
@@ -203,7 +203,7 @@ function ReviewComposer({
               className={
                 n <= rating
                   ? "w-6 h-6 fill-amber-300 text-amber-300"
-                  : "w-6 h-6 text-gray-700"
+                  : "w-6 h-6 text-(--app-glyph)"
               }
             />
           </button>

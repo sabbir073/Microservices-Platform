@@ -38,6 +38,7 @@ export default async function WalletPage() {
           pointsBalance: true,
           cashBalance: true,
           adCreditBalance: true,
+          taskCreditPoints: true,
           totalEarnings: true,
           country: true,
           timezone: true,
@@ -181,6 +182,7 @@ export default async function WalletPage() {
         pointsBalance={user.pointsBalance}
         cashBalance={Number(user.cashBalance)}
         adCreditBalance={toNum(user.adCreditBalance)}
+        taskCreditPoints={user.taskCreditPoints}
         totalEarnings={Number(user.totalEarnings)}
         totalWithdrawn={totalWithdrawn}
         monthlyIncome={monthlyIncome}

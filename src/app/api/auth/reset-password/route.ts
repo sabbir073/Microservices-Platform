@@ -2,16 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resetPassword } from "@/lib/auth/services";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { validatePassword } from "@/lib/password-policy";
 
 const resetPasswordSchema = z.object({
   token: z.string().min(1, "Reset token is required"),
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      "Password must contain at least one uppercase letter, one lowercase letter, and one number"
-    ),
+  // Length + character classes come from the admin Security policy and are
+  // checked after parsing — Zod cannot await a setting.
+  password: z.string().min(1, "Password is required"),
 });
 
 export async function POST(request: NextRequest) {
@@ -20,6 +17,11 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { token, password } = resetPasswordSchema.parse(body);
+
+    const pwError = await validatePassword(password);
+    if (pwError) {
+      return NextResponse.json({ error: pwError }, { status: 400 });
+    }
 
     await resetPassword(token, password);
 

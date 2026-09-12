@@ -42,6 +42,7 @@ import {
   LayoutList,
   Activity,
   Sparkles,
+  Timer,
   ChevronLeft,
   ChevronRight,
   FolderTree,
@@ -117,6 +118,7 @@ const iconMap: Record<string, LucideIcon> = {
   Activity,
   BarChart3,
   Sparkles,
+  Timer,
   Settings,
   Shield,
   FolderTree,
@@ -290,7 +292,7 @@ function AdminSidebarContent({
                       </span>
                       {!collapsed && (
                         <>
-                          <span className="flex-1 truncate">{module.name}</span>
+                          <span className="flex-1 min-w-0 truncate">{module.name}</span>
                           {pending > 0 ? (
                             <span className="px-1.5 py-0.5 text-[10px] font-bold bg-linear-to-r from-indigo-500 to-purple-600 text-white rounded tabular-nums">
                               {badgeText(pending)}

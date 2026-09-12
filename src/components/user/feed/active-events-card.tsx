@@ -148,17 +148,15 @@ export function ActiveEventsCard({ className }: { className?: string }) {
   if (!events || shown.length === 0) return null;
 
   return (
-    <section className={cn("glass p-4", className)}>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-white inline-flex items-center gap-1.5">
-          <span className="w-6 h-6 rounded-lg bg-violet-500/15 text-violet-300 grid place-items-center">
-            <Sparkles className="w-3.5 h-3.5" />
-          </span>
+    <section className={cn("app-card", className)}>
+      <div className="flex items-center justify-between gap-2 mb-3">
+        <h3 className="t-section text-white inline-flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-gray-400" />
           Active Events
         </h3>
         <Link
           href="/events"
-          className="text-xs text-violet-400 hover:text-violet-300 inline-flex items-center"
+          className="app-press app-tap-row inline-flex items-center px-2.5 -mr-2 rounded-(--app-r-chip) t-meta font-extrabold text-(--app-info) hover:bg-(--app-info-soft)"
         >
           See all <ChevronRight className="w-3.5 h-3.5" />
         </Link>
@@ -185,13 +183,13 @@ export function ActiveEventsCard({ className }: { className?: string }) {
           return (
             <div
               key={ev.id}
-              className="rounded-xl bg-gray-950/40 border border-gray-800 p-3"
+              className="app-tile"
             >
               <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-semibold text-white truncate flex-1">
+                <p className="t-card-title text-white truncate min-w-0 flex-1">
                   {ev.title}
                 </p>
-                <span className="text-[11px] text-gray-500 inline-flex items-center gap-1 shrink-0">
+                <span className="t-meta text-gray-500 inline-flex items-center gap-1 shrink-0">
                   <Clock className="w-3 h-3" /> {timeLeft(ev.endAt)}
                 </span>
               </div>
@@ -199,7 +197,7 @@ export function ActiveEventsCard({ className }: { className?: string }) {
               {/* Progress toward the (next tier's) target */}
               <div className="mt-2">
                 <div className="flex items-center justify-between text-[11px] mb-1">
-                  <span className="text-gray-400 truncate">{meta.label}</span>
+                  <span className="text-gray-400 truncate min-w-0">{meta.label}</span>
                   <span className="text-white font-bold tabular-nums shrink-0">
                     {isUpload
                       ? ev.claimed
@@ -209,9 +207,9 @@ export function ActiveEventsCard({ className }: { className?: string }) {
                   </span>
                 </div>
                 {!isUpload && (
-                  <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
+                  <div className="h-2 rounded-full bg-(--app-surface) overflow-hidden">
                     <div
-                      className="h-full rounded-full bg-linear-to-r from-violet-500 to-fuchsia-500 transition-[width]"
+                      className="h-full rounded-full bg-(image:--app-rail) transition-[width]"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
@@ -220,23 +218,23 @@ export function ActiveEventsCard({ className }: { className?: string }) {
 
               {/* Reward + action */}
               <div className="mt-2.5 flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1 text-amber-400 font-bold text-sm tabular-nums">
-                  <Coins className="w-3.5 h-3.5" />+{rewardPoints}
+                <span className="t-figure-sm inline-flex items-baseline gap-1 text-white">
+                  <Coins className="w-4 h-4 self-center text-gray-400" />+{rewardPoints}
                   {rewardXp ? (
-                    <span className="text-violet-400 ml-1 text-xs">
+                    <span className="t-meta font-bold text-gray-400 ml-1">
                       +{rewardXp} XP
                     </span>
                   ) : null}
                 </span>
 
                 {done ? (
-                  <span className="inline-flex items-center gap-1 text-emerald-400 text-xs font-bold">
+                  <span className="app-chip app-chip-in">
                     <CheckCircle2 className="w-3.5 h-3.5" /> Claimed
                   </span>
                 ) : isUpload ? (
                   <Link
                     href="/events"
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-violet-500 hover:bg-violet-600 text-white text-xs font-bold"
+                    className="app-accent app-press app-tap-row inline-flex items-center gap-1.5 px-3.5 rounded-(--app-r-control) text-xs font-extrabold"
                   >
                     <Upload className="w-3.5 h-3.5" /> Upload
                   </Link>
@@ -245,10 +243,10 @@ export function ActiveEventsCard({ className }: { className?: string }) {
                     onClick={() => claim(ev)}
                     disabled={!canClaim || busy}
                     className={cn(
-                      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold",
+                      "app-press app-tap-row inline-flex items-center gap-1.5 px-3.5 rounded-(--app-r-control) text-xs font-extrabold",
                       canClaim
-                        ? "bg-violet-500 hover:bg-violet-600 text-white"
-                        : "bg-gray-800 text-gray-500 cursor-not-allowed"
+                        ? "app-accent"
+                        : "bg-(--app-surface) border border-(--app-line) text-gray-500 cursor-not-allowed"
                     )}
                   >
                     {busy ? (

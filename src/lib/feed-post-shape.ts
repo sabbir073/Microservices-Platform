@@ -10,6 +10,7 @@
  * Server-agnostic on purpose: no prisma import, so the shape can be referenced
  * from anywhere.
  */
+import { postAudience } from "@/lib/public-post-gate";
 
 export const FEED_POST_SELECT = {
   id: true,
@@ -71,6 +72,14 @@ export interface FeedViewerContext {
   votes: Map<string, string>;
   following: Set<string>;
   users: Map<string, unknown>;
+  /**
+   * `feed.public_audience_epoch` in ms, or null.
+   *
+   * Required, not optional, so a new list route has to answer the question
+   * rather than silently mislabel every post. Null is the fail-closed answer:
+   * every post reads "Members only".
+   */
+  audienceEpochMs: number | null;
 }
 
 type Row = {
@@ -110,6 +119,11 @@ export function formatFeedPost(post: Row, ctx: FeedViewerContext) {
     images: post.images,
     backgroundStyle: post.backgroundStyle,
     isPublic: post.isPublic,
+    // What the author actually published to, by the same rule the logged-out
+    // gate uses — so the badge on the card and the reach of the post can never
+    // disagree. A pre-epoch post reads MEMBERS even though its column says
+    // true, because that is the truth about who can read it.
+    audience: postAudience(post, ctx.audienceEpochMs),
     isPinned: post.isPinned,
     isAnnouncement: post.isAnnouncement,
     isPromoted: post.isPromoted,

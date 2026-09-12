@@ -1,8 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CheckCircle, X, MoreHorizontal, Play, ChevronRight } from "lucide-react";
+import {
+  ArrowUpRight,
+  CheckCircle,
+  ExternalLink,
+  MoreVertical,
+  Play,
+  X,
+} from "lucide-react";
+import { mediaSrc } from "@/lib/media-url";
 import { SmartImage } from "@/components/user/primitives/smart-image";
+import { placementSpec } from "@/lib/ad-placements";
 
 /** A native feed ad, shaped by GET /api/ads/feed. */
 export interface FeedAd {
@@ -34,11 +43,55 @@ function displayUrl(u: string): string {
   }
 }
 
+/* The overlay chrome is the same measured set the shared renderer uses — see
+   the note on TEXT_BAND in src/components/user/primitives/ad-renderer.tsx. The
+   two files are the only places white text sits on an unknown creative, and
+   they must agree, so the values are asserted against each other in
+   scripts/verify-ads-coverage.ts. */
+const CHIP_BG = "rgba(8,9,14,0.78)";
+
 /**
- * Compact "Sponsored" ad card — Facebook link-ad style: thumbnail on the left,
- * headline + green destination URL + "Advertiser · Ad" on the right, with a
- * dismiss (×) and an options (⋯) menu. Clicking the card opens the destination.
- * Impression (view) + click (open) tracking is unchanged.
+ * Split the ad copy into a headline and the description under the creative.
+ *
+ * A feed ad carries one block of text, and the reference wants two: a short
+ * line ON the creative and a fuller one below it. Taking the first sentence for
+ * the headline means the two are not the same words twice — and when there is
+ * only one sentence, the description falls back to the destination rather than
+ * repeating the headline.
+ */
+function splitPitch(content: string): { headline: string; rest: string } {
+  const text = content.trim();
+  if (!text) return { headline: "", rest: "" };
+  const m = text.match(/^(.{1,90}?[.!?])(\s+|$)([\s\S]*)$/);
+  if (m) return { headline: m[1].trim(), rest: m[3].trim() };
+  if (text.length <= 90) return { headline: text, rest: "" };
+  const cut = text.lastIndexOf(" ", 90);
+  return {
+    headline: text.slice(0, cut > 40 ? cut : 90).trim(),
+    rest: text.slice(cut > 40 ? cut : 90).trim(),
+  };
+}
+
+/** Last word of the headline takes the accent, as in the reference. */
+function splitHeadline(title: string): { lead: string; accent: string } {
+  const t = title.trim();
+  if (!t) return { lead: "", accent: "" };
+  const i = t.lastIndexOf(" ");
+  if (i <= 0) return { lead: "", accent: t };
+  return { lead: t.slice(0, i), accent: t.slice(i + 1) };
+}
+
+/**
+ * The native in-feed ad card.
+ *
+ * Shape, top to bottom: the creative full-bleed with the brand chip and the
+ * accented headline laid over it and an outbound arrow at its lower right; then
+ * the round brand avatar, the description and the ⋮; then "Sponsored ·
+ * BrandName"; then two full-width buttons.
+ *
+ * Impression (view) and click (open) tracking are the same two calls they were
+ * before — `/api/spaces/[id]/event` with `kind: "view"` once on 50% visibility,
+ * and `kind: "open"` from every control that navigates.
  */
 export function FeedAdCard({ ad }: { ad: FeedAd }) {
   const ref = useRef<HTMLElement | null>(null);
@@ -81,150 +134,252 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
 
   if (dismissed) return null;
 
-  const initial = (ad.author.name || "A").charAt(0).toUpperCase();
+  const brand = ad.author.name || "Sponsored";
+  const initial = brand.charAt(0).toUpperCase();
   const poster = ad.images[0] || null;
   const hasVideo = !!ad.videoUrl;
   const url = ad.targetUrl;
+  const { headline, rest } = splitPitch(ad.content);
+  const { lead, accent } = splitHeadline(headline || brand);
+  const description = rest || (url ? displayUrl(url) : brand);
 
-  // The thumbnail block (image poster / video first-frame / placeholder + play).
-  const thumb = (
-    <div className="relative w-24 h-24 sm:w-28 sm:h-28 shrink-0 overflow-hidden rounded-lg bg-gray-950">
-      {poster ? (
-        <SmartImage
-          src={poster}
-          alt=""
-          fill
-          sizes="112px"
-          className="object-cover"
-          onError={(e) => {
-            e.currentTarget.style.display = "none";
-          }}
-        />
-      ) : hasVideo ? (
-        <video
-          src={ad.videoUrl ?? undefined}
-          muted
-          playsInline
-          preload="metadata"
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="w-full h-full grid place-items-center bg-linear-to-br from-indigo-600/30 to-purple-600/20 text-2xl font-extrabold text-white/80">
-          {initial}
-        </div>
-      )}
-      {hasVideo && (
-        <span className="absolute inset-0 grid place-items-center">
-          <span className="w-9 h-9 rounded-full bg-black/55 backdrop-blur grid place-items-center">
-            <Play className="w-4 h-4 text-white fill-white translate-x-px" />
+  // Same contract as every other space: the ceiling comes from the catalog, not
+  // from a number typed here, and the box is reserved before the bytes land so
+  // the feed does not shift under the reader's thumb.
+  // NO forced aspect ratio. A fixed 16/9 box with `object-contain` is what put
+  // black bars above and below every creative that is not 16/9 — and almost
+  // none are. The creative sets its own height; `minHeight` reserves a row so
+  // the feed still does not jump while the bytes are in flight, and the space's
+  // ceiling still caps it. Reserving HEIGHT does not decide the shape, which is
+  // the whole difference.
+  const mediaMax = placementSpec("IN_FEED").maxHeightPx;
+  const mediaStyle = {
+    minHeight: Math.round(mediaMax * 0.5),
+    maxHeight: mediaMax,
+  };
+
+  // One anchor shape for every region that navigates — the creative, the arrow
+  // inside it, and both buttons. There is exactly one `trackClick`, so no
+  // control can look actionable without billing.
+  const linkProps = {
+    href: url ?? "",
+    target: "_blank",
+    rel: "noopener sponsored noreferrer",
+    onClick: trackClick,
+  } as const;
+
+  const creative = (
+    <div
+      className="on-media relative w-full overflow-hidden bg-(--app-media-well)"
+      style={mediaStyle}
+    >
+        {poster ? (
+          // A plain <img>, not the fill/Image path: `FeedAd` carries no
+          // dimensions, and `fill` needs a parent with a fixed height — which
+          // is precisely the box that letterboxed the creative and left the
+          // black bars. Letting the image size itself is what removes them.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={mediaSrc(poster)}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="block h-auto w-full"
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+          />
+        ) : hasVideo ? (
+          <video
+            src={ad.videoUrl ?? undefined}
+            muted
+            playsInline
+            preload="metadata"
+            className="block h-auto w-full"
+          />
+        ) : (
+          <div
+            className="grid h-full w-full place-items-center text-4xl font-black text-white/90"
+            style={{ backgroundImage: "var(--app-grad)" }}
+          >
+            {initial}
+          </div>
+        )}
+        {hasVideo && !poster && (
+          <span className="pointer-events-none absolute inset-0 grid place-items-center">
+            <span className="grid h-12 w-12 place-items-center rounded-full bg-black/55 backdrop-blur-sm">
+              <Play className="h-5 w-5 translate-x-px fill-white text-white" />
+            </span>
+          </span>
+        )}
+
+        {/* Brand chip */}
+        <span
+          className="on-media pointer-events-none absolute left-2 top-2 z-20 inline-flex max-w-[75%] items-center gap-1.5 rounded-full px-2 py-1 backdrop-blur-sm"
+          style={{ backgroundColor: CHIP_BG }}
+        >
+          <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-white text-[9px] font-black text-black">
+            {initial}
+          </span>
+          <span className="truncate text-[11px] font-semibold text-white">
+            {brand}
           </span>
         </span>
-      )}
-    </div>
+
+      </div>
   );
 
-  const bodyInner = (
-    <>
-      {thumb}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm font-semibold text-white leading-snug line-clamp-2 pr-6">
-          {ad.content || ad.author.name}
-        </p>
-        {url && (
-          <p className="mt-1 inline-flex items-center gap-1 text-xs text-emerald-400 max-w-full">
-            <Play className="w-3 h-3 shrink-0 fill-emerald-400" />
-            <span className="truncate">{displayUrl(url)}</span>
-          </p>
-        )}
-        <p className="mt-1 inline-flex items-center gap-1 text-[11px] text-gray-500 truncate max-w-full">
-          <span className="truncate">{ad.author.name}</span>
-          {ad.author.isBlueVerified && (
-            <CheckCircle className="w-3 h-3 shrink-0 text-blue-400 fill-blue-500/30" />
-          )}
-          <span aria-hidden>·</span>
-          <span>Ad</span>
-        </p>
-      </div>
-    </>
-  );
+  /* The headline sits UNDER the creative, not on it.
+     It used to be overlaid on a black gradient band, and that band is what the
+     owner kept reporting as a black shadow across every ad. There is no way to
+     put light text on an arbitrary photo without darkening something, so the
+     text moved off the photo instead — no scrim, nothing to darken, and the
+     creative is shown whole. It stays inside the same anchor, so a tap on it is
+     still the one recorded click. */
+  const headlineRow = (lead || accent) ? (
+    <span className="flex items-center gap-2 px-3 pt-3">
+      <span className="line-clamp-2 min-w-0 flex-1 text-lg font-extrabold leading-tight text-(--app-ink)">
+        {lead}
+        {accent ? (
+          <span className="text-(--app-info)">
+            {lead ? " " : ""}
+            {accent}
+          </span>
+        ) : null}
+      </span>
+      {url ? (
+        <span className="app-accent grid h-11 w-11 shrink-0 place-items-center rounded-full">
+          <ArrowUpRight className="h-5 w-5" />
+        </span>
+      ) : null}
+    </span>
+  ) : null;
 
   return (
     <article
       ref={ref}
-      className="relative rounded-xl border border-gray-800 bg-gray-900 overflow-hidden"
+      className="app-card relative isolate overflow-hidden p-0"
     >
-      {/* Dismiss (×) */}
+      {url ? (
+        <a {...linkProps} className="app-press block" aria-label={`${headline || brand} — ${brand}`}>
+          {creative}
+          {headlineRow}
+        </a>
+      ) : (
+        <>
+          {creative}
+          {headlineRow}
+        </>
+      )}
+
+      {/* Dismiss (×) — over the creative, never over a button. */}
       <button
         type="button"
         aria-label="Hide ad"
         onClick={() => setDismissed(true)}
-        className="absolute top-2 right-2 z-10 w-6 h-6 grid place-items-center rounded-full text-gray-500 hover:text-white hover:bg-gray-800/70 transition-colors"
+        className="app-tap absolute right-0 top-0 z-30 grid place-items-center"
       >
-        <X className="w-4 h-4" />
+        <span className="grid h-7 w-7 place-items-center rounded-full bg-black/60 text-white/80 backdrop-blur-sm hover:bg-black/80 hover:text-white">
+          <X className="h-3.5 w-3.5" />
+        </span>
       </button>
 
-      {/* Body — links to the destination (or a plain block when no URL) */}
-      {url ? (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener sponsored noreferrer"
-          onClick={trackClick}
-          className="flex items-start gap-3 p-3 hover:bg-gray-800/30 transition-colors"
-        >
-          {bodyInner}
-        </a>
-      ) : (
-        <div className="flex items-start gap-3 p-3">{bodyInner}</div>
-      )}
-
-      {/* Options (⋯) */}
-      <div className="absolute bottom-1.5 right-1.5 z-10">
-        <button
-          type="button"
-          aria-label="Ad options"
-          onClick={() => setMenuOpen((v) => !v)}
-          className="w-6 h-6 grid place-items-center rounded-full text-gray-500 hover:text-white hover:bg-gray-800/70 transition-colors"
-        >
-          <MoreHorizontal className="w-4 h-4" />
-        </button>
-        {menuOpen && (
-          <>
-            <div
-              className="fixed inset-0 z-10"
-              onClick={() => setMenuOpen(false)}
+      <div className="p-4">
+        <div className="flex items-start gap-3">
+          {ad.author.avatar ? (
+            <SmartImage
+              src={ad.author.avatar}
+              alt=""
+              width={40}
+              height={40}
+              className="h-10 w-10 shrink-0 rounded-full object-cover"
             />
-            <div className="absolute bottom-8 right-0 z-20 w-44 rounded-lg border border-gray-700 bg-gray-900 shadow-xl overflow-hidden">
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setDismissed(true);
-                }}
-                className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-gray-800"
-              >
-                Hide this ad
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMenuOpen(false);
-                  setShowWhy(true);
-                }}
-                className="w-full text-left px-3 py-2 text-xs text-gray-200 hover:bg-gray-800 inline-flex items-center gap-1"
-              >
-                Why this ad? <ChevronRight className="w-3 h-3 text-gray-500" />
-              </button>
-            </div>
-          </>
+          ) : (
+            <span
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-sm font-black text-white"
+              style={{ backgroundImage: "var(--app-grad)" }}
+            >
+              {initial}
+            </span>
+          )}
+          <p className="t-body line-clamp-2 min-w-0 flex-1 text-gray-300">
+            {description}
+          </p>
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              aria-label="Ad options"
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((v) => !v)}
+              className="app-tap app-press -mr-2 -mt-2 grid place-items-center rounded-full text-gray-400 hover:text-gray-100"
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+            {menuOpen && (
+              <>
+                <span
+                  className="fixed inset-0 z-30"
+                  onClick={() => setMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-9 z-40 w-44 overflow-hidden rounded-(--app-r-control) border border-(--app-line) bg-(--app-surface) shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setDismissed(true);
+                    }}
+                    className="app-tap-row w-full px-3 text-left text-xs text-gray-300 hover:bg-(--app-surface-2)"
+                  >
+                    Hide this ad
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      setShowWhy(true);
+                    }}
+                    className="app-tap-row w-full px-3 text-left text-xs text-gray-300 hover:bg-(--app-surface-2)"
+                  >
+                    Why this ad?
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <p className="t-meta mt-2 inline-flex items-center gap-1 text-gray-400">
+          <span>Sponsored ·</span>
+          <span className="truncate">{brand}</span>
+          {ad.author.isBlueVerified && (
+            <CheckCircle className="h-3 w-3 shrink-0 fill-blue-500/30 text-blue-400" />
+          )}
+        </p>
+        {showWhy && (
+          <p className="t-meta mt-1 text-gray-400">
+            Ads like this keep the platform free to use.
+          </p>
+        )}
+
+        {/* Both buttons navigate and both bill — see the note in ad-renderer. */}
+        {url && (
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <a
+              {...linkProps}
+              className="app-tap-row app-press flex items-center justify-center rounded-(--app-r-control) border border-(--app-line) bg-(--app-surface-2) px-3 text-center text-sm font-bold text-gray-100"
+            >
+              {ad.ctaLabel || "Learn More"}
+            </a>
+            <a
+              {...linkProps}
+              className="app-tap-row app-press flex items-center justify-center gap-1.5 rounded-(--app-r-control) bg-(--app-bright) px-3 text-sm font-bold text-(--app-on-bright)"
+            >
+              Visit site
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </div>
         )}
       </div>
-
-      {showWhy && (
-        <p className="px-3 pb-2 -mt-1 text-[11px] text-gray-500">
-          This is a sponsored ad — ads like this help keep the platform free.
-        </p>
-      )}
     </article>
   );
 }

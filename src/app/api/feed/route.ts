@@ -21,6 +21,8 @@ import { getAdDensity } from "@/lib/ad-density";
 import { getSetting } from "@/lib/system-settings";
 import type { Prisma } from "@/generated/prisma/client";
 import { recordUserAction } from "@/lib/goal-progress";
+import { publicAudienceEpochMs } from "@/lib/public-post";
+import { postAudience } from "@/lib/public-post-gate";
 import {
   FEED_AUTHOR_SELECT,
   FEED_POST_SELECT,
@@ -49,7 +51,11 @@ type FeedPostRow = Prisma.PostGetPayload<{ select: typeof FEED_POST_SELECT }>;
  * on every feed request and every 30s poll. Cached for a minute.
  */
 const cachedMainFeedCount = unstable_cache(
-  async () => prisma.post.count({ where: { isPublic: true, isHidden: false } }),
+  // No `isPublic` filter: since the audience picker shipped, `isPublic` is the
+  // internet-audience choice, not in-platform visibility. A "Members only" post
+  // is a normal feed post — filtering it out here would make the option mean
+  // "nobody but me". See src/lib/public-post-gate.ts.
+  async () => prisma.post.count({ where: { isHidden: false } }),
   ["feed-main-total"],
   { revalidate: 60 }
 );
@@ -66,11 +72,17 @@ export async function GET(request: NextRequest) {
     const tag = searchParams.get("tag"); // Hashtag feed (without leading '#')
     const search = searchParams.get("search"); // Free-text content search
     const seed = searchParams.get("seed"); // Per-session jitter seed (reshuffle)
+    // Read once per request, not per post: the badge on every card is derived
+    // from it, and it is a cached SystemSetting read.
+    const feedAudienceEpochMs = await publicAudienceEpochMs();
     const skip = (page - 1) * limit;
 
     // Build query
+    // `isPublic` is NOT a filter here. It is the author's internet-audience
+    // choice (Public vs Members only), and both belong in the signed-in feed —
+    // that is what "Members only" means. Logged-out reach is decided by
+    // `isPubliclyVisible` on the /post/[id] surface, nowhere else.
     const where: Record<string, unknown> = {
-      isPublic: true,
       isHidden: false, // agency-moderator soft-hidden posts never surface
     };
 
@@ -283,86 +295,97 @@ export async function GET(request: NextRequest) {
     // for them too.
     const allPosts = [...announcements, ...posts, ...promoted];
 
-    // Get post users
     const userIds = [...new Set(allPosts.map((p) => p.userId))];
-    const users = await prisma.user.findMany({
-      where: { id: { in: userIds } },
-      select: FEED_AUTHOR_SELECT,
-    });
-    const userMap = new Map(users.map((u) => [u.id, u]));
-
     // Which reaction did the viewer leave, and what does the post's cluster look
     // like? Both are answered for the WHOLE page in one query each — a per-post
     // lookup would be a query per card.
     const pageIds = allPosts.map((p) => p.id);
 
-    // Per-type totals for the little emoji cluster. Deliberately computed rather
-    // than denormalised onto Post: at this size the grouping is cheap, and a
-    // cached counter is the kind of thing that drifts away from the rows.
-    const reactionCounts: Record<string, Record<string, number>> = {};
-    if (pageIds.length > 0) {
-      const grouped = await prisma.like.groupBy({
-        by: ["postId", "type"],
-        where: { postId: { in: pageIds } },
-        _count: { _all: true },
-      });
-      for (const g of grouped as Array<{
-        postId: string;
-        type: string;
-        _count: { _all: number };
-      }>) {
-        (reactionCounts[g.postId] ??= {})[g.type] = g._count._all;
-      }
-    }
-
-    // Check if current user has liked each post
-    let userLikes: Set<string> = new Set();
-    let myReactions = new Map<string, string>();
-    let savedSet: Set<string> = new Set();
-    let followingSet: Set<string> = new Set();
-    if (session?.user?.id) {
-      const likes = await prisma.like.findMany({
-        where: {
-          userId: session.user.id,
-          postId: { in: pageIds },
-        },
-        select: { postId: true, type: true },
-      });
-      userLikes = new Set(likes.map((l) => l.postId));
-      myReactions = new Map(likes.map((l) => [l.postId, l.type]));
-
+    // ONE round-trip layer for the whole hydration step.
+    //
+    // These six reads — authors, reaction totals, the viewer's likes, saves,
+    // follows and poll votes — used to be six sequential `await`s. Every one of
+    // them depends only on `allPosts`, which is already resolved here, so none
+    // of them was ever waiting on the one before it: the waterfall was
+    // accidental. On Accelerate each `await` is a full proxy round-trip
+    // (measured at 85–190ms from the dev machine), so the page paid five extra
+    // trips it had no reason to.
+    //
+    // The guards are preserved exactly as they were — an empty page skips the
+    // grouping, an anonymous viewer skips the four per-viewer reads, and a page
+    // with no authors skips the follow lookup — so the queries that actually run
+    // are the same set as before. Only their arrangement changed.
+    const viewerId = session?.user?.id ?? null;
+    const [users, grouped, likes, saved, follows, votes] = await Promise.all([
+      prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: FEED_AUTHOR_SELECT,
+      }),
+      // Per-type totals for the little emoji cluster. Deliberately computed
+      // rather than denormalised onto Post: at this size the grouping is cheap,
+      // and a cached counter is the kind of thing that drifts away from the rows.
+      pageIds.length > 0
+        ? prisma.like.groupBy({
+            by: ["postId", "type"],
+            where: { postId: { in: pageIds } },
+            _count: { _all: true },
+          })
+        : Promise.resolve([]),
+      viewerId
+        ? prisma.like.findMany({
+            where: { userId: viewerId, postId: { in: pageIds } },
+            select: { postId: true, type: true },
+          })
+        : Promise.resolve([]),
       // Saved posts — same batching as likes, one query for the page.
-      const saved = await prisma.savedPost.findMany({
-        where: { userId: session.user.id, postId: { in: pageIds } },
-        select: { postId: true },
-      });
-      savedSet = new Set(saved.map((x) => x.postId));
-
+      viewerId
+        ? prisma.savedPost.findMany({
+            where: { userId: viewerId, postId: { in: pageIds } },
+            select: { postId: true },
+          })
+        : Promise.resolve([]),
       // Which post-authors does the viewer already follow?
-      if (userIds.length > 0) {
-        const follows = await prisma.follow.findMany({
-          where: {
-            followerId: session.user.id,
-            followingId: { in: userIds },
-          },
-          select: { followingId: true },
-        });
-        followingSet = new Set(follows.map((f) => f.followingId));
-      }
+      viewerId && userIds.length > 0
+        ? prisma.follow.findMany({
+            where: { followerId: viewerId, followingId: { in: userIds } },
+            select: { followingId: true },
+          })
+        : Promise.resolve([]),
+      viewerId
+        ? prisma.vote.findMany({
+            where: { userId: viewerId, postId: { in: pageIds } },
+            select: { postId: true, optionId: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const reactionCounts: Record<string, Record<string, number>> = {};
+    for (const g of grouped as Array<{
+      postId: string;
+      type: string;
+      _count: { _all: number };
+    }>) {
+      (reactionCounts[g.postId] ??= {})[g.type] = g._count._all;
     }
 
-    // Capture user's votes for polls
-    let userVoteMap = new Map<string, string>();
-    if (session?.user?.id) {
-      const votes = await prisma.vote.findMany({
-        where: {
-          userId: session.user.id,
-          postId: { in: allPosts.map((p) => p.id) },
-        },
-        select: { postId: true, optionId: true },
-      });
-      userVoteMap = new Map(votes.map((v) => [v.postId, v.optionId]));
-    }
+    const userLikes = new Set((likes as { postId: string }[]).map((l) => l.postId));
+    const myReactions = new Map(
+      (likes as { postId: string; type: string }[]).map((l) => [l.postId, l.type])
+    );
+    const savedSet = new Set(
+      (saved as { postId: string }[]).map((x) => x.postId)
+    );
+    const followingSet = new Set(
+      (follows as { followingId: string }[]).map((f) => f.followingId)
+    );
+    const userVoteMap = new Map(
+      (votes as { postId: string; optionId: string }[]).map((v) => [
+        v.postId,
+        v.optionId,
+      ])
+    );
 
     type FormattablePost = (typeof allPosts)[number];
     // Everything per-viewer is looked up in bulk above; the shared formatter
@@ -376,6 +399,7 @@ export async function GET(request: NextRequest) {
       votes: userVoteMap,
       following: followingSet,
       users: userMap as Map<string, unknown>,
+      audienceEpochMs: feedAudienceEpochMs,
     };
     const formatPost = (post: FormattablePost) =>
       formatFeedPost(post, viewerCtx);
@@ -598,7 +622,12 @@ export async function POST(request: NextRequest) {
         content: content.trim(),
         images: images || [],
         backgroundStyle: resolvedBackground,
-        isPublic: isPublic !== false,
+        // EXPLICIT opt-in. This used to be `isPublic !== false`, i.e. a body
+        // that said nothing published to the whole internet. `isPublic` is now
+        // the audience the author picked, and the only way to get Public is to
+        // ask for it. A post inside a group is never public, whatever the body
+        // says — group posts are for the group.
+        isPublic: isPublic === true && !groupId,
         pollOptions: formattedPoll ?? undefined,
         pollEndsAt: pollEndsAt ? new Date(pollEndsAt) : null,
         donationGoal:
@@ -620,7 +649,10 @@ export async function POST(request: NextRequest) {
       // Event progress. This is the weakest action type to build an event on —
       // a user can always make more posts — so admins should set a daily cap on
       // FEED_POST events; the admin form says so.
-      post.isPublic
+      // Was `post.isPublic`, back when that was always true. It is now the
+      // audience choice, and a Members-only post is still a post — the event
+      // counts feed activity, not reach. Group posts stay excluded.
+      !post.groupId
         ? recordUserAction({
             userId: session.user.id,
             action: "feed_post",
@@ -702,6 +734,7 @@ export async function POST(request: NextRequest) {
         images: post.images,
         backgroundStyle: post.backgroundStyle,
         isPublic: post.isPublic,
+        audience: postAudience(post, await publicAudienceEpochMs()),
         isPinned: post.isPinned,
         isAnnouncement: post.isAnnouncement,
         isPromoted: post.isPromoted,

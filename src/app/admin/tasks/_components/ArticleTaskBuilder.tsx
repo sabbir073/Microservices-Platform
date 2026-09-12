@@ -370,7 +370,7 @@ function Stepper({
                 >
                   {isDone ? <CheckCircle2 className="w-3.5 h-3.5" /> : i + 1}
                 </span>
-                <span className="text-xs font-semibold truncate inline-flex items-center gap-1.5">
+                <span className="text-xs font-semibold truncate min-w-0 inline-flex items-center gap-1.5">
                   <Icon className="w-3 h-3 shrink-0" />
                   {s.label}
                 </span>
@@ -917,7 +917,7 @@ function PopupStep({
               }
               className={`px-3 py-1.5 text-xs font-bold transition-colors ${
                 (value.engagementMode ?? "natural") === "natural"
-                  ? "bg-emerald-500 text-gray-950"
+                  ? "bg-emerald-500 text-(--app-on-bright)"
                   : "bg-gray-900 text-gray-400 hover:text-white"
               }`}
             >
@@ -928,7 +928,7 @@ function PopupStep({
               onClick={() => onChange({ ...value, engagementMode: "fast" })}
               className={`px-3 py-1.5 text-xs font-bold transition-colors ${
                 value.engagementMode === "fast"
-                  ? "bg-amber-500 text-gray-950"
+                  ? "bg-amber-500 text-(--app-on-bright)"
                   : "bg-gray-900 text-gray-400 hover:text-white"
               }`}
             >
@@ -1096,7 +1096,7 @@ function PopupStep({
           type="button"
           onClick={onSaveAndContinue}
           disabled={saving || !taskId}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-gray-950 rounded-lg text-sm font-bold disabled:opacity-50"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-400 text-(--app-on-bright) rounded-lg text-sm font-bold disabled:opacity-50"
           title={!taskId ? "Save the task first" : ""}
         >
           {saving ? (
@@ -1320,7 +1320,7 @@ function KeysStep({
           onClick={onContinue}
           disabled={noKeys}
           title={noKeys ? "Add at least one key to continue" : ""}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-gray-950 rounded-lg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-(--app-on-bright) rounded-lg text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Continue to Embed
           <ArrowRight className="w-4 h-4" />
@@ -1665,7 +1665,7 @@ function KeyPoolManager({
             type="button"
             onClick={generate}
             disabled={busy}
-            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-500 text-gray-950 font-bold rounded-lg hover:bg-amber-400 disabled:opacity-50"
+            className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-500 text-(--app-on-bright) font-bold rounded-lg hover:bg-amber-400 disabled:opacity-50"
           >
             {busy ? (
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1887,7 +1887,7 @@ function EmbedSnippets({
                   {copiedIdx === i ? "Copied" : "Copy"}
                 </button>
               </div>
-              <pre className="text-[11px] font-mono text-cyan-200 bg-black/40 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap break-all">
+              <pre className="text-[11px] on-media font-mono text-cyan-200 bg-black/40 rounded px-2 py-1.5 overflow-x-auto whitespace-pre-wrap break-all">
                 {snippet}
               </pre>
             </div>

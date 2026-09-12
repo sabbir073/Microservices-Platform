@@ -311,9 +311,15 @@ async function main() {
       "the pool is narrowed only when the booked campaign HAS something servable",
       /if \(booked\.length > 0\) pool = booked;/.test(s)
     );
+    // The guard is the same; only its shape changed. The booking read moved
+    // into the `Promise.all` beside the creative pool (both key off the same
+    // placement id, so making one wait for the other was a wasted round-trip on
+    // every request). What matters is that a preview never resolves a booking
+    // and so never narrows the pool — asserted on the ternary that now carries
+    // it, rather than on the `if` block that used to.
     check(
       "an admin preview is not narrowed — they must see what the space holds",
-      /if \(!preview\) \{\s*const booking = await getActiveBooking/.test(s)
+      /preview \? Promise\.resolve\(null\) : getActiveBooking\(/.test(s)
     );
     check(
       "poolSize reports the pool actually drawn from",

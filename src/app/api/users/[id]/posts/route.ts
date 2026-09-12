@@ -17,7 +17,9 @@ export async function GET(
   const cursor = searchParams.get("cursor");
 
   const posts = await prisma.post.findMany({
-    where: { userId: id, isPublic: true, isHidden: false },
+    // A "Members only" post is still on its author's timeline for signed-in
+    // viewers — `isPublic` is the internet-audience choice, not visibility here.
+    where: { userId: id, isHidden: false },
     orderBy: { createdAt: "desc" },
     take: limit + 1,
     ...(cursor ? { skip: 1, cursor: { id: cursor } } : {}),

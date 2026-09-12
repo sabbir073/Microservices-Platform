@@ -46,7 +46,17 @@ export async function convertPointsToCash(
   }
 
   // Default to the whole balance; otherwise the requested (floored) amount.
-  const amount = requestedPoints == null ? balance : Math.floor(requestedPoints);
+  //
+  // The finite check is not redundant with the route's: a NaN `requestedPoints`
+  // survives every comparison below (NaN > balance and NaN < minConvert are both
+  // false), reaches `pointsToUsd` as NaN, and `usd <= 0` does not catch it
+  // either — so the CAS would be handed `decrement: NaN`. Guard in the library
+  // that owns the invariant rather than relying on one caller to sanitise.
+  const amount =
+    requestedPoints == null ? balance : Math.floor(requestedPoints);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, reason: "TOO_SMALL", threshold, points: balance, min: minConvert };
+  }
   if (amount > balance) {
     return { ok: false, reason: "INSUFFICIENT", threshold, points: balance };
   }
@@ -86,8 +96,8 @@ export async function convertPointsToCash(
           amount: usd,
           description: `Converted ${amount.toLocaleString()} points to ${formatUsd(usd)}`,
           // Per-occurrence by design. A user may convert points to cash
-          // twice in a session, for the same amount, quite legitimately.
-          // A deterministic key would make `Transaction @@unique([userId, reference])`
+          // twice in a session, for the same amount, quite legitimately.
+          // A deterministic key would make `Transaction @@unique([userId, reference])`
           // reject the second one, so this stays keyed on the instant it happened.
           reference: `convert_${userId}_${Date.now()}`,
         },

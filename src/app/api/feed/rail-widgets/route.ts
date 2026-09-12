@@ -25,49 +25,57 @@ export async function GET() {
   }
   const userId = session.user.id;
 
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: {
-      id: true,
-      level: true,
-      pointsBalance: true,
-      streak: true,
-      lastCheckIn: true,
-      referralCode: true,
-      package: { select: { accessLevel: true } },
-    },
-  });
+  // Four independent reads, one round-trip layer.
+  //
+  // The profile, the day context, the referral count and the mission lookup
+  // were four sequential `await`s, and only the earnings aggregate genuinely
+  // needed anything from the ones before it (`startOfDayUtc`). On Accelerate
+  // each layer is a full proxy round-trip, so this endpoint — which the feed
+  // hits on every mount — was paying three trips of pure waiting.
+  //
+  // getUserDayContext is React-`cache()`d and reads only country/timezone, so it
+  // does not duplicate the profile read below.
+  const [user, dayCtx, referralCount, missionRaw] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        level: true,
+        pointsBalance: true,
+        streak: true,
+        lastCheckIn: true,
+        referralCode: true,
+        package: { select: { accessLevel: true } },
+      },
+    }),
+    // All daily boundaries use the user's LOCAL midnight (country-based).
+    getUserDayContext(userId),
+    prisma.user.count({ where: { referredById: userId } }),
+    // The shared resolver (tier + level + schedule + audience targeting). This
+    // was a fourth hand-written copy of the same query; the widget would have
+    // shown a mission the user is no longer eligible for.
+    //
+    // The old copy carried `cacheStrategy: { ttl: 120 }`, which is dropped on
+    // purpose: the result is now per-user (targeting), so a shared cache entry
+    // would leak one user's mission to another.
+    getActiveMissionForUser(userId),
+  ]);
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
+  const { startOfDayUtc, dayKey: todayKey, tz } = dayCtx;
 
-  // All daily boundaries use the user's LOCAL midnight (country-based).
-  const { startOfDayUtc, dayKey: todayKey, tz } = await getUserDayContext(userId);
-
-  // These two are independent of each other and of the mission lookup below, so
-  // they run together. Awaiting them in sequence added a full Accelerate
-  // round-trip each — on an endpoint the feed calls on every mount.
-  const [todayAgg, referralCount] = await Promise.all([
-    prisma.transaction.aggregate({
-      // Today's earnings (points) — completed EARNING/BONUS transactions today.
-      where: {
-        userId,
-        status: "COMPLETED",
-        type: { in: ["EARNING", "BONUS"] },
-        createdAt: { gte: startOfDayUtc },
-      },
-      _sum: { points: true },
-    }),
-    prisma.user.count({ where: { referredById: userId } }),
-  ]);
-  // The shared resolver (tier + level + schedule + audience targeting). This
-  // was a fourth hand-written copy of the same query; the widget would have
-  // shown a mission the user is no longer eligible for.
-  //
-  // The old copy carried `cacheStrategy: { ttl: 120 }`, which is dropped on
-  // purpose: the result is now per-user (targeting), so a shared cache entry
-  // would leak one user's mission to another.
-  const missionRaw = await getActiveMissionForUser(userId);
+  // Today's earnings (points) — completed EARNING/BONUS transactions today.
+  // The only read that genuinely has to wait: its window comes from `dayCtx`.
+  const todayAgg = await prisma.transaction.aggregate({
+    where: {
+      userId,
+      status: "COMPLETED",
+      type: { in: ["EARNING", "BONUS"] },
+      createdAt: { gte: startOfDayUtc },
+    },
+    _sum: { points: true },
+  });
 
   // Login-streak status (mirror of /api/daily-reward GET, on the user's local day).
   let currentStreak = user.streak || 0;

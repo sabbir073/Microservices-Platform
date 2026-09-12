@@ -63,7 +63,7 @@ export function SoloRewardNotification({
         <Link
           href={href}
           onClick={() => setVisible(false)}
-          className="px-3 py-1.5 rounded-lg bg-white text-amber-600 text-xs font-bold hover:bg-white/90"
+          className="px-3 py-1.5 rounded-lg bg-white text-amber-700 text-xs font-bold hover:bg-white/90"
         >
           Claim
         </Link>

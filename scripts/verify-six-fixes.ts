@@ -403,6 +403,30 @@ async function main() {
       "the summary counts collected points, not every row",
       /filter\(\(a\) => a\.isClaimed\)/.test(api)
     );
+
+    // Owner report, 2026-09-12: claiming showed no ad (lost ad revenue), the
+    // grid cards were too big, and claimed badges cluttered the top.
+    check(
+      "claiming plays the shared interstitial-ad gate, like every other reward flow",
+      /runInterstitial/.test(view) &&
+        view.indexOf("runInterstitial(") >
+          view.indexOf("/api/achievements/${a.id}/claim")
+    );
+    check(
+      "the ad gate fires only after the claim already succeeded, so a slow or missing ad never blocks or costs the payout",
+      /toast\.success\(`Claimed[\s\S]{0,140}await runInterstitial\(\)/.test(view)
+    );
+    check(
+      "the achievement grid is denser than the old fixed 3-column layout, at every breakpoint",
+      /grid-cols-4/.test(view) &&
+        /sm:grid-cols-5/.test(view) &&
+        /md:grid-cols-6/.test(view) &&
+        /lg:grid-cols-8/.test(view)
+    );
+    check(
+      "claimed achievements sort behind claimable and in-progress ones, not deleted",
+      /canClaim \? 0 : !a\.isUnlocked \? 1 : 2/.test(view)
+    );
     check(
       "the earning paths trigger an evaluation",
       /runAchievementCheck/.test(code("app/api/admin/submissions/[id]/route.ts")) &&

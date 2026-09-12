@@ -8,6 +8,7 @@ import {
   direction,
   isSettled,
   magnitudeUsd,
+  pointsDenominated,
   signedUsd,
   sourceOf,
 } from "../src/lib/finance/signing";
@@ -267,9 +268,16 @@ async function main() {
     );
   }
   check(
-    "all eight streams are reported",
-    rev.streams.length === 8,
+    // Nine since the buyer task commission joined them. The count is asserted
+    // rather than the labels: a stream deleted or quietly dropped from the
+    // tuple is exactly the failure this console exists to prevent.
+    "all nine streams are reported",
+    rev.streams.length === 9,
     String(rev.streams.length)
+  );
+  check(
+    "the buyer task commission is one of them",
+    rev.streams.some((s) => s.key === "taskfee")
   );
   check(
     "the total is the sum of its parts",
@@ -302,9 +310,17 @@ async function main() {
       "withdrawal fees count only completed payouts",
       /status: "COMPLETED"/.test(s)
     );
+    // The exclusion moved into `adRevenueWindow` when the ad line started
+    // honouring the date filter. Same guarantee, asserted where it now lives —
+    // plus the reason it moved, so this does not drift back.
     check(
       "ad revenue excludes house campaigns",
-      /isHouse: false/.test(s)
+      /isHouse/.test(src("lib/ad-revenue.ts"))
+    );
+    check(
+      "…and the finance console asks for a WINDOW, not a lifetime total",
+      /adRevenueWindow\(/.test(s) && !/spentTotal/.test(s),
+      "a lifetime figure beside windowed ones makes the total mean nothing"
     );
   }
 
@@ -496,6 +512,139 @@ async function main() {
     check(
       "source colours come from the shared taxonomy, so admin and wallet agree",
       /SOURCE_META/.test(s)
+    );
+  }
+
+  /* ── Buyer money, and the staff side of the business ──────────────── */
+  console.log("\nBuyer task credit is not income");
+  {
+    // Buying task credit is wallet cash becoming task points. Counting it as
+    // revenue inflated income by the whole top-up, and again by the spend.
+    check(
+      "buying task credit is internal, not revenue",
+      direction(row("PURCHASE", -50, "taskcredit_buy_u1_1")) === "internal"
+    );
+    check(
+      "spending task credit on a completion is internal too",
+      direction(row("PURCHASE", 0, "taskspend_t1_1", -100)) === "internal"
+    );
+    check(
+      "the platform's cut of a funded task IS revenue",
+      direction(row("ADMIN_FEE", 0, "task_fee_t1_1", -5)) === "revenue" &&
+        sourceOf(row("ADMIN_FEE", 0, "task_fee_t1_1", -5)) === "taskfee"
+    );
+    // The fee row carries its money in `points` with `amount` at zero, so a
+    // report that reads `amount` shows real income as $0.00 — the founding bug
+    // of this console, in a new place.
+    check(
+      "a points-only row is recognised rather than read as zero",
+      pointsDenominated(row("ADMIN_FEE", 0, "task_fee_t1_1", -5)) &&
+        !pointsDenominated(row("EARNING", 1.5, "task_x", 150))
+    );
+    check(
+      "the revenue breakdown sums the buyer task commission",
+      /task_fee_/.test(code("lib/finance/revenue.ts")) &&
+        /key: "taskfee"/.test(code("lib/finance/revenue.ts"))
+    );
+    check(
+      "unverified subscription requests are not counted as money received",
+      /isActive: true/.test(code("lib/finance/revenue.ts")) &&
+        /endDate: \{ lt: new Date\(\) \}/.test(code("lib/finance/revenue.ts"))
+    );
+  }
+
+  console.log("\nPayroll");
+  {
+    const pay = row("BONUS", 500, "payroll_salary_2026-09");
+    check(
+      "a payroll payment is a cost, in its own bucket",
+      direction(pay) === "cost" && sourceOf(pay) === "payroll"
+    );
+    check(
+      "an ordinary user bonus still lands in the bonus bucket",
+      sourceOf(row("BONUS", 1, "welcome_bonus_u1")) === "bonus"
+    );
+
+    const run = code("lib/payroll/run.ts");
+    check(
+      "a period pays once — the reference is derived from person + period",
+      /payroll_salary_\$\{p\}/.test(run) && /payroll_commission_\$\{p\}/.test(run)
+    );
+    check(
+      "the ledger row is written BEFORE the balance moves",
+      run.indexOf("tx.transaction.create") < run.indexOf("tx.user.updateMany")
+    );
+    check(
+      "a duplicate reference is treated as already-paid, not as a crash",
+      /isDuplicateLedgerError\(e\)/.test(run)
+    );
+    check("the credit is checked, never assumed", /credited\.count !== 1/.test(run));
+    check(
+      "staff come from the one authoritative definition, not a new column",
+      /STAFF_WHERE/.test(run) && !/isStaff/.test(run)
+    );
+
+    const cfg = code("lib/payroll/config.ts");
+    check(
+      "no salary or commission rate is invented — everything starts at zero",
+      /perUnitUsd: 0, percentOfValue: 0/.test(cfg) &&
+        /getSetting<boolean>\(KEY_ENABLED, false\)/.test(cfg)
+    );
+
+    const basis = code("lib/payroll/basis.ts");
+    check(
+      "commission is earned on measurable work, from columns that already exist",
+      [
+        "submission_review",
+        "deposit_approval",
+        "withdrawal_payout",
+        "kyc_review",
+        "ad_review",
+        "listing_review",
+        "moderation",
+      ].every((k) => basis.includes(k))
+    );
+    check(
+      "a percentage is only offered where the item carries money",
+      /hasValue: true/.test(basis) && /hasValue: false/.test(basis)
+    );
+
+    const payApi = code("app/api/admin/payroll/pay/route.ts");
+    check("paying is gated on payroll.manage", /"payroll\.manage"/.test(payApi));
+    check(
+      "the amount is never taken from the client",
+      !/b\.amount/.test(payApi) && !/amountUsd: b\./.test(payApi)
+    );
+    check(
+      "a payment is attributable — audited against the person paid",
+      /action: "PAYROLL_PAID"/.test(payApi) && /targetUserId: b\.userId/.test(payApi)
+    );
+    check("a refused payment is audited too", /PAYROLL_PAY_REJECTED/.test(payApi));
+    check(
+      "a salary change names the person whose pay changed",
+      /targetUserId: id/.test(code("app/api/admin/payroll/route.ts"))
+    );
+
+    // The MANAGER role holds every permission except finance. A payroll
+    // permission outside FINANCE_PERMISSIONS would be a new door into it.
+    const rbac = code("lib/rbac.ts");
+    const fin = rbac.slice(
+      rbac.indexOf("export const FINANCE_PERMISSIONS"),
+      rbac.indexOf("];", rbac.indexOf("export const FINANCE_PERMISSIONS"))
+    );
+    check(
+      "payroll sits inside FINANCE_PERMISSIONS, so a MANAGER can never hold it",
+      fin.includes("payroll.view") && fin.includes("payroll.manage")
+    );
+
+    check(
+      "payroll shows on the finance console as an expense",
+      /getPayrollExpense/.test(code("app/admin/finance/page.tsx")) &&
+        /totals\.costUsd - payroll\.usd/.test(code("app/admin/finance/page.tsx"))
+    );
+    check(
+      "the payout rail is stated, not invented",
+      /platform wallet/i.test(src("lib/payroll/run.ts"))
     );
   }
 

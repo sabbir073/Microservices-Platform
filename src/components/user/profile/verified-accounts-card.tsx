@@ -105,7 +105,7 @@ export function VerifiedAccountsCard() {
             ) : (
               <a
                 href="/api/integrations/discord/start"
-                className="px-3 py-1.5 rounded-lg bg-[#5865f2] hover:bg-[#4752c4] text-white text-xs font-bold"
+                className="px-3 py-1.5 rounded-lg bg-[#5865f2] hover:bg-[#4752c4] text-(--app-on-accent) text-xs font-bold"
               >
                 Link Discord
               </a>

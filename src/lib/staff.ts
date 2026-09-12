@@ -1,3 +1,4 @@
+import { UserRole as PrismaUserRole } from "@/generated/prisma/enums";
 import { ADMIN_ROLES, type UserRole } from "@/lib/rbac";
 
 /**
@@ -39,12 +40,94 @@ export function isStaffRole(role: string | null | undefined): boolean {
 }
 
 /**
- * Drop-in `where` fragment for any query that feeds a public ranking.
+ * Drop-in `where` fragments for any query that feeds a public ranking, narrowed
+ * to the roles the GENERATED Prisma client actually knows about.
  *
- * Spread it into the query rather than filtering in JS after the fact: a
+ * Spread them into the query rather than filtering in JS after the fact: a
  * `take: 5` that pulls five rows and then removes the staff among them returns
  * three names, not five.
+ *
+ * `STAFF_ROLES` comes from `ADMIN_ROLES`, a hand-written list. Prisma validates
+ * every value in a `notIn` against its own enum and throws
+ * `PrismaClientValidationError` on anything it does not recognise — which takes
+ * down the whole page, not just the widget.
+ *
+ * The two lists fall out of step more easily than they should: adding a role in
+ * `rbac.ts` before the migration runs, or running a migration while `next dev`
+ * is up so the server keeps a client generated before the enum gained the value.
+ * That is exactly how `MANAGER` crashed `/social`.
+ *
+ * Intersecting here means a mismatch DEGRADES — one staff account may briefly
+ * appear on a board — instead of 500-ing the page. The board being slightly
+ * wrong for a minute is recoverable; the feed being down is not.
  */
+const KNOWN_ROLES = new Set<string>(Object.values(PrismaUserRole));
+const QUERYABLE_STAFF_ROLES = STAFF_ROLES.filter((r) => KNOWN_ROLES.has(r));
+
+/* c8 ignore next 6 */
+if (QUERYABLE_STAFF_ROLES.length !== STAFF_ROLES.length) {
+  const missing = STAFF_ROLES.filter((r) => !KNOWN_ROLES.has(r));
+  console.warn(
+    `[staff] Prisma client does not know role(s) ${missing.join(", ")} — ` +
+      `they cannot be filtered out of public rankings. Run \`npm run prisma:generate\` ` +
+      `and restart the dev server.`
+  );
+}
+
 export const NON_STAFF_WHERE = {
-  role: { notIn: STAFF_ROLES },
+  role: { notIn: QUERYABLE_STAFF_ROLES },
+} as const;
+
+// ───────────────────────── Employees vs clients ───────────────────────────────
+
+/**
+ * The owner's line: "super admin, manager, admin, finance admin, moderator —
+ * these are platform employees. Everyone else is a platform client."
+ *
+ * There is exactly ONE definition of that line and it is right here, derived
+ * from `ADMIN_ROLES`. Deliberately NOT a denormalised `isStaff` column on User:
+ * a column is a second definition, and a second definition drifts. The first
+ * time somebody changes a role with a raw SQL update, or adds a role to the
+ * enum and forgets the backfill, the column and `ADMIN_ROLES` disagree — and
+ * then "is this person staff?" has two answers depending on which one you ask.
+ * The role column is already on every row we load, so deriving costs nothing.
+ *
+ * `scripts/verify-staff-off-leaderboard.ts` asserts that no second list exists.
+ */
+export type AccountType = "staff" | "client";
+
+/** Employee or customer, from the role alone. The one place that decides. */
+export function accountTypeOf(role: string | null | undefined): AccountType {
+  return isStaffRole(role) ? "staff" : "client";
+}
+
+/** True when this account belongs to a paying/earning customer, not an employee. */
+export function isClientRole(role: string | null | undefined): boolean {
+  return !isStaffRole(role);
+}
+
+/** Label + colours for the staff/client badge, so every surface renders it the same. */
+export const ACCOUNT_TYPE_BADGE: Record<
+  AccountType,
+  { label: string; title: string; className: string }
+> = {
+  staff: {
+    label: "Staff",
+    title: "Platform employee — works on the platform. Hidden from public leaderboards.",
+    className: "bg-violet-500/10 text-violet-300 border-violet-500/30",
+  },
+  client: {
+    label: "Client",
+    title: "Platform customer — earns, buys or advertises here.",
+    className: "bg-slate-500/10 text-slate-400 border-slate-600/40",
+  },
+};
+
+/**
+ * The mirror of `NON_STAFF_WHERE` — for admin views that want employees only.
+ * Narrowed the same way and for the same reason: an unknown role here would
+ * throw rather than simply miss somebody.
+ */
+export const STAFF_WHERE = {
+  role: { in: QUERYABLE_STAFF_ROLES },
 } as const;

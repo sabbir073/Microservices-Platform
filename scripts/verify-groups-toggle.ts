@@ -3,6 +3,11 @@ import * as fs from "fs";
 import * as path from "path";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
+import {
+  CATEGORY_FOR_KEY,
+  SETTING_GROUPS,
+  settingEntry,
+} from "../src/lib/admin-settings-catalog";
 
 /**
  * Groups behind an admin switch, shipped off.
@@ -140,9 +145,15 @@ async function main() {
       "the tab only exists when the flag is on",
       /groupsEnabled\s*\?\s*\[\{ key: "groups"/.test(v)
     );
+    // Matched on the GUARD, not on the whole JSX line. The original pinned the
+    // exact string `&& <GroupsTab />}`, so wrapping the tab in a fragment to add
+    // a banner broke the test while the guard itself was untouched — a test that
+    // fails for a reason it does not care about teaches people to edit the test.
     check(
       "GroupsTab cannot mount with the flag off",
-      /\{groupsEnabled && activeTab === "groups" && <GroupsTab \/>\}/.test(v)
+      /\{groupsEnabled && activeTab === "groups" &&/.test(v) &&
+        // …and there is no OTHER mount that skips the guard.
+        (v.match(/<GroupsTab\s*\/>/g) ?? []).length === 1
     );
     // With one tab left, a tab strip is worse than none — that strip is exactly
     // what the owner screenshotted.
@@ -163,9 +174,13 @@ async function main() {
     );
     check(
       "the page reads it server-side and passes it down",
-      /const groupsEnabled = await isGroupsEnabled\(\)/.test(
-        code("src/app/(main)/social/page.tsx")
-      ) && /groupsEnabled=\{groupsEnabled\}/.test(code("src/app/(main)/social/page.tsx"))
+      // `isGroupsEnabled()` moved into the page's single Promise.all when six
+      // sequential awaits were collapsed into one — it is destructured now
+      // rather than assigned on its own line. Still read on the server, still
+      // passed down; that is the rule, and the await shape is not.
+      /isGroupsEnabled\(\)/.test(code("src/app/(main)/social/page.tsx")) &&
+        /groupsEnabled,/.test(code("src/app/(main)/social/page.tsx")) &&
+        /groupsEnabled=\{groupsEnabled\}/.test(code("src/app/(main)/social/page.tsx"))
     );
   }
 
@@ -174,9 +189,18 @@ async function main() {
   {
     const f = code("src/components/admin/settings/system-settings-form.tsx");
     check('the key is in DEFAULTS as false', /"ui\.groups_enabled": false/.test(f));
+    // Asserted against the real map rather than the literal that used to be
+    // hand-written in the form. The mapping moved into the settings catalog and
+    // is derived from it now; what matters is that Save still files this key
+    // under a category, because a key missing from the map renders, accepts
+    // input, says "saved" and writes nothing.
     check(
       "the key is mapped to the ui_toggles category so it saves",
-      /"ui\.groups_enabled": "ui_toggles"/.test(f)
+      CATEGORY_FOR_KEY["ui.groups_enabled"] === "ui_toggles"
+    );
+    check(
+      "…and it carries a label and a description an admin can act on",
+      (settingEntry("ui.groups_enabled")?.description?.length ?? 0) > 20
     );
     // `!== false` is the default-ON form and would show an unset value as on.
     check(
@@ -188,13 +212,24 @@ async function main() {
       /onChange=\{\(v\) => set\("ui\.groups_enabled", v\)\}/.test(f)
     );
     // A feature switch filed under a tab labelled "Popups" is one nobody finds.
+    // The point was never the word "Toggles" — it was that a feature switch
+    // must not be filed under a tab called "Popups", which is where nobody
+    // looks for it. Assert the property, not the wording.
     check(
-      "the tab is no longer labelled Popups",
-      /\{ id: "ui_toggles", label: "Toggles"/.test(f)
+      "the tab is not labelled Popups",
+      (() => {
+        const g = SETTING_GROUPS.find((x) => x.id === "ui_toggles");
+        return !!g && !/popup/i.test(g.label);
+      })()
     );
+    // The dead CATEGORY_CONFIG surface is gone entirely. It was a second,
+    // unreachable settings UI (nothing linked to `/admin/settings/<category>`)
+    // writing a rival key namespace — `site_name` beside `platform_name`,
+    // `smtp_user` beside `smtp_username`. It was also the ONLY editor for
+    // `allow_withdrawals`, so the withdrawal kill-switch had no reachable UI.
     check(
-      "it is NOT added to the dead CATEGORY_CONFIG surface",
-      !/ui\.groups_enabled/.test(code("src/app/admin/settings/[category]/page.tsx"))
+      "the rival CATEGORY_CONFIG settings surface no longer exists",
+      !fs.existsSync(path.join(root, "src/app/admin/settings/[category]/page.tsx"))
     );
   }
 

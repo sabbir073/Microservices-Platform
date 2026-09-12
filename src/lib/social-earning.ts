@@ -12,10 +12,57 @@
  * Idempotency: every credit writes a Transaction with a deterministic
  * `reference` that includes a `_recipient_` or `_actor_` segment so the two
  * sides cannot collide. POST_CREATE keeps its date-keyed once-per-day reference.
+ *
+ * ── The two admin-controlled earning modes ────────────────────────────────
+ *
+ *   POSTER  mode (`role === "recipient"`) — the author earns from the likes,
+ *           comments and shares their post receives. Gated by
+ *           `cfg.posterModeEnabled`.
+ *   ENGAGER mode (`role === "actor"`)     — the liker / commenter / sharer
+ *           earns for performing the action. Gated by
+ *           `cfg.engagerModeEnabled`.
+ *
+ * Both ship OFF (see SOCIAL_EARNING_DEFAULTS). Each has its own per-user daily
+ * point ceiling on top of the shared one.
+ *
+ * ── How each mode resists farming, in the attacker's terms ────────────────
+ *
+ *   "I'll like my own post 500 times."
+ *       Unlike/relike produces the SAME ledger reference
+ *       (`social_like_received_<role>_<postId>_<actorId>`), and
+ *       Transaction @@unique([userId, reference]) means it pays once, ever —
+ *       plus the actor === author self-guard fires before either side runs.
+ *
+ *   "Then I'll make a second account and we'll like each other all day."
+ *       The self-guard is blind to that, so the pair cap is:
+ *       `cfg.pairDailyCapPerUser` is the most either side may earn in a day
+ *       from ONE counterparty, counted off `metadata.sourceUserId` on today's
+ *       own social ledger rows. Earning the full daily cap this way costs the
+ *       attacker `dailyCap / pairCap` distinct real accounts, not two.
+ *
+ *   "I'll register 200 fresh accounts tonight."
+ *       `minAccountAgeHours` and `minLevelToEarn` both apply to the user being
+ *       PAID, on both sides, so a same-night farm earns nothing.
+ *
+ *   "I'll post 10,000 times."
+ *       POST_CREATE's reference is date-keyed per user, so it pays once a day;
+ *       `capPerPost` bounds what any single post can ever return its author;
+ *       and both mode caps bound the day regardless.
+ *
+ * ── Deleting a post or a comment ──────────────────────────────────────────
+ *
+ * Deletion NEITHER claws back NOR re-pays. The points were earned when the
+ * engagement happened and the ledger row is immutable history; `Transaction`
+ * has no FK to `Post`, so nothing cascades. Re-payment is impossible in the
+ * other direction too, because every reference embeds the original `postId`
+ * and cuids are never reissued. Moderators remove content, not money — if a
+ * post was fraudulent the admin reverses it from /admin/finance, where the
+ * reversal is itself an auditable ledger row.
  */
 import { prisma } from "@/lib/prisma";
 import { getPointsPerUsd } from "@/lib/economy";
 import { getUserDayContext } from "@/lib/user-day";
+import { calculateLevel } from "@/lib/level";
 import {
   TransactionStatus,
   TransactionType,
@@ -35,11 +82,18 @@ export type { SocialAction, SocialEarningConfig } from "@/lib/social-actions";
 
 export type SkipReason =
   | "disabled"
+  /** The earning MODE this side belongs to is switched off by the admin. */
+  | "mode_off"
   | "self"
   | "min_age"
+  | "min_level"
   | "banned"
   | "post_cap"
   | "daily_cap"
+  /** This side's own per-mode daily ceiling is full. */
+  | "mode_cap"
+  /** Already earned the day's maximum from this one counterparty. */
+  | "pair_cap"
   | "daily_xp_cap"
   | "duplicate"
   | "no_recipient";
@@ -280,6 +334,7 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
       id: true,
       status: true,
       createdAt: true,
+      xp: true,
       package: {
         select: {
           socialEarningMultiplier: true,
@@ -296,6 +351,11 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
     (Date.now() - user.createdAt.getTime()) / (1000 * 60 * 60);
   if (ageHours < cfg.minAccountAgeHours) {
     return { points: 0, xp: 0, skipped: "min_age" };
+  }
+  // Level gate. Applies to the user being PAID on BOTH sides, so it is not a
+  // way to farm an old-but-idle account either.
+  if (cfg.minLevelToEarn > 0 && calculateLevel(user.xp ?? 0) < cfg.minLevelToEarn) {
+    return { points: 0, xp: 0, skipped: "min_level" };
   }
 
   const pkg = (
@@ -361,33 +421,54 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   const day = await getUserDayContext(userId);
   const todayStart = day.startOfDayUtc;
 
-  // Daily points cap
-  const dailyPts = await prisma.transaction.aggregate({
+  // ONE scan of today's social ledger rows answers all four ceilings: the
+  // shared daily cap, this mode's own daily cap, the per-counterparty pair cap
+  // and the XP cap. It replaces an aggregate + a findMany, so it is a query
+  // cheaper than the version that only knew about two of them.
+  //
+  // Read off `Transaction`, deliberately — the ledger is never pruned. The
+  // previous generation of this feature counted from `SocialActionLog`, log
+  // retention deleted the rows at 120 days, and long-lived users silently
+  // stopped earning forever. Nothing here may depend on a prunable table.
+  //
+  // `metadata.role` and `metadata.sourceUserId` have been written on every
+  // social credit since this engine shipped, so the history reads correctly.
+  const todayRows = await prisma.transaction.findMany({
     where: {
       userId,
       reference: { startsWith: "social_" },
       createdAt: { gte: todayStart },
     },
-    _sum: { points: true },
+    select: { points: true, metadata: true },
   });
-  const todayPoints = Math.max(0, dailyPts._sum.points ?? 0);
 
-  // Daily XP cap (sum metadata.xp on today's social_* rows)
+  let todayPoints = 0;
+  let todayModePoints = 0;
+  let todayPairPoints = 0;
   let todayXp = 0;
-  if (cfg.dailyXpCapPerUser > 0) {
-    const todayRows = await prisma.transaction.findMany({
-      where: {
-        userId,
-        reference: { startsWith: "social_" },
-        createdAt: { gte: todayStart },
-      },
-      select: { metadata: true },
-    });
-    for (const r of todayRows) {
-      const md = r.metadata as { xp?: number } | null;
-      if (md && typeof md.xp === "number") todayXp += md.xp;
+  for (const r of todayRows) {
+    const md = r.metadata as
+      | { xp?: number; role?: string; sourceUserId?: string | null }
+      | null;
+    const pts = Math.max(0, r.points ?? 0);
+    todayPoints += pts;
+    if (md && typeof md.xp === "number") todayXp += md.xp;
+    // Rows written before `role` existed count only toward the shared cap —
+    // they cannot be attributed to a mode, and guessing would over-restrict.
+    if (md?.role === role) {
+      todayModePoints += pts;
+      if (sourceUserId && md.sourceUserId === sourceUserId) {
+        todayPairPoints += pts;
+      }
     }
   }
+
+  // This side's own daily budget. 0 means "pays nothing", matching
+  // `dailyCapPerUser` — a budget of zero is zero.
+  const modeCap =
+    role === "recipient" ? cfg.posterDailyCapPerUser : cfg.engagerDailyCapPerUser;
+  // The pair cap is a FILTER, not a budget: 0 switches it off.
+  const pairCap = cfg.pairDailyCapPerUser;
 
   // Cap points (apply plan multiplier first, then daily/post caps)
   let allowPoints = Math.max(0, Math.floor(basePoints * planMultiplier));
@@ -396,6 +477,12 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
       allowPoints = Math.min(allowPoints, cfg.capPerPost - postEarned);
     }
     allowPoints = Math.min(allowPoints, Math.max(0, cfg.dailyCapPerUser - todayPoints));
+    // Mode + pair ceilings stack UNDER the shared cap — each only ever narrows
+    // the allowance, so raising one can never widen another.
+    allowPoints = Math.min(allowPoints, Math.max(0, modeCap - todayModePoints));
+    if (pairCap > 0 && sourceUserId) {
+      allowPoints = Math.min(allowPoints, Math.max(0, pairCap - todayPairPoints));
+    }
   }
   if (allowPoints > 0 && cfg.dailyCapPerUser > 0 && todayPoints >= cfg.dailyCapPerUser) {
     allowPoints = 0;
@@ -410,6 +497,12 @@ async function creditOne(ctx: CreditCtx): Promise<SideResult> {
   if (allowPoints <= 0 && allowXp <= 0) {
     if (cfg.dailyCapPerUser > 0 && todayPoints >= cfg.dailyCapPerUser) {
       return { points: 0, xp: 0, skipped: "daily_cap" };
+    }
+    if (todayModePoints >= modeCap) {
+      return { points: 0, xp: 0, skipped: "mode_cap" };
+    }
+    if (pairCap > 0 && sourceUserId && todayPairPoints >= pairCap) {
+      return { points: 0, xp: 0, skipped: "pair_cap" };
     }
     if (cfg.dailyXpCapPerUser > 0 && todayXp >= cfg.dailyXpCapPerUser) {
       return { points: 0, xp: 0, skipped: "daily_xp_cap" };
@@ -622,6 +715,11 @@ export async function awardSocialEarning(
     // post would pump your own milestone without ever paying.
     if (actorUserId && actorUserId === postOwnerUserId && action !== "POST_CREATE") {
       result.recipient = { points: 0, xp: 0, skipped: "self" };
+    } else if (!cfg.posterModeEnabled) {
+      // POSTER mode off. Checked ahead of resolveRatio on purpose: letting the
+      // counter advance while the mode is off would bank milestones that all
+      // pay out the moment the owner flips the switch.
+      result.recipient = { points: 0, xp: 0, skipped: "mode_off" };
     } else {
       const gate = await resolveRatio({
         userId: postOwnerUserId,
@@ -657,6 +755,9 @@ export async function awardSocialEarning(
   if (actorUserId) {
     if (postOwnerUserId && actorUserId === postOwnerUserId) {
       result.actor = { points: 0, xp: 0, skipped: "self" };
+    } else if (!cfg.engagerModeEnabled) {
+      // ENGAGER mode off — again before resolveRatio, so no milestone is banked.
+      result.actor = { points: 0, xp: 0, skipped: "mode_off" };
     } else {
       const gate = await resolveRatio({
         userId: actorUserId,

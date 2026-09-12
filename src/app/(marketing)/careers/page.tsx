@@ -71,16 +71,16 @@ export default function CareersPage() {
             <a
               key={r.title}
               href={`mailto:${CAREERS_EMAIL}?subject=${encodeURIComponent("Application: " + r.title)}`}
-              className="group block rounded-2xl bg-(--mk-surface) border border-(--mk-border) backdrop-blur-xl p-5 hover:bg-(--mk-surface-2) hover:border-blue-500/30 transition-all"
+              className="group block rounded-2xl mk-card backdrop-blur-xl p-5 hover:bg-(--mk-surface-2) hover:border-blue-500/30 transition-all"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <h3 className="text-lg font-bold text-(--mk-text)">{r.title}</h3>
                   <p className="mt-1 text-sm text-(--mk-muted)">{r.blurb}</p>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs text-(--mk-muted)">
-                    <span className="rounded-full bg-(--mk-surface) border border-(--mk-border) px-2.5 py-1">{r.team}</span>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-(--mk-surface) border border-(--mk-border) px-2.5 py-1"><MapPin className="h-3 w-3" /> {r.location}</span>
-                    <span className="rounded-full bg-(--mk-surface) border border-(--mk-border) px-2.5 py-1">{r.type}</span>
+                    <span className="rounded-full mk-card px-2.5 py-1">{r.team}</span>
+                    <span className="inline-flex items-center gap-1 rounded-full mk-card px-2.5 py-1"><MapPin className="h-3 w-3" /> {r.location}</span>
+                    <span className="rounded-full mk-card px-2.5 py-1">{r.type}</span>
                   </div>
                 </div>
                 <span className="inline-flex items-center gap-1.5 rounded-lg bg-linear-to-r from-blue-600 to-purple-600 px-4 py-2 text-sm font-bold text-white shrink-0">

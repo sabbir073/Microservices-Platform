@@ -41,7 +41,7 @@ export function RelatedCourses({ related }: { related: Related[] }) {
                     className="object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-gray-700">
+                  <div className="w-full h-full flex items-center justify-center text-(--app-glyph)">
                     <GraduationCap className="w-10 h-10" />
                   </div>
                 )}

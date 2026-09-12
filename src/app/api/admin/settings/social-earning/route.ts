@@ -22,7 +22,15 @@ const sideSchema = z.object({
 
 const schema = z.object({
   enabled: z.boolean(),
+  // The two earning modes. Same key names the engine reads via
+  // parseSocialEarningConfig -> `poster_mode_enabled` / `engager_mode_enabled`.
+  poster_mode_enabled: z.boolean(),
+  engager_mode_enabled: z.boolean(),
   daily_cap_per_user: z.number().int().min(0).max(100000),
+  poster_daily_cap_per_user: z.number().int().min(0).max(100000),
+  engager_daily_cap_per_user: z.number().int().min(0).max(100000),
+  pair_daily_cap_per_user: z.number().int().min(0).max(100000),
+  min_level_to_earn: z.number().int().min(0).max(50),
   daily_xp_cap_per_user: z.number().int().min(0).max(100000),
   cap_per_post: z.number().int().min(0).max(100000),
   min_account_age_hours: z.number().int().min(0).max(720),
@@ -78,7 +86,13 @@ export async function POST(req: NextRequest) {
 
   const writes: Array<[string, unknown]> = [
     ["social_earning.enabled", cfg.enabled],
+    ["social_earning.poster_mode_enabled", cfg.poster_mode_enabled],
+    ["social_earning.engager_mode_enabled", cfg.engager_mode_enabled],
     ["social_earning.daily_cap_per_user", cfg.daily_cap_per_user],
+    ["social_earning.poster_daily_cap_per_user", cfg.poster_daily_cap_per_user],
+    ["social_earning.engager_daily_cap_per_user", cfg.engager_daily_cap_per_user],
+    ["social_earning.pair_daily_cap_per_user", cfg.pair_daily_cap_per_user],
+    ["social_earning.min_level_to_earn", cfg.min_level_to_earn],
     ["social_earning.daily_xp_cap_per_user", cfg.daily_xp_cap_per_user],
     ["social_earning.cap_per_post", cfg.cap_per_post],
     ["social_earning.min_account_age_hours", cfg.min_account_age_hours],

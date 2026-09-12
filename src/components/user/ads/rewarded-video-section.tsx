@@ -273,7 +273,7 @@ function RewardedPlayer({
     <div className="fixed inset-0 z-9999 bg-black/95 grid place-items-center p-4">
       <div className="w-full max-w-md space-y-3">
         <div className="flex items-center justify-between">
-          <p className="text-sm font-bold text-white truncate">{ad.title}</p>
+          <p className="text-sm font-bold text-white truncate min-w-0">{ad.title}</p>
           <button
             onClick={onClose}
             aria-label="Close"

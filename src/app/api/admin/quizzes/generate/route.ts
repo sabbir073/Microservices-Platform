@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    if (!isGeminiConfigured()) {
+    if (!(await isGeminiConfigured())) {
       return NextResponse.json(
         { error: "Gemini AI is not configured. Set GEMINI_API_KEY in environment." },
         { status: 503 }

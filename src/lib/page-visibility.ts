@@ -56,6 +56,9 @@ export const USER_PAGES: UserPage[] = [
   { path: "/packages", label: "Packages", group: "Grow" },
   { path: "/advertiser", label: "Create Ad", group: "Grow" },
   { path: "/create-task", label: "Create Task", group: "Grow" },
+  { path: "/transactions", label: "Transactions", group: "Account" },
+  { path: "/buyer", label: "Buyer Hub", group: "Grow" },
+  { path: "/buy-points", label: "Buy Credit", group: "Grow" },
   { path: "/agency", label: "Agency Console", group: "Grow" },
   // Account
   { path: "/deposit", label: "Add Funds", group: "Account" },

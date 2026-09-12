@@ -27,7 +27,13 @@ export interface AdminSideRow {
 
 export interface AdminSocialEarningConfig {
   enabled: boolean;
+  poster_mode_enabled: boolean;
+  engager_mode_enabled: boolean;
   daily_cap_per_user: number;
+  poster_daily_cap_per_user: number;
+  engager_daily_cap_per_user: number;
+  pair_daily_cap_per_user: number;
+  min_level_to_earn: number;
   daily_xp_cap_per_user: number;
   cap_per_post: number;
   min_account_age_hours: number;
@@ -58,7 +64,13 @@ export async function readSocialEarningAdminConfig(): Promise<AdminSocialEarning
 
   return {
     enabled: cfg.enabled,
+    poster_mode_enabled: cfg.posterModeEnabled,
+    engager_mode_enabled: cfg.engagerModeEnabled,
     daily_cap_per_user: cfg.dailyCapPerUser,
+    poster_daily_cap_per_user: cfg.posterDailyCapPerUser,
+    engager_daily_cap_per_user: cfg.engagerDailyCapPerUser,
+    pair_daily_cap_per_user: cfg.pairDailyCapPerUser,
+    min_level_to_earn: cfg.minLevelToEarn,
     daily_xp_cap_per_user: cfg.dailyXpCapPerUser,
     cap_per_post: cfg.capPerPost,
     min_account_age_hours: cfg.minAccountAgeHours,

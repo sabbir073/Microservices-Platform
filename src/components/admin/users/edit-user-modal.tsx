@@ -21,9 +21,12 @@ import {
   type VerifiedBadgeStyle,
 } from "@/components/user/profile/verified-badge";
 import { userDisplayId } from "@/lib/display-id";
-import { isAdmin, PERMISSION_CATALOG, permissionLabel, permissionDescription, type UserRole } from "@/lib/rbac";
+import { useCountries } from "@/lib/use-countries";
+import { PERMISSION_CATALOG, permissionLabel, permissionDescription, canAdministerStaffAccount, canAssignStaffRole, ROLE_CONFIG, roleDescription, type UserRole } from "@/lib/rbac";
 import { USER_PAGES } from "@/lib/page-visibility";
-import { FEATURES } from "@/lib/features";
+import { FEATURES, type PackageFeatureKey } from "@/lib/features";
+import { FEATURE_BUNDLES, missingFor } from "@/lib/feature-bundles";
+import { BuyerSuspensionPanel } from "@/components/admin/users/buyer-suspension-panel";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import { DateField } from "@/components/ui/date-field";
 
@@ -104,10 +107,27 @@ export interface EditUserData {
 interface UserEditFormProps {
   user: EditUserData;
   isSuperAdmin: boolean;
+  /**
+   * The signed-in admin's role. Drives the role picker through the SAME
+   * functions the API uses, so the dropdown offers exactly what the server
+   * will accept — a Manager sees the staff roles it may assign and does not
+   * see Finance Admin, Manager or Super Admin at all.
+   */
+  actorRole?: UserRole;
   /** All active plans, used to populate the plan picker. */
   plans: Array<{ id: string; slug: string; name: string }>;
   /** Active super-admin-defined custom roles, for the role dropdown. */
   customRoles?: Array<{ id: string; name: string }>;
+  /**
+   * The user's PLAN-level feature values, before their per-user overrides.
+   * The form needs them to work out what the user will actually end up with:
+   * a dependency already supplied by their package is not missing, and one the
+   * admin has just switched Off is.
+   */
+  packageFeatures?: Partial<Record<PackageFeatureKey, boolean>>;
+  /** This buyer's own suspensions, and the platform catalog to pick from. */
+  buyerBlocks?: { types: string[]; platforms: string[]; note: string };
+  platformList?: { key: string; label: string; emoji: string }[];
   /** Called when admin clicks Cancel or after successful Save. Defaults to router.back(). */
   onDone?: () => void;
 }
@@ -134,6 +154,25 @@ const TABS: Array<{ id: Tab; label: string; superOnly?: boolean }> = [
   { id: "address", label: "Address" },
 ];
 
+/**
+ * Roles whose name suggests something narrower than what they grant.
+ *
+ * Every entry here exists because the label alone could reasonably be read as
+ * a user-side capability when it is in fact admin-panel access.
+ */
+const ROLE_WARNINGS: Record<string, string> = {
+  AD_MANAGER:
+    "Admin role — opens the admin panel and can manage EVERY advertiser's campaigns, not just their own. To let someone run their own ads, leave the role as User and turn on “Run Ads (advertiser)” under Feature Access instead.",
+  AGENCY:
+    "User-side console, not an admin. Automatically grants Run Ads, Agency Mode and Create Tasks. If you only want them to buy tasks, leave the role as User and turn on Create Tasks under Feature Access.",
+  MODERATOR:
+    "Admin role — opens the admin panel with moderation powers over other people's content.",
+  FINANCE_ADMIN:
+    "Admin role — can see and act on platform finances, including other users' balances and payouts.",
+  SUPER_ADMIN:
+    "Full control of the platform, including other admins and every protected setting. Grant this to nobody you would not trust with the database.",
+};
+
 const PROFESSIONS = [
   "Student",
   "Software Engineer",
@@ -155,8 +194,12 @@ const PROFESSIONS = [
 export function UserEditForm({
   user,
   isSuperAdmin,
+  actorRole,
   plans,
   customRoles = [],
+  packageFeatures = {},
+  buyerBlocks,
+  platformList = [],
   onDone,
 }: UserEditFormProps) {
   const router = useRouter();
@@ -173,6 +216,8 @@ export function UserEditForm({
   const [tab, setTab] = useState<Tab>("account");
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  // The canonical 196-row country list, from the `Country` table.
+  const countries = useCountries();
 
   // Form state — initialized from user, all fields strings (or "" / undefined)
   const [form, setForm] = useState({
@@ -271,8 +316,31 @@ export function UserEditForm({
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((p) => ({ ...p, [k]: v }));
 
-  // Non-super admins may not change a user who already holds an admin role.
-  const roleLocked = !isSuperAdmin && isAdmin(user.role as UserRole);
+  // Locked when the hierarchy says this admin may not administer this account
+  // at all. Same function as the API — the form and the server cannot disagree
+  // about who is editable, which is how a UI that offers an action the server
+  // then 403s gets built.
+  const effectiveActor: UserRole | undefined =
+    actorRole ?? (isSuperAdmin ? "SUPER_ADMIN" : undefined);
+  const roleLocked = !canAdministerStaffAccount(
+    effectiveActor,
+    user.role as UserRole
+  ).ok;
+  // The roles this admin may actually hand out, in display order.
+  const assignableRoles = (
+    [
+      "ADMIN",
+      "MANAGER",
+      "MODERATOR",
+      "SUPPORT_ADMIN",
+      "CONTENT_ADMIN",
+      "MARKETING_ADMIN",
+      "FINANCE_ADMIN",
+      "AD_MANAGER",
+      "AGENCY",
+      "SUPER_ADMIN",
+    ] as UserRole[]
+  ).filter((r) => canAssignStaffRole(effectiveActor, r).ok);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -569,9 +637,11 @@ export function UserEditForm({
               </Field>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Role">
-                  {/* Admin roles are SUPER_ADMIN-only (feature #8) — non-super
-                      admins can only set USER/TUTOR and can't touch a user who
-                      already holds an admin role. Server enforces this too. */}
+                  {/* Which staff roles are offered comes from the same
+                      canAssignStaffRole() the API enforces with: a super admin
+                      sees all of them, a manager sees the staff it administers
+                      (no Finance Admin, no Manager, no Super Admin), everyone
+                      else sees only USER/TUTOR. */}
                   <select
                     value={roleValue}
                     onChange={(e) => setRoleValue(e.target.value)}
@@ -580,18 +650,14 @@ export function UserEditForm({
                   >
                     <option value="USER">User</option>
                     <option value="TUTOR">Tutor</option>
-                    {isSuperAdmin ? (
+                    {assignableRoles.length > 0 ? (
                       <>
-                        <option value="ADMIN">Admin</option>
-                        <option value="MODERATOR">Moderator</option>
-                        <option value="SUPPORT_ADMIN">Support Admin</option>
-                        <option value="CONTENT_ADMIN">Content Admin</option>
-                        <option value="MARKETING_ADMIN">Marketing Admin</option>
-                        <option value="FINANCE_ADMIN">Finance Admin</option>
-                        <option value="AD_MANAGER">Ad Manager</option>
-                        <option value="AGENCY">Agency</option>
-                        <option value="SUPER_ADMIN">Super Admin</option>
-                        {customRoles.length > 0 && (
+                        {assignableRoles.map((r) => (
+                          <option key={r} value={r} title={roleDescription(r)}>
+                            {ROLE_CONFIG[r].label}
+                          </option>
+                        ))}
+                        {isSuperAdmin && customRoles.length > 0 && (
                           <optgroup label="Custom roles">
                             {customRoles.map((cr) => (
                               <option key={cr.id} value={`custom:${cr.id}`}>
@@ -613,6 +679,22 @@ export function UserEditForm({
                       )
                     )}
                   </select>
+                  {/*
+                    What this role actually confers, at the moment it is picked.
+
+                    "Ad Manager" reads like "this person can run ads" and it is
+                    not: it is an ADMIN role that opens the admin panel with
+                    `ads.manage` over EVERY advertiser's campaigns. Someone who
+                    just wants to advertise their own thing needs the
+                    `advertiser` FEATURE on the Feature Access tab — a
+                    completely different system. Granting the role by mistake
+                    hands a customer the keys to everyone else's ad account.
+                  */}
+                  {ROLE_WARNINGS[roleValue] && (
+                    <p className="mt-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-2.5 py-2 text-[11px] leading-relaxed text-amber-300">
+                      {ROLE_WARNINGS[roleValue]}
+                    </p>
+                  )}
                 </Field>
                 <Field label="Status">
                   <select
@@ -919,19 +1001,19 @@ export function UserEditForm({
                 <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
                   <div className="flex items-center gap-2">
                     <dt className="text-slate-500 shrink-0">Display ID:</dt>
-                    <dd className="text-white font-mono font-bold truncate">
+                    <dd className="text-white font-mono font-bold break-all min-w-0">
                       {userDisplayId(user.id)}
                     </dd>
                   </div>
                   <div className="flex items-center gap-2">
                     <dt className="text-slate-500 shrink-0">Internal ID:</dt>
-                    <dd className="text-slate-400 font-mono truncate text-[10px]">
+                    <dd className="text-slate-400 font-mono break-all min-w-0 text-[10px]">
                       {user.id}
                     </dd>
                   </div>
                   <div className="flex items-center gap-2">
                     <dt className="text-slate-500 shrink-0">Email:</dt>
-                    <dd className="text-slate-300 truncate">{user.email}</dd>
+                    <dd className="text-slate-300 break-all min-w-0">{user.email}</dd>
                   </div>
                   <div className="flex items-center gap-2">
                     <dt className="text-slate-500 shrink-0">Role:</dt>
@@ -1208,13 +1290,37 @@ export function UserEditForm({
           {tab === "address" && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Country is a CODE, not an address line.
+                    This was a free-text box with the placeholder "Bangladesh",
+                    and three live accounts duly hold the literal string
+                    "Bangladesh" — which matches no ad targeting rule, no
+                    audience segment and no report bucket. The list is the
+                    canonical `Country` table (all 196 rows, ISO2 values), the
+                    same one every other country dropdown on the platform now
+                    reads. */}
                 <Field label="Country">
-                  <input
+                  <select
                     value={form.country}
                     onChange={(e) => set("country", e.target.value)}
                     className={fieldCls}
-                    placeholder="Bangladesh"
-                  />
+                  >
+                    <option value="">— Not set —</option>
+                    {countries.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.flag ? `${c.flag} ` : ""}
+                        {c.name} ({c.code})
+                      </option>
+                    ))}
+                    {/* A row whose stored value is not in the list (an old
+                        free-text value) must still be visible and editable —
+                        silently blanking it on open would destroy data. */}
+                    {form.country &&
+                      !countries.some((c) => c.code === form.country) && (
+                        <option value={form.country}>
+                          {form.country} — not a known country code
+                        </option>
+                      )}
+                  </select>
                 </Field>
                 <Field label="Region">
                   <input
@@ -1291,6 +1397,19 @@ export function UserEditForm({
 
           {tab === "access" && (
             <div className="space-y-4">
+              {/* Per-buyer suspensions live beside the feature grants because
+                  that is where an admin already goes to decide what this one
+                  account may do. The global lists are in Settings; this is the
+                  exception for one person. */}
+              {buyerBlocks && platformList.length > 0 && (
+                <BuyerSuspensionPanel
+                  userId={user.id}
+                  platforms={platformList}
+                  initialTypes={buyerBlocks.types}
+                  initialPlatforms={buyerBlocks.platforms}
+                  initialNote={buyerBlocks.note}
+                />
+              )}
               <p className="text-xs text-slate-500">
                 Override this user&apos;s feature access. <b>Default</b> follows
                 their plan; <b>On</b>/<b>Off</b> force it regardless of package.
@@ -1306,6 +1425,14 @@ export function UserEditForm({
                   </p>
                   {FEATURES.filter((f) => f.group === grp).map((f) => {
                     const cur = form.featureOverrides[f.key];
+                    // What this user will END UP with once saved: the pending
+                    // override if the admin set one, otherwise their plan.
+                    const effective = (k: PackageFeatureKey) =>
+                      form.featureOverrides[k] ?? packageFeatures[k] ?? false;
+                    const bundle = FEATURE_BUNDLES[f.key];
+                    const gaps = effective(f.key)
+                      ? missingFor(f.key, effective)
+                      : { requires: [], suggests: [] };
                     const setOv = (val: boolean | null) => {
                       const next = { ...form.featureOverrides };
                       if (val === null) delete next[f.key];
@@ -1320,8 +1447,9 @@ export function UserEditForm({
                     return (
                       <div
                         key={f.key}
-                        className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-slate-950/50 border border-slate-800"
+                        className="rounded-lg bg-slate-950/50 border border-slate-800"
                       >
+                      <div className="flex items-center justify-between gap-3 px-3 py-2">
                         <span className="text-sm text-white">{f.label}</span>
                         <div className="inline-flex rounded-lg border border-slate-700 overflow-hidden text-xs font-semibold shrink-0">
                           {opts.map(({ lbl, val }) => {
@@ -1348,6 +1476,117 @@ export function UserEditForm({
                             );
                           })}
                         </div>
+                      </div>
+
+                      {/*
+                        What else this grant needs. Granting a capability is not
+                        the same as making it usable: an admin who ticks
+                        "Create Tasks" and stops there leaves the buyer to hit
+                        "Social task creation isn't enabled for your account"
+                        with no clue which of 28 switches is missing.
+                      */}
+                      {effective(f.key) && bundle && (
+                        <div className="border-t border-slate-800 px-3 py-2.5 space-y-2">
+                          <p className="text-[11px] leading-relaxed text-slate-500">
+                            {bundle.summary}
+                          </p>
+
+                          {gaps.requires.length > 0 && (
+                            <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-2">
+                              <p className="text-[11px] font-bold text-amber-300">
+                                Needs {gaps.requires.length} more to work
+                              </p>
+                              {gaps.requires.map((d) => (
+                                <div key={d.key} className="mt-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      set("featureOverrides", {
+                                        ...form.featureOverrides,
+                                        [d.key]: true,
+                                      })
+                                    }
+                                    className="rounded border border-amber-400/50 bg-amber-400/15 px-2 py-0.5 text-[11px] font-semibold text-amber-200 hover:bg-amber-400/25"
+                                  >
+                                    Turn on{" "}
+                                    {FEATURES.find((x) => x.key === d.key)
+                                      ?.label ?? d.key}
+                                  </button>
+                                  <p className="mt-0.5 text-[11px] leading-relaxed text-amber-200/60">
+                                    {d.why}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {gaps.suggests.length > 0 && (
+                            <div className="space-y-1">
+                              {gaps.suggests.map((d) => (
+                                <div key={d.key}>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      set("featureOverrides", {
+                                        ...form.featureOverrides,
+                                        [d.key]: true,
+                                      })
+                                    }
+                                    className="rounded border border-slate-700 px-2 py-0.5 text-[11px] font-semibold text-slate-300 hover:text-white"
+                                  >
+                                    Also turn on{" "}
+                                    {FEATURES.find((x) => x.key === d.key)
+                                      ?.label ?? d.key}
+                                  </button>
+                                  <p className="mt-0.5 text-[11px] leading-relaxed text-slate-600">
+                                    {d.why}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+
+                          {bundle.alsoNeeds && bundle.alsoNeeds.length > 0 && (
+                            <div>
+                              <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                                Check separately
+                              </p>
+                              <ul className="mt-0.5 space-y-0.5">
+                                {bundle.alsoNeeds.map((n) => (
+                                  <li
+                                    key={n.label}
+                                    className="text-[11px] leading-relaxed text-slate-500"
+                                  >
+                                    <span className="text-slate-400">
+                                      {n.label}
+                                    </span>{" "}
+                                    — {n.why}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {bundle.doesNotGrant &&
+                            bundle.doesNotGrant.length > 0 && (
+                              <div>
+                                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-600">
+                                  Does NOT grant
+                                </p>
+                                <ul className="mt-0.5 space-y-0.5">
+                                  {bundle.doesNotGrant.map((n) => (
+                                    <li
+                                      key={n}
+                                      className="text-[11px] leading-relaxed text-slate-500"
+                                    >
+                                      {n}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
+                      )}
                       </div>
                     );
                   })}

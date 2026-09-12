@@ -9,6 +9,8 @@ import { getEffectiveFeatures } from "@/lib/packages";
 import { getHiddenPaths } from "@/lib/page-visibility-server";
 import { PageAccessGuard } from "@/components/dashboard/page-access-guard";
 import { AnchorAdBar } from "@/components/user/primitives/anchor-ad-bar";
+import { maintenanceFor } from "@/lib/maintenance";
+import { MaintenanceScreen } from "@/components/dashboard/maintenance-screen";
 
 export default async function MainLayout({
   children,
@@ -34,7 +36,10 @@ export default async function MainLayout({
   //  - getHiddenPaths: super-admin page visibility → nav hiding + route guard
   //  - the avatar: the session doesn't carry it, and the header/sidebar need it.
   //    Short cache so a new upload appears after PhotoModal's router.refresh.
-  const [{ enabled }, hiddenPaths, dbUser] = await Promise.all([
+  //  - maintenanceFor: the admin's Maintenance Mode switch. It joins this
+  //    Promise.all rather than sitting in front of it so a platform that is UP
+  //    — every request but the rare one — pays nothing extra for the check.
+  const [{ enabled }, hiddenPaths, dbUser, maintenance] = await Promise.all([
     getEffectiveFeatures(session.user.id),
     getHiddenPaths(session.user.id),
     prisma.user
@@ -44,7 +49,18 @@ export default async function MainLayout({
         cacheStrategy: { ttl: 10, swr: 30 },
       })
       .catch(() => null),
+    maintenanceFor(session.user.id).catch(() => ({
+      // Never close the platform because the settings read failed — an
+      // unreachable database must not look like a deliberate shutdown.
+      active: false,
+      message: "",
+    })),
   ]);
+
+  // Closed for everyone but staff, who need to be able to see the fix land.
+  if (maintenance.active) {
+    return <MaintenanceScreen message={maintenance.message} />;
+  }
   const features = Array.from(enabled);
   const avatar = dbUser?.avatar ?? null;
 
@@ -62,7 +78,8 @@ export default async function MainLayout({
       />
 
       {/* Main Content */}
-      <div className="lg:pl-72">
+      {/* Rail width at each tier: 0 (phone) → 256px (md) → 288px (lg). */}
+      <div className="md:pl-64 lg:pl-72">
         {/* Header */}
         <Header user={session.user} avatar={avatar} />
 
@@ -90,7 +107,12 @@ export default async function MainLayout({
             Nothing below ~1400px moves: at 1280px the region is already 928px,
             well under the cap, so the feed's right rail and every mobile and
             tablet layout are untouched. */}
-        <main className="mx-auto w-full max-w-7xl py-6 px-4 sm:px-6 lg:px-8 pb-[calc(6rem+var(--anchor-ad-h,0px))] lg:pb-[calc(2rem+var(--anchor-ad-h,0px))] scroll-mt-[calc(4rem+env(safe-area-inset-top))]">
+        {/* Page gutter. `px-4` on a phone put a card's content 16px from the
+            screen edge and its own padding immediately inside that — the
+            crowding that reads as cheap. `--app-gap` is the same fluid step the
+            cards space themselves by, so the gutter and the rhythm inside the
+            page are one measurement rather than two guesses. */}
+        <main className="mx-auto w-full max-w-7xl py-(--app-pad) px-(--app-pad) sm:px-6 lg:px-8 pb-[calc(6rem+var(--anchor-ad-h,0px))] md:pb-[calc(2rem+var(--anchor-ad-h,0px))] scroll-mt-[calc(4rem+env(safe-area-inset-top))]">
           <AppRefreshShell>{children}</AppRefreshShell>
         </main>
       </div>

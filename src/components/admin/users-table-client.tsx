@@ -18,6 +18,10 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { ROLE_CONFIG, type UserRole } from "@/lib/rbac";
+// Employee vs customer comes from ONE place (src/lib/staff.ts), derived from
+// ADMIN_ROLES. Never re-list roles here — that is how the leaderboard filter
+// and the admin UI ended up able to disagree about who counts as staff.
+import { accountTypeOf, ACCOUNT_TYPE_BADGE } from "@/lib/staff";
 import { BulkActionsBar } from "@/components/admin/bulk-actions-bar";
 import { PackageBadge } from "@/components/user/profile/badges";
 import { Avatar } from "@/components/user/primitives/avatar";
@@ -324,15 +328,32 @@ export function UsersTableClient({
                         </span>
                       </td>
                       <td className="py-4 px-4">
-                        <span
-                          className={cn(
-                            "px-2 py-1 rounded-full text-xs font-medium",
-                            roleConfig.bgColor,
-                            roleConfig.color
-                          )}
-                        >
-                          {roleConfig.label}
-                        </span>
+                        <div className="flex flex-col items-start gap-1">
+                          <span
+                            className={cn(
+                              "px-2 py-1 rounded-full text-xs font-medium",
+                              roleConfig.bgColor,
+                              roleConfig.color
+                            )}
+                          >
+                            {roleConfig.label}
+                          </span>
+                          {(() => {
+                            const badge =
+                              ACCOUNT_TYPE_BADGE[accountTypeOf(u.role)];
+                            return (
+                              <span
+                                title={badge.title}
+                                className={cn(
+                                  "px-1.5 py-0.5 rounded border text-[10px] font-medium uppercase tracking-wide",
+                                  badge.className
+                                )}
+                              >
+                                {badge.label}
+                              </span>
+                            );
+                          })()}
+                        </div>
                       </td>
                       <td className="py-4 px-4">
                         <span
@@ -538,6 +559,20 @@ export function UsersTableClient({
                     >
                       {roleConfig.label}
                     </span>
+                    {(() => {
+                      const badge = ACCOUNT_TYPE_BADGE[accountTypeOf(u.role)];
+                      return (
+                        <span
+                          title={badge.title}
+                          className={cn(
+                            "px-1.5 py-0.5 rounded border text-[10px] font-medium uppercase tracking-wide",
+                            badge.className
+                          )}
+                        >
+                          {badge.label}
+                        </span>
+                      );
+                    })()}
                     {u.package && (
                       <PackageBadge
                         tier={u.package.slug}

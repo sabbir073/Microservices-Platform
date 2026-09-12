@@ -10,6 +10,7 @@ import { ProfileCompletionBanner } from "@/components/user/primitives/profile-co
 import { getKycPromptState } from "@/lib/kyc-prompt-server";
 import { KycPromptBanner } from "@/components/user/primitives/kyc-prompt-banner";
 import { getSetting } from "@/lib/system-settings";
+import { getHiddenPaths } from "@/lib/page-visibility-server";
 import { isGroupsEnabled } from "@/lib/groups-gate";
 import {
   DEFAULT_WIDGET_CONFIG,
@@ -32,23 +33,18 @@ export default async function SocialPage() {
   // Every read on this page is a sidebar/discovery widget — none of it is
   // actionable data. A blip upstream should cost the user a widget, not the
   // whole feed, so each degrades to an empty result instead of throwing.
-  // Only used to filter a 5-item "who to follow" widget, so it does NOT need the
-  // viewer's entire follow list — a user following 5,000 people was loading all
-  // 5,000 rows on every /social render.
-  const followingIds = (
-    await safeRead(
-      prisma.follow.findMany({
-        where: { followerId: userId },
-        select: { followingId: true },
-        orderBy: { createdAt: "desc" },
-        take: 200,
-      }),
-      [] as { followingId: string }[],
-      "social:following"
-    )
-  ).map((f) => f.followingId);
-
+  //
+  // ONE round-trip layer for the entire page.
+  //
+  // This was six: the follow list in front, the twelve-way Promise.all, and then
+  // ad density, the groups switch, the hidden-path list and the avatar as four
+  // more sequential `await`s behind it. None of them feeds any other — every one
+  // needs only `userId` — so five of those six layers were pure waiting. On
+  // Accelerate a layer is a full proxy round-trip, which is why /social was the
+  // slowest page in the app (2.1s average render, 4.2s worst) despite every
+  // individual query being small.
   const [
+    followingRows,
     bannerRows,
     tickerPayload,
     bestEarnersRaw,
@@ -61,7 +57,24 @@ export default async function SocialPage() {
     customWidgetsRaw,
     effectiveFeatures,
     initialFeedAds,
+    adDensity,
+    groupsEnabled,
+    hiddenPaths,
+    me,
   ] = await Promise.all([
+      // Only used to filter a 5-item "who to follow" widget, so it does NOT need
+      // the viewer's entire follow list — a user following 5,000 people was
+      // loading all 5,000 rows on every /social render.
+      safeRead(
+        prisma.follow.findMany({
+          where: { followerId: userId },
+          select: { followingId: true },
+          orderBy: { createdAt: "desc" },
+          take: 200,
+        }),
+        [] as { followingId: string }[],
+        "social:following"
+      ),
       safeRead(
       prisma.banner.findMany({
         where: {
@@ -130,28 +143,31 @@ export default async function SocialPage() {
       // SSR the first in-feed native ad so it's in the initial HTML (unblockable
       // first paint); the client fetches the rest via /api/feed/inline.
       serveFeedAds({ userId, count: 1 }),
+      getAdDensity(),
+      // Admin switch `ui.groups_enabled` — default off. The server blocks the
+      // Groups API regardless; this is what stops the tab being offered.
+      isGroupsEnabled(),
+      // The toolbar shortcuts are filtered against the same per-user page grants
+      // the sidebar uses, so a hidden page is never offered as a shortcut to it.
+      getHiddenPaths(userId),
+      // The session doesn't carry the avatar — fetch it so the composer shows
+      // the user's real picture (kept fresh; PhotoModal calls router.refresh on
+      // upload).
+      prisma.user
+        .findUnique({
+          where: { id: userId },
+          select: { avatar: true },
+          cacheStrategy: { ttl: 10, swr: 30 },
+        })
+        .catch(() => null),
     ]);
 
+  const followingIds = followingRows.map((f) => f.followingId);
   // Exclude the viewer and anyone they already follow, then take 5.
   const excluded = new Set([userId, ...followingIds]);
   const suggestedToFollow = whoToFollowRows
     .filter((u) => !excluded.has(u.id))
     .slice(0, 5);
-
-  const adDensity = await getAdDensity();
-  // Admin switch `ui.groups_enabled` — default off. The server blocks the
-  // Groups API regardless; this is what stops the tab being offered.
-  const groupsEnabled = await isGroupsEnabled();
-
-  // The session doesn't carry the avatar — fetch it so the composer shows the
-  // user's real picture (kept fresh; PhotoModal calls router.refresh on upload).
-  const me = await prisma.user
-    .findUnique({
-      where: { id: userId },
-      select: { avatar: true },
-      cacheStrategy: { ttl: 10, swr: 30 },
-    })
-    .catch(() => null);
 
   const canBoost = effectiveFeatures.enabled.has("boost");
   const canShareLinks = effectiveFeatures.enabled.has("shareLinks");
@@ -241,6 +257,7 @@ export default async function SocialPage() {
       underPostBanner={adDensity.underPostBanner}
       underPostInterval={adDensity.underPostInterval}
       groupsEnabled={groupsEnabled}
+      hiddenPaths={new Set(hiddenPaths)}
       tickerConfig={
         tickerPayload
           ? {

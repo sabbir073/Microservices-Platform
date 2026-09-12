@@ -15,6 +15,7 @@ import { toast } from "@/lib/toast";
 import { ProofImageUpload } from "@/components/user/tasks/proof-image-upload";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import { AdRenderer } from "@/components/user/primitives/ad-renderer";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 interface Offer {
   id: string;
@@ -158,7 +159,7 @@ export function OfferwallCatalogView() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1.5 overflow-x-auto border-b border-gray-800 pb-px">
+      <ScrollFadeRow innerClassName="flex gap-1.5 border-b border-gray-800 pb-px" ariaLabel="Offerwall tabs">
         {offerWalls.length > 0 && (
           <TabBtn active={tab === "featured"} onClick={() => setTab("featured")}>⭐ Featured walls</TabBtn>
         )}
@@ -171,7 +172,7 @@ export function OfferwallCatalogView() {
           </TabBtn>
         ))}
         <TabBtn active={tab === "history"} onClick={() => { setTab("history"); loadHistory(); }}>History</TabBtn>
-      </div>
+      </ScrollFadeRow>
 
       <AdRenderer placement="TASK_LIST" />
 
@@ -307,7 +308,7 @@ export function OfferwallCatalogView() {
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button onClick={onClick}
-      className={`whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
+      className={`shrink-0 whitespace-nowrap px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
         active ? "border-emerald-500 text-white" : "border-transparent text-gray-400 hover:text-white"}`}>
       {children}
     </button>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   AlertTriangle,
   ArrowDownToLine,
+  BadgeDollarSign,
   Banknote,
   Coins,
   CreditCard,
@@ -34,6 +35,7 @@ import {
 } from "@/lib/finance/scope";
 import { getRevenueBreakdown } from "@/lib/finance/revenue";
 import { getDailySeries, getLedgerTotals } from "@/lib/finance/series";
+import { getPayrollExpense, lastClosedPeriod } from "@/lib/payroll/run";
 
 export const revalidate = 60;
 
@@ -90,17 +92,27 @@ export default async function AdminFinancePage({
       })()
     : undefined;
 
-  const [balances, obligations, recon, revenue, totals, series, sellerName, taxId] =
-    await Promise.all([
-      getBalances(),
-      getObligations(),
-      getReconciliation(),
-      getRevenueBreakdown({ from }),
-      getLedgerTotals({ from }),
-      getDailySeries({ from }),
-      getSetting<string>("billing.seller_name", ""),
-      getSetting<string>("billing.tax_id", ""),
-    ]);
+  const [
+    balances,
+    obligations,
+    recon,
+    revenue,
+    totals,
+    series,
+    payroll,
+    sellerName,
+    taxId,
+  ] = await Promise.all([
+    getBalances(),
+    getObligations(),
+    getReconciliation(),
+    getRevenueBreakdown({ from }),
+    getLedgerTotals({ from }),
+    getDailySeries({ from }),
+    getPayrollExpense({ from }),
+    getSetting<string>("billing.seller_name", ""),
+    getSetting<string>("billing.tax_id", ""),
+  ]);
 
   const billingIncomplete = !String(sellerName || "").trim() || !String(taxId || "").trim();
 
@@ -173,6 +185,7 @@ export default async function AdminFinancePage({
           series={series}
           balances={balances}
           obligations={obligations}
+          payroll={payroll}
           rangeLabel={range.label}
         />
       )}
@@ -198,6 +211,7 @@ function OverviewTab({
   series,
   balances,
   obligations,
+  payroll,
   rangeLabel,
 }: {
   revenue: Awaited<ReturnType<typeof getRevenueBreakdown>>;
@@ -205,12 +219,18 @@ function OverviewTab({
   series: Awaited<ReturnType<typeof getDailySeries>>;
   balances: Awaited<ReturnType<typeof getBalances>>;
   obligations: Awaited<ReturnType<typeof getObligations>>;
+  payroll: Awaited<ReturnType<typeof getPayrollExpense>>;
   rangeLabel: string;
 }) {
+  // Payroll lands in the ledger as a BONUS row, so it is ALREADY inside
+  // `totals.costUsd` and the net below is right as it stands. What would be
+  // wrong is showing it as money paid to users: it is the platform's own wage
+  // bill, so it is split back out and given its own line.
+  const userCost = Math.max(0, totals.costUsd - payroll.usd);
   const net = revenue.totalUsd - totals.costUsd;
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard
           title="Revenue"
           value={usd(revenue.totalUsd)}
@@ -220,15 +240,31 @@ function OverviewTab({
         />
         <StatCard
           title="Paid to users"
-          value={usd(totals.costUsd)}
+          value={usd(userCost)}
           subtext={`${rangeLabel} · tasks, bonuses, referrals`}
           icon={TrendingDown}
           tone="red"
         />
         <StatCard
+          title="Payroll"
+          value={usd(payroll.usd)}
+          subtext={
+            payroll.measured
+              ? `${payroll.count} staff payment(s) · ${rangeLabel}`
+              : `nothing paid yet — set up ${lastClosedPeriod()}`
+          }
+          icon={BadgeDollarSign}
+          tone="amber"
+          href="/admin/finance/payroll"
+        />
+        <StatCard
           title="Net"
           value={usd(net)}
-          subtext={net >= 0 ? "revenue exceeds payouts" : "payouts exceed revenue"}
+          subtext={
+            net >= 0
+              ? "after user payouts AND payroll"
+              : "payouts + payroll exceed revenue"
+          }
           icon={Scale}
           tone={net >= 0 ? "green" : "amber"}
         />
@@ -485,7 +521,7 @@ function SourcesTab({
               className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-800 hover:border-slate-600 text-xs text-slate-300 hover:text-white"
             >
               <r.icon className="w-4 h-4 shrink-0 text-slate-400" />
-              <span className="truncate">{r.label}</span>
+              <span className="truncate min-w-0">{r.label}</span>
             </Link>
           ))}
         </div>

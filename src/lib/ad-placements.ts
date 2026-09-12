@@ -57,6 +57,22 @@ export const PLACEMENT_LABEL: Record<string, string> = Object.fromEntries(
   AD_PLACEMENTS.map((p) => [p.name, p.label])
 );
 
+/**
+ * Names that actually have an `<AdRenderer>` mounted somewhere.
+ *
+ * A space outside this set renders on no page, so an ad assigned to it is
+ * stranded: ACTIVE, approved, funded, and structurally unable to serve. The DB
+ * held one such row (`QW`) with two ads in it, and nothing anywhere said so.
+ */
+const CANONICAL_PLACEMENT_NAMES: ReadonlySet<string> = new Set(
+  AD_PLACEMENTS.map((p) => p.name)
+);
+
+/** True if `name` is a real, mounted ad space. */
+export function isCanonicalPlacement(name: string): boolean {
+  return CANONICAL_PLACEMENT_NAMES.has(name);
+}
+
 export function placementLabel(name: string): string {
   return PLACEMENT_LABEL[name] ?? name;
 }

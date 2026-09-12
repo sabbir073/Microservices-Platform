@@ -140,7 +140,7 @@ export function AdInterstitialOverlay({
           type="button"
           onClick={onDone}
           aria-label="Close ad"
-          className="absolute top-3 right-3 z-10 w-9 h-9 grid place-items-center rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white"
+          className="absolute top-3 right-3 z-10 w-9 h-9 grid place-items-center on-media rounded-full bg-white/10 hover:bg-white/20 text-white/80 hover:text-white"
         >
           <X className="w-5 h-5" />
         </button>

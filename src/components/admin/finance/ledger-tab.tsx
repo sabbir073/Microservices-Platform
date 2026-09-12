@@ -308,7 +308,7 @@ export function LedgerTab({ days }: { days: number | null }) {
             {open.metadata != null && (
               <div className="pt-2">
                 <p className="text-slate-500 mb-1">Metadata</p>
-                <pre className="p-2 rounded-lg bg-black/40 text-[10px] text-slate-300 overflow-x-auto">
+                <pre className="p-2 on-media rounded-lg bg-black/40 text-[10px] text-slate-300 overflow-x-auto">
                   {JSON.stringify(open.metadata, null, 2)}
                 </pre>
               </div>

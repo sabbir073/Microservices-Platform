@@ -79,7 +79,7 @@ export function ListingCard({
               size={16}
               fallbackStyle="solid-gray"
             />
-            <span className="truncate">{sellerName}</span>
+            <span className="truncate min-w-0">{sellerName}</span>
           </div>
         )}
         <div className="flex items-center justify-between pt-1">

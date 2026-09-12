@@ -20,6 +20,7 @@ import {
   Scale,
   AlertTriangle,
   Tag,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
@@ -250,7 +251,22 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
             Manage listings, orders, disputes, and categories
           </p>
         </div>
-        <CreateListingButton canManage={canManage} />
+        <div className="flex items-center gap-2">
+          {/*
+            /admin/marketplace/settings — commission overrides, promotion
+            pricing and the mediation fee — had no link anywhere in the app.
+            It was reachable only by typing the URL, which is how a working
+            settings screen becomes a settings screen nobody knows exists.
+          */}
+          <Link
+            href="/admin/marketplace/settings"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:border-slate-600 hover:text-white"
+          >
+            <SettingsIcon className="h-4 w-4" />
+            Settings
+          </Link>
+          <CreateListingButton canManage={canManage} />
+        </div>
       </div>
 
       {/* Stats — always visible across tabs */}
@@ -838,7 +854,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
                   className="rounded-lg border border-slate-800 bg-slate-950/50 p-4 hover:border-blue-500/50 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-white font-medium truncate">
+                    <p className="text-white font-medium truncate min-w-0">
                       {c.category}
                     </p>
                     <span className="px-2 py-0.5 rounded-full bg-blue-500/15 text-blue-400 text-xs tabular-nums">

@@ -144,7 +144,7 @@ export function WithdrawalView({
               </p>
               <Link
                 href="/packages"
-                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-gray-900 text-xs font-bold"
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-(--app-on-bright) text-xs font-bold"
               >
                 Get Subscription
                 <ArrowUpRight className="w-3.5 h-3.5" />
@@ -168,7 +168,7 @@ export function WithdrawalView({
               </p>
               <Link
                 href="/packages"
-                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-gray-900 text-xs font-bold"
+                className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-(--app-on-bright) text-xs font-bold"
               >
                 Upgrade Now
                 <ArrowUpRight className="w-3.5 h-3.5" />

@@ -48,7 +48,7 @@ export function ProfileCompletionBanner({
           </div>
           <Link
             href="/profile?tab=personal"
-            className="inline-flex items-center gap-1.5 mt-2.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-gray-900 text-xs font-bold active:scale-[0.97] transition-transform"
+            className="inline-flex items-center gap-1.5 mt-2.5 px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-(--app-on-bright) text-xs font-bold active:scale-[0.97] transition-transform"
           >
             <UserCog className="w-3.5 h-3.5" />
             Finish profile

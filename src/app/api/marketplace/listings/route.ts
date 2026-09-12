@@ -14,6 +14,7 @@ import { assertPublicUrl } from "@/lib/link-preview";
 import { inngest, EVENTS } from "@/lib/inngest/client";
 import { userCanFeature } from "@/lib/packages";
 import { toNum, toNumOrNull } from "@/lib/money";
+import { getSetting } from "@/lib/system-settings";
 import { formatAffiliateReward } from "@/lib/affiliate";
 import { z } from "zod";
 
@@ -371,6 +372,34 @@ export async function POST(request: NextRequest) {
         { error: "Auction mode needs an end date" },
         { status: 400 }
       );
+    }
+
+    // Admin cap on concurrent live listings per seller (Limits settings).
+    // The box was on the settings screen and nothing read it. 0 = no cap.
+    const maxListings = Math.max(
+      0,
+      Math.floor(Number(await getSetting<number>("max_active_listings", 0)) || 0)
+    );
+    if (maxListings > 0) {
+      const live = await prisma.marketplaceListing.count({
+        where: {
+          sellerId: session.user.id,
+          status: {
+            in: [
+              MarketplaceListingStatus.PENDING_REVIEW,
+              MarketplaceListingStatus.ACTIVE,
+            ],
+          },
+        },
+      });
+      if (live >= maxListings) {
+        return NextResponse.json(
+          {
+            error: `You can have ${maxListings} active listing${maxListings === 1 ? "" : "s"} at a time. Remove or sell one first.`,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Stock media: analyse the uploaded deliverable (files[0]) so the admin can

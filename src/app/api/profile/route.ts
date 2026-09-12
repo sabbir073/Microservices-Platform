@@ -13,6 +13,7 @@ import { calculateProfileCompletion } from "@/lib/profile-completion";
 import { getXpRank, calculateXpForLevel } from "@/lib/user-rank";
 import { getPointsPerUsd } from "@/lib/economy";
 import { toNum } from "@/lib/money";
+import { resolveCountryCode } from "@/lib/country-codes";
 import { checkUsername, USERNAME_RULE_MESSAGE } from "@/lib/username";
 import { getUserDayContext } from "@/lib/user-day";
 import {
@@ -594,10 +595,32 @@ export async function PATCH(request: NextRequest) {
       "division",
       "region",
       "postalCode",
-      "country",
     ] as const) {
       if (body[f] !== undefined) {
         updateData[f] = body[f] === null ? null : String(body[f]).trim() || null;
+      }
+    }
+
+    // `country` is NOT a free-text address line like the eight above it. It is
+    // the ISO-3166-1 alpha-2 code that ad targeting, audience segments and every
+    // country report key off; a display name stored here matches nothing and
+    // fails silently. The LocationSelector already submits ISO2 — this resolves
+    // whatever actually arrives (ISO2, ISO3 or the full name) through the
+    // canonical `Country` table so an older client, a mobile build or a direct
+    // API call cannot reintroduce the problem.
+    if (body.country !== undefined) {
+      const raw = body.country === null ? "" : String(body.country).trim();
+      if (!raw) {
+        updateData.country = null;
+      } else {
+        const iso2 = await resolveCountryCode(raw);
+        if (!iso2) {
+          return NextResponse.json(
+            { error: `Unknown country "${raw}"` },
+            { status: 400 }
+          );
+        }
+        updateData.country = iso2;
       }
     }
 

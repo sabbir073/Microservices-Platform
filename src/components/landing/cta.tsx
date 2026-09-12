@@ -11,7 +11,7 @@ export function CTA(props: Props) {
   const v: CtaContent = { ...DEFAULT_LANDING_CONTENT.cta, ...props };
 
   return (
-    <section className="py-16 sm:py-24">
+    <section className="mk-section">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="relative overflow-hidden rounded-3xl bg-linear-to-br from-indigo-600 to-violet-600 p-8 sm:p-12 lg:p-16 text-center shadow-xl shadow-indigo-600/25">
           <div className="pointer-events-none absolute inset-0">
@@ -37,7 +37,7 @@ export function CTA(props: Props) {
 
             <Link
               href={v.cta_href}
-              className="inline-flex items-center gap-2 px-8 py-4 bg-white text-indigo-700 font-bold rounded-xl hover:bg-indigo-50 transition-colors shadow-lg"
+              className="mk-press inline-flex items-center gap-2 px-8 py-4 bg-white text-indigo-700 font-bold rounded-xl hover:bg-indigo-50 shadow-lg"
             >
               {v.cta_label}
               <ArrowRight className="w-5 h-5" />

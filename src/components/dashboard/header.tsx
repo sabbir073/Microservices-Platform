@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { Menu, Bell, Search, Wallet, Sparkles, Settings, LogOut, User, ChevronDown, FileText, Check, ChevronLeft } from "lucide-react";
@@ -10,6 +10,8 @@ import { useMobileNav } from "@/lib/stores/mobile-nav-store";
 import { useAutoRefresh } from "@/hooks/use-auto-refresh";
 import { useAppRefresh } from "@/hooks/use-app-refresh";
 import { Avatar } from "@/components/user/primitives/avatar";
+import { ThemeSwitch } from "@/components/dashboard/theme-switch";
+import { GlobalSearch } from "@/components/user/primitives/global-search";
 
 interface HeaderProps {
   user: {
@@ -50,11 +52,21 @@ export function Header({ user, avatar }: HeaderProps) {
     "/earn",
   ]);
   const showBack = !!pathname && !ROOT_PATHS.has(pathname);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [shortcutHint, setShortcutHint] = useState("Ctrl K");
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
+  // The balance is re-polled every 60s and on every pull-to-refresh, and it
+  // used to change with no acknowledgement at all — the number was simply
+  // different the next time you looked at it. `tick` counts real changes (not
+  // re-fetches that return the same figure) and re-keys the span, which replays
+  // the `app-tick` scale. Kept in a ref + a counter rather than compared in an
+  // effect, so this stays out of the render path.
+  const prevBalance = useRef<number | null>(null);
+  const [tick, setTick] = useState(0);
 
   // Poll ONLY the two numbers the header chrome shows. This used to hit
   // /api/notifications + /api/wallet (~11 queries, incl. two Transaction
@@ -65,7 +77,12 @@ export function Header({ user, avatar }: HeaderProps) {
       const res = await fetch("/api/header", { cache: "no-store" });
       if (res.ok) {
         const d = await res.json();
-        setWalletBalance(d.points ?? 0);
+        const next = d.points ?? 0;
+        if (prevBalance.current !== null && prevBalance.current !== next) {
+          setTick((t) => t + 1);
+        }
+        prevBalance.current = next;
+        setWalletBalance(next);
         setUnreadCount(d.unreadCount ?? 0);
       }
     } catch (error) {
@@ -104,6 +121,24 @@ export function Header({ user, avatar }: HeaderProps) {
   // Pull-to-refresh anywhere in the app instantly re-pulls balance + notifications.
   useAppRefresh(fetchData);
 
+  // ⌘K / Ctrl-K from anywhere in the app. The hint label is set on the client
+  // because the platform is unknown during SSR and a mismatched <kbd> would
+  // hydrate-error.
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setShortcutHint("⌘ K");
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const handleSignOut = () => {
     signOut({ callbackUrl: "/login" });
   };
@@ -135,15 +170,20 @@ export function Header({ user, avatar }: HeaderProps) {
 
   return (
     <>
-      <header className="sticky top-0 z-30 glass-strong border-0 border-b border-gray-800/60 rounded-none safe-t">
-        <div className="flex h-16 items-center justify-between px-4 sm:px-6 lg:px-8">
+      <header className="app-chrome sticky top-0 z-30 border-0 border-b border-(--shell-border) rounded-none safe-t">
+        {/* Seven controls in one row is what "crowded" meant: a logo, a search
+            box, a theme toggle, a Reports link, a points pill, a bell and an
+            avatar, all at the same weight. Two of them have moved (see the
+            profile menu below) and the rest are now ranked by size rather than
+            lined up as equals. */}
+        <div className="flex h-16 items-center justify-between gap-2 px-3 sm:px-5 lg:px-8">
           {/* Left: Mobile Back + Menu Button & Logo (mobile only) */}
-          <div className="flex items-center gap-2 lg:hidden">
+          <div className="flex items-center gap-0.5 md:hidden">
             {showBack && (
               <button
                 onClick={() => router.back()}
                 aria-label="Go back"
-                className="p-2 -ml-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 active:scale-95 transition-transform"
+                className="app-tap app-press -ml-1.5 inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:text-white hover:bg-(--shell-hover)"
               >
                 <ChevronLeft className="w-6 h-6" />
               </button>
@@ -152,52 +192,95 @@ export function Header({ user, avatar }: HeaderProps) {
               onClick={() => setIsMobileMenuOpen(true)}
               aria-label="Open menu"
               className={cn(
-                "p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800",
-                !showBack && "-ml-2"
+                "app-tap app-press inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:text-white hover:bg-(--shell-hover)",
+                !showBack && "-ml-1.5"
               )}
             >
               <Menu className="w-6 h-6" />
             </button>
-            <Link href="/social" className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-            </Link>
-          </div>
-
-          {/* Center/Left: Search (desktop) */}
-          <div className="hidden lg:flex flex-1 max-w-md">
-            <div className="relative w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <input
-                type="search"
-                placeholder="Search tasks, users..."
-                className="w-full pl-10 pr-4 py-2 bg-gray-900 border border-gray-800 rounded-lg text-white placeholder:text-gray-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-          </div>
-
-          {/* Right: Actions */}
-          <div className="flex items-center gap-2 sm:gap-4">
-            {/* View Reports Button (desktop) */}
-            <Link
-              href="/wallet"
-              className="hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
-            >
-              <FileText className="w-4 h-4" />
-              <span className="text-sm">Reports</span>
-            </Link>
-
-            {/* Wallet Balance */}
-            <Link
-              href="/wallet"
-              className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gray-900 border border-gray-800 hover:border-gray-700 transition-colors"
-            >
-              <Wallet className="w-4 h-4 text-indigo-400" />
-              <span className="text-sm font-medium text-white">
-                {walletBalance.toLocaleString()} PTS
+            <Link href="/social" aria-label="Home" className="app-press flex items-center">
+              <span className="app-icon app-icon-accent h-9 w-9 rounded-(--app-r-control)">
+                <Sparkles className="w-4.5 h-4.5" />
               </span>
             </Link>
+          </div>
+
+          {/* Center/Left: Search.
+              This was a bare <input> with no onChange, no form and no action —
+              typing in it and pressing Enter did nothing, on every page, for
+              every user. Meanwhile a complete search UI (GlobalSearch, backed by
+              /api/search over tasks, users, courses and listings) existed and was
+              mounted on exactly one page, /earn. The box is now the trigger for
+              that same component: one search, reachable from the whole shell. */}
+          <div className="hidden md:flex flex-1 max-w-md">
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              className="app-press app-tap-row group w-full flex items-center gap-3 pl-3.5 pr-2 py-2 bg-(--app-surface-2) border border-(--app-line) rounded-(--app-r-control) text-left hover:border-(--app-line-strong)"
+            >
+              <Search className="w-5 h-5 shrink-0 text-gray-500 group-hover:text-gray-400" />
+              <span className="t-body flex-1 min-w-0 truncate text-gray-500">
+                Search tasks, people, courses…
+              </span>
+              <kbd className="hidden xl:inline-block shrink-0 px-1.5 py-0.5 rounded-md border border-(--app-line) bg-(--app-surface) text-[10px] font-semibold text-gray-500">
+                {shortcutHint}
+              </kbd>
+            </button>
+          </div>
+
+          {/* Right: Actions.
+              Was seven controls of equal weight. Now three, ranked:
+              the balance (a figure, the biggest thing here), the bell, the
+              avatar. `Reports` was a third link to /wallet in the same row as
+              the points pill that already goes there, and the theme toggle is
+              a preference rather than an action — both now live in the account
+              menu, which is where a phone app puts them. */}
+          <div className="flex items-center gap-0.5 sm:gap-1.5">
+            {/* Search on phones. It had no entry point at all below 1024px —
+                the box was `hidden lg:flex`, so the platform's search simply
+                did not exist on a phone. */}
+            <button
+              type="button"
+              onClick={() => setIsSearchOpen(true)}
+              aria-label="Search"
+              className="app-tap app-press md:hidden inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:text-white hover:bg-(--shell-hover)"
+            >
+              <Search className="w-5 h-5" />
+            </button>
+
+            {/* Wallet balance — the one figure in the shell.
+                ONE line, not two. A stacked 11px label over a 16px number has
+                to fit 29px of text plus padding inside a 44px bar, and it read
+                as squeezed. The number still leads: it is 16px/800 tabular and
+                the unit beside it is 11px and muted, so the eye lands on the
+                money rather than on "PTS". */}
+            <Link
+              href="/wallet"
+              aria-label={`Wallet balance: ${walletBalance.toLocaleString()} points`}
+              className="app-press app-tap-row hidden sm:flex items-center gap-2 px-3 rounded-(--app-r-control) bg-(--app-surface-2) border border-(--app-line) hover:border-(--app-line-strong)"
+            >
+              <Wallet className="w-4 h-4 shrink-0 text-gray-400" />
+              <span className="flex items-baseline gap-1">
+                <span
+                  key={tick}
+                  className={cn(
+                    "text-base font-extrabold tabular-nums tracking-tight text-white",
+                    tick > 0 && "app-tick"
+                  )}
+                >
+                  {walletBalance.toLocaleString()}
+                </span>
+                <span className="t-eyebrow text-gray-400">PTS</span>
+              </span>
+            </Link>
+
+            {/* Light/dark, back in the row.
+                It was moved into the account menu to thin out a crowded header,
+                but the owner went looking for it here and could not find it —
+                and a control people reach for by reflex is one that has to be
+                where the reflex goes. The menu row is gone so there is only one
+                of them. */}
+            <ThemeSwitch />
 
             {/* Notifications */}
             <div className="relative">
@@ -208,11 +291,16 @@ export function Header({ user, avatar }: HeaderProps) {
                   if (opening) void loadNotifications();
                   setIsProfileOpen(false);
                 }}
-                className="relative p-2 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800"
+                aria-label={
+                  unreadCount > 0
+                    ? `Notifications, ${unreadCount} unread`
+                    : "Notifications"
+                }
+                className="app-tap app-press relative inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:text-white hover:bg-(--shell-hover)"
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 min-w-4 h-4 flex items-center justify-center px-1 text-xs font-bold text-white bg-red-500 rounded-full">
+                  <span className="absolute top-1.5 right-1.5 min-w-4.5 h-4.5 flex items-center justify-center px-1 text-[10px] font-extrabold text-(--app-on-accent) bg-(--app-badge) rounded-full ring-2 ring-(--shell-bg)">
                     {unreadCount > 9 ? "9+" : unreadCount}
                   </span>
                 )}
@@ -227,26 +315,24 @@ export function Header({ user, avatar }: HeaderProps) {
                   />
                   {/* The header is h-16 PLUS its safe-area padding, so a flat
                       top-16 opened the panel under the bar on notched devices. */}
-                  <div className="fixed inset-x-2 top-[calc(4rem+env(safe-area-inset-top))] sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
-                      <h3 className="text-sm font-semibold text-white">
-                        Notifications
-                      </h3>
+                  <div className="fixed inset-x-2 top-[calc(4rem+env(safe-area-inset-top))] sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-88 rounded-(--app-r-card) bg-(--app-surface) border border-(--app-line) shadow-(--app-e3) z-50 overflow-hidden">
+                    <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-(--app-line)">
+                      <h3 className="t-section text-white">Notifications</h3>
                       {unreadCount > 0 && (
                         <button
                           onClick={handleMarkAllRead}
-                          className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1"
+                          className="app-press app-tap-row inline-flex items-center gap-1.5 px-2.5 rounded-(--app-r-chip) t-meta font-semibold text-(--app-info) hover:bg-(--app-info-soft)"
                         >
-                          <Check className="w-3 h-3" />
+                          <Check className="w-3.5 h-3.5" />
                           Mark all read
                         </button>
                       )}
                     </div>
-                    <div className="max-h-80 overflow-y-auto">
+                    <div className="max-h-88 overflow-y-auto">
                       {notifications.length === 0 ? (
-                        <div className="px-4 py-8 text-center text-gray-500">
+                        <div className="px-4 py-10 text-center text-gray-500">
                           <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">No notifications</p>
+                          <p className="t-body">No notifications</p>
                         </div>
                       ) : (
                         notifications.map((notif) => (
@@ -255,22 +341,22 @@ export function Header({ user, avatar }: HeaderProps) {
                             href="/notifications"
                             onClick={() => setIsNotificationOpen(false)}
                             className={cn(
-                              "block px-4 py-3 border-b border-gray-800 hover:bg-gray-800/50 transition-colors",
-                              !notif.isRead && "bg-indigo-500/5"
+                              "app-tap-row block px-4 py-3 border-b border-(--app-line) transition-colors hover:bg-(--app-surface-2)",
+                              !notif.isRead && "bg-(--app-info-soft)"
                             )}
                           >
                             <div className="flex items-start gap-3">
                               {!notif.isRead && (
-                                <span className="w-2 h-2 mt-1.5 bg-indigo-500 rounded-full shrink-0" />
+                                <span className="w-2 h-2 mt-2 rounded-full shrink-0 bg-(--app-info)" />
                               )}
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-white truncate">
+                                <p className="t-card-title text-white truncate">
                                   {notif.title}
                                 </p>
-                                <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">
+                                <p className="t-meta text-gray-400 mt-0.5 line-clamp-2">
                                   {notif.message}
                                 </p>
-                                <p className="text-xs text-gray-600 mt-1">
+                                <p className="t-meta text-gray-500 mt-1">
                                   {formatTimeAgo(notif.createdAt)}
                                 </p>
                               </div>
@@ -282,7 +368,7 @@ export function Header({ user, avatar }: HeaderProps) {
                     <Link
                       href="/notifications"
                       onClick={() => setIsNotificationOpen(false)}
-                      className="block px-4 py-3 text-center text-sm text-indigo-400 hover:text-indigo-300 border-t border-gray-800"
+                      className="app-tap-row flex items-center justify-center px-4 t-body font-semibold text-(--app-info) hover:bg-(--app-info-soft) border-t border-(--app-line)"
                     >
                       View all notifications
                     </Link>
@@ -298,7 +384,8 @@ export function Header({ user, avatar }: HeaderProps) {
                   setIsProfileOpen(!isProfileOpen);
                   setIsNotificationOpen(false);
                 }}
-                className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+                aria-label="Account menu"
+                className="app-tap app-press flex items-center gap-1.5 px-1 rounded-(--app-r-control) hover:bg-(--shell-hover)"
               >
                 <Avatar
                   src={avatar}
@@ -315,47 +402,57 @@ export function Header({ user, avatar }: HeaderProps) {
                     className="fixed inset-0 z-40"
                     onClick={() => setIsProfileOpen(false)}
                   />
-                  <div className="absolute right-0 mt-2 w-56 max-w-[calc(100vw-1rem)] rounded-lg bg-gray-900 border border-gray-800 shadow-lg z-50">
-                    <div className="px-4 py-3 border-b border-gray-800">
-                      <p className="text-sm font-medium text-white truncate">
-                        {user.name || "User"}
-                      </p>
-                      <p className="text-xs text-gray-500 truncate">
-                        {user.email}
-                      </p>
+                  <div className="absolute right-0 mt-2 w-64 max-w-[calc(100vw-1rem)] rounded-(--app-r-card) bg-(--app-surface) border border-(--app-line) shadow-(--app-e3) z-50 overflow-hidden">
+                    <div className="flex items-center gap-3 px-4 py-3.5 border-b border-(--app-line)">
+                      <Avatar src={avatar} name={user.name || user.email} size={40} />
+                      <div className="min-w-0">
+                        <p className="t-card-title text-white truncate">
+                          {user.name || "User"}
+                        </p>
+                        <p className="t-meta text-gray-500 truncate">
+                          {user.email}
+                        </p>
+                      </div>
                     </div>
-                    <div className="py-1">
+                    <div className="p-1.5">
                       <Link
                         href="/profile"
                         onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800"
+                        className="app-nav-item app-press"
                       >
-                        <User className="w-4 h-4" />
+                        <User className="w-4.5 h-4.5 shrink-0" />
                         Profile
                       </Link>
+                      {/* Moved here from the header row, where it was a third
+                          control pointing at /wallet. Same destination, same
+                          label, one less thing competing in the top bar. */}
                       <Link
                         href="/wallet"
                         onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800"
+                        className="app-nav-item app-press"
                       >
-                        <FileText className="w-4 h-4" />
-                        Reports & Transactions
+                        <FileText className="w-4.5 h-4.5 shrink-0" />
+                        Reports &amp; Transactions
                       </Link>
                       <Link
                         href="/settings"
                         onClick={() => setIsProfileOpen(false)}
-                        className="flex items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800"
+                        className="app-nav-item app-press"
                       >
-                        <Settings className="w-4 h-4" />
+                        <Settings className="w-4.5 h-4.5 shrink-0" />
                         Settings
                       </Link>
                     </div>
-                    <div className="border-t border-gray-800 py-1">
+                    {/* Light/dark also moved out of the header row. It is a
+                        preference, not an action, and it kept a permanent slot
+                        beside the things people press every day. Still one tap
+                        from every screen — this menu is always in the bar. */}
+                    <div className="border-t border-(--app-line) p-1.5">
                       <button
                         onClick={handleSignOut}
-                        className="flex w-full items-center gap-3 px-4 py-2 text-sm text-gray-400 hover:text-red-400 hover:bg-gray-800"
+                        className="app-nav-item app-press w-full hover:text-(--app-out)"
                       >
-                        <LogOut className="w-4 h-4" />
+                        <LogOut className="w-4.5 h-4.5 shrink-0" />
                         Sign Out
                       </button>
                     </div>
@@ -366,6 +463,9 @@ export function Header({ user, avatar }: HeaderProps) {
           </div>
         </div>
       </header>
+
+      {/* One shared search surface for the whole shell. */}
+      <GlobalSearch open={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
     </>
   );
 }

@@ -117,7 +117,7 @@ export function PromoteModal({
                     className={cn(
                       "px-2 py-1.5 rounded-md text-xs font-bold border",
                       duration === d
-                        ? "bg-amber-500 border-amber-500 text-gray-950"
+                        ? "bg-amber-500 border-amber-500 text-(--app-on-bright)"
                         : "bg-gray-900 border-gray-800 text-gray-400 hover:text-white"
                     )}
                   >
@@ -158,7 +158,7 @@ export function PromoteModal({
             onClick={submit}
             disabled={busy}
             type="button"
-            className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
+            className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-(--app-on-bright) text-sm font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
           >
             {busy ? (
               <Loader2 className="w-4 h-4 animate-spin" />

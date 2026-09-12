@@ -28,6 +28,7 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { runInterstitial } from "@/lib/reward-interstitial";
 import { ensureAdsAllowed } from "@/lib/adblock";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 interface Board {
   id: string;
@@ -600,13 +601,13 @@ export function BoardTasksView() {
       </div>
 
       {!loading && availableCategories.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none -mx-1 px-1">
+        <ScrollFadeRow className="-mx-1" innerClassName="flex items-center gap-2 px-1" ariaLabel="Category filter">
           <button
             onClick={() => setCategoryFilter(null)}
             className={cn(
               "px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors shrink-0",
               !categoryFilter
-                ? "bg-white text-gray-900 border-white"
+                ? "bg-(--app-bright) text-(--app-on-bright) border-(--app-bright)"
                 : "bg-gray-900 text-gray-300 border-gray-800 hover:border-gray-700"
             )}
           >
@@ -620,7 +621,7 @@ export function BoardTasksView() {
                 className={cn(
                   "px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors shrink-0",
                   categoryFilter === c
-                    ? "bg-white text-gray-900 border-white"
+                    ? "bg-(--app-bright) text-(--app-on-bright) border-(--app-bright)"
                     : cn(CATEGORY_COLORS[c], "hover:opacity-80")
                 )}
               >
@@ -628,7 +629,7 @@ export function BoardTasksView() {
               </button>
             )
           )}
-        </div>
+        </ScrollFadeRow>
       )}
 
       {loading && <ListSkeleton rows={3} />}

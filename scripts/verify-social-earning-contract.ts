@@ -1,8 +1,10 @@
 import "dotenv/config";
+import { readFileSync } from "node:fs";
 import { z } from "zod";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
 import {
+  SOCIAL_EARNING_DEFAULTS,
   SOCIAL_ACTIONS,
   SOCIAL_ACTIVITY_KEYS,
   SOCIAL_EARNING_CATEGORY,
@@ -46,6 +48,15 @@ function check(name: string, ok: boolean, detail?: string) {
   }
 }
 
+/**
+ * Source with comments stripped, so a check can never pass on prose that merely
+ * describes the behaviour. Same helper as scripts/verify-feed-features.ts.
+ */
+const code = (p: string) =>
+  readFileSync(p, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[^:])\/\/.*$/gm, "$1");
+
 /* ── The shapes, replicated from the code under test ──────────────────────── */
 
 // Mirrors the form's SideRow / FormState and the API's zod schema. If any of
@@ -59,7 +70,13 @@ interface SideRow {
 }
 interface FormState {
   enabled: boolean;
+  poster_mode_enabled: boolean;
+  engager_mode_enabled: boolean;
   daily_cap_per_user: number;
+  poster_daily_cap_per_user: number;
+  engager_daily_cap_per_user: number;
+  pair_daily_cap_per_user: number;
+  min_level_to_earn: number;
   daily_xp_cap_per_user: number;
   cap_per_post: number;
   min_account_age_hours: number;
@@ -78,7 +95,13 @@ const sideSchema = z.object({
 });
 const apiSchema = z.object({
   enabled: z.boolean(),
+  poster_mode_enabled: z.boolean(),
+  engager_mode_enabled: z.boolean(),
   daily_cap_per_user: z.number().int().min(0).max(100000),
+  poster_daily_cap_per_user: z.number().int().min(0).max(100000),
+  engager_daily_cap_per_user: z.number().int().min(0).max(100000),
+  pair_daily_cap_per_user: z.number().int().min(0).max(100000),
+  min_level_to_earn: z.number().int().min(0).max(50),
   daily_xp_cap_per_user: z.number().int().min(0).max(100000),
   cap_per_post: z.number().int().min(0).max(100000),
   min_account_age_hours: z.number().int().min(0).max(720),
@@ -95,7 +118,13 @@ function apiWrites(cfg: FormState): Map<string, unknown> {
   const m = new Map<string, unknown>();
   const p = (k: string, v: unknown) => m.set(`${SOCIAL_EARNING_CATEGORY}.${k}`, v);
   p("enabled", cfg.enabled);
+  p("poster_mode_enabled", cfg.poster_mode_enabled);
+  p("engager_mode_enabled", cfg.engager_mode_enabled);
   p("daily_cap_per_user", cfg.daily_cap_per_user);
+  p("poster_daily_cap_per_user", cfg.poster_daily_cap_per_user);
+  p("engager_daily_cap_per_user", cfg.engager_daily_cap_per_user);
+  p("pair_daily_cap_per_user", cfg.pair_daily_cap_per_user);
+  p("min_level_to_earn", cfg.min_level_to_earn);
   p("daily_xp_cap_per_user", cfg.daily_xp_cap_per_user);
   p("cap_per_post", cfg.cap_per_post);
   p("min_account_age_hours", cfg.min_account_age_hours);
@@ -131,7 +160,13 @@ function toFormState(map: Map<string, unknown>): FormState {
   }
   return {
     enabled: cfg.enabled,
+    poster_mode_enabled: cfg.posterModeEnabled,
+    engager_mode_enabled: cfg.engagerModeEnabled,
     daily_cap_per_user: cfg.dailyCapPerUser,
+    poster_daily_cap_per_user: cfg.posterDailyCapPerUser,
+    engager_daily_cap_per_user: cfg.engagerDailyCapPerUser,
+    pair_daily_cap_per_user: cfg.pairDailyCapPerUser,
+    min_level_to_earn: cfg.minLevelToEarn,
     daily_xp_cap_per_user: cfg.dailyXpCapPerUser,
     cap_per_post: cfg.capPerPost,
     min_account_age_hours: cfg.minAccountAgeHours,
@@ -192,7 +227,13 @@ function randomForm(): FormState {
   }
   return {
     enabled: rnd() < 0.5,
+    poster_mode_enabled: rnd() < 0.5,
+    engager_mode_enabled: rnd() < 0.5,
     daily_cap_per_user: Math.floor(rnd() * 100001),
+    poster_daily_cap_per_user: Math.floor(rnd() * 100001),
+    engager_daily_cap_per_user: Math.floor(rnd() * 100001),
+    pair_daily_cap_per_user: Math.floor(rnd() * 100001),
+    min_level_to_earn: Math.floor(rnd() * 51),
     daily_xp_cap_per_user: Math.floor(rnd() * 100001),
     cap_per_post: Math.floor(rnd() * 100001),
     min_account_age_hours: Math.floor(rnd() * 721),
@@ -360,6 +401,172 @@ async function main() {
   check(
     "an in-budget reward does not warn",
     !warns({ ...flat, points: 100 }, 500)
+  );
+
+  /* 7 — the two admin-controlled earning modes */
+  console.log("\n7. Poster / engager modes: defaults, gates, caps, key parity");
+
+  const engine = code("src/lib/social-earning.ts");
+  const vocab = code("src/lib/social-actions.ts");
+  const api = code("src/app/api/admin/settings/social-earning/route.ts");
+  const form = code("src/components/admin/settings/social-earning-form.tsx");
+  const adminLib = code("src/lib/social-earning-admin.ts");
+
+  // 7a — the mode gates ship OPEN, deliberately.
+  //
+  // They are not a new feature: they are a master switch placed over earning
+  // that is already running. There is not one `social_earning.*` row in the
+  // database, so the defaults ARE the live configuration, and payments have
+  // already been made under them. A closed gate here would not be a cautious
+  // default, it would silently stop feed earning for everyone now receiving it.
+  // What gates the money is still the per-action enable beneath each mode.
+  check(
+    "poster mode defaults OPEN, so adding the gate does not stop live earning",
+    SOCIAL_EARNING_DEFAULTS.posterModeEnabled === true,
+    "the defaults are the live config — closing this gate is an outage, not a safe default"
+  );
+  check(
+    "engager mode defaults OPEN, for the same reason",
+    SOCIAL_EARNING_DEFAULTS.engagerModeEnabled === true
+  );
+  // The genuinely NEW protection is the pair cap, and that one must be on:
+  // without it two accounts can drain the daily cap between themselves.
+  check(
+    "the anti-collusion pair cap is ON by default",
+    SOCIAL_EARNING_DEFAULTS.pairDailyCapPerUser > 0,
+    "a cap that ships off protects nobody until someone thinks to enable it"
+  );
+  check(
+    "the parser reads the mode switches, so a saved row can turn them on",
+    /poster_mode_enabled/.test(vocab) && /engager_mode_enabled/.test(vocab)
+  );
+
+  // 7b — key parity, both ends. A setting is only real when the writing form
+  // and the reading code use the SAME key.
+  const NEW_KEYS = [
+    "poster_mode_enabled",
+    "engager_mode_enabled",
+    "poster_daily_cap_per_user",
+    "engager_daily_cap_per_user",
+    "pair_daily_cap_per_user",
+    "min_level_to_earn",
+  ];
+  for (const k of NEW_KEYS) {
+    check(
+      `key parity: ${k} is written by the API, read by the parser, and on the form`,
+      api.includes(`"social_earning.${k}"`) &&
+        api.includes(`${k}:`) &&
+        vocab.includes(`"${k}"`) &&
+        adminLib.includes(`${k}:`) &&
+        form.includes(`${k}`)
+    );
+  }
+  // And the round-trip above already proves the values survive; assert the new
+  // keys are genuinely in that payload rather than silently dropped.
+  const written = apiWrites(randomForm());
+  for (const k of NEW_KEYS) {
+    check(
+      `the API's writes array actually contains social_earning.${k}`,
+      written.has(`${SOCIAL_EARNING_CATEGORY}.${k}`)
+    );
+  }
+
+  // 7c — a mode that is off pays nothing, and is checked BEFORE the ratio
+  // counter advances (otherwise milestones bank up and all pay at switch-on).
+  check(
+    "poster mode off short-circuits the recipient side with mode_off",
+    /!cfg\.posterModeEnabled[\s\S]{0,200}skipped: "mode_off"/.test(engine)
+  );
+  check(
+    "engager mode off short-circuits the actor side with mode_off",
+    /!cfg\.engagerModeEnabled[\s\S]{0,200}skipped: "mode_off"/.test(engine)
+  );
+  check(
+    "the recipient mode gate precedes resolveRatio (no banked milestones)",
+    // The first `await resolveRatio(` is the recipient side, the last is the
+    // actor side. Each mode gate must sit ahead of its own call.
+    engine.indexOf("!cfg.posterModeEnabled") <
+      engine.indexOf("await resolveRatio(") &&
+      engine.indexOf("!cfg.engagerModeEnabled") <
+        engine.lastIndexOf("await resolveRatio(") &&
+      engine.indexOf("await resolveRatio(") !==
+        engine.lastIndexOf("await resolveRatio(")
+  );
+
+  // 7d — no self-earning, on either side.
+  check(
+    "a user cannot earn as author from their own engagement",
+    /actorUserId === postOwnerUserId && action !== "POST_CREATE"[\s\S]{0,120}skipped: "self"/.test(
+      engine
+    )
+  );
+  check(
+    "a user cannot earn as engager on their own post",
+    /postOwnerUserId && actorUserId === postOwnerUserId[\s\S]{0,120}skipped: "self"/.test(
+      engine
+    )
+  );
+
+  // 7e — idempotency. One reference per (user, event); the DB unique is the
+  // real guarantee, and the credit re-checks it inside a row lock.
+  check(
+    "every credit still writes a deterministic reference containing the role",
+    /reference =\s*ctx\.referenceOverride/.test(engine) &&
+      /social_\$\{action\.toLowerCase\(\)\}_\$\{role\}_/.test(engine)
+  );
+  check(
+    "the duplicate re-check happens inside the FOR UPDATE row lock",
+    /FOR UPDATE[\s\S]{0,300}raceDup[\s\S]{0,200}if \(raceDup\) return null;/.test(
+      engine
+    )
+  );
+
+  // 7f — caps are mandatory, stack downward, and are read off the un-prunable
+  // ledger rather than a table log retention deletes.
+  check(
+    "per-mode daily caps are applied to the allowance",
+    /modeCap - todayModePoints/.test(engine) &&
+      /role === "recipient" \? cfg\.posterDailyCapPerUser : cfg\.engagerDailyCapPerUser/.test(
+        engine
+      )
+  );
+  check(
+    "the pair cap bounds what one counterparty can pay in a day",
+    /pairCap - todayPairPoints/.test(engine) &&
+      /md\.sourceUserId === sourceUserId/.test(engine)
+  );
+  check(
+    "mode and pair ceilings only ever narrow — Math.min, never Math.max",
+    /allowPoints = Math\.min\(allowPoints, Math\.max\(0, modeCap - todayModePoints\)\)/.test(
+      engine
+    )
+  );
+  check(
+    "the cap counters read Transaction, not the retention-pruned SocialActionLog",
+    /prisma\.transaction\.findMany\([\s\S]{0,300}reference: \{ startsWith: "social_" \}/.test(
+      engine
+    ) && !/socialActionLog[\s\S]{0,200}todayModePoints/.test(engine)
+  );
+  check(
+    "mode_cap and pair_cap are reported, so a stuck user is diagnosable",
+    /skipped: "mode_cap"/.test(engine) && /skipped: "pair_cap"/.test(engine)
+  );
+  check(
+    "cap defaults are conservative (poster 200 / engager 100 / pair 25)",
+    SOCIAL_EARNING_DEFAULTS.posterDailyCapPerUser === 200 &&
+      SOCIAL_EARNING_DEFAULTS.engagerDailyCapPerUser === 100 &&
+      SOCIAL_EARNING_DEFAULTS.pairDailyCapPerUser === 25
+  );
+  check(
+    "the level gate exists and defaults to off",
+    /cfg\.minLevelToEarn > 0 && calculateLevel\(/.test(engine) &&
+      SOCIAL_EARNING_DEFAULTS.minLevelToEarn === 0
+  );
+
+  // 7g — deleting a post must neither claw back nor re-pay.
+  check(
+    "no feed route deletes or reverses a social_ ledger row on post deletion",
+    !/transaction\.delete/.test(code("src/app/api/feed/[id]/route.ts"))
   );
 
   console.log(

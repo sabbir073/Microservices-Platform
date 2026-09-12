@@ -253,6 +253,29 @@ check(
   /!isPrivileged/.test(feedApi)
 );
 
+// A donation moves points that were already counted as earned once. Crediting
+// the recipient's lifetime `totalEarnings` on top — with nothing decrementing
+// the donor — meant two accounts bouncing the same points between their posts
+// pumped `totalEarnings` without bound at zero cost. That column is what
+// /api/leaderboard ranks on, what the admin leaderboard reset pays prizes on,
+// and what the `total_earned` achievements (which pay real points) measure.
+const donateApi = code("src/app/api/feed/[id]/donate/route.ts");
+check(
+  "a donation does NOT inflate the recipient's lifetime earnings",
+  !/totalEarnings:\s*\{\s*increment/.test(donateApi),
+  "a transfer counted as an earning is a free leaderboard/achievement farm"
+);
+check(
+  "…but the donor is still debited with a CAS",
+  /pointsBalance:\s*\{\s*gte:\s*v\.data\.points\s*\}/.test(donateApi),
+  "the pre-check above it is check-then-act"
+);
+check(
+  "…and the recipient still gets a GIFT ledger row",
+  /TransactionType\.GIFT/.test(donateApi),
+  "money that moves without a row is money nobody can reconcile"
+);
+
 const composer = code("src/components/user/feed/create-post-composer.tsx");
 check(
   "the composer hides the tab rather than showing it disabled",
@@ -417,6 +440,58 @@ check(
   "editing an existing task is left alone",
   /const isCreate = !task;/.test(form) && /if \(!isCreate\) return;/.test(form),
   "the type is fixed there — the URL step only makes sense while creating"
+);
+
+/* ────────────────────────────────────────────────────────────────
+   A deposit can be corrected to the amount that actually arrived
+   ──────────────────────────────────────────────────────────────── */
+console.log("\nDeposits — the admin credits what arrived, visibly");
+
+const dep = code("src/app/api/admin/deposits/[id]/route.ts");
+const depUi = code("src/components/admin/deposits/admin-deposits-view.tsx");
+
+check(
+  "the route accepts a corrected amount at all",
+  /body\.amount/.test(dep) && /correctedAmount/.test(dep),
+  "the user-typed amount was the only number the admin could credit"
+);
+check(
+  "a nonsense amount is refused rather than credited",
+  /rawCorrected\s*<=\s*0/.test(dep) && /Number\.isFinite\(rawCorrected\)/.test(dep)
+);
+check(
+  "the CORRECTED amount is what reaches the balance and the ledger",
+  /cashBalance:\s*\{\s*increment:\s*creditedAmount\s*\}/.test(dep) &&
+    /amount:\s*creditedAmount,/.test(dep),
+  "crediting one number and recording another is how a ledger stops reconciling"
+);
+check(
+  "…and what the referral cut is computed from",
+  /awardReferralMoneyBonus\(\s*deposit\.userId,\s*"DEPOSIT",\s*creditedAmount/.test(dep),
+  "paying a percentage of a number nobody actually sent is free money"
+);
+check(
+  "the original survives the correction on the record itself",
+  /Amount corrected from \$\{usd\(requestedAmount\)\} to/.test(dep) &&
+    /requestedAmount,/.test(dep),
+  "a silently altered amount is worse than no correction at all"
+);
+check(
+  "the correction is audited against the affected account",
+  /action: "DEPOSIT_AMOUNT_CORRECTED"/.test(dep) &&
+    /DEPOSIT_AMOUNT_CORRECTED"[\s\S]{0,400}targetUserId: deposit\.userId/.test(dep),
+  "a blank targetUserId makes the action invisible on that user's activity"
+);
+check(
+  "idempotency is untouched — the status CAS and the ledger reference stand",
+  /updateMany\(\{\s*where:\s*\{\s*id,\s*status:\s*"PENDING"\s*\}/.test(dep) &&
+    /reference: `deposit_\$\{deposit\.id\}`/.test(dep),
+  "a deposit already credited must not credit again at any amount"
+);
+check(
+  "the admin UI actually sends it",
+  /setAmounts\(/.test(depUi) && /\{ amount: received \}/.test(depUi),
+  "a route nobody can reach is the same as no route"
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

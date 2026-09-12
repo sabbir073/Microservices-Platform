@@ -399,7 +399,7 @@ export function AdSheet({
                       >
                         {on ? "✓" : ""}
                       </span>
-                      <span className="text-[11px] font-semibold text-gray-200 truncate">
+                      <span className="text-[11px] font-semibold text-gray-200 truncate min-w-0">
                         {p.label}
                       </span>
                     </div>

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
+import type { Prisma } from "@/generated/prisma/client";
 import { getSetting } from "@/lib/system-settings";
-import { toNum } from "@/lib/money";
 import { NON_STAFF_WHERE } from "@/lib/staff";
 
 export type LeaderboardMetric =
@@ -29,6 +29,91 @@ export interface CombinedRow {
   };
   /** True only when this user's package is in the eligibility allowlist. */
   isEligible: boolean;
+}
+
+/**
+ * THE EARNINGS BASIS FOR EVERY BOARD: money earned from TASKS.
+ *
+ * `User.totalEarnings` used to be it, and it is not a ranking metric — it is a
+ * lifetime credit counter that a marketplace SALE also increments. The seller's
+ * total goes up and the buyer's never goes down, so two accounts selling the
+ * same item back and forth to each other climb the board together. It costs
+ * them the platform fee per lap and nothing else, and the prize reset paid out
+ * on the same number.
+ *
+ * `TaskSubmission.pointsEarned` is what an approved submission actually paid,
+ * written by every approval path, already indexed by user. Summing it needs no
+ * new column and no backfill: the rows are the work.
+ *
+ * Deliberately NOT the `Transaction` ledger. A paid submission has three
+ * different reference shapes there, `amount`'s sign is not consistent across
+ * write sites, and the ledger also carries daily rewards, quiz prizes and
+ * leaderboard prizes themselves — ranking on prize money you already won is a
+ * feedback loop.
+ */
+const PAID_SUBMISSION = {
+  status: { in: ["APPROVED", "AUTO_APPROVED"] },
+  pointsEarned: { gt: 0 },
+} satisfies Prisma.TaskSubmissionWhereInput;
+
+/**
+ * Task-earned points for a specific set of users. Missing = 0, never absent.
+ */
+export async function taskEarningsFor(
+  userIds: string[]
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (userIds.length === 0) return out;
+  const rowsRaw = await prisma.taskSubmission.groupBy({
+    by: ["userId"],
+    where: { userId: { in: userIds }, ...PAID_SUBMISSION },
+    _sum: { pointsEarned: true },
+  });
+  // Accelerate collapses groupBy typings — restate the row shape.
+  const rows = rowsRaw as unknown as Array<{
+    userId: string;
+    _sum: { pointsEarned: number | null };
+  }>;
+  for (const r of rows) out.set(r.userId, r._sum.pointsEarned ?? 0);
+  return out;
+}
+
+/**
+ * The top task earners, ranked by the sum itself rather than by a proxy column.
+ *
+ * The aggregate is ordered in the DATABASE, so this is the real top N and not
+ * "the top N of whoever happened to lead on `totalEarnings`". Staff are removed
+ * afterwards, which is why the pool is pulled wider than `take`.
+ */
+export async function topTaskEarners(
+  take: number
+): Promise<Array<{ userId: string; points: number }>> {
+  const want = Math.max(1, Math.min(take, 500));
+  const rowsRaw = await prisma.taskSubmission.groupBy({
+    by: ["userId"],
+    where: PAID_SUBMISSION,
+    _sum: { pointsEarned: true },
+    orderBy: { _sum: { pointsEarned: "desc" } },
+    take: Math.min(want * 4 + 50, 2000),
+  });
+  const rows = rowsRaw as unknown as Array<{
+    userId: string;
+    _sum: { pointsEarned: number | null };
+  }>;
+  if (rows.length === 0) return [];
+
+  // Staff never appear on a public board and never win a prize, and this list
+  // feeds both, so they come out here — once, at the shared source.
+  const ids = rows.map((r) => r.userId);
+  const live = await prisma.user.findMany({
+    where: { id: { in: ids }, ...NON_STAFF_WHERE },
+    select: { id: true },
+  });
+  const ok = new Set(live.map((u) => u.id));
+  return rows
+    .filter((r) => ok.has(r.userId))
+    .map((r) => ({ userId: r.userId, points: r._sum.pointsEarned ?? 0 }))
+    .slice(0, want);
 }
 
 /** Default eligibility — any paid tier. Free users see their rank but
@@ -103,6 +188,11 @@ export async function computeCombinedTopUsers(options: {
 
   const ids = users.map((u) => u.id);
 
+  // Task-EARNED points for the pool. This is the `points` component of the
+  // combined score — `totalEarnings` is only the prefilter that chose the pool,
+  // because a marketplace round-trip inflates it and would otherwise buy rank.
+  const earnedByUser = await taskEarningsFor(ids);
+
   // Tasks count and Referrals count (parallel)
   const [taskRowsRaw, referralRowsRaw] = await Promise.all([
     prisma.taskSubmission.groupBy({
@@ -140,9 +230,9 @@ export async function computeCombinedTopUsers(options: {
   // Build per-user component row
   const rows = users.map((u) => ({
     user: u,
-    // `totalEarnings` is a Decimal column masked as `number` by the cast above —
-    // normalize to a real number for the percentile/score math below.
-    points: toNum(u.totalEarnings),
+    // Points EARNED FROM TASKS, already in points — no rate conversion, and no
+    // Decimal. `toNum(u.totalEarnings)` was here and is what made rank buyable.
+    points: earnedByUser.get(u.id) ?? 0,
     xp: u.xp,
     tasks: tasksByUser.get(u.id) ?? 0,
     team: teamByUser.get(u.id) ?? 0,
@@ -202,7 +292,8 @@ export async function computeCombinedTopUsers(options: {
     packageName: r.user.package?.name ?? null,
     score: Math.round(r.score * 10) / 10,
     components: {
-      points: Math.round(r.points * 1000),
+      // Already points — this used to multiply a USD figure by a hardcoded 1000.
+      points: Math.round(r.points),
       xp: r.xp,
       tasks: r.tasks,
       team: r.team,

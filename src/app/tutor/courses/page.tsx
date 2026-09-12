@@ -194,7 +194,7 @@ function CourseCard({
             className="object-cover"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-slate-700">
+          <div className="w-full h-full flex items-center justify-center text-(--app-glyph)">
             <BookOpen className="w-10 h-10" />
           </div>
         )}
@@ -236,10 +236,10 @@ function CourseCard({
 function StatusPill({ status }: { status: string }) {
   const cfg: Record<string, { label: string; cls: string }> = {
     DRAFT: { label: "Draft", cls: "bg-slate-700 text-slate-200" },
-    PENDING_REVIEW: { label: "In review", cls: "bg-amber-500 text-amber-950" },
-    PUBLISHED: { label: "Live", cls: "bg-emerald-500 text-emerald-950" },
+    PENDING_REVIEW: { label: "In review", cls: "bg-amber-500 text-(--app-on-bright)" },
+    PUBLISHED: { label: "Live", cls: "bg-emerald-500 text-(--app-on-bright)" },
     SUSPENDED: { label: "Suspended", cls: "bg-rose-500 text-white" },
-    ARCHIVED: { label: "Archived", cls: "bg-slate-600 text-slate-200" },
+    ARCHIVED: { label: "Archived", cls: "bg-slate-600 text-white" },
   };
   const c = cfg[status] ?? cfg.DRAFT;
   return (

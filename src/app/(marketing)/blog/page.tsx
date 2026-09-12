@@ -25,7 +25,7 @@ export default function BlogIndexPage() {
         {/* Featured */}
         <Link
           href={`/blog/${featured.slug}`}
-          className="group block rounded-3xl bg-(--mk-surface) border border-(--mk-border) backdrop-blur-xl overflow-hidden hover:border-blue-500/30 transition-all"
+          className="group block rounded-3xl mk-card backdrop-blur-xl overflow-hidden hover:border-blue-500/30 transition-all"
         >
           <div className="grid md:grid-cols-2">
             <div className="grid place-items-center bg-linear-to-br from-blue-500/20 to-purple-600/20 p-12 text-7xl">
@@ -52,12 +52,12 @@ export default function BlogIndexPage() {
             <Link
               key={p.slug}
               href={`/blog/${p.slug}`}
-              className="group flex flex-col rounded-2xl bg-(--mk-surface) border border-(--mk-border) backdrop-blur-xl overflow-hidden hover:border-blue-500/30 transition-all"
+              className="group flex flex-col rounded-2xl mk-card backdrop-blur-xl overflow-hidden hover:border-blue-500/30 transition-all"
             >
               <div className="grid place-items-center bg-linear-to-br from-blue-500/15 to-purple-600/15 py-10 text-5xl">{p.emoji}</div>
               <div className="flex flex-1 flex-col p-5">
                 <div className="flex items-center gap-2 text-[11px] text-(--mk-muted)">
-                  <span className="rounded-full bg-(--mk-surface) border border-(--mk-border) px-2 py-0.5">{p.category}</span>
+                  <span className="rounded-full mk-card px-2 py-0.5">{p.category}</span>
                   <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{p.readMinutes} min</span>
                 </div>
                 <h3 className="mt-3 font-bold text-(--mk-text) leading-snug">{p.title}</h3>

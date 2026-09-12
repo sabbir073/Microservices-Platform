@@ -41,6 +41,19 @@ export const CREATOR_TYPES: Record<CreatorApplicationType, CreatorTypeMeta> = {
     grantFeatures: ["agencyMode", "createTasks", "advertiser"],
     dashboardHref: "/agency",
   },
+  TASK_BUYER: {
+    label: "Task Buyer",
+    blurb:
+      "Fund your own tasks: pay people on the platform to follow, share, or complete a job you set. You choose the reward and how many people.",
+    gateFeature: "createTasks",
+    // Deliberately NOT the AGENCY bundle. `createTasks` alone leaves a buyer
+    // refused the moment they pick Social — the type most of them want — so
+    // `socialTasks` comes with it. `agencyMode` and `advertiser` do not: an
+    // agency console and an ad-campaign builder are not what someone asking to
+    // buy 200 follows applied for.
+    grantFeatures: ["createTasks", "socialTasks"],
+    dashboardHref: "/create-task",
+  },
   AFFILIATE: {
     label: "Affiliate",
     blurb: "Earn commissions by promoting products and courses with your link.",

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Clock, Coins, Lock, Check, Sparkles, Zap } from "lucide-react";
+import { Clock, Coins, Lock, Check, Zap } from "lucide-react";
 import type { ReactNode } from "react";
 import { SmartImage } from "./smart-image";
 
@@ -36,22 +36,33 @@ interface TaskCardProps {
   className?: string;
 }
 
+/* Difficulty is a three-step scale, so green/amber/red is the one place a
+   traffic-light reading is genuinely the meaning rather than decoration. It
+   draws from the app's own semantic tokens instead of three more raw hues. */
 const DIFFICULTY_TONE: Record<TaskDifficulty, string> = {
-  EASY: "bg-emerald-500/10 text-emerald-400",
-  MEDIUM: "bg-amber-500/10 text-amber-400",
-  HARD: "bg-red-500/10 text-red-400",
+  EASY: "bg-(--app-in-soft) border-(--app-in-line) text-(--app-in)",
+  MEDIUM: "bg-(--app-warn-soft) border-(--app-warn-line) text-(--app-warn)",
+  HARD: "bg-(--app-out-soft) border-(--app-out-line) text-(--app-out)",
 };
 
+/* The action button. Only the two states that are actually a call to action
+   get the gradient; the rest are status, and status is a chip, not a button
+   that looks pressable. "Revise" was a SECOND solid fill in a different hue
+   (orange) sitting next to indigo ones in the same list. */
 const STATUS_TONE: Record<TaskStatus, string> = {
-  AVAILABLE: "bg-indigo-500 hover:bg-indigo-600 text-white",
-  LOCKED: "bg-gray-800 text-gray-500 cursor-not-allowed",
-  COMPLETED: "bg-emerald-500/15 text-emerald-400 cursor-default",
-  COOLDOWN: "bg-gray-800 text-gray-500 cursor-not-allowed",
-  PENDING: "bg-amber-500/15 text-amber-400 cursor-default",
-  IN_PROGRESS: "bg-indigo-500 hover:bg-indigo-600 text-white",
-  SUBMITTED: "bg-amber-500/15 text-amber-400",
-  REVISION: "bg-orange-500 hover:bg-orange-600 text-white",
-  REJECTED: "bg-red-500/15 text-red-400 hover:bg-red-500/25",
+  AVAILABLE: "app-accent",
+  IN_PROGRESS: "app-accent",
+  REVISION: "app-accent",
+  LOCKED: "bg-(--app-surface-2) border border-(--app-line) text-gray-500 cursor-not-allowed",
+  COOLDOWN: "bg-(--app-surface-2) border border-(--app-line) text-gray-500 cursor-not-allowed",
+  COMPLETED:
+    "bg-(--app-in-soft) border border-(--app-in-line) text-(--app-in) cursor-default",
+  PENDING:
+    "bg-(--app-warn-soft) border border-(--app-warn-line) text-(--app-warn) cursor-default",
+  SUBMITTED:
+    "bg-(--app-warn-soft) border border-(--app-warn-line) text-(--app-warn)",
+  REJECTED:
+    "bg-(--app-out-soft) border border-(--app-out-line) text-(--app-out)",
 };
 
 export function TaskCard({
@@ -105,11 +116,7 @@ export function TaskCard({
 
   return (
     <div
-      className={cn(
-        "group card card-interactive p-4",
-        isLocked && "opacity-60",
-        className
-      )}
+      className={cn("group app-card app-lift", isLocked && "opacity-60", className)}
     >
       <div className="flex gap-3">
         {(thumbnail || icon) && (
@@ -120,48 +127,40 @@ export function TaskCard({
                 alt=""
                 width={56}
                 height={56}
-                className="w-14 h-14 rounded-lg object-cover bg-gray-800"
+                className="w-14 h-14 rounded-(--app-r-control) object-cover bg-(--app-surface-2)"
               />
             ) : (
-              <div className="w-12 h-12 rounded-lg bg-indigo-500/10 text-indigo-400 flex items-center justify-center">
-                {icon}
-              </div>
+              // Was an indigo-tinted tile on every task in the list, so a
+              // 20-task page was 20 indigo squares — and the reward figure
+              // beside them was amber, and the XP purple.
+              <div className="app-icon app-icon-lg">{icon}</div>
             )}
           </div>
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="text-sm font-semibold text-white truncate flex-1">
+            <h3 className="t-card-title text-white truncate flex-1 min-w-0">
               {title}
             </h3>
             {isDone && (
-              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+              <Check className="w-4 h-4 shrink-0 text-(--app-in)" />
             )}
           </div>
           {description && (
-            <p className="text-xs text-gray-400 line-clamp-2 mt-0.5">
+            <p className="t-meta text-gray-400 line-clamp-2 mt-1">
               {description}
             </p>
           )}
-          <div className="flex flex-wrap items-center gap-1.5 mt-2">
-            {type && (
-              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-gray-800 text-gray-400 uppercase">
-                {type}
-              </span>
-            )}
+          <div className="flex flex-wrap items-center gap-1.5 mt-2.5">
+            {type && <span className="app-chip uppercase">{type}</span>}
             {difficulty && (
-              <span
-                className={cn(
-                  "px-1.5 py-0.5 rounded text-[10px] font-medium uppercase",
-                  DIFFICULTY_TONE[difficulty]
-                )}
-              >
+              <span className={cn("app-chip uppercase", DIFFICULTY_TONE[difficulty])}>
                 {difficulty}
               </span>
             )}
             {durationMin !== undefined && (
-              <span className="inline-flex items-center gap-0.5 text-[10px] text-gray-400">
-                <Clock className="w-3 h-3" />
+              <span className="inline-flex items-center gap-1 t-meta text-gray-400">
+                <Clock className="w-3.5 h-3.5" />
                 {durationMin}m
               </span>
             )}
@@ -169,14 +168,18 @@ export function TaskCard({
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-800">
-        <div className="flex items-center gap-2.5">
-          <span className="inline-flex items-center gap-1 text-amber-400 text-sm font-bold tabular-nums">
-            <Coins className="w-3.5 h-3.5" />+{reward}
+      {/* The reward is the reason to press the button, so it is the second
+          biggest thing on the card after the title — by SIZE. It used to be
+          amber 14px next to a purple 12px XP figure and an indigo button:
+          three colours, one size, nothing leading. */}
+      <div className="flex items-center justify-between gap-3 mt-3 pt-3 border-t border-(--app-line)">
+        <div className="flex items-baseline gap-2">
+          <span className="t-figure-sm inline-flex items-baseline gap-1 text-white">
+            <Coins className="w-4 h-4 self-center text-gray-400" />+{reward}
           </span>
           {xpReward !== undefined && xpReward > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-purple-400 text-xs font-medium tabular-nums">
-              <Sparkles className="w-3 h-3" />+{xpReward} XP
+            <span className="t-meta font-bold text-gray-400 tabular-nums">
+              +{xpReward} XP
             </span>
           )}
         </div>
@@ -185,12 +188,12 @@ export function TaskCard({
             ? { href }
             : { onClick: onAction, disabled: isLocked || isDone || onCooldown })}
           className={cn(
-            "inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors",
+            "app-press app-tap-row shrink-0 inline-flex items-center justify-center gap-1.5 px-3.5 rounded-(--app-r-control) text-xs font-extrabold",
             STATUS_TONE[status]
           )}
         >
-          {isLocked && <Lock className="w-3 h-3" />}
-          {status === "AVAILABLE" && <Zap className="w-3 h-3" />}
+          {isLocked && <Lock className="w-3.5 h-3.5" />}
+          {status === "AVAILABLE" && <Zap className="w-3.5 h-3.5" />}
           {label}
         </ActionTag>
       </div>

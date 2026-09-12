@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import type { FeaturesContent } from "@/lib/landing-content";
 import { DEFAULT_LANDING_CONTENT } from "@/lib/landing-content";
+import { SectionHeading } from "./section-heading";
 
 const ICONS: Record<string, LucideIcon> = {
   Pin,
@@ -59,29 +60,21 @@ export function Features(props: Props) {
   const v: FeaturesContent = { ...DEFAULT_LANDING_CONTENT.features, ...props };
 
   return (
-    <section id="features" className="py-20 sm:py-28 bg-(--mk-band)">
+    <section id="features" className="mk-section bg-(--mk-band)">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <span className="inline-block px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 text-xs font-semibold uppercase tracking-wider mb-4">
-            {v.badge}
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-(--mk-text) tracking-tight mb-4">
-            {v.heading_line1}{" "}
-            <span className="bg-linear-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
-              {v.heading_line2}
-            </span>
-          </h2>
-          <p className="text-(--mk-muted) max-w-2xl mx-auto text-lg leading-relaxed">
-            {v.subheading}
-          </p>
-        </div>
+        <SectionHeading
+          eyebrow={v.badge}
+          line1={v.heading_line1}
+          line2={v.heading_line2}
+          sub={v.subheading}
+        />
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="mk-rise grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {v.items.map((feature, i) => {
             const Icon = ICONS[feature.iconKey] ?? Sparkles;
             const href = feature.href?.trim();
             const cardClass =
-              "mk-zoom group relative flex flex-col h-full p-6 rounded-2xl bg-(--mk-surface) border border-(--mk-border) shadow-sm hover:border-(--mk-border-strong)";
+              "mk-zoom mk-press group relative flex flex-col h-full p-6 rounded-2xl mk-card hover:border-(--mk-border-strong)";
             const inner = (
               <>
                 <div

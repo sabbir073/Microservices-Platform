@@ -73,7 +73,7 @@ export function ProfileGate({
                 className="flex items-center gap-2 p-2.5 rounded-lg bg-gray-950 border border-gray-800 hover:border-amber-500/40 transition-colors"
               >
                 <Circle className="w-3.5 h-3.5 text-gray-600 shrink-0" />
-                <span className="text-sm text-gray-300 flex-1 truncate">
+                <span className="text-sm text-gray-300 flex-1 min-w-0 truncate">
                   {it.label}
                 </span>
                 <ChevronRight className="w-4 h-4 text-gray-600" />

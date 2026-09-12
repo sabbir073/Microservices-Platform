@@ -43,6 +43,7 @@ import type {
   EditTab,
 } from "./profile-view.types";
 import { COUNTRIES, TAG_OPTIONS } from "./profile-view.constants";
+import { useCountries } from "@/lib/use-countries";
 import { ProfileTabBody } from "./profile-tab-body";
 import { PostsListTab } from "./posts-list-tab";
 import { UserListTab } from "./user-list-tab";
@@ -50,8 +51,12 @@ import { AnalyticsTab } from "./analytics-tab";
 import { TagModal } from "./tag-modal";
 import { PhotoModal } from "./photo-modal";
 import { ConnectSocialModal } from "./connect-social-modal";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 export function ProfileView() {
+  // Canonical 196-row country list; the 15-row constant is only the first-paint
+  // fallback. A country the platform can be set to must be a country it can name.
+  const countryList = useCountries(COUNTRIES.map((c) => ({ ...c, flag: null })));
   const [data, setData] = useState<ProfileResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [primaryTab, setPrimaryTab] = useState<PrimaryTab>("profile");
@@ -230,7 +235,7 @@ export function ProfileView() {
           <Globe className="w-4 h-4 text-indigo-400 shrink-0" />
           <p className="text-sm text-indigo-200 flex-1">
             We detected you&apos;re in{" "}
-            <strong>{COUNTRIES.find((c) => c.code === autoCountry.country)?.name ?? autoCountry.country}</strong>.
+            <strong>{countryList.find((c) => c.code === autoCountry.country)?.name ?? autoCountry.country}</strong>.
             Auto-fill your profile?
           </p>
           <button
@@ -342,7 +347,7 @@ export function ProfileView() {
             {profile.country && (
               <span className="inline-flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-rose-400" />
-                {COUNTRIES.find((c) => c.code === profile.country)?.name ?? profile.country}
+                {countryList.find((c) => c.code === profile.country)?.name ?? profile.country}
               </span>
             )}
             {profile.profession && (
@@ -447,7 +452,7 @@ export function ProfileView() {
 
       {/* Sticky Facebook-style primary tabs */}
       <nav className="sticky top-0 z-30 -mx-4 sm:-mx-6 px-4 sm:px-6 glass-strong rounded-none border-0 border-y border-gray-800/60">
-        <div className="flex gap-1 overflow-x-auto scrollbar-thin py-1">
+        <ScrollFadeRow innerClassName="flex gap-1 py-1" ariaLabel="Profile tabs">
           {(
             [
               { key: "profile", label: "Profile", icon: User },
@@ -461,7 +466,7 @@ export function ProfileView() {
               key={t.key}
               onClick={() => setPrimaryTab(t.key)}
               className={cn(
-                "inline-flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors relative",
+                "shrink-0 inline-flex items-center gap-1.5 px-3 sm:px-4 py-2.5 text-sm font-semibold whitespace-nowrap transition-colors relative",
                 primaryTab === t.key
                   ? "text-indigo-400"
                   : "text-gray-400 hover:text-white"
@@ -474,7 +479,7 @@ export function ProfileView() {
               )}
             </button>
           ))}
-        </div>
+        </ScrollFadeRow>
       </nav>
 
       {/* Tab content */}

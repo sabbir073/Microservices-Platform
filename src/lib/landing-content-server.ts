@@ -4,6 +4,8 @@ import {
   DEFAULT_LANDING_CONTENT,
   LANDING_SETTING_KEY_PREFIX,
   isSectionKey,
+  withEarnCardLinks,
+  withRequiredNavLinks,
   type LandingContent,
   type SectionKey,
 } from "@/lib/landing-content";
@@ -39,5 +41,12 @@ export async function getLandingContent(): Promise<LandingContent> {
   } catch {
     // DB unreachable at build / preview time — fall back to defaults.
   }
+  // A stored section REPLACES the default array it came from, so a marketing
+  // page added after the admin last saved the navbar would never appear in the
+  // menu, and an earn card saved before it had a destination would stay dead.
+  // Reconcile both against the routes that actually exist. Anything the admin
+  // has set by hand is left alone.
+  merged.navbar = withRequiredNavLinks(merged.navbar);
+  merged.features = withEarnCardLinks(merged.features);
   return merged;
 }

@@ -9,6 +9,8 @@ import {
 import { matchesTargeting, type TargetableUser } from "@/lib/ad-targeting";
 import { getSetting } from "@/lib/system-settings";
 import { bufferImpression, bufferServeOutcome } from "@/lib/ad-counters";
+import { resolveEventCountry } from "@/lib/ad-geo";
+import { resolveCountryCode } from "@/lib/country-codes";
 import { creativeUrl, isFirstPartyAdType } from "@/lib/ad-proxy";
 import {
   getNetworkGlobals,
@@ -76,6 +78,28 @@ const SUPPRESSED: ServeResult = {
 
 /** Viewer attributes targeting can filter on — must cover every AdTargeting geo
  *  dimension or a rule silently matches nobody. */
+/**
+ * The viewer's country, as the ISO2 code the targeting matcher compares against.
+ *
+ * `matchesTargeting()` lowercases `user.country` and looks for it in the
+ * campaign's list of ISO2 codes. That is an exact string comparison, so an
+ * account holding the display name "Bangladesh" — three of them do, from a
+ * free-text admin field since fixed — matches NO Bangladesh campaign and is
+ * silently dropped from every geo-targeted buy. Nobody sees an error; the
+ * advertiser just reaches fewer people than they paid for.
+ *
+ * Resolving here, once per serve, rather than inside the matcher, is deliberate:
+ * the matcher runs per AD per serve and must stay synchronous and allocation-free.
+ * Unresolvable values are left as they are rather than blanked — an unknown
+ * country should fail to match a targeted ad, not become "everyone".
+ */
+async function normalizeViewerCountry(
+  raw: string | null | undefined
+): Promise<string | null | undefined> {
+  if (!raw) return raw;
+  return (await resolveCountryCode(raw)) ?? raw;
+}
+
 const VIEWER_SELECT = {
   country: true,
   region: true,
@@ -165,6 +189,28 @@ async function serveAdInner(opts: {
   // `serveFeedAds` below already does it this way and always filters; this is
   // that behaviour, applied to the banner path too. `matchesTargeting({}, {})`
   // correctly passes an untargeted ad and rejects a targeted one.
+  // The space and its click price depend on the PLACEMENT only — not on who is
+  // looking — so they are started here and awaited after the viewer block
+  // instead of queued behind it.
+  //
+  // This path runs on 41% of all requests in the app (every rotating ad slot,
+  // measured over a real session), and it was six Accelerate round-trip layers
+  // deep: viewer → country → placement → price → creatives → booking. Both of
+  // these are cached reads with no side effects, so starting them early changes
+  // nothing about what is served — it only stops them waiting their turn.
+  const placementRowPromise = prisma.adPlacement.findFirst({
+    where: { name: placement, isActive: true },
+    cacheStrategy: { ttl: 30, swr: 60 },
+  });
+  // Per-space click price, falling back to the global one. This is the budget
+  // FLOOR here, not a charge — an ad may only serve if its campaign can afford
+  // a click on this particular space.
+  const costPromise = getPlacementClickCost(placement);
+  // An early `return` below leaves these unawaited; attach a no-op catch so a
+  // failed read can never surface as an unhandled rejection.
+  placementRowPromise.catch(() => {});
+  costPromise.catch(() => {});
+
   let viewer: TargetableUser = {};
   let houseOnly = false;
   if (userId && !preview) {
@@ -180,6 +226,7 @@ async function serveAdInner(opts: {
     if (pkg?.adFree && !interstitial) return SUPPRESSED; // Watch & Earn is unaffected
     houseOnly = !!pkg?.adFree;
     viewer = { ...(u ?? {}), packageSlug: pkg?.slug ?? null };
+    viewer.country = await normalizeViewerCountry(u?.country);
   }
 
   // Full-screen frequency cap. Checked before the placement lookup so a capped
@@ -197,36 +244,42 @@ async function serveAdInner(opts: {
     if (!slot.allowed) return SUPPRESSED;
   }
 
-  const placementRow = await prisma.adPlacement.findFirst({
-    where: { name: placement, isActive: true },
-    cacheStrategy: { ttl: 30, swr: 60 },
-  });
+  const [placementRow, cost] = await Promise.all([
+    placementRowPromise,
+    costPromise,
+  ]);
   if (!placementRow) return EMPTY;
 
-  // Per-space click price, falling back to the global one. This is the budget
-  // FLOOR here, not a charge — an ad may only serve if its campaign can afford
-  // a click on this particular space.
-  const cost = await getPlacementClickCost(placement);
   const now = new Date();
   // The eligible pool is IDENTICAL for every viewer of a placement, so it is a
   // textbook shared read: cache it. Targeting and the weighted pick still run
   // per request in JS below, so rotation variety is unchanged. `take` also caps
   // the response so a placement with many ads can't hit Accelerate's payload
   // limit (P6009), which is explicitly non-retryable.
-  const allAds = await prisma.ad.findMany({
-    where: {
-      placementId: placementRow.id,
-      status: "ACTIVE",
-      // Admin preview (ads.view-gated, never counts an impression) is the only
-      // path allowed to look past the campaign gate, so an admin can still see
-      // what a space renders while a campaign is paused.
-      ...(preview ? {} : { campaign: servableCampaignWhere(cost, now, houseOnly) }),
-      ...(opts.ownInventoryOnly ? { type: { notIn: ["ADSENSE", "GAM"] } } : {}),
-    },
-    include: { campaign: { select: { title: true } } },
-    take: 50,
-    ...(preview ? {} : { cacheStrategy: { ttl: 30, swr: 120 } }),
-  });
+  // The creative pool and the space's booking both key off `placementRow.id`
+  // and nothing else, so they go together rather than one behind the other.
+  // `getActiveBooking` is a memoised read with no side effects; issuing it for a
+  // space that turns out to have no targeted ads costs nothing and saves a
+  // round-trip on every space that does.
+  const [allAds, booking] = await Promise.all([
+    prisma.ad.findMany({
+      where: {
+        placementId: placementRow.id,
+        status: "ACTIVE",
+        // Admin preview (ads.view-gated, never counts an impression) is the only
+        // path allowed to look past the campaign gate, so an admin can still see
+        // what a space renders while a campaign is paused.
+        ...(preview
+          ? {}
+          : { campaign: servableCampaignWhere(cost, now, houseOnly) }),
+        ...(opts.ownInventoryOnly ? { type: { notIn: ["ADSENSE", "GAM"] } } : {}),
+      },
+      include: { campaign: { select: { title: true } } },
+      take: 50,
+      ...(preview ? {} : { cacheStrategy: { ttl: 30, swr: 120 } }),
+    }),
+    preview ? Promise.resolve(null) : getActiveBooking(placementRow.id, now),
+  ]);
 
   // Always filter. See the note on `viewer` above.
   const targeted = allAds.filter((a) => matchesTargeting(a.targeting, viewer));
@@ -242,7 +295,6 @@ async function serveAdInner(opts: {
   // Previews skip this: an admin looking at a space must see what it holds.
   let pool = targeted;
   if (!preview) {
-    const booking = await getActiveBooking(placementRow.id, now);
     if (booking?.exclusive) {
       const booked = targeted.filter((a) => a.campaignId === booking.campaignId);
       if (booked.length > 0) pool = booked;
@@ -304,7 +356,16 @@ async function serveAdInner(opts: {
   if (counted) {
     // Buffered — see src/lib/ad-counters.ts. This used to be two hot-row writes
     // per served ad, on the few rows currently in rotation.
-    bufferImpression(chosen.id);
+    //
+    // `viewer.country` is handed over rather than re-read: the targeting block
+    // above already selected it (VIEWER_SELECT), so the profile fallback costs
+    // nothing here. On Vercel the edge header wins anyway and the profile is
+    // never consulted — which matters, because only 18 of 48 accounts have a
+    // country set and an anonymous viewer has no profile at all.
+    bufferImpression(
+      chosen.id,
+      await resolveEventCountry({ userId, profileCountry: viewer.country })
+    );
   }
 
   return {
@@ -425,12 +486,15 @@ export async function serveFeedAds(opts: {
     ]);
     if (pkg?.adFree) return [];
     viewer = { ...(u ?? {}), packageSlug: pkg?.slug ?? null };
+    viewer.country = await normalizeViewerCountry(u?.country);
   }
 
   const placement = await prisma.adPlacement.findFirst({
     where: { name: "IN_FEED", isActive: true },
     select: { id: true },
   });
+  // No row to attribute the request to — a configuration problem, not a fill
+  // problem, exactly as `recordServeOutcome` treats it for the other spaces.
   if (!placement) return [];
 
   // IN_FEED has its own rate on the card, like every other space.
@@ -489,7 +553,7 @@ export async function serveFeedAds(opts: {
     : [];
   const postMap = new Map(posts.map((p) => [p.id, p]));
 
-  return picked
+  const out = picked
     .map((a): FeedAd | null => {
       if (a.promotedPostId) {
         const p = postMap.get(a.promotedPostId);
@@ -534,4 +598,43 @@ export async function serveFeedAds(opts: {
       };
     })
     .filter((x): x is FeedAd => x !== null);
+
+  // ── Counting: the same basis as the other 24 spaces ──────────────────────
+  //
+  // IN_FEED used to count NOTHING here. Its entire impression figure came from
+  // the client `kind:"view"` beacon, which is deduped per (ad, viewer, minute),
+  // while every other space counts server-side at delivery with no dedup at all
+  // — a banner on a 12-second rotation books five impressions a minute for one
+  // viewer sitting still. Put side by side in the same report table, IN_FEED
+  // therefore looked roughly an order of magnitude weaker than spaces it may
+  // well outperform, for a reason that has nothing to do with performance. A
+  // report that ranks the owner's inventory has to rank it on one ruler.
+  //
+  // The ruler chosen is DELIVERY, server-side, no dedup: it is what 24 of the 25
+  // spaces already record (so the existing history stays comparable), it costs
+  // no extra write on the hot path, and it does not depend on a client beacon
+  // that an ad blocker can strip — which matters on an ad stack built
+  // specifically to survive blockers.
+  //
+  // Stated plainly, because it is the cost of that choice: the feed client
+  // prefetches a POOL and spaces it through the scroll, so a session abandoned
+  // early leaves some delivered creatives unseen and counted. The banner path
+  // has the mirror-image flaw (a rotation counts whether or not the viewer
+  // looked). Neither is a viewability metric and neither is sold as one.
+  //
+  // The `kind:"view"` beacon no longer increments any counter (see
+  // `recordImpression` in ad-events.ts), so this does not double-count.
+  if (out.length > 0) {
+    const country = await resolveEventCountry({
+      userId,
+      profileCountry: viewer.country,
+    });
+    for (const a of out) bufferImpression(a.adId, country);
+  }
+  // Fill data, like every other placement. Without it a feed with no eligible
+  // demand and a feed nobody opened were indistinguishable in the fill report —
+  // IN_FEED was the one space in the list with no denominator at all.
+  bufferServeOutcome(placement.id, out.length > 0);
+
+  return out;
 }

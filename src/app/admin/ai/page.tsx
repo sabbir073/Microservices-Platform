@@ -14,7 +14,7 @@ export default async function AIContentPage() {
   if (!(await can(session.user.id, "ai.view"))) redirect("/admin");
 
   const canManage = await can(session.user.id, "ai.manage");
-  const configured = isGeminiConfigured();
+  const configured = await isGeminiConfigured();
 
   // Pull last 30 days of AI calls from AuditLog (entity = "AI")
   // eslint-disable-next-line react-hooks/purity

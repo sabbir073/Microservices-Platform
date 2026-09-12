@@ -10,12 +10,22 @@ import {
 } from "lucide-react";
 import type { SocialAccount } from "./profile-view.types";
 
+/**
+ * OFFLINE FALLBACK ONLY — not the country list.
+ *
+ * The canonical list is the `Country` table (196 rows), read through
+ * `useCountries()`; these fifteen exist so a label renders on the first paint
+ * before that fetch lands. "UK" used to sit in here as a country code: it is not
+ * one (the ISO2 for the United Kingdom is GB), so a profile set to GB fell
+ * through to showing the bare code while a profile set to "UK" matched nothing
+ * anywhere else on the platform.
+ */
 export const COUNTRIES = [
   { code: "BD", name: "Bangladesh" },
   { code: "IN", name: "India" },
   { code: "PK", name: "Pakistan" },
   { code: "US", name: "United States" },
-  { code: "UK", name: "United Kingdom" },
+  { code: "GB", name: "United Kingdom" },
   { code: "CA", name: "Canada" },
   { code: "AU", name: "Australia" },
   { code: "AE", name: "UAE" },

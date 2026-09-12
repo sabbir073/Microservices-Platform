@@ -39,6 +39,7 @@ import { SmartImage } from "@/components/user/primitives/smart-image";
 import { cn, pts } from "@/lib/utils";
 import { levelProgress, calculateXpForLevel } from "@/lib/level";
 import { taskRunHref } from "@/lib/task-routes";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 
 type TabKey =
   | "tasks"
@@ -144,7 +145,11 @@ export function EarningHub({ user }: EarningHubProps) {
       </section>
 
       {/* Tab Nav */}
-      <nav className="flex gap-1 overflow-x-auto scrollbar-none -mx-1 px-1 pb-1 sticky top-0 z-10 bg-gray-950/80 backdrop-blur-sm">
+      <ScrollFadeRow
+        className="-mx-1 sticky top-0 z-10 bg-gray-950/80 backdrop-blur-sm"
+        innerClassName="flex gap-1 px-1 pb-1"
+        ariaLabel="Earn tabs"
+      >
         {TABS.map((t) => {
           const isActive = t.key === tab;
           return (
@@ -152,7 +157,7 @@ export function EarningHub({ user }: EarningHubProps) {
               key={t.key}
               onClick={() => setTab(t.key)}
               className={cn(
-                "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors border",
+                "shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors border",
                 isActive
                   ? "bg-indigo-500/15 text-white border-indigo-500/40"
                   : "bg-gray-900 text-gray-400 border-gray-800 hover:text-white hover:bg-gray-800"
@@ -163,7 +168,7 @@ export function EarningHub({ user }: EarningHubProps) {
             </button>
           );
         })}
-      </nav>
+      </ScrollFadeRow>
 
       {/* Active Tab */}
       <section>

@@ -8,6 +8,8 @@ import { processReferralCommissions } from "@/lib/referral-commissions";
 import { Prisma } from "@/generated/prisma/client";
 import { normalizeSocialConfig } from "@/lib/social-tasks";
 import { getPointsPerUsd } from "@/lib/economy";
+import { chargeTaskCompletion, notifyTaskClosed } from "@/lib/task-credit";
+import { getBuyerSettings } from "@/lib/buyer-settings";
 import { bumpTrust, TRUST_APPROVE, TRUST_REJECT } from "@/lib/trust";
 import { notifyUser } from "@/lib/notify";
 import { recordUserAction } from "@/lib/goal-progress";
@@ -226,6 +228,9 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
       const awardsPoints = !isBoardTask && earnedPoints > 0;
       const pointsPerUsd = await getPointsPerUsd();
+      // Commission on a buyer-funded completion. Read outside the transaction:
+      // a settings lookup inside one burns the 15s Accelerate budget.
+      const { feePercent: buyerFeePercent } = await getBuyerSettings();
 
       // Approve the submission. For non-board tasks award points/XP and write
       // a transaction; for board tasks just mark APPROVED and bump the
@@ -243,6 +248,15 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
       // two different keys — the constraint never fired and the user was paid
       // TWICE for one submission.
       const ledgerReference = `task_${existingSubmission.taskId}_${existingSubmission.id}`;
+      // Set inside the transaction when a buyer-funded task closes; the
+      // notification is sent AFTER it commits. Notifying from inside would
+      // announce a closure that a rollback then un-did.
+      let closedTask: {
+        buyerId: string;
+        taskTitle: string;
+        reason: "NO_CREDIT" | "DELIVERED";
+      } | null = null;
+
       const submission = await prisma.$transaction(async (tx) => {
         const claim = await tx.taskSubmission.updateMany({
           where: { id, status: "PENDING" },
@@ -288,21 +302,25 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           // mint unfunded points. Unfunded (admin) tasks always credit.
           let credit = !alreadyPaid;
           if (credit && task.fundedByUserId) {
-            const drawn = await tx.task.updateMany({
-              where: { id: task.id, remainingBudget: { gte: earnedPoints } },
-              data: { remainingBudget: { decrement: earnedPoints } },
+            const charge = await chargeTaskCompletion(tx, {
+              taskId: task.id,
+              buyerId: task.fundedByUserId,
+              rewardPoints: earnedPoints,
+              standardReward: task.pointsReward,
+              feePercent: buyerFeePercent,
+              remainingBudget: task.remainingBudget,
             });
-            if (drawn.count === 0) {
-              credit = false;
-              await tx.task.update({
-                where: { id: task.id },
-                data: { remainingBudget: 0, status: "COMPLETED" },
-              });
-            } else if (task.remainingBudget - earnedPoints < task.pointsReward) {
+            credit = charge.paid;
+            if (charge.closeTask) {
               await tx.task.update({
                 where: { id: task.id },
                 data: { status: "COMPLETED" },
               });
+              closedTask = {
+                buyerId: task.fundedByUserId,
+                taskTitle: task.title,
+                reason: charge.closeReason ?? "DELIVERED",
+              };
             }
           }
           if (credit) {
@@ -356,6 +374,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
           { status: 400 }
         );
       }
+
+      if (closedTask) void notifyTaskClosed(closedTask);
 
       // Reputation: approving nudges trust up; an all-rejected social bundle
       // (finalStatus flipped to REJECTED) counts as a fraud strike instead.

@@ -1,5 +1,11 @@
 export { StatCard } from "./stat-card";
-export { Skeleton, CardSkeleton, ListSkeleton, FeedPostSkeleton } from "./skeleton";
+export {
+  Skeleton,
+  CardSkeleton,
+  ListSkeleton,
+  FeedPostSkeleton,
+  BalanceSkeleton,
+} from "./skeleton";
 export { EmptyState } from "./empty-state";
 export { FilterChips } from "./filter-chips";
 export type { FilterChip } from "./filter-chips";

@@ -504,12 +504,12 @@ function CourseCard({ c, highlight }: { c: BrowseCard; highlight?: boolean }) {
             className="object-cover group-hover:scale-[1.02] transition-transform"
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-gray-700">
+          <div className="w-full h-full flex items-center justify-center text-(--app-glyph)">
             <GraduationCap className="w-12 h-12" />
           </div>
         )}
         {c.isEnrolled && (
-          <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-emerald-500 text-emerald-950 text-[10px] font-bold">
+          <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-emerald-500 text-(--app-on-bright) text-[10px] font-bold">
             Enrolled
           </span>
         )}

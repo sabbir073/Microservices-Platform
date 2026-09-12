@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { clicksAreBillable, getPlacementClickCost } from "@/lib/ad-rate-card";
 import { bumpAdDailyStat } from "@/lib/ad-stats";
-import { bufferImpression } from "@/lib/ad-counters";
+import { resolveEventCountry } from "@/lib/ad-geo";
 // `ad-serve` does not import this module, so there is no cycle.
 import { servableCampaignWhere } from "@/lib/ad-serve";
 
@@ -17,7 +17,21 @@ import { servableCampaignWhere } from "@/lib/ad-serve";
  * inflate/dilute any ad's impressions.
  */
 
-const CLICK_COOLDOWN_MS = 30_000;
+/**
+ * Click dedup window. MUST NOT be shorter than `VIEW_COOLDOWN_MS`.
+ *
+ * It was 30s against a 60s view window, and the two windows are what CTR is
+ * made of: one impression is counted per (ad, viewer, minute), but two clicks
+ * could be counted inside that same minute. A viewer who clicks, comes back and
+ * clicks again 31 seconds later produced 2 clicks against 1 impression — a
+ * CTR above 100%, which is not a rounding artefact but an impossible number,
+ * and the advertiser was billed for the second click as well.
+ *
+ * That was live: ad cmt7d8f5y0407g8mg8eqqt5gu on PACKAGES_TOP sat at 4 clicks
+ * against 3 impressions. Aligning the windows makes a billed click impossible
+ * without an impression to hang it on.
+ */
+const CLICK_COOLDOWN_MS = 60_000;
 const VIEW_COOLDOWN_MS = 60_000;
 
 /** Stable, non-identifying subject key for an anonymous viewer. */
@@ -76,10 +90,20 @@ export async function recordImpression(
   });
   if (!slot) return { counted: false };
 
-  // Buffered (src/lib/ad-counters.ts) — the AdEngagement row above is already
-  // the durable, deduped record of this view; the counters are a rollup and do
-  // not need to be written synchronously on a hot row.
-  bufferImpression(adId);
+  // NOTE: this deliberately does NOT touch the impression counters any more.
+  //
+  // Impressions are counted on exactly one basis platform-wide — server-side, at
+  // delivery, in `serveAd` and `serveFeedAds` (see the long note at the foot of
+  // `serveFeedAds` for why that ruler and not this one). This path used to be
+  // the sole counter for IN_FEED, on a *different* basis (deduped per ad, per
+  // viewer, per minute), which is precisely what made the feed look ~10x weaker
+  // than every other space in the same report table.
+  //
+  // Now that `serveFeedAds` counts at delivery, incrementing here as well would
+  // double-count every feed ad. What this function still does is the part only
+  // it can do: write the durable, deduped, user-attributed `AdEngagement` row —
+  // the record that says a specific viewer actually rendered this creative, and
+  // the rate-limited fraud guard on views. That row is untouched.
   return { counted: true };
 }
 
@@ -102,6 +126,14 @@ export async function recordClick(
   });
   if (!slot) return { billed: false };
 
+  // Resolved once, at the top, and threaded through every exit below.
+  //
+  // An impression and the click on it MUST land in the same bucket or the
+  // per-country CTR is a ratio of two different populations. Resolving it once
+  // here — rather than at each of the four `bumpAdDailyStat` calls below — is
+  // what makes that true no matter which branch this click takes.
+  const country = await resolveEventCountry({ userId });
+
   // The ad's OWN status matters, not just its campaign's. A PAUSED, PENDING,
   // REJECTED or CHANGES_REQUESTED ad must never bill: the advertiser was told it
   // had stopped.
@@ -121,7 +153,7 @@ export async function recordClick(
     .catch(() => null);
 
   if (!ad?.campaignId || ad.status !== "ACTIVE") {
-    await bumpAdDailyStat(adId, { clicks: 1 });
+    await bumpAdDailyStat(adId, { clicks: 1 }, country);
     return { billed: false };
   }
 
@@ -137,7 +169,7 @@ export async function recordClick(
     await prisma.ad
       .update({ where: { id: adId }, data: { clicks: { increment: 1 } } })
       .catch(() => null);
-    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 });
+    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 }, country);
     return { billed: false };
   }
 
@@ -149,7 +181,7 @@ export async function recordClick(
     await prisma.ad
       .update({ where: { id: adId }, data: { clicks: { increment: 1 } } })
       .catch(() => null);
-    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 });
+    await bumpAdDailyStat(adId, { clicks: 1, spendUsd: 0 }, country);
     return { billed: false };
   }
 
@@ -187,10 +219,11 @@ export async function recordClick(
       .catch(() => null);
   }
 
-  await bumpAdDailyStat(adId, {
-    clicks: 1,
-    spendUsd: billed.count > 0 ? cost : 0,
-  });
+  await bumpAdDailyStat(
+    adId,
+    { clicks: 1, spendUsd: billed.count > 0 ? cost : 0 },
+    country
+  );
 
   if (billed.count === 0) {
     // Out of budget — pause so it drops out of rotation.

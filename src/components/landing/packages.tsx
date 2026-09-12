@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import type { PackagesContent } from "@/lib/landing-content";
 import { DEFAULT_LANDING_CONTENT } from "@/lib/landing-content";
+import { SectionHeading } from "./section-heading";
 
 const ICONS: Record<string, LucideIcon> = {
   Zap,
@@ -27,24 +28,16 @@ export function Packages(props: Props) {
   const v: PackagesContent = { ...DEFAULT_LANDING_CONTENT.packages, ...props };
 
   return (
-    <section id="pricing" className="py-20 sm:py-28">
+    <section id="pricing" className="mk-section">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <span className="inline-block px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 text-xs font-semibold uppercase tracking-wider mb-4">
-            {v.badge}
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-(--mk-text) tracking-tight mb-4">
-            {v.heading_line1}{" "}
-            <span className="bg-linear-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">
-              {v.heading_line2}
-            </span>
-          </h2>
-          <p className="text-(--mk-muted) max-w-2xl mx-auto text-lg leading-relaxed">
-            {v.subheading}
-          </p>
-        </div>
+        <SectionHeading
+          eyebrow={v.badge}
+          line1={v.heading_line1}
+          line2={v.heading_line2}
+          sub={v.subheading}
+        />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 lg:gap-8">
+        <div className="mk-rise grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 lg:gap-8">
           {v.plans.map((pkg, i) => {
             const Icon = ICONS[pkg.iconKey] ?? Star;
             return (
@@ -53,7 +46,7 @@ export function Packages(props: Props) {
                 className={`mk-zoom relative rounded-2xl p-6 lg:p-8 ${
                   pkg.is_popular
                     ? "bg-linear-to-b from-violet-500/10 to-transparent border-2 border-violet-500/50 shadow-xl shadow-violet-500/10 xl:scale-105"
-                    : "bg-(--mk-surface) border border-(--mk-border) shadow-sm hover:border-(--mk-border-strong)"
+                    : "mk-card hover:border-(--mk-border-strong)"
                 }`}
               >
                 {pkg.is_popular && (

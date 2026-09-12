@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
-import nodemailer from "nodemailer";
+import { getMailConfig, buildTransport } from "@/lib/mailer";
 
 export async function POST() {
   const session = await auth();
@@ -12,22 +12,19 @@ export async function POST() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || "587");
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASSWORD;
-  const fromEmail =
-    process.env.SMTP_FROM_EMAIL ||
-    process.env.SMTP_FROM ||
-    process.env.EMAIL_FROM ||
-    user;
+  // Test what the admin actually SAVED, not what the process booted with. This
+  // route read env vars only, so an owner who configured SMTP on the settings
+  // screen, saved it, and pressed "Send test email" was told it wasn't
+  // configured — the one message guaranteed to make them think it was broken.
+  const cfg = await getMailConfig();
+  const { host, port } = cfg;
 
-  if (!host || !user || !pass) {
+  if (!cfg.configured) {
     return NextResponse.json(
       {
         error: "SMTP not configured",
         details:
-          "Set SMTP_HOST, SMTP_USER, SMTP_PASSWORD env vars, then retry.",
+          "Fill in SMTP Host, Username and Password on the Email tab and press Save (or set SMTP_HOST / SMTP_USER / SMTP_PASSWORD), then retry.",
       },
       { status: 400 }
     );
@@ -41,18 +38,13 @@ export async function POST() {
   }
 
   try {
-    const transporter = nodemailer.createTransport({
-      host,
-      port,
-      secure: process.env.SMTP_SECURE === "true",
-      auth: { user, pass },
-    });
+    const transporter = buildTransport(cfg);
 
-    const appName = process.env.NEXT_PUBLIC_APP_NAME || "EarnGPT";
+    const appName = cfg.fromName;
     const sentAt = new Date().toLocaleString();
 
     await transporter.sendMail({
-      from: `"${appName}" <${fromEmail}>`,
+      from: cfg.from,
       to: session.user.email,
       subject: `[${appName}] SMTP Test Email`,
       text: `This is a test email from your ${appName} admin panel.\n\nSent at: ${sentAt}\nSent by: ${session.user.email}\n\nIf you're seeing this, your SMTP settings are working correctly.`,

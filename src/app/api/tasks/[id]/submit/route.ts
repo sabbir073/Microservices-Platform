@@ -13,6 +13,8 @@ import {
 import { processReferralCommissions } from "@/lib/referral-commissions";
 import { notifyUser } from "@/lib/notify";
 import { getPointsPerUsd } from "@/lib/economy";
+import { chargeTaskCompletion, notifyTaskClosed } from "@/lib/task-credit";
+import { getBuyerSettings } from "@/lib/buyer-settings";
 import {
   compareUniqueKey,
   type ArticleConfig,
@@ -56,7 +58,12 @@ import {
   verifyTelegramMember,
   verifyDiscordMember,
 } from "@/lib/social-verify-membership";
-import { fetchRawHtml, fetchRawBytes, CRAWLER_UA } from "@/lib/link-preview";
+import {
+  fetchRawHtml,
+  fetchRawBytes,
+  CRAWLER_UA,
+  VERIFY_MAX_BYTES,
+} from "@/lib/link-preview";
 import { getSetting } from "@/lib/system-settings";
 import { bumpTrust, TRUST_APPROVE } from "@/lib/trust";
 import {
@@ -74,6 +81,11 @@ import {
   scoreQuiz,
   quizPayout,
 } from "@/lib/quiz-shape";
+import {
+  articleWordCount,
+  assessArticleOriginality,
+  type ArticleOriginality,
+} from "@/lib/article-originality";
 
 // POST /api/tasks/:id/submit - Submit task proof
 export async function POST(
@@ -291,9 +303,69 @@ export async function POST(
     // ── Article task: check unique key + force PENDING (admin reviews) ──
     let uniqueKeyMismatch = false;
     let claimedArticleKeyId: string | null = null;
+    let articleOriginality: ArticleOriginality | null = null;
     if (task.type === "ARTICLE") {
       const cfg = task.articleConfig as ArticleConfig | null;
-      if (cfg?.useKeyPool) {
+      if (cfg?.writing) {
+        // ── Buyer WRITING task ────────────────────────────────────────────
+        //
+        // The buyer is paying for words, so two things are checked here and
+        // exactly two. The word count REFUSES, because the buyer stated the
+        // number before anybody started writing and it is an objective fact.
+        // Everything else only produces a note for whoever reviews it: two
+        // people writing about the same product will legitimately overlap, and
+        // auto-rejecting on a similarity score would punish honest work.
+        //
+        // NOT plagiarism detection. The comparison set is this task's own
+        // submissions. Nothing here reads the web. See
+        // src/lib/article-originality.ts.
+        const text = String(proof ?? "").trim();
+        const words = articleWordCount(text);
+        if (words < cfg.writing.minWords) {
+          return NextResponse.json(
+            {
+              error: `This task asks for at least ${cfg.writing.minWords} words. You wrote ${words}.`,
+            },
+            { status: 400 }
+          );
+        }
+        if (cfg.writing.requireUrl && !String(proofUrl ?? "").trim()) {
+          return NextResponse.json(
+            { error: "Add the link to where you published it." },
+            { status: 400 }
+          );
+        }
+        if (
+          cfg.writing.requireScreenshot &&
+          !(Array.isArray(proofImages) && proofImages.length > 0) &&
+          !String(screenshotUrl ?? "").trim()
+        ) {
+          return NextResponse.json(
+            { error: "This task needs a screenshot as well." },
+            { status: 400 }
+          );
+        }
+
+        // Bounded on purpose: a reviewer's aid must not turn one submit into a
+        // full-table read as a task accumulates thousands of submissions. The
+        // newest 200 are the ones a duplicate would most likely have been
+        // copied from.
+        const others = await prisma.taskSubmission.findMany({
+          where: {
+            taskId: task.id,
+            id: { not: submission.id },
+            userId: { not: session.user.id },
+            proof: { not: null },
+          },
+          select: { proof: true },
+          orderBy: { createdAt: "desc" },
+          take: 200,
+        });
+        articleOriginality = assessArticleOriginality(
+          text,
+          others.map((o) => o.proof ?? "")
+        );
+      } else if (cfg?.useKeyPool) {
         // v2 (key-pool) mode: the key MUST exist in the pool, MUST be
         // claimed by this user, and MUST not already be tied to a
         // submission. Atomically bind it to this submission.
@@ -837,11 +909,11 @@ export async function POST(
             // is cheaper than a wrongly unverifiable submission.
             const fetched = await Promise.all(
               fetchUrls.map(async (u) => {
-                const asCrawler = await fetchRawHtml(u, CRAWLER_UA).catch(() => null);
+                const asCrawler = await fetchRawHtml(u, CRAWLER_UA, VERIFY_MAX_BYTES).catch(() => null);
                 if (asCrawler && !looksUnreadable(toPageContent(asCrawler))) {
                   return asCrawler;
                 }
-                const asBrowser = await fetchRawHtml(u).catch(() => null);
+                const asBrowser = await fetchRawHtml(u, undefined, VERIFY_MAX_BYTES).catch(() => null);
                 // Keep whichever actually said something; prefer the browser
                 // result only when the crawler result was unusable.
                 if (asBrowser && !looksUnreadable(toPageContent(asBrowser))) {
@@ -939,6 +1011,12 @@ export async function POST(
     }
     // For ARTICLE: surface the unique-key mismatch flag so the admin sees
     // it during review (article submissions don't auto-reject on mismatch).
+    // For a buyer WRITING task: the originality note travels with the
+    // submission so the reviewer sees it where they make the decision, rather
+    // than having to go and compare submissions by hand.
+    if (articleOriginality) {
+      submissionMetadata.articleOriginality = { ...articleOriginality };
+    }
     if (task.type === "ARTICLE" && uniqueKeyMismatch) {
       submissionMetadata.articleUniqueKeyMismatch = true;
       submissionMetadata.articleSubmittedUniqueKey = submittedUniqueKey ?? null;
@@ -1172,26 +1250,35 @@ export async function POST(
       // return without crediting. (Funded tasks are normally manual-review; this
       // guards the auto path against concurrent overspend.)
       if (task.fundedByUserId) {
-        const drawn = await prisma.task.updateMany({
-          where: { id: task.id, remainingBudget: { gte: effectivePoints } },
-          data: { remainingBudget: { decrement: effectivePoints } },
+        const charge = await chargeTaskCompletion(prisma, {
+          taskId: task.id,
+          buyerId: task.fundedByUserId,
+          rewardPoints: effectivePoints,
+          standardReward: task.pointsReward,
+          feePercent: (await getBuyerSettings()).feePercent,
+          remainingBudget: task.remainingBudget,
         });
-        if (drawn.count === 0) {
-          await prisma.task.update({
-            where: { id: task.id },
-            data: { remainingBudget: 0, status: "COMPLETED" },
-          });
-          return NextResponse.json({
-            submission: updatedSubmission,
-            status: "approved",
-            message: "This task's reward budget is exhausted — no reward granted.",
-            rewards: { points: 0, xp: 0 },
-          });
-        }
-        if (task.remainingBudget - effectivePoints < task.pointsReward) {
+        if (charge.closeTask) {
           await prisma.task.update({
             where: { id: task.id },
             data: { status: "COMPLETED" },
+          });
+          // Outside any transaction, fire-and-forget: the buyer has to learn
+          // their task stopped, but a notification is not worth failing a
+          // payout for.
+          void notifyTaskClosed({
+            buyerId: task.fundedByUserId,
+            taskTitle: task.title,
+            reason: charge.closeReason ?? "DELIVERED",
+          });
+        }
+        if (!charge.paid) {
+          return NextResponse.json({
+            submission: updatedSubmission,
+            status: "approved",
+            message:
+              "The advertiser has run out of credit for this task — no reward granted.",
+            rewards: { points: 0, xp: 0 },
           });
         }
       }

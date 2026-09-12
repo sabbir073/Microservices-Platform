@@ -22,6 +22,8 @@ import {
   Smile,
   Palette,
   Lock,
+  Globe,
+  Users,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -87,6 +89,11 @@ export function CreatePostComposer({
   const [donationGoal, setDonationGoal] = useState<number>(1000);
   const [busy, setBusy] = useState(false);
   const [postAsAnnouncement, setPostAsAnnouncement] = useState(false);
+  // Who this post is for. MEMBERS is the default, and it is a deliberate one:
+  // the previous composer hardcoded `isPublic: true`, so "everyone on the
+  // internet" was a setting nobody had ever chosen. A default that publishes is
+  // not a default anyone picked.
+  const [audience, setAudience] = useState<"MEMBERS" | "PUBLIC">("MEMBERS");
   // Facebook-style link preview: auto-fetched for the first URL, dismissable.
   const [linkPreview, setLinkPreview] = useState<LinkPreviewData | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -307,7 +314,7 @@ export function CreatePostComposer({
         body: JSON.stringify({
           content: content.trim(),
           images,
-          isPublic: true,
+          isPublic: audience === "PUBLIC",
           backgroundStyle:
             mode === "text" && images.length === 0 && bg ? bg : null,
           disableLinkPreview: previewDismissed,
@@ -354,11 +361,13 @@ export function CreatePostComposer({
 
   if (!expanded) {
     const firstName = user.name?.split(" ")[0] ?? "there";
+    // Photo / Poll / Colored. These carried a hue each (emerald, amber,
+    // pink) on a control whose whole job is "tap to write" — three colours
+    // inside the composer, directly under the balance card.
     const quickActions = [
       {
         label: "Photo",
         icon: ImageIcon,
-        tone: "text-emerald-400",
         onClick: () => {
           setMode("text");
           setExpanded(true);
@@ -367,7 +376,6 @@ export function CreatePostComposer({
       {
         label: "Poll",
         icon: ListChecks,
-        tone: "text-amber-400",
         onClick: () => {
           setMode("poll");
           setExpanded(true);
@@ -376,7 +384,6 @@ export function CreatePostComposer({
       {
         label: "Colored",
         icon: Palette,
-        tone: "text-pink-400",
         onClick: () => {
           setMode("text");
           setExpanded(true);
@@ -384,36 +391,41 @@ export function CreatePostComposer({
       },
     ];
     return (
-      <div className="rounded-2xl border border-indigo-500/30 bg-linear-to-br from-indigo-500/10 via-purple-500/5 to-gray-900 p-3 shadow-lg shadow-indigo-500/5">
+      /* The composer is a neutral card with one accent thing in it — the Post
+         button. It used to be a tinted indigo panel with a ringed avatar, an
+         indigo-hover input and a gradient button, so four elements were
+         competing inside a control whose only job is "tap here to write". */
+      <div className="app-card">
         {/* Top row — tap anywhere to open the composer */}
         <button
           onClick={() => setExpanded(true)}
-          className="w-full flex items-center gap-3 group"
+          className="app-press w-full flex items-center gap-3 group"
         >
           <Avatar
             src={user.avatar}
             name={user.name}
             size={44}
-            className="shrink-0 ring-2 ring-indigo-500/30"
+            className="shrink-0"
           />
-          <span className="flex-1 text-left rounded-full bg-gray-950/80 border border-gray-700 group-hover:border-indigo-500/50 px-4 py-2.5 text-sm text-gray-400 transition-colors truncate">
+          <span className="app-tap-row flex-1 min-w-0 flex items-center text-left rounded-full bg-(--app-surface-2) border border-(--app-line) group-hover:border-(--app-line-strong) px-4 text-sm text-gray-400 transition-colors truncate">
             What&apos;s on your mind, {firstName}?
           </span>
-          <span className="hidden sm:inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-linear-to-r from-indigo-500 to-purple-600 text-white text-sm font-bold shrink-0">
+          <span className="app-accent app-tap-row hidden sm:inline-flex items-center gap-1.5 px-4 rounded-full text-sm font-extrabold shrink-0">
             <Send className="w-4 h-4" />
             Post
           </span>
         </button>
 
-        {/* Quick actions */}
-        <div className="mt-2.5 pt-2.5 border-t border-white/5 grid grid-cols-3 gap-1">
+        {/* Quick actions. The icons carried a hue each (`a.tone`), which put
+            three more colours directly under the feed's balance card. */}
+        <div className="mt-3 pt-3 border-t border-(--app-line) grid grid-cols-3 gap-1">
           {quickActions.map((a) => (
             <button
               key={a.label}
               onClick={a.onClick}
-              className="inline-flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-semibold text-gray-300 hover:bg-white/5 transition-colors"
+              className="app-tap-row app-press inline-flex items-center justify-center gap-1.5 rounded-(--app-r-chip) text-xs font-bold text-gray-300 hover:bg-(--app-surface-2) hover:text-white"
             >
-              <a.icon className={cn("w-4 h-4", a.tone)} />
+              <a.icon className="w-4 h-4 text-gray-400" />
               {a.label}
             </button>
           ))}
@@ -423,7 +435,7 @@ export function CreatePostComposer({
   }
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4 space-y-3">
+    <div className="app-card space-y-3">
       <div className="flex items-center gap-3">
         <Avatar
           src={user.avatar}
@@ -536,6 +548,14 @@ export function CreatePostComposer({
             )}
             <textarea
               ref={textareaRef}
+              // Focused the moment the composer opens. Tapping the prompt used
+              // to expand the box and leave the caret nowhere, so writing a post
+              // took two taps: one to open it and one to actually get into it.
+              // On a phone the second tap is also what raises the keyboard, so
+              // the gap was the difference between "I can type" and "nothing
+              // happened". The collapsed state is a separate early return, so
+              // this textarea mounts fresh each time and autoFocus fires.
+              autoFocus
               value={content}
               onChange={(e) => setContent(e.target.value)}
               // `onSelect` fires for mouse drags, double-clicks, shift-arrows
@@ -776,6 +796,75 @@ export function CreatePostComposer({
           </span>
         </label>
       )}
+
+      {/* Who can read this. Shown before posting, never behind a menu, and the
+          consequence is written into the option itself rather than implied by a
+          globe icon. Members only is pre-selected. */}
+      <fieldset className="rounded-lg border border-gray-800 bg-gray-900/40 px-3 py-2.5">
+        <legend className="px-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
+          Who can read this
+        </legend>
+        <div className="mt-1 space-y-1.5">
+          {(
+            [
+              {
+                key: "MEMBERS" as const,
+                Icon: Users,
+                title: "Members only",
+                detail: "Signed-in EarnGPT members. Not readable without an account.",
+              },
+              {
+                key: "PUBLIC" as const,
+                Icon: Globe,
+                title: "Public",
+                detail:
+                  "Anyone on the internet can read this — no account needed. It gets a shareable link and can be found by search engines.",
+              },
+            ]
+          ).map(({ key, Icon, title, detail }) => {
+            const on = audience === key;
+            return (
+              <label
+                key={key}
+                className={cn(
+                  "flex cursor-pointer items-start gap-2.5 rounded-lg border px-2.5 py-2 transition-colors",
+                  on
+                    ? "border-indigo-500/60 bg-indigo-500/10"
+                    : "border-transparent hover:bg-gray-800/50"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="post-audience"
+                  checked={on}
+                  onChange={() => setAudience(key)}
+                  disabled={busy}
+                  className="mt-0.5 border-gray-600 bg-gray-800 text-indigo-500 focus:ring-indigo-500"
+                />
+                <Icon
+                  className={cn(
+                    "mt-0.5 h-3.5 w-3.5 shrink-0",
+                    on ? "text-indigo-300" : "text-gray-500"
+                  )}
+                />
+                <span className="min-w-0">
+                  <span
+                    className={cn(
+                      "block text-xs font-semibold",
+                      on ? "text-indigo-100" : "text-gray-300"
+                    )}
+                  >
+                    {title}
+                  </span>
+                  <span className="block text-[11px] leading-snug text-gray-400">
+                    {detail}
+                  </span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <div className="flex items-center justify-between pt-2 border-t border-gray-800">
         <span className="text-[11px] text-gray-500 tabular-nums">

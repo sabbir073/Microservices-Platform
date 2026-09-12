@@ -17,7 +17,12 @@ export default async function FeedWidgetsSettingsPage() {
   const rows = await prisma.systemSetting.findMany({
     where: {
       key: {
-        in: ["feed.sidebar_widgets", "feed.quick_earn_tiles", "feed.custom_widgets"],
+        in: [
+          "feed.sidebar_widgets",
+          "feed.quick_earn_tiles",
+          "feed.custom_widgets",
+          "feed.public_post_sharing",
+        ],
       },
     },
   });
@@ -31,6 +36,7 @@ export default async function FeedWidgetsSettingsPage() {
     ),
     quickEarn: normalizeQuickEarn(map.get("feed.quick_earn_tiles")),
     customWidgets,
+    publicSharing: map.get("feed.public_post_sharing") === true,
   };
 
   return <FeedWidgetsForm initial={initial} canEdit={canEdit} />;

@@ -1,5 +1,5 @@
 import "server-only";
-import { dbRateLimit } from "@/lib/rate-limit-db";
+import { dbRateLimit, dbMinGap } from "@/lib/rate-limit-db";
 import { getSetting } from "@/lib/system-settings";
 
 /**
@@ -94,9 +94,11 @@ export async function claimInterstitialSlot(
   }
 
   if (cfg.minGapSeconds > 0) {
-    const gap = await dbRateLimit(
+    // A sliding gap, not a per-minute quota. `dbRateLimit` buckets by
+    // floor(now / windowMs), so two claims either side of a wall-clock minute
+    // both passed a 60-second "gap" one second apart.
+    const gap = await dbMinGap(
       `adfreq:gap:${userId}`,
-      1,
       cfg.minGapSeconds * 1000
     );
     if (!gap.ok) return { allowed: false, reason: "gap" };

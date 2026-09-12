@@ -335,7 +335,7 @@ export function CreateListingView() {
               {files.length > 0 ? (
                 <div className="flex items-center gap-2 p-2 rounded-lg bg-gray-950 border border-gray-800 text-xs">
                   <Check className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span className="text-gray-300 truncate flex-1">
+                  <span className="text-gray-300 truncate min-w-0 flex-1">
                     {files[0].split("/").pop()}
                   </span>
                   <button

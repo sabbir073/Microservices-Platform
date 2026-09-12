@@ -52,7 +52,7 @@ export function ThemeToggle({
       title={label}
       className={
         className ||
-        "inline-flex items-center justify-center gap-2 w-9 h-9 rounded-lg border border-(--mk-border) text-(--mk-muted) hover:text-(--mk-text) hover:bg-(--mk-surface-2) transition-colors"
+        "inline-flex items-center justify-center gap-2 w-11 h-11 rounded-xl border border-(--mk-border) text-(--mk-muted) hover:text-(--mk-text) hover:bg-(--mk-surface-2) transition-colors"
       }
     >
       <Icon className="w-4.5 h-4.5" />

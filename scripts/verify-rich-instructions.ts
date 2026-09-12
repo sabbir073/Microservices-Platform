@@ -255,8 +255,19 @@ check(
     /dangerouslySetInnerHTML/.test(renderer)
 );
 check(
+  // Still a numbered list, but the numbers are drawn rather than left to the
+  // browser: `list-decimal` at 14px reads as a paragraph with digits in it,
+  // which is what made task pages hard to scan. The rule being protected is
+  // that legacy steps are not DROPPED and are still numbered in order.
   "…and still renders legacy steps as a numbered list",
-  /legacySteps\(value\)/.test(renderer) && /list-decimal/.test(renderer)
+  /legacySteps\(value\)/.test(renderer) &&
+    /<ol/.test(renderer) &&
+    /\{i \+ 1\}/.test(renderer)
+);
+check(
+  "long instructions collapse instead of burying the task",
+  /COLLAPSE_AFTER_STEPS/.test(renderer) && /Show all \$\{steps\.length\}|Show all \$/.test(renderer),
+  "an admin pasting twenty steps must not push the action button off-screen"
 );
 
 console.log(`\n${passed} passed, ${failed} failed\n`);

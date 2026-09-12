@@ -147,6 +147,28 @@ export interface ArticleConfig {
    * reading — the next prompt will appear soon"). Admin-configured.
    */
   popupAfterClickMessage?: string;
+
+  /**
+   * BUYER "write an article" variant.
+   *
+   * Present = this is a commissioned WRITING task, not the admin's
+   * read-through-my-pages flow. The two share the `articleConfig` column and
+   * nothing else: when `writing` is set, `useKeyPool` is false, `pages` is
+   * empty, and the worker submits prose instead of visiting URLs.
+   *
+   * Readers should branch on `writing` rather than on `useKeyPool`, because
+   * "not key pool" also covers the legacy single-link article task.
+   */
+  writing?: {
+    /** What the buyer wants written. Shown to the worker before they start. */
+    brief: string;
+    /** Submissions below this are refused — see /api/tasks/[id]/submit. */
+    minWords: number;
+    /** Also require a link to where it was published. */
+    requireUrl: boolean;
+    /** Also require a screenshot. */
+    requireScreenshot: boolean;
+  };
 }
 
 /** Default theme colors for the popup. Match the existing embed look. */

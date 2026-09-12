@@ -1,0 +1,14 @@
+-- Task credit: points bought to fund tasks, kept apart from points earned.
+--
+-- `pointsBalance` is what a worker EARNS. It mirrors into `totalEarnings`, it
+-- converts to cash, and from there it can be withdrawn. If task budgets were
+-- funded from the same column then buying points would be buying withdrawable
+-- balance, and the platform would be a way to move money in and straight back
+-- out again — which is both a laundering path and a chargeback one.
+--
+-- So this is a separate column with exactly one way in (buy it with wallet cash)
+-- and one way out (fund a task). It is never credited by an earning path, never
+-- converted to cash, and never withdrawn. `src/lib/task-credit.ts` is the only
+-- module that writes it, and scripts/verify-task-credit.ts asserts the
+-- separation from both directions.
+ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "taskCreditPoints" INTEGER NOT NULL DEFAULT 0;

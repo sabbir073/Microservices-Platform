@@ -263,7 +263,7 @@ export function AssignmentSubmitter({
                   href={u}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-gray-300 truncate flex-1 hover:underline"
+                  className="text-gray-300 break-all min-w-0 flex-1 hover:underline"
                 >
                   {u}
                 </a>

@@ -1,4 +1,15 @@
 import { prisma } from "@/lib/prisma";
+import { getSetting, invalidateSettingsCache } from "@/lib/system-settings";
+
+/**
+ * The admin-facing platform fee, as a PERCENT, on `/admin/settings` → Financial.
+ *
+ * One number, one key, read by every marketplace sale path. `orders/route.ts`
+ * used to carry its own `const PLATFORM_FEE_PERCENT = 5`, so the box in the
+ * admin form moved the fee on three checkout paths and not on the fourth.
+ */
+export const FEE_PERCENT_KEY = "marketplace.fee_percent";
+export const DEFAULT_FEE_PERCENT = 5;
 
 export interface CommissionRatesConfig {
   /** Default commission in basis points (1 bps = 0.01%). */
@@ -14,16 +25,34 @@ export const DEFAULT_COMMISSION: CommissionRatesConfig = {
   byAssetType: {},
 };
 
-/** Read commission rate config from SystemSetting; falls back to DEFAULT. */
+/** The platform default fee in bps, from the ONE admin-editable percent key. */
+async function defaultBps(): Promise<number> {
+  const pct = Number(
+    await getSetting<number>(FEE_PERCENT_KEY, DEFAULT_FEE_PERCENT)
+  );
+  if (!Number.isFinite(pct)) return DEFAULT_COMMISSION.default;
+  return clampBps(Math.round(Math.max(0, Math.min(100, pct)) * 100));
+}
+
+/**
+ * Read commission rate config from SystemSetting; falls back to DEFAULT.
+ *
+ * The DEFAULT rate comes from `marketplace.fee_percent` — not from the JSON
+ * row — so the settings-form box and this advanced editor cannot disagree about
+ * what the platform charges. The JSON row keeps only the per-asset-type
+ * overrides, which have no scalar control.
+ */
 export async function getCommissionConfig(): Promise<CommissionRatesConfig> {
+  const base = await defaultBps();
   const row = await prisma.systemSetting.findUnique({
     where: { key: SETTING_KEY },
   });
-  if (!row?.value || typeof row.value !== "object") return DEFAULT_COMMISSION;
+  if (!row?.value || typeof row.value !== "object") {
+    return { ...DEFAULT_COMMISSION, default: base };
+  }
   const v = row.value as Partial<CommissionRatesConfig>;
   return {
-    default:
-      typeof v.default === "number" ? clampBps(v.default) : DEFAULT_COMMISSION.default,
+    default: base,
     byAssetType:
       v.byAssetType && typeof v.byAssetType === "object"
         ? Object.fromEntries(
@@ -76,8 +105,20 @@ function clampBps(n: number): number {
 export async function saveCommissionConfig(
   cfg: CommissionRatesConfig
 ): Promise<void> {
+  // The default lands in the shared percent key, so the advanced editor and
+  // the box on /admin/settings are literally the same setting.
+  const bps = clampBps(cfg.default);
+  await prisma.systemSetting.upsert({
+    where: { key: FEE_PERCENT_KEY },
+    create: {
+      key: FEE_PERCENT_KEY,
+      category: "financial",
+      value: Math.round((bps / 100) * 100) / 100,
+    },
+    update: { category: "financial", value: Math.round((bps / 100) * 100) / 100 },
+  });
   const payload: CommissionRatesConfig = {
-    default: clampBps(cfg.default),
+    default: bps,
     byAssetType: cfg.byAssetType
       ? Object.fromEntries(
           Object.entries(cfg.byAssetType).map(([k, n]) => [
@@ -99,4 +140,7 @@ export async function saveCommissionConfig(
       value: payload as unknown as object,
     },
   });
+  // `getSetting` caches; without this the new fee applies only after the cache
+  // expires, which reads to the admin as a box that did nothing.
+  invalidateSettingsCache();
 }

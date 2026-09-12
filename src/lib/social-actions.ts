@@ -58,11 +58,57 @@ export interface PerSideRule {
 
 export interface SocialEarningConfig {
   enabled: boolean;
+  /**
+   * Mode 1 — "the poster earns": the author is paid for the likes / comments /
+   * shares their post receives (`role === "recipient"`).
+   *
+   * Ships OFF. Every per-activity recipient rate below is inert until the owner
+   * turns this on, because he has not chosen his numbers yet.
+   */
+  posterModeEnabled: boolean;
+  /**
+   * Mode 2 — "the engager earns": the liker / commenter / sharer is paid for
+   * performing the action (`role === "actor"`).
+   *
+   * Ships OFF, same reason.
+   */
+  engagerModeEnabled: boolean;
   perActivity: Record<
     SocialAction,
     { recipient: PerSideRule; actor: PerSideRule }
   >;
   dailyCapPerUser: number;
+  /**
+   * Per-user daily ceiling on POSTER-mode points alone. The platform-wide
+   * `dailyCapPerUser` still applies on top; the tighter of the two wins, so
+   * raising one can never widen the other.
+   */
+  posterDailyCapPerUser: number;
+  /** Per-user daily ceiling on ENGAGER-mode points alone. Same stacking rule. */
+  engagerDailyCapPerUser: number;
+  /**
+   * Most points one user may earn in a day **from any one other account**,
+   * per mode.
+   *
+   * This is the defence against the attack the self-guard cannot see: two (or
+   * fifty) accounts that like, comment on and share each other's posts all day.
+   * Neither is earning from itself, so `skipped: "self"` never fires — but
+   * every payout on both sides carries `metadata.sourceUserId`, and once a pair
+   * has moved this many points between them today, the pair is done. A ring of
+   * N accounts therefore costs an attacker N real accounts to earn N × this,
+   * instead of two accounts earning the full daily cap.
+   *
+   * 0 disables the pair cap (it does NOT mean "pay nothing") — deliberately the
+   * opposite polarity to `dailyCapPerUser`, because a pair cap is a filter and
+   * a daily cap is a budget.
+   */
+  pairDailyCapPerUser: number;
+  /**
+   * Account level (from `calculateLevel(xp)`) required before either mode pays.
+   * 0 = no gate. Stacks with `minAccountAgeHours`: a farm has to both age and
+   * level its throwaway accounts.
+   */
+  minLevelToEarn: number;
   dailyXpCapPerUser: number;
   capPerPost: number;
   minAccountAgeHours: number;
@@ -133,7 +179,26 @@ export const SOCIAL_EARNING_DEFAULTS: SocialEarningConfig = {
       actor: flat(false, 0),
     },
   },
+  // Both earning modes ship OFF. The per-activity rates above are the shape of
+  // the offer, not the offer itself — nothing pays until the owner flips the
+  // two mode switches on the settings page, having picked his own numbers.
+  // ON, unlike every other new switch here, because these two are not a new
+  // feature — they are a master gate placed OVER behaviour that is already
+  // live. There is not one `social_earning.*` row in the database, so the whole
+  // system runs on these defaults, and 53 payments have already been made under
+  // them. Shipping the gates closed would silently stop feed earning for
+  // everyone currently receiving it, which is not a default, it is an outage.
+  // What actually decides whether anything pays is still the per-action enable
+  // beneath each mode.
+  posterModeEnabled: true,
+  engagerModeEnabled: true,
   dailyCapPerUser: 500,
+  // Conservative on purpose. These are the numbers a bot farm runs into on the
+  // night the owner turns a mode on and before he has tuned anything.
+  posterDailyCapPerUser: 200,
+  engagerDailyCapPerUser: 100,
+  pairDailyCapPerUser: 25,
+  minLevelToEarn: 0,
   dailyXpCapPerUser: 1000,
   capPerPost: 100,
   minAccountAgeHours: 24,
@@ -211,8 +276,29 @@ export function parseSocialEarningConfig(
 
   return {
     enabled: asBoolean(get("enabled"), d.enabled),
+    posterModeEnabled: asBoolean(
+      get("poster_mode_enabled"),
+      d.posterModeEnabled
+    ),
+    engagerModeEnabled: asBoolean(
+      get("engager_mode_enabled"),
+      d.engagerModeEnabled
+    ),
     perActivity,
     dailyCapPerUser: asNumber(get("daily_cap_per_user"), d.dailyCapPerUser),
+    posterDailyCapPerUser: asNumber(
+      get("poster_daily_cap_per_user"),
+      d.posterDailyCapPerUser
+    ),
+    engagerDailyCapPerUser: asNumber(
+      get("engager_daily_cap_per_user"),
+      d.engagerDailyCapPerUser
+    ),
+    pairDailyCapPerUser: asNumber(
+      get("pair_daily_cap_per_user"),
+      d.pairDailyCapPerUser
+    ),
+    minLevelToEarn: asNumber(get("min_level_to_earn"), d.minLevelToEarn),
     dailyXpCapPerUser: asNumber(
       get("daily_xp_cap_per_user"),
       d.dailyXpCapPerUser

@@ -30,6 +30,15 @@ export interface WithdrawalConfig {
   subscriptionRequired: boolean;
   /** Admin-configured "you'll receive funds in …" message shown to the user. */
   payoutMessage: string;
+  /**
+   * How many withdrawal requests one user may open in a rolling 24 hours.
+   *
+   * This used to be a hardcoded 24-hour cooldown in the request route — i.e. a
+   * fixed 1/day — while the Limits settings screen showed an editable
+   * "Max Withdrawals Per Day" of 3 that nothing read. The setting is now the
+   * real control; 0 or less means no limit.
+   */
+  maxPerDay: number;
 }
 
 export async function getWithdrawalConfig(
@@ -42,6 +51,7 @@ export async function getWithdrawalConfig(
     allowWithdrawals,
     requiresSubscription,
     payoutMessage,
+    maxPerDaySetting,
     feats,
   ] = await Promise.all([
     getSetting<number>("min_withdrawal", 5),
@@ -50,6 +60,7 @@ export async function getWithdrawalConfig(
     getSetting<boolean>("allow_withdrawals", true),
     getSetting<boolean>("withdrawal_requires_subscription", false),
     getSetting<string>("withdrawal_payout_time_message", "1-3 business days"),
+    getSetting<number>("max_withdrawals_per_day", 1),
     getEffectiveFeatures(userId),
   ]);
 
@@ -82,5 +93,6 @@ export async function getWithdrawalConfig(
     enabled,
     subscriptionRequired,
     payoutMessage: payoutMessage || "1-3 business days",
+    maxPerDay: Math.max(0, Math.floor(Number(maxPerDaySetting) || 0)),
   };
 }

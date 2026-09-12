@@ -3,11 +3,13 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { writeAudit } from "@/lib/audit";
-import { type UserRole } from "@/lib/rbac";
+import { canAssignStaffRole, type UserRole } from "@/lib/rbac";
 import { z } from "zod";
+import { validatePassword } from "@/lib/password-policy";
 import bcrypt from "bcryptjs";
 import { v4 as uuidv4 } from "uuid";
 import { USERNAME_REGEX, USERNAME_RULE_MESSAGE } from "@/lib/username";
+import { resolveCountryCode } from "@/lib/country-codes";
 
 // Helper for optional, possibly-empty string fields
 const optStr = z.string().max(200).optional().nullable();
@@ -16,7 +18,9 @@ const optStr = z.string().max(200).optional().nullable();
 const createUserSchema = z.object({
   // Required core
   email: z.string().email(),
-  password: z.string().min(8),
+  // Admin-set passwords follow the same Security policy as self-serve ones;
+  // enforced after parsing (see the POST handler).
+  password: z.string().min(1),
 
   // Account
   name: z.string().min(2).max(80).optional(),
@@ -30,6 +34,7 @@ const createUserSchema = z.object({
     .enum([
       "USER",
       "SUPER_ADMIN",
+      "MANAGER",
       "ADMIN",
       "FINANCE_ADMIN",
       "CONTENT_ADMIN",
@@ -103,12 +108,22 @@ export async function POST(request: NextRequest) {
 
     const data = validation.data;
 
-    // Only super admin can create admin accounts
-    if (data.role !== "USER" && adminRole !== "SUPER_ADMIN") {
-      return NextResponse.json(
-        { error: "Only super admin can create admin accounts" },
-        { status: 403 }
-      );
+    // Admin Security policy (password_min_length + require_strong_passwords).
+    const pwError = await validatePassword(data.password);
+    if (pwError) {
+      return NextResponse.json({ error: pwError }, { status: 400 });
+    }
+
+    // Creating an admin is assigning a role, so it runs the same assignment
+    // check as changing one. A manager may create the staff it administers and
+    // cannot create a finance admin, another manager, or a super admin —
+    // otherwise "a manager cannot promote anyone to finance admin" would be
+    // trivially bypassed by creating a fresh finance admin instead.
+    if (data.role !== "USER") {
+      const createCheck = canAssignStaffRole(adminRole, data.role as UserRole);
+      if (!createCheck.ok) {
+        return NextResponse.json({ error: createCheck.reason }, { status: 403 });
+      }
     }
 
     // Build a sensible display name if admin didn't supply one
@@ -155,6 +170,15 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const rawCountry = n(data.country);
+    const countryIso2 = rawCountry ? await resolveCountryCode(rawCountry) : null;
+    if (rawCountry && !countryIso2) {
+      return NextResponse.json(
+        { error: `Unknown country "${rawCountry}" — use its ISO code` },
+        { status: 400 }
+      );
+    }
+
     const user = await prisma.user.create({
       data: {
         // Core
@@ -180,8 +204,10 @@ export async function POST(request: NextRequest) {
         secondaryEmail: n(data.secondaryEmail),
         secondaryPhone: n(data.secondaryPhone),
         bio: n(data.bio),
-        // Address
-        country: n(data.country),
+        // Address. `country` is ISO2 only — see the note on the same field in
+        // `[id]/route.ts`. Resolved, not trusted: the create form shares the
+        // same LocationSelector, but an API caller can send anything.
+        country: countryIso2,
         region: n(data.region),
         division: n(data.division),
         subDivision: n(data.subDivision),

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { userCanFeature } from "@/lib/packages";
 import { writeAudit } from "@/lib/audit";
 import { add, toNum } from "@/lib/money";
+import { lifetimeImpressionsByAd } from "@/lib/ad-stats";
 import { AD_PLACEMENTS, placementSizeKey } from "@/lib/ad-placements";
 
 const PLACEMENT_LABEL_BY_NAME: Record<string, string> = Object.fromEntries(
@@ -68,9 +69,15 @@ export async function GET(
     createdAt: Date;
   }>;
 
+  // Canonical impressions: `AdDailyStat`, not the `Ad.impressions` running
+  // total that drifted from it by 72 across 5 ads before the two were written
+  // together. See `lifetimeImpressionsByAd`.
+  const impressionsByAd = await lifetimeImpressionsByAd(ads.map((a) => a.id));
+  const adImpressions = (id: string) => impressionsByAd.get(id) ?? 0;
+
   const totals = ads.reduce(
     (acc, a) => {
-      acc.impressions += a.impressions;
+      acc.impressions += adImpressions(a.id);
       acc.clicks += a.clicks;
       return acc;
     },
@@ -114,9 +121,12 @@ export async function GET(
       targeting: a.targeting,
       weight: a.weight,
       size: a.size ?? (a.placement ? placementSizeKey(a.placement.name) : null),
-      impressions: a.impressions,
+      impressions: adImpressions(a.id),
       clicks: a.clicks,
-      ctr: a.impressions > 0 ? (a.clicks / a.impressions) * 100 : 0,
+      ctr:
+        adImpressions(a.id) > 0
+          ? (a.clicks / adImpressions(a.id)) * 100
+          : 0,
       // Review state — without these the advertiser could never see WHY an ad
       // was turned down, only that it was.
       submittedAt: a.submittedAt?.toISOString() ?? null,

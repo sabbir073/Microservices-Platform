@@ -16,6 +16,10 @@ enum UserRole {
   USER
   TUTOR
   SUPER_ADMIN
+  // Staff manager — one tier below super-admin. Its job is administering the
+  // OTHER admins (create, suspend, re-role, tune permissions). It is walled off
+  // from finance entirely: see `canAdministerStaffAccount` in src/lib/rbac.ts.
+  MANAGER
   // Generic admin below super-admin; super-admin grants it powers. Also the
   // baseline enum role carried by users assigned a CustomRole.
   ADMIN
@@ -725,17 +729,17 @@ model AdNetwork {
 }
 
 model Ad {
-  id                String         @id @default(cuid())
+  id                String               @id @default(cuid())
   campaignId        String
-  campaign          AdCampaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaign          AdCampaign           @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   placementId       String
-  placement         AdPlacement    @relation(fields: [placementId], references: [id])
-  type              String         @default("LOCAL") // LOCAL | HTML | ADSENSE | GAM
-  format            String         @default("BANNER") // BANNER | NATIVE (feed post-like)
+  placement         AdPlacement          @relation(fields: [placementId], references: [id])
+  type              String               @default("LOCAL") // LOCAL | HTML | ADSENSE | GAM
+  format            String               @default("BANNER") // BANNER | NATIVE (feed post-like)
   contentUrl        String? // image / GIF creative URL
   videoUrl          String? // MP4/WebM video creative URL
   targetUrl         String?
-  htmlContent       String?        @db.Text
+  htmlContent       String?              @db.Text
   // Third-party ad-network config (type ADSENSE | GAM). The self-contained
   // creative HTML is composed server-side in src/lib/ad-network.ts.
   adSlot            String? // AdSense ad-slot id (data-ad-slot)
@@ -745,13 +749,13 @@ model Ad {
   impressionPixel   String? // 1×1 beacon fired on view
   clickTracker      String? // pinged on click (local creatives)
   // Creative size — preset key (see src/lib/ad-sizes.ts); width/height used for "custom"
-  size              String?        @default("responsive")
+  size              String?              @default("responsive")
   width             Int?
   height            Int?
-  weight            Int            @default(10)
+  weight            Int                  @default(10)
   // ACTIVE | PAUSED | INACTIVE | PENDING (awaiting admin review) | CHANGES_REQUESTED | REJECTED
   // Only src/lib/ad-review.ts may write this column — it is the review gate.
-  status            String         @default("ACTIVE")
+  status            String               @default("ACTIVE")
   // Review workflow (advertiser-submitted ads land as PENDING until an admin acts)
   submittedById     String?
   submittedAt       DateTime?
@@ -761,37 +765,38 @@ model Ad {
   // "a reviewed creative exists" bit that lets an advertiser resume a paused ad
   // without being able to activate one that was never reviewed.
   approvedAt        DateTime?
-  rejectionReason   String?        @db.Text
-  rejectionCodes    String[]       @default([])
-  reviewNote        String?        @db.Text // internal reviewer note (never shown to the advertiser)
+  rejectionReason   String?              @db.Text
+  rejectionCodes    String[]             @default([])
+  reviewNote        String?              @db.Text // internal reviewer note (never shown to the advertiser)
   // One id per submission — a multi-placement submit creates N Ad rows that a
   // reviewer should see (and decide on) together.
   creativeGroupId   String?
   // ads.manage-only escape hatch: lets a trusted network creative keep
   // `allow-same-origin` while advertiser HTML never can. See sandboxed-ad-frame.
-  allowSameOrigin   Boolean        @default(false)
+  allowSameOrigin   Boolean              @default(false)
   reviews           AdReview[]
   engagements       AdEngagement[]
-  impressions       Int            @default(0)
-  clicks            Int            @default(0)
+  impressions       Int                  @default(0)
+  clicks            Int                  @default(0)
   // Native (post-like) creative fields — used when format = NATIVE
-  headline          String?        @db.Text // post-like ad copy
+  headline          String?              @db.Text // post-like ad copy
   brandName         String? // shown as author name
   brandLogo         String? // author avatar URL
   ctaLabel          String? // CTA button label (e.g. "Learn More")
   // Promote-a-real-post: when set, the native ad renders this post + its author
   promotedPostId    String?
-  promotedPost      Post?          @relation("PostAds", fields: [promotedPostId], references: [id], onDelete: SetNull)
+  promotedPost      Post?                @relation("PostAds", fields: [promotedPostId], references: [id], onDelete: SetNull)
   // Simple targeting: { countries?, genders?, minLevel?, packages? } (null = everyone)
   targeting         Json?
   // Viewer-reward (watch-and-earn)
-  rewardPoints      Int            @default(0)
-  rewardCooldownSec Int            @default(3600)
-  watchSeconds      Int            @default(15)
+  rewardPoints      Int                  @default(0)
+  rewardCooldownSec Int                  @default(3600)
+  watchSeconds      Int                  @default(15)
   views             AdView[]
   dailyStats        AdDailyStat[]
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  countryStats      AdCountryDailyStat[]
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
 
   @@index([campaignId])
   @@index([placementId])
@@ -862,6 +867,48 @@ model AdDailyStat {
   // and the composite above cannot serve that. PageDailyStat — which the comment
   // there says was modelled on this table — has had this index all along.
   @@index([date])
+}
+
+/// Per-day, per-country, per-ad rollup of impressions, clicks and spend.
+///
+/// Nothing on the platform recorded WHERE an ad event came from. `AdEngagement`
+/// — the only per-event ad row — has no country column, and is pruned at 30
+/// days anyway, so even adding one there would answer "which country?" for the
+/// last month and never for a year. The owner sells inventory; "which country
+/// are my clicks and impressions coming from?" is a question about history.
+///
+/// So this is a rollup, not a raw log: one row per (ad, country, UTC day). It is
+/// keyed on `adId` rather than on placement/campaign so that every derived cut —
+/// per placement, per campaign, house vs network, and the REVENUE GATE that
+/// excludes both from spend — comes off the same `Ad` join the rest of the ad
+/// report already uses. A second, independently-keyed table is how two panels
+/// on one screen start disagreeing.
+///
+/// `country` is an ISO-3166-1 alpha-2 code, or the literal `ZZ` for "unknown"
+/// (see src/lib/ad-geo.ts). It is never null: a nullable column turns "we did
+/// not know" into a row that every `groupBy` and every chart quietly drops, and
+/// a country chart that silently discards its unknowns tells the owner his
+/// traffic is 100% from wherever happens to be tagged. `ZZ` is a real bucket
+/// with a real share, and the report states that share on screen.
+model AdCountryDailyStat {
+  id          String   @id @default(cuid())
+  adId        String
+  ad          Ad       @relation(fields: [adId], references: [id], onDelete: Cascade)
+  /// ISO-3166-1 alpha-2, uppercase, or `ZZ` when it could not be resolved.
+  country     String   @db.VarChar(2)
+  date        DateTime @db.Date
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  /// Billed click cost only. Read it through the same house/network gate the
+  /// rest of the ad report uses — this column is NOT safe to sum blind.
+  spendUsd    Decimal  @default(0) @db.Decimal(18, 6)
+
+  @@unique([adId, country, date])
+  /// The report scans a date window across every ad and then groups by country;
+  /// the unique index above is `adId`-first and cannot serve that.
+  @@index([date])
+  /// "How did ONE country trend?" — the drill-down the breakdown leads to.
+  @@index([country, date])
 }
 
 /// Per-day, per-placement record of ad REQUESTS, not impressions.
@@ -1405,6 +1452,24 @@ model User {
   // Non-withdrawable ad-spend wallet (USD, 1 credit = $1). Bought with cash/
   // points or admin-granted; campaign budgets are funded from this.
   adCreditBalance                   Decimal                      @default(0) @db.Decimal(18, 6)
+  /// Points BOUGHT to fund tasks — deliberately not `pointsBalance`.
+  ///
+  /// Earned points mirror into `totalEarnings`, convert to cash and can then be
+  /// withdrawn. Funding task budgets from the same column would make buying
+  /// points the same as buying withdrawable balance, turning the platform into
+  /// a way to move money in and straight back out. This has one way in (buy it
+  /// with wallet cash) and one way out (fund a task); no earning path ever
+  /// credits it. `src/lib/task-credit.ts` is its only writer.
+  taskCreditPoints                  Int                          @default(0)
+  /// Per-buyer suspensions — the task types and social platforms THIS account
+  /// may not use, on top of the global buyer settings.
+  ///
+  /// A BLOCK list, not an allow list: an untouched buyer gets whatever the
+  /// platform currently allows, and a new platform added later is available to
+  /// everyone who has not been specifically stopped from using it.
+  ///
+  /// `{ types: string[], platforms: string[], note: string, at: string }`
+  buyerBlocks                       Json?
   totalEarnings                     Decimal                      @default(0) @db.Decimal(18, 6)
   totalWithdrawals                  Decimal                      @default(0) @db.Decimal(18, 6)
   xp                                Int                          @default(0)
@@ -1554,6 +1619,8 @@ model User {
   courseRefundsProcessed            CourseRefundRequest[]        @relation("CourseRefundAdmin")
   courseViews                       CourseListingView[]
   lotteryTickets                    LotteryTicket[]
+  leaderboardGifts                  LeaderboardGiftAward[]       @relation("LeaderboardGiftWinner")
+  leaderboardGiftsFulfilled         LeaderboardGiftAward[]       @relation("LeaderboardGiftFulfiller")
   adCampaigns                       AdCampaign[]                 @relation("UserAdCampaigns")
   posts                             Post[]
   comments                          Comment[]
@@ -2013,6 +2080,17 @@ model Transaction {
   @@index([type, createdAt])
   // Wallet history filtered by source type.
   @@index([userId, type, createdAt])
+  // "Today's earnings" on the feed's right rail — GET /api/feed/rail-widgets,
+  // which every feed mount calls:
+  //   _sum(points) where { userId, status: COMPLETED, type: in [EARNING, BONUS],
+  //                        createdAt: { gte: localMidnight } }
+  // [userId, type, createdAt] above leaves `status` out, so the planner walks
+  // every EARNING/BONUS row the user has ever had in the window and re-checks
+  // status per row. Equality (userId, status) → IN list (type) → range
+  // (createdAt) is the order that lets all four predicates be satisfied by the
+  // one scan. Transaction is the fastest-growing table on the platform, so this
+  // one matters more with every payment rather than less.
+  @@index([userId, status, type, createdAt])
 }
 
 // Client-driven request idempotency. A money POST may send an `Idempotency-Key`
@@ -3081,6 +3159,10 @@ enum CreatorApplicationType {
   ADVERTISER
   AGENCY
   AFFILIATE
+  /// Buy and fund tasks, and nothing else. AGENCY also grants `agencyMode` and
+  /// `advertiser`, which is far more than someone who just wants 200 people to
+  /// follow their page ever asked for.
+  TASK_BUYER
 }
 
 enum CreatorApplicationStatus {
@@ -3341,6 +3423,34 @@ model Post {
   // The existing [isPublic, isHidden, lastActivityAt] omits isPinned, so Postgres
   // had to sort every matching row instead of walking an index.
   @@index([isPublic, isHidden, isAnnouncement, isPromoted, isPinned, lastActivityAt])
+  // The index above stopped matching the query it was built for.
+  //
+  // `isPublic` was dropped from the feed predicate when it became the author's
+  // internet-audience choice rather than in-platform visibility — both Public
+  // and Members-only posts belong in the signed-in feed. A B-tree cannot skip
+  // its leading column, so every composite that starts with `isPublic` became
+  // unusable for the main feed the moment that filter went away, and the pool
+  // query fell back to a sequential scan plus a sort (Post: 11,406 sequential
+  // scans against 986 index scans in pg_stat_user_tables).
+  //
+  // Serves GET /api/feed's pool read:
+  //   where  { isHidden: false, groupId: null, isAnnouncement: false, isPromoted: false }
+  //   order  [{ isPinned: desc }, { lastActivityAt: desc }]  take 500
+  // Four equality columns first, then the two sort keys in sort order, so
+  // Postgres walks it backwards and never sorts.
+  // Named explicitly: Prisma's generated name for six columns overflows
+  // Postgres' 63-byte identifier limit and gets truncated mid-column, which
+  // makes the hand-written migration SQL easy to get subtly wrong. `map:` pins
+  // both sides to the same name.
+  @@index([isHidden, groupId, isAnnouncement, isPromoted, isPinned, lastActivityAt], map: "Post_feedPool_idx")
+  // Serves GET /api/feed/pulse: _max(lastActivityAt) over
+  //   { isHidden: false, isAnnouncement: false, isPromoted: false }.
+  // Deliberately separate from the index above rather than sharing its prefix:
+  // pulse does NOT constrain `groupId`, so with groupId sitting between the
+  // equalities and lastActivityAt the planner would have to scan every matching
+  // row to find the maximum. Here lastActivityAt directly follows the three
+  // equality columns, so the max is the first entry of a backward index scan.
+  @@index([isHidden, isAnnouncement, isPromoted, lastActivityAt])
   // Profile timelines + the per-day post-limit count on every new post.
   @@index([userId, createdAt])
   @@index([userId, isPublic, isHidden, createdAt])
@@ -4381,4 +4491,91 @@ model InvoiceLine {
   position    Int     @default(0)
 
   @@index([invoiceId])
+}
+
+enum LeaderboardGiftStatus {
+  PENDING
+  FULFILLED
+  CANCELLED
+}
+
+/// A physical/digital prize a leaderboard rank won, and whether it was handed over.
+///
+/// `lb_gift_items` let an admin promise "rank 1 wins a phone" for two months
+/// before this existed, and nothing anywhere recorded the promise — the winner
+/// was never told and no admin could see who was owed what. This is the
+/// smallest honest version of keeping that promise: the award is recorded, the
+/// winner is notified, and an admin marks it FULFILLED. It is deliberately NOT
+/// a shipping system — no address, no carrier, no tracking.
+///
+/// Unique on (cycleId, rank): re-running or resuming a cycle's payout can never
+/// owe the same gift twice, the same way the ledger reference stops double points.
+model LeaderboardGiftAward {
+  id            String                @id @default(cuid())
+  /// e.g. "2026-09_monthly" — the WINDOW, not the run time.
+  cycleId       String
+  period        String
+  rank          Int
+  userId        String
+  user          User                  @relation("LeaderboardGiftWinner", fields: [userId], references: [id], onDelete: Cascade)
+  giftName      String
+  giftImage     String?
+  status        LeaderboardGiftStatus @default(PENDING)
+  notes         String?
+  fulfilledAt   DateTime?
+  fulfilledById String?
+  fulfilledBy   User?                 @relation("LeaderboardGiftFulfiller", fields: [fulfilledById], references: [id], onDelete: SetNull)
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  @@unique([cycleId, rank])
+  @@index([userId])
+  @@index([status])
+  @@index([cycleId])
+  @@index([fulfilledById])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scheduler: one row per (job, due window).
+//
+// This IS the lock. `@@unique([job, windowKey])` means the first tick to
+// `create` a row owns that window; everyone else's create fails with P2002 and
+// becomes a no-op. There is no read-then-write anywhere in the claim path.
+//
+// `leaseUntil` is what makes a half-dead tick recoverable. Serverless can kill
+// work started after the response, so a row can be left `running` forever. A
+// later tick may take the window over with a conditional update that requires
+// the lease to have expired AND the state not to be `completed` — a CAS, whose
+// `count === 1` is the proof it won. Re-running is safe because every job
+// registered here is independently idempotent (the leaderboard payout freezes
+// its winner list with a create and gives every credit a unique ledger
+// reference), so a takeover resumes rather than pays twice.
+// ─────────────────────────────────────────────────────────────────────────────
+model ScheduledJobRun {
+  id         String    @id @default(cuid())
+  /// Registry name, e.g. "leaderboard-reset".
+  job        String
+  /// The due window this row owns. Scheduled windows are the interval bucket;
+  /// a hand-run from the admin screen uses its own "manual-<ms>" key so it can
+  /// never seal a scheduled window it did not actually settle.
+  windowKey  String
+  /// running | completed | failed
+  state      String    @default("running")
+  /// How many ticks have owned this window (a takeover increments it).
+  attempts   Int       @default(1)
+  /// traffic | http | manual
+  source     String    @default("traffic")
+  claimedAt  DateTime  @default(now())
+  /// Past this instant the window may be taken over by another tick.
+  leaseUntil DateTime
+  finishedAt DateTime?
+  durationMs Int?
+  /// One human line for the admin screen.
+  summary    String?
+  error      String?
+  result     Json?
+
+  @@unique([job, windowKey])
+  @@index([job, claimedAt])
+  @@index([state])
 }

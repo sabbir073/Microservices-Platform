@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
+import { isNetworkAdType } from "@/lib/ad-revenue";
 
 // GET /api/admin/ads/analytics?days=14 — platform-wide ad time-series from
 // AdDailyStat + lifetime totals.
@@ -61,6 +62,29 @@ export async function GET(req: NextRequest) {
     return sum + (Number.isFinite(n) && n > 0 ? n : toNum(row.delta));
   }, 0);
 
+  // Which ads in the window can earn the platform anything at all. Resolved
+  // BEFORE the day buckets are filled, because `spendUsd` has to be filtered on
+  // it: `AdDailyStat.spendUsd` is written per click and historically carried
+  // house spend (the demo campaign billed itself before `recordClick` learned to
+  // skip house inventory). Those rows are still in the table, so a plain
+  // `sum(spendUsd)` reports money that never existed as ad revenue — right next
+  // to `revenue.lifetime`, which correctly excludes house and therefore
+  // disagrees with it. Network ads bill nothing here either (their revenue is in
+  // Google's console), so the same set gates both the numerator and the eCPM
+  // denominator.
+  const adIds = [...new Set(stats.map((s) => s.adId))];
+  const adRows = adIds.length
+    ? await prisma.ad.findMany({
+        where: { id: { in: adIds } },
+        select: { id: true, type: true, campaign: { select: { isHouse: true } } },
+      })
+    : [];
+  const earning = new Set(
+    adRows
+      .filter((a) => !a.campaign?.isHouse && !isNetworkAdType(a.type))
+      .map((a) => a.id)
+  );
+
   const byDay = new Map<
     string,
     { impressions: number; clicks: number; spendUsd: number }
@@ -79,7 +103,8 @@ export async function GET(req: NextRequest) {
     if (cur) {
       cur.impressions += s.impressions;
       cur.clicks += s.clicks;
-      cur.spendUsd += toNum(s.spendUsd);
+      // Revenue only — see the note on `earning` above.
+      if (earning.has(s.adId)) cur.spendUsd += toNum(s.spendUsd);
     }
   }
 
@@ -91,22 +116,8 @@ export async function GET(req: NextRequest) {
   // House inventory bills nothing by design, and network (AdSense / Ad Manager)
   // revenue is reported in Google's console and never reaches here — so both can
   // only sit in the denominator with an empty numerator and drag the figure
-  // down. Network was the one missed when this was first written.
-  const adIds = [...new Set(stats.map((s) => s.adId))];
-  const adRows = adIds.length
-    ? await prisma.ad.findMany({
-        where: { id: { in: adIds } },
-        select: { id: true, type: true, campaign: { select: { isHouse: true } } },
-      })
-    : [];
-  const earning = new Set(
-    adRows
-      .filter(
-        (a) =>
-          !a.campaign?.isHouse && a.type !== "ADSENSE" && a.type !== "GAM"
-      )
-      .map((a) => a.id)
-  );
+  // down. Network was the one missed when this was first written. The set is
+  // built above, because the spend numerator needs the same filter.
   const paidImpr = stats.reduce(
     (sum, s) => sum + (earning.has(s.adId) ? s.impressions : 0),
     0

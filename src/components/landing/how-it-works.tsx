@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import type { HowItWorksContent } from "@/lib/landing-content";
 import { DEFAULT_LANDING_CONTENT } from "@/lib/landing-content";
+import { SectionHeading } from "./section-heading";
 
 const ICONS: Record<string, LucideIcon> = {
   UserPlus,
@@ -32,22 +33,14 @@ export function HowItWorks(props: Props) {
   };
 
   return (
-    <section id="how-it-works" className="py-20 sm:py-28">
+    <section id="how-it-works" className="mk-section">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <span className="inline-block px-3 py-1 rounded-full bg-violet-500/10 border border-violet-500/20 text-violet-600 text-xs font-semibold uppercase tracking-wider mb-4">
-            {v.badge}
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold text-(--mk-text) tracking-tight mb-4">
-            {v.heading_line1}{" "}
-            <span className="bg-linear-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">
-              {v.heading_line2}
-            </span>
-          </h2>
-          <p className="text-(--mk-muted) max-w-2xl mx-auto text-lg leading-relaxed">
-            {v.subheading}
-          </p>
-        </div>
+        <SectionHeading
+          eyebrow={v.badge}
+          line1={v.heading_line1}
+          line2={v.heading_line2}
+          sub={v.subheading}
+        />
 
         <div className="relative">
           <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-linear-to-r from-indigo-500/30 via-violet-500/30 to-fuchsia-500/30 hidden lg:block -translate-y-1/2 pointer-events-none" />
@@ -58,7 +51,7 @@ export function HowItWorks(props: Props) {
               return (
                 <div
                   key={i}
-                  className="mk-zoom relative p-6 pt-8 rounded-2xl bg-(--mk-surface) border border-(--mk-border) shadow-sm text-center"
+                  className="mk-zoom mk-press relative p-6 pt-8 rounded-2xl mk-card text-center"
                 >
                   <div className="absolute -top-4 left-1/2 -translate-x-1/2">
                     <span

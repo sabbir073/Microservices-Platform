@@ -7,6 +7,7 @@ import { sendNotificationEmail, isSmtpConfigured } from "@/lib/email";
 import { getPointsPerUsd } from "@/lib/economy";
 import { z } from "zod";
 import { writeAuditMany } from "@/lib/audit";
+import { canAdministerStaffAccount, type UserRole } from "@/lib/rbac";
 
 // Bulk action schema
 const bulkActionSchema = z.object({
@@ -73,9 +74,16 @@ export async function POST(request: NextRequest) {
       where: { id: { in: selfFiltered } },
       select: { id: true, role: true },
     });
-    const actorIsSuper = session.user.role === "SUPER_ADMIN";
+    // Same hierarchy as the single-user endpoints — a bulk action is just the
+    // single action N times, and running it through a laxer rule would make
+    // "select all → suspend" the way around every check above.
+    const actorRole = session.user.role as UserRole | undefined;
     const targetIds = targetRows
-      .filter((t) => t.role !== "SUPER_ADMIN" && (actorIsSuper || t.role === "USER"))
+      .filter(
+        (t) =>
+          t.role !== "SUPER_ADMIN" &&
+          canAdministerStaffAccount(actorRole, t.role as UserRole).ok
+      )
       .map((t) => t.id);
     if (targetIds.length === 0) {
       return NextResponse.json(
@@ -105,7 +113,7 @@ export async function POST(request: NextRequest) {
       if (!subject || !message) {
         return NextResponse.json({ error: "Subject and message required" }, { status: 400 });
       }
-      if (isSmtpConfigured()) {
+      if (await isSmtpConfigured()) {
         const recipients = await prisma.user.findMany({
           where: {
             id: { in: targetIds },

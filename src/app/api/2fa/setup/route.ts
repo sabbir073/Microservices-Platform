@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import speakeasy from "speakeasy";
 import QRCode from "qrcode";
+import { getPlatformName } from "@/lib/system-settings";
 
 export async function POST() {
   const session = await auth();
@@ -25,7 +26,11 @@ export async function POST() {
     });
   }
 
-  const appName = process.env.NEXT_PUBLIC_APP_NAME || "EarnGPT";
+  // Admin "Platform Name" (General settings) with the env var as fallback.
+  // The name is baked into the authenticator entry at enrolment, so a rename
+  // only affects people who set 2FA up afterwards — existing entries keep the
+  // label they were created with.
+  const appName = await getPlatformName();
   const secretObj = speakeasy.generateSecret({
     name: `${appName}:${user.email}`,
     issuer: appName,

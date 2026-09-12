@@ -1,4 +1,5 @@
 import "dotenv/config";
+import * as fs from "fs";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { withAccelerate } from "@prisma/extension-accelerate";
 import { servableCampaignWhere } from "../src/lib/ad-serve";
@@ -189,6 +190,118 @@ async function main() {
     "the main-feed query now excludes group posts",
     true,
     "enforced by `where.groupId = null` in /api/feed"
+  );
+
+  // ───────────────────── Round-trip depth on the hot paths ──────────────────
+  //
+  // Every one of these is a *waterfall* assertion, not a query-count one. The
+  // platform's page time is dominated by how many sequential Accelerate
+  // round-trips a request makes, not by how much work any single query does:
+  // measured against the live database, `notification.count` on a 326-row table
+  // takes 362ms and `post.findMany take:20` takes 83ms. Those are network
+  // latencies. The tables are small; the trips are not.
+  //
+  // So the regression these guard against is somebody "just adding one more
+  // await" to a hot handler. It reads as free in review and costs a full
+  // round-trip on every request. Source assertions are the only way to catch it
+  // — the result is byte-identical either way, so no behavioural test can.
+  const read = (p: string) => fs.readFileSync(p, "utf8");
+
+  const feedRoute = read("src/app/api/feed/route.ts");
+  const hydration = feedRoute.slice(
+    feedRoute.indexOf("ONE round-trip layer for the whole hydration step")
+  );
+  check(
+    "GET /api/feed hydrates authors + reactions + likes + saves + follows + votes in ONE layer",
+    /const \[users, grouped, likes, saved, follows, votes\] = await Promise\.all\(/.test(
+      feedRoute
+    ),
+    "six independent reads were six sequential awaits"
+  );
+  check(
+    "…and no `await prisma.` sneaks back into that block",
+    !/await prisma\./.test(hydration.slice(0, hydration.indexOf("formatPost"))),
+    "a per-viewer read added here costs a round-trip on every feed page"
+  );
+
+  const socialPage = read("src/app/(main)/social/page.tsx");
+  check(
+    "/social resolves its whole page in ONE Promise.all",
+    /followingRows,[\s\S]{0,600}?adDensity,\s*\n\s*groupsEnabled,\s*\n\s*hiddenPaths,\s*\n\s*me,\s*\n\s*\] = await Promise\.all\(/.test(
+      socialPage
+    ),
+    "the follow list in front and four more awaits behind made it 6 layers deep"
+  );
+  check(
+    "…and nothing is awaited between that Promise.all and the JSX",
+    !/\n  const \w+ = await /.test(
+      socialPage.slice(socialPage.indexOf("const followingIds = followingRows"))
+    ),
+    "/social was the slowest page in the app at 2.09s average render"
+  );
+
+  const rail = read("src/app/api/feed/rail-widgets/route.ts");
+  check(
+    "rail-widgets fetches profile + day context + referrals + mission together",
+    /const \[user, dayCtx, referralCount, missionRaw\] = await Promise\.all\(/.test(
+      rail
+    ),
+    "only the earnings aggregate genuinely depends on the day context"
+  );
+
+  const adServe = read("src/lib/ad-serve.ts");
+  check(
+    "the ad space + its click price are started before the viewer lookup, not after it",
+    /const placementRowPromise = prisma\.adPlacement\.findFirst/.test(adServe) &&
+      /const \[placementRow, cost\] = await Promise\.all\(/.test(adServe),
+    "this path serves 41% of all requests; it was 6 round-trip layers deep"
+  );
+  check(
+    "…and the unawaited promises carry a catch, so an early return cannot reject unhandled",
+    /placementRowPromise\.catch\(\(\) => \{\}\);/.test(adServe) &&
+      /costPromise\.catch\(\(\) => \{\}\);/.test(adServe)
+  );
+  check(
+    "the creative pool and the space's booking resolve together",
+    /const \[allAds, booking\] = await Promise\.all\(/.test(adServe),
+    "both key off placementRow.id and nothing else"
+  );
+
+  // ─────────────────────────── Index coverage ───────────────────────────────
+  //
+  // Each of these serves a named query. The first two exist because a composite
+  // that leads with `isPublic` stopped matching the feed the day `isPublic` was
+  // dropped from the predicate — a B-tree cannot skip its leading column, so the
+  // index silently became dead weight and the feed fell back to a sequential
+  // scan. That failure is invisible: the query still returns the right rows.
+  const schema = read("prisma/schema.prisma");
+  check(
+    "Post has an index matching the feed pool's real predicate + sort",
+    /@@index\(\[isHidden, groupId, isAnnouncement, isPromoted, isPinned, lastActivityAt\], map: "Post_feedPool_idx"\)/.test(
+      schema
+    ),
+    "four equality columns, then [isPinned, lastActivityAt] in sort order"
+  );
+  check(
+    "…and the migration creates it under exactly the name the schema maps to",
+    /CREATE INDEX IF NOT EXISTS "Post_feedPool_idx"/.test(
+      read(
+        "prisma/migrations/20260912120000_feed_pulse_and_earnings_indexes/migration.sql"
+      )
+    ),
+    "six columns overflow Postgres' 63-byte identifier limit, so the name is pinned by hand"
+  );
+  check(
+    "Post has a dedicated index for /api/feed/pulse's _max(lastActivityAt)",
+    /@@index\(\[isHidden, isAnnouncement, isPromoted, lastActivityAt\]\)/.test(
+      schema
+    ),
+    "pulse does not constrain groupId, so it cannot use the index above"
+  );
+  check(
+    "Transaction indexes the rail's today-earnings sum including `status`",
+    /@@index\(\[userId, status, type, createdAt\]\)/.test(schema),
+    "[userId, type, createdAt] omits status and re-checks it per row"
   );
 
   console.log(

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TaskInstructions } from "@/components/user/tasks/task-instructions";
+import { TaskAside } from "@/components/user/tasks/task-step";
+import { hasInstructions } from "@/lib/task-instructions";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -821,31 +823,38 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
 
       <AdRenderer placement="TASK_START" />
 
-      {/* Intro */}
-      {task.description && (
-        <div className="rounded-xl bg-gray-900 border border-gray-800 p-4">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mb-1">
-            About this task
-          </p>
-          <p className="text-sm text-gray-300 whitespace-pre-wrap">
-            {task.description}
-          </p>
+      {/* Reference material, collapsed.
+
+          These were two full-weight panels above everything actionable, so the
+          first screen of a task was reading rather than doing — and on a task
+          with a long admin write-up the actual steps started below the fold on
+          every phone. They are still one tap away; they are just no longer the
+          first thing in the way. */}
+      {(task.description || hasInstructions(task.instructions)) && (
+        <div className="space-y-2">
+          {task.description && (
+            <TaskAside title="About this task">
+              <p className="whitespace-pre-wrap text-sm text-gray-300">
+                {task.description}
+              </p>
+            </TaskAside>
+          )}
+          {hasInstructions(task.instructions) && (
+            <TaskAside title="Instructions from the advertiser">
+              {/* One renderer for every surface — see task-instructions.tsx. */}
+              <TaskInstructions value={task.instructions} title={null} className="" />
+            </TaskAside>
+          )}
         </div>
       )}
 
-      {/* One renderer for every surface — see components/user/tasks/task-instructions. */}
-      <TaskInstructions value={task.instructions} />
-
       {task.instructionVideoUrl && (
-        <div className="space-y-2">
-          <p className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
-            Instruction video
-          </p>
+        <TaskAside title="Instruction video" defaultOpen>
           <InlineVideoEmbed
             url={task.instructionVideoUrl}
             title={`Instruction video — ${task.title}`}
           />
-        </div>
+        </TaskAside>
       )}
 
       {total === 0 && (
@@ -932,7 +941,7 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
               className="flex items-center gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 px-3 py-2.5"
             >
               <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-              <span className="text-sm text-white truncate">
+              <span className="text-sm text-white truncate min-w-0">
                 {def ? `${def.emoji} ${def.label}` : item.action}
               </span>
               <span className="ml-auto text-emerald-400 font-bold text-xs tabular-nums shrink-0">
@@ -948,7 +957,7 @@ export function SocialTaskRunView({ taskId }: { taskId: string }) {
               className="flex items-center gap-2 rounded-xl border border-gray-800 bg-gray-900/60 px-3 py-2.5 opacity-60"
             >
               <Lock className="w-4 h-4 text-gray-500 shrink-0" />
-              <span className="text-sm text-gray-400 truncate">
+              <span className="text-sm text-gray-400 truncate min-w-0">
                 {def ? `${def.emoji} ${def.label}` : item.action}
               </span>
               <span className="ml-auto text-[10px] font-semibold uppercase text-gray-600 shrink-0">

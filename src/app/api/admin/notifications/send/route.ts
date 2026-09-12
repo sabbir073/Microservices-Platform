@@ -9,7 +9,7 @@ import {
 } from "@/lib/onesignal";
 import { sendNotificationEmail, isSmtpConfigured } from "@/lib/email";
 import { Prisma } from "@/generated/prisma/client";
-import { audienceWhere, type AudienceCriteria } from "@/lib/audience";
+import { audienceWhereResolved, type AudienceCriteria } from "@/lib/audience";
 
 interface SendNotificationBody {
   type: string;
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       // flat fields (packages/level/country-substring/active) when absent.
       let where: Prisma.UserWhereInput;
       if (criteria && Object.keys(criteria).length > 0) {
-        where = audienceWhere(criteria);
+        where = await audienceWhereResolved(criteria);
       } else {
         where = { status: "ACTIVE" };
         if (packages && packages.length > 0) {
@@ -291,7 +291,7 @@ export async function POST(request: NextRequest) {
     // Email channel — batched, best-effort. Skips opted-out + deleted accounts.
     let emailResult: { success: boolean; sent?: number; error?: string } | null = null;
     if (sendEmail) {
-      if (!isSmtpConfigured()) {
+      if (!(await isSmtpConfigured())) {
         emailResult = { success: false, sent: 0, error: "SMTP not configured" };
       } else {
         const recipients = await prisma.user.findMany({

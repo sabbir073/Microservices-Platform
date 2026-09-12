@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
-import { audienceWhere, type AudienceCriteria } from "@/lib/audience";
+import { audienceWhereResolved, type AudienceCriteria } from "@/lib/audience";
 
 /**
  * POST /api/admin/notifications/estimate
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (target === "segment" && criteria && Object.keys(criteria).length > 0) {
-      where = audienceWhere(criteria);
+      where = await audienceWhereResolved(criteria);
     } else if (target === "segment") {
       if (packages && packages.length > 0) {
         where.package = { slug: { in: packages as string[] } };

@@ -80,7 +80,7 @@ export function PollBlock({
                 style={{ width: `${pct}%` }}
               />
               <div className="relative flex items-center justify-between gap-3">
-                <span className="text-sm text-white truncate">{o.label}</span>
+                <span className="text-sm text-white truncate min-w-0">{o.label}</span>
                 <span className="text-xs tabular-nums text-gray-300 shrink-0">
                   {pct.toFixed(0)}% · {o.voteCount}
                 </span>

@@ -2,16 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { registerUser } from "@/lib/auth/services";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { validatePassword } from "@/lib/password-policy";
 
 const registerSchema = z.object({
   email: z.string().email("Invalid email address"),
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters")
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      "Password must contain at least one uppercase letter, one lowercase letter, and one number"
-    ),
+  // Length + character classes are enforced against the admin Security policy
+  // after parsing (see below) — Zod cannot await a setting. This keeps only the
+  // floor no policy may go under.
+  password: z.string().min(1, "Password is required"),
   name: z.string().min(2, "Name must be at least 2 characters"),
   username: z
     .string()
@@ -30,6 +28,12 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const validatedData = registerSchema.parse(body);
+
+    // Admin Security policy (password_min_length + require_strong_passwords).
+    const pwError = await validatePassword(validatedData.password);
+    if (pwError) {
+      return NextResponse.json({ error: pwError }, { status: 400 });
+    }
 
     // Anti-fraud: cap accounts per IP (admin-toggleable).
     const { clientIp } = await import("@/lib/rate-limit");

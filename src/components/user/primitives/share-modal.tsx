@@ -36,26 +36,26 @@ const PLATFORMS: Array<{
   {
     key: "facebook",
     name: "Facebook",
-    color: "bg-[#1877f2] text-white",
+    color: "bg-[#1877f2] text-(--app-on-accent)",
     build: (u) => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(u)}`,
   },
   {
     key: "whatsapp",
     name: "WhatsApp",
-    color: "bg-[#25d366] text-white",
+    color: "bg-[#25d366] text-(--app-on-bright)",
     build: (u, t) => `https://wa.me/?text=${encodeURIComponent(`${t} ${u}`)}`,
   },
   {
     key: "telegram",
     name: "Telegram",
-    color: "bg-[#0088cc] text-white",
+    color: "bg-[#0088cc] text-(--app-on-accent)",
     build: (u, t) =>
       `https://t.me/share/url?url=${encodeURIComponent(u)}&text=${encodeURIComponent(t)}`,
   },
   {
     key: "linkedin",
     name: "LinkedIn",
-    color: "bg-[#0a66c2] text-white",
+    color: "bg-[#0a66c2] text-(--app-on-accent)",
     build: (u) =>
       `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(u)}`,
   },
@@ -101,7 +101,7 @@ export function ShareModal({
     <BottomSheet open={open} onOpenChange={onOpenChange} title={title}>
       <div className="space-y-4">
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-gray-800 border border-gray-700">
-          <span className="flex-1 text-xs text-gray-300 truncate">{url}</span>
+          <span className="flex-1 min-w-0 text-xs text-gray-300 break-all">{url}</span>
           <button
             onClick={copyLink}
             className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold"

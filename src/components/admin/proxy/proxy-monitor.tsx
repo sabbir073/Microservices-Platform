@@ -206,7 +206,7 @@ export function ProxyMonitor({ canManage }: Props) {
                   key={o.userId}
                   className="flex items-center justify-between text-sm bg-slate-950 rounded p-2"
                 >
-                  <span className="text-white truncate">{o.name}</span>
+                  <span className="text-white truncate min-w-0">{o.name}</span>
                   <span className="text-red-400 font-bold tabular-nums shrink-0 ml-2">
                     {o.count} rejection{o.count > 1 ? "s" : ""}
                   </span>

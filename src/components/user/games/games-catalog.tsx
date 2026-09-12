@@ -5,6 +5,7 @@ import { Gamepad2, Play, Coins, Star } from "lucide-react";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import { cn } from "@/lib/utils";
+import { ScrollFadeRow } from "@/components/user/primitives/scroll-fade-row";
 import { GamePlayer, type PlayableGame } from "./game-player";
 import type { AdPlacementName } from "@/lib/ad-placements";
 
@@ -104,13 +105,13 @@ export function GamesCatalog({ games }: { games: CatalogGame[] }) {
           )}
 
           {categories.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
+            <ScrollFadeRow className="-mx-1" innerClassName="flex gap-2 pb-1 px-1" ariaLabel="Game category filter">
               {[ALL, ...categories].map((c) => (
                 <button
                   key={c}
                   onClick={() => setTab(c)}
                   className={cn(
-                    "px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors",
+                    "shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors",
                     tab === c
                       ? "bg-emerald-500 text-white"
                       : "bg-gray-800 text-gray-400 hover:text-white"
@@ -119,7 +120,7 @@ export function GamesCatalog({ games }: { games: CatalogGame[] }) {
                   {c === ALL ? "All" : c}
                 </button>
               ))}
-            </div>
+            </ScrollFadeRow>
           )}
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -147,7 +148,7 @@ export function GamesCatalog({ games }: { games: CatalogGame[] }) {
                   <p className="text-sm font-bold text-white truncate">{g.title}</p>
                   <EarnBadge game={g} />
                   <div className="flex items-center justify-between mt-0.5">
-                    <span className="text-[10px] text-gray-500 truncate">
+                    <span className="text-[10px] text-gray-500 truncate min-w-0">
                       {g.categoryName ?? g.category ?? ""}
                     </span>
                     <span className="text-[10px] text-gray-600 tabular-nums shrink-0">

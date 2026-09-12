@@ -19,6 +19,7 @@ import {
   CircleSlash,
   Zap,
   Clock,
+  Package,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
 import { format } from "date-fns";
@@ -61,6 +62,18 @@ interface GiftItem {
   giftImage?: string;
 }
 
+/** A gift a past reset actually awarded to a real user — see LeaderboardGiftAward. */
+interface GiftAward {
+  id: string;
+  cycleId: string;
+  period: string;
+  rank: number;
+  giftName: string;
+  status: "PENDING" | "FULFILLED" | "CANCELLED";
+  userName: string;
+  userEmail: string;
+}
+
 const DEFAULTS = {
   enabled: true,
   metric: "COMBINED" as
@@ -98,6 +111,9 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
   const [resetting, setResetting] = useState<Period | null>(null);
   const [cycles, setCycles] = useState<Cycle[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [gifts, setGifts] = useState<GiftAward[]>([]);
+  const [giftsLoading, setGiftsLoading] = useState(true);
+  const [giftBusy, setGiftBusy] = useState<string | null>(null);
 
   const set = <K extends keyof Values>(k: K, val: Values[K]) =>
     setV((p) => ({ ...p, [k]: val }));
@@ -116,8 +132,44 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
     }
   };
 
+  const loadGifts = async () => {
+    setGiftsLoading(true);
+    try {
+      const res = await fetch("/api/admin/leaderboard/gifts");
+      if (!res.ok) throw new Error(await res.text());
+      const d = await res.json();
+      setGifts(d.gifts ?? []);
+    } catch {
+      // ignore
+    } finally {
+      setGiftsLoading(false);
+    }
+  };
+
+  const markGift = async (id: string, status: "FULFILLED" | "CANCELLED") => {
+    setGiftBusy(id);
+    try {
+      const res = await fetch("/api/admin/leaderboard/gifts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`);
+      toast.success(status === "FULFILLED" ? "Marked fulfilled" : "Gift cancelled");
+      await loadGifts();
+    } catch (err) {
+      toast.error("Could not update the gift", {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setGiftBusy(null);
+    }
+  };
+
   useEffect(() => {
     loadHistory();
+    loadGifts();
   }, []);
 
   const save = async () => {
@@ -167,10 +219,18 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
       toast.success(
         `${period[0].toUpperCase() + period.slice(1)} leaderboard reset complete`,
         {
-          description: `${data.awarded} winner${data.awarded === 1 ? "" : "s"} · ${data.totalDistributed} pts distributed`,
+          description: [
+            `${data.awarded} winner${data.awarded === 1 ? "" : "s"}`,
+            `${data.totalDistributed} pts`,
+            data.totalXp ? `${data.totalXp} XP` : null,
+            data.giftsAwarded ? `${data.giftsAwarded} gift(s)` : null,
+          ]
+            .filter(Boolean)
+            .join(" · "),
         }
       );
       await loadHistory();
+      await loadGifts();
       router.refresh();
     } catch (err) {
       toast.error(`${period} reset failed`, {
@@ -184,9 +244,12 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
   const distributionField = (
     period: Period,
     winnerCount: number,
-    distribution: number[]
+    distribution: number[],
+    kind: "points" | "xp" = "points"
   ) => {
-    const key = `${period}_distribution` as keyof Values;
+    const key = (
+      kind === "xp" ? `${period}_xp_distribution` : `${period}_distribution`
+    ) as keyof Values;
     const updated = (next: number[]) => set(key, next as never);
     const sized = [...distribution];
     while (sized.length < winnerCount) sized.push(0);
@@ -194,7 +257,8 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
     return (
       <div className="space-y-2">
         <p className="text-xs font-medium text-slate-400">
-          Per-rank distribution ({winnerCount} rank{winnerCount === 1 ? "" : "s"}):
+          {kind === "xp" ? "Per-rank XP bonus" : "Per-rank distribution"} (
+          {winnerCount} rank{winnerCount === 1 ? "" : "s"}):
         </p>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {sized.map((amt, i) => (
@@ -217,10 +281,19 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
             </div>
           ))}
         </div>
-        <p className="text-[11px] text-slate-500 tabular-nums">
-          Sum: {sized.reduce((a, b) => a + b, 0).toLocaleString()} pts (target pool:{" "}
-          {Number(v[`${period}_prize` as keyof Values] ?? 0).toLocaleString()} pts)
-        </p>
+        {kind === "xp" ? (
+          <p className="text-[11px] text-slate-500 tabular-nums">
+            Sum: {sized.reduce((a, b) => a + b, 0).toLocaleString()} XP — credited
+            alongside the points prize, and the winner&rsquo;s level is
+            recalculated on the same XP curve as every other earning path. Leave
+            at 0 for no XP bonus.
+          </p>
+        ) : (
+          <p className="text-[11px] text-slate-500 tabular-nums">
+            Sum: {sized.reduce((a, b) => a + b, 0).toLocaleString()} pts (target pool:{" "}
+            {Number(v[`${period}_prize` as keyof Values] ?? 0).toLocaleString()} pts)
+          </p>
+        )}
       </div>
     );
   };
@@ -238,6 +311,11 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
           />
           <span className="text-white font-medium">Leaderboard enabled</span>
         </label>
+        <p className="-mt-2 text-xs text-slate-500">
+          Off takes the board down properly: the /leaderboard page redirects,
+          the nav entry disappears, and /api/leaderboard returns 403 — so a
+          bookmark or a saved request is refused too, not just hidden.
+        </p>
 
         <Field label="Ranking Metric">
           <select
@@ -249,12 +327,15 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
             <option value="COMBINED">
               Combined (mix of all 4 — recommended)
             </option>
-            <option value="POINTS_EARNED">Points Earned</option>
+            <option value="POINTS_EARNED">Points Earned (from tasks)</option>
             <option value="TASKS_COMPLETED">Tasks Completed</option>
             <option value="REFERRALS">Referrals</option>
             <option value="XP_EARNED">XP Earned</option>
           </select>
           <p className="text-[11px] text-slate-500 mt-1">
+            Points means points EARNED FROM TASKS, on this board and in the
+            payout. Marketplace sales are deliberately not counted: two accounts
+            selling the same item back and forth would otherwise both climb.
             Combined ranks each user by the average of their percentile across
             Points, XP, Tasks, and Team — so being well-rounded matters.
           </p>
@@ -309,6 +390,12 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
                 period,
                 winnerCount,
                 (v[distributionKey] as number[]) ?? []
+              )}
+              {distributionField(
+                period,
+                winnerCount,
+                (v[`${period}_xp_distribution` as keyof Values] as number[]) ?? [],
+                "xp"
               )}
             </div>
           );
@@ -372,8 +459,13 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
           </h2>
           <p className="text-sm text-slate-400">
             Optional physical/digital prizes per rank — mobile, gadget, tour
-            package, etc. Shown alongside point + XP rewards on the standings
-            page.
+            package, etc.
+          </p>
+          <p className="text-xs text-slate-500">
+            A reset records the gift for the winning rank and notifies that
+            user by name, then it appears in &ldquo;Gifts owed&rdquo; below
+            until you mark it handed over. There is no shipping or address
+            capture — arrange delivery your usual way.
           </p>
         </div>
 
@@ -382,6 +474,97 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
           onChange={(next) => set("gift_items", next)}
           disabled={!canEdit}
         />
+      </div>
+
+      {/* Gifts owed — the promises made by past resets, and whether they were kept */}
+      <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold text-white mb-1 inline-flex items-center gap-2">
+            <Package className="w-5 h-5 text-emerald-400" />
+            Gifts Owed
+          </h2>
+          <p className="text-sm text-slate-400">
+            Every gift a reset has awarded. The winner has already been notified
+            by name — mark it Fulfilled once it is in their hands.
+          </p>
+        </div>
+        {giftsLoading ? (
+          <p className="text-sm text-slate-500 inline-flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+          </p>
+        ) : gifts.length === 0 ? (
+          <p className="text-sm text-slate-500">
+            No gifts awarded yet. Add a gift for a rank above, and the next reset
+            for that period will record it here.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-[11px] uppercase tracking-wider text-slate-500 border-b border-slate-800">
+                  <th className="py-2 pr-3">Cycle</th>
+                  <th className="py-2 pr-3">Rank</th>
+                  <th className="py-2 pr-3">Winner</th>
+                  <th className="py-2 pr-3">Gift</th>
+                  <th className="py-2 pr-3">Status</th>
+                  <th className="py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {gifts.map((g) => (
+                  <tr key={g.id} className="border-b border-slate-800/60">
+                    <td className="py-2 pr-3 text-slate-400 font-mono text-xs">
+                      {g.cycleId}
+                    </td>
+                    <td className="py-2 pr-3 text-amber-400 font-bold">
+                      #{g.rank}
+                    </td>
+                    <td className="py-2 pr-3 text-white">
+                      {g.userName}
+                      <span className="block text-[11px] text-slate-500">
+                        {g.userEmail}
+                      </span>
+                    </td>
+                    <td className="py-2 pr-3 text-slate-200">{g.giftName}</td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase border ${
+                          g.status === "FULFILLED"
+                            ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/40"
+                            : g.status === "CANCELLED"
+                            ? "bg-slate-500/15 text-slate-400 border-slate-600"
+                            : "bg-amber-500/15 text-amber-300 border-amber-500/40"
+                        }`}
+                      >
+                        {g.status}
+                      </span>
+                    </td>
+                    <td className="py-2 text-right whitespace-nowrap">
+                      {g.status !== "FULFILLED" && (
+                        <button
+                          onClick={() => markGift(g.id, "FULFILLED")}
+                          disabled={!canEdit || giftBusy === g.id}
+                          className="px-3 py-1 rounded-lg text-xs bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/20 disabled:opacity-50"
+                        >
+                          Mark fulfilled
+                        </button>
+                      )}
+                      {g.status === "PENDING" && (
+                        <button
+                          onClick={() => markGift(g.id, "CANCELLED")}
+                          disabled={!canEdit || giftBusy === g.id}
+                          className="ml-2 px-3 py-1 rounded-lg text-xs bg-slate-800 text-slate-400 border border-slate-700 hover:bg-slate-700 disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Reset controls — Manual + Automatic side by side */}
@@ -456,10 +639,33 @@ export function LeaderboardSettingsForm({ initial, canEdit, packages }: Props) {
               )}
             </span>
           </div>
-          <p className="text-sm text-slate-400 mt-1 mb-4">
-            When enabled, leaderboards reset on schedule (daily 00:00, weekly
-            Mon 00:00, monthly 1st 00:00) and prize distribution runs
-            automatically. Disable to require manual resets only.
+          <p className="text-sm text-slate-400 mt-1 mb-2">
+            This is live: an hourly Vercel cron closes each daily (00:00 UTC),
+            weekly (Monday 00:00 UTC) and monthly (1st, 00:00 UTC) window as
+            soon as it ends, and pays the winners in the same run.
+          </p>
+          <p className="mb-2 text-xs text-slate-500">
+            Runs hourly and pays the window that has just closed, in{" "}
+            <span className="font-semibold text-slate-400">UTC</span> (00:00
+            UTC = 06:00 in Dhaka). A missed midnight — deploy, outage — is
+            picked up on the next hour rather than skipped, and a cycle can only
+            be paid once however many times it runs.
+          </p>
+          <p className="mb-2 text-xs text-slate-500">
+            <span className="font-semibold text-amber-300">
+              The very first scheduled run is special:
+            </span>{" "}
+            it seals whichever daily, weekly and monthly windows had already
+            closed before this went live — <em>without</em> paying them, since
+            nobody was competing under these rules yet. Every window after
+            that pays normally.
+          </p>
+          <p className="text-xs text-slate-500">
+            Requires <code className="text-slate-400">CRON_SECRET</code> to be
+            set in Vercel. With no secret configured the scheduled endpoint
+            refuses to run at all rather than sit open — this route moves real
+            money — so this switch does nothing on an environment where that
+            variable was never set, however long it has been on.
           </p>
 
           {/* Switch-style toggle */}

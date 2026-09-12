@@ -131,7 +131,7 @@ export function LinkPreviewCard({
     // Compact skeleton (no big image box) so a link that resolves to nothing
     // doesn't flash a large empty card before collapsing.
     return (
-      <div className="mt-3 rounded-xl border border-gray-800 bg-gray-900/60 p-3 animate-pulse">
+      <div className="mt-3 rounded-(--app-r-control) border border-(--app-line) bg-(--app-surface-2) p-3">
         <div className="flex items-center gap-2">
           <div className="h-9 w-9 rounded bg-gray-800 shrink-0" />
           <div className="flex-1 space-y-2">

@@ -27,7 +27,7 @@ function OfferButton({
   const cls = cn(
     "inline-flex items-center justify-center px-6 py-3 rounded-xl font-bold transition-transform hover:scale-[1.02]",
     variant === "primary" && "bg-linear-to-r from-indigo-500 to-purple-600 text-white",
-    variant === "secondary" && "bg-white text-gray-900",
+    variant === "secondary" && "bg-(--app-bright) text-(--app-on-bright)",
     variant === "outline" && "border border-white/30 text-white hover:bg-white/10"
   );
   const wrap = cn("my-4", ALIGN[align] ?? "text-center");

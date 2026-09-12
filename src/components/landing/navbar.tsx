@@ -41,7 +41,9 @@ export function Navbar(props: Props) {
             </span>
           </Link>
 
-          <nav className="hidden lg:flex items-center gap-8">
+          {/* gap-4 until xl: the bar carries eight links now, and at exactly
+              1024px the old gap-8 pushed the last one under the sign-up CTA. */}
+          <nav className="hidden lg:flex items-center gap-4 xl:gap-8">
             {v.nav_links.map((link, i) => (
               <MarketingNavLink
                 key={`${link.href}-${i}`}
@@ -63,18 +65,29 @@ export function Navbar(props: Props) {
             </Link>
             <Link
               href={v.cta_signup_href}
-              className="px-5 py-2.5 bg-linear-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold rounded-xl shadow-sm shadow-indigo-600/20 hover:from-indigo-500 hover:to-violet-500 transition-colors"
+              className="mk-press px-5 py-2.5 bg-linear-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold rounded-xl shadow-sm shadow-indigo-600/20 hover:from-indigo-500 hover:to-violet-500"
             >
               {v.cta_signup_label}
             </Link>
           </div>
 
-          <div className="lg:hidden flex items-center gap-1.5">
+          {/* The sign-up CTA was behind the hamburger on every phone — the one
+              action the page exists for took two taps and a scroll. It now sits
+              in the bar itself from 400px up (hidden only on the very narrowest
+              devices, where the wordmark + two controls already fill the row). */}
+          <div className="lg:hidden flex items-center gap-1">
+            <Link
+              href={v.cta_signup_href}
+              className="hidden min-[400px]:inline-flex items-center min-h-11 px-4 bg-linear-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold rounded-xl shadow-sm shadow-indigo-600/20"
+            >
+              {v.cta_signup_label}
+            </Link>
             <ThemeToggle />
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-2 text-(--mk-muted) hover:text-(--mk-text)"
+              className="inline-flex items-center justify-center w-11 h-11 rounded-xl text-(--mk-muted) hover:text-(--mk-text) hover:bg-(--mk-surface-2)"
               aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={isMobileMenuOpen}
             >
               {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
             </button>
@@ -83,30 +96,33 @@ export function Navbar(props: Props) {
       </div>
 
       {isMobileMenuOpen && (
-        <div className="lg:hidden bg-(--mk-nav-scrolled) backdrop-blur-xl border-t border-(--mk-border)">
-          <div className="px-4 py-4 space-y-3">
+        // A fixed bar with an auto-height panel under it can grow past the
+        // viewport and strand the last links. Cap it at the space below the bar
+        // and let it scroll.
+        <div className="lg:hidden max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain bg-(--mk-nav-scrolled) backdrop-blur-xl border-t border-(--mk-border)">
+          <div className="px-4 py-4 space-y-1 pb-[calc(1rem+env(safe-area-inset-bottom))]">
             {v.nav_links.map((link, i) => (
               <MarketingNavLink
                 key={`${link.href}-${i}`}
                 href={link.href}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="block py-2 text-(--mk-text) hover:text-indigo-600 transition-colors"
+                className="mk-press flex items-center min-h-11 px-2 -mx-2 rounded-xl font-medium text-(--mk-text) hover:bg-(--mk-surface-2) hover:text-indigo-600"
               >
                 {link.label}
               </MarketingNavLink>
             ))}
-            <div className="pt-4 space-y-3 border-t border-(--mk-border)">
+            <div className="pt-4 mt-3 space-y-3 border-t border-(--mk-border)">
               <Link
                 href={v.cta_signin_href}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="block w-full py-2.5 text-center text-(--mk-text) border border-(--mk-border-strong) rounded-xl hover:bg-(--mk-surface-2) transition-colors"
+                className="mk-press flex items-center justify-center w-full min-h-12 text-center text-(--mk-text) border border-(--mk-border-strong) rounded-xl hover:bg-(--mk-surface-2)"
               >
                 {v.cta_signin_label}
               </Link>
               <Link
                 href={v.cta_signup_href}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className="block w-full py-2.5 text-center bg-linear-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-xl hover:from-indigo-500 hover:to-violet-500 transition-colors"
+                className="mk-press flex items-center justify-center w-full min-h-12 text-center bg-linear-to-r from-indigo-600 to-violet-600 text-white font-semibold rounded-xl hover:from-indigo-500 hover:to-violet-500"
               >
                 {v.cta_signup_label}
               </Link>

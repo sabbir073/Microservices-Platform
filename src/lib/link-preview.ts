@@ -17,6 +17,18 @@ export interface LinkPreview {
 
 const TIMEOUT_MS = 6000;
 const MAX_BYTES = 1024 * 1024; // 1 MB — some sites push og: tags past big inline scripts
+/**
+ * A bigger ceiling for VERIFICATION reads.
+ *
+ * Measured on a real Pinterest pin: the page is ~1.14MB and its meta block —
+ * title, description, and the pin's destination link — sits at ~1.03MB. That is
+ * so close to the 1MB cap that whether we caught it came down to how much
+ * preamble Pinterest happened to send: one pin verified, the next was reported
+ * unreadable, with nothing different about them. Reading a link the user
+ * submitted is worth a few more megabytes; a link PREVIEW in the feed is not,
+ * so that keeps the smaller cap.
+ */
+export const VERIFY_MAX_BYTES = 4 * 1024 * 1024;
 const MAX_REDIRECTS = 3;
 // A realistic browser UA — some sites 403 obvious bot user-agents.
 const BROWSER_UA =
@@ -102,8 +114,8 @@ export async function assertPublicUrl(raw: string): Promise<URL> {
   return u;
 }
 
-/** Read up to MAX_BYTES of the response body as UTF-8 text, then abort. */
-async function readCapped(res: Response): Promise<string> {
+/** Read up to `cap` bytes of the response body as UTF-8 text, then abort. */
+async function readCapped(res: Response, cap: number = MAX_BYTES): Promise<string> {
   if (!res.body) return await res.text();
   const reader = res.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -115,7 +127,7 @@ async function readCapped(res: Response): Promise<string> {
       if (value) {
         chunks.push(value);
         total += value.byteLength;
-        if (total >= MAX_BYTES) break;
+        if (total >= cap) break;
       }
     }
   } finally {
@@ -308,7 +320,8 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview | nu
  */
 export async function fetchRawHtml(
   rawUrl: string,
-  userAgent?: string
+  userAgent?: string,
+  maxBytes: number = MAX_BYTES
 ): Promise<string | null> {
   try {
     const u = await assertPublicUrl(rawUrl);
@@ -318,7 +331,7 @@ export async function fetchRawHtml(
     if (!ctype.includes("text/html") && !ctype.includes("application/xhtml")) {
       return null;
     }
-    return await readCapped(res);
+    return await readCapped(res, maxBytes);
   } catch {
     return null;
   }

@@ -23,7 +23,8 @@ const GRID_COLS: Record<number, string> = {
   5: "grid-cols-5",
 };
 
-/** App-style fixed bottom navigation for mobile (hidden on lg+). */
+/** App-style fixed bottom navigation for phones (hidden from md up, where
+ *  the persistent rail takes over). */
 export function BottomTabBar({
   features,
   hiddenPaths,
@@ -34,14 +35,16 @@ export function BottomTabBar({
   const pathname = usePathname();
   const setMenuOpen = useMobileNav((s) => s.setOpen);
   const [unread, setUnread] = useState(0);
-  // This bar is `lg:hidden` — on desktop it's not visible, so skip its poll
+  // This bar is `md:hidden` — above that it's not visible, so skip its poll
   // entirely (the Header already polls notifications). Halves the poll volume
   // for every desktop user instead of duplicating it.
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(max-width: 1023px)");
+    // Must track the same breakpoint the bar renders at, or the poll runs
+    // for tablet and desktop users who cannot see the badge it feeds.
+    const mq = window.matchMedia("(max-width: 767px)");
     const apply = () => setIsMobile(mq.matches);
     apply();
     mq.addEventListener("change", apply);
@@ -83,8 +86,13 @@ export function BottomTabBar({
 
   return (
     <nav
-      className="lg:hidden fixed bottom-0 inset-x-0 z-40 glass-strong rounded-none border-0 border-t border-gray-800/70"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      aria-label="Primary"
+      className="app-chrome md:hidden fixed bottom-0 inset-x-0 z-40 rounded-none border-0 border-t border-(--shell-border)"
+      style={{
+        paddingBottom: "env(safe-area-inset-bottom)",
+        paddingLeft: "env(safe-area-inset-left)",
+        paddingRight: "env(safe-area-inset-right)",
+      }}
     >
       <div
         className={cn(
@@ -100,25 +108,44 @@ export function BottomTabBar({
               key={tab.name}
               href={tab.href}
               onClick={() => haptic("light")}
+              aria-current={activeTab ? "page" : undefined}
               className={cn(
-                "flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-transform active:scale-95",
-                activeTab ? "text-indigo-400" : "text-gray-400"
+                // min-h-14 (56px) rather than whatever the content happened to
+                // add up to — a tab bar row is the most-tapped target in the
+                // app and it must not depend on the label's line height.
+                "app-press relative flex flex-col items-center justify-center gap-1 min-h-14 py-2 text-[11px] font-bold tracking-tight",
+                activeTab ? "text-(--app-info)" : "text-gray-400"
               )}
             >
+              {/* Which tab you are on was carried by colour alone (indigo
+                  text) — a 1px hue change on a 10px label, at the bottom of
+                  the screen, in a hurry. A bar above the tab is what a native
+                  tab bar uses and what people actually see. It is painted with
+                  `--app-rail`, the light end of the brand ramp: the 600-step
+                  gradient the buttons use measures 2.84:1 against the dark bar,
+                  and a 2px indicator with nothing written on it has to clear
+                  3:1 on its own. */}
+              {activeTab && !primary && (
+                <span
+                  aria-hidden
+                  className="absolute top-0 h-0.5 w-9 rounded-full bg-(image:--app-rail)"
+                />
+              )}
               {primary ? (
-                // Center Home: bigger icon inside a subtle rounded highlight.
+                // Centre Home: the one gradient in the tab bar, lifted out of
+                // the row so it is unmistakably the primary destination.
                 <span
                   className={cn(
-                    "flex items-center justify-center w-12 h-12 rounded-2xl transition-all -mt-4 border border-gray-800",
+                    "flex items-center justify-center w-14 h-14 rounded-(--app-r-panel) transition-all -mt-5",
                     activeTab
-                      ? "bg-linear-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-600/30 border-transparent"
-                      : "bg-gray-900 text-gray-300"
+                      ? "app-accent app-accent-glow"
+                      : "bg-(--app-surface-2) text-gray-300 border border-(--app-line)"
                   )}
                 >
                   <tab.icon className="w-6 h-6" />
                 </span>
               ) : (
-                <tab.icon className="w-5 h-5" />
+                <tab.icon className="w-5.5 h-5.5" />
               )}
               <span className={cn(primary && "mt-0.5")}>{tab.name}</span>
             </Link>
@@ -131,12 +158,13 @@ export function BottomTabBar({
             haptic("light");
             setMenuOpen(true);
           }}
-          className="flex flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium text-gray-400 transition-transform active:scale-95"
+          aria-label={unread > 0 ? `Open menu, ${unread} unread` : "Open menu"}
+          className="app-press flex flex-col items-center justify-center gap-1 min-h-14 py-2 text-[11px] font-bold tracking-tight text-gray-400"
         >
           <span className="relative">
-            <Menu className="w-5 h-5" />
+            <Menu className="w-5.5 h-5.5" />
             {unread > 0 && (
-              <span className="absolute -top-1.5 -right-2 px-1 min-w-4 h-4 rounded-full bg-red-500 text-white text-[9px] font-bold leading-4 text-center">
+              <span className="absolute -top-1.5 -right-2 px-1 min-w-4.5 h-4.5 rounded-full bg-(--app-badge) text-(--app-on-accent) text-[10px] font-extrabold leading-4.5 text-center ring-2 ring-(--shell-bg)">
                 {unread > 9 ? "9+" : unread}
               </span>
             )}

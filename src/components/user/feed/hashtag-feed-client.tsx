@@ -95,7 +95,7 @@ export function HashtagFeedClient({ tag }: { tag: string }) {
   if (items.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-gray-800 p-10 text-center">
-        <Hash className="w-10 h-10 text-gray-700 mx-auto mb-2" />
+        <Hash className="w-10 h-10 text-(--app-glyph) mx-auto mb-2" />
         <p className="text-sm text-gray-400 font-semibold">
           No posts with #{tag} yet
         </p>

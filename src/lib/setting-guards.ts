@@ -55,6 +55,12 @@ export const NUMERIC_SETTING_BOUNDS: Record<string, SettingBound> = {
     label: "Withdrawal fee",
     why: "It is a percentage.",
   },
+  "marketplace.fee_percent": {
+    min: 0,
+    max: 100,
+    label: "Marketplace fee",
+    why: "It is a percentage. Above 100 the seller would owe money on a sale.",
+  },
   vat_pct: { min: 0, max: 100, label: "VAT", why: "It is a percentage." },
   "ads.credit_bonus_pct": {
     min: 0,
@@ -87,7 +93,7 @@ export const NUMERIC_SETTING_BOUNDS: Record<string, SettingBound> = {
     min: 0.001,
     max: 100,
     label: "Cost per click",
-    why: "What an advertiser is billed per click — it moves real money.",
+    why: "It is the price of a click in every ad space with no rate of its own — today, all 29 of them — so it moves real money across the whole inventory.",
   },
   "billing.tax_pct": {
     min: 0,

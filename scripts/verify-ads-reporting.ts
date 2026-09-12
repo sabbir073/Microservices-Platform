@@ -63,13 +63,27 @@ async function main() {
     const revenue = code("lib/finance/revenue.ts");
     const dash = code("app/admin/page.tsx");
 
+    // These two used to pin `_sum: { spentTotal: true }` and a literal
+    // `isHouse: false` inside revenue.ts. Both guarantees still hold, but the
+    // query moved into `adRevenueWindow` — `spentTotal` is LIFETIME, so reading
+    // it here made the ad line ignore the date filter every other line obeys.
+    // Assert where the money now comes from, and that the exclusion lives in
+    // the helper rather than having quietly disappeared.
+    const adRevenueLib = code("lib/ad-revenue.ts");
     check(
-      "finance sums spentTotal, not budget",
-      /_sum: \{ spentTotal: true \}/.test(revenue)
+      "finance reads windowed ad revenue, not a lifetime campaign total",
+      /adRevenueWindow\(/.test(revenue) &&
+        !/_sum: \{ spentTotal: true \}/.test(revenue),
+      "spentTotal has no time axis, so the date filter did nothing to this line"
+    );
+    check(
+      "…and it is passed the caller's range, not a hardcoded window",
+      /adRevenueWindow\(range\.from/.test(revenue)
     );
     check(
       "finance excludes house campaigns — they bill nothing by design",
-      /where: \{ isHouse: false \},\s*_sum: \{ spentTotal: true \}/.test(revenue)
+      /isHouse/.test(adRevenueLib) && /isNetworkAdType/.test(adRevenueLib),
+      "house inventory billing itself is not income, and network types are not ours"
     );
     check(
       "the dashboard sums spentTotal, not budget, for revenue",
@@ -113,8 +127,13 @@ async function main() {
   {
     const s = code("app/api/admin/ads/analytics/route.ts");
     check(
+      // The literal pair used to be spelled out here. It is now the shared
+      // `isNetworkAdType` from src/lib/ad-revenue.ts — same exclusion, one
+      // definition, so this accepts either spelling rather than pinning the
+      // panel to a copy it no longer owns.
       "the platform-wide eCPM excludes them too",
-      /!a\.campaign\?\.isHouse && a\.type !== "ADSENSE" && a\.type !== "GAM"/.test(s)
+      /!a\.campaign\?\.isHouse && !isNetworkAdType\(a\.type\)/.test(s) ||
+        /!a\.campaign\?\.isHouse && a\.type !== "ADSENSE" && a\.type !== "GAM"/.test(s)
     );
     check(
       "it no longer divides by every impression in the window",
@@ -142,7 +161,7 @@ async function main() {
   {
     const s = code("lib/ad-serve.ts");
     const guard = s.indexOf("if (!network) return EMPTY;");
-    const count = s.indexOf("bufferImpression(chosen.id)");
+    const count = s.indexOf("bufferImpression(");
     check("the network guard exists", guard > 0);
     check(
       "the impression is counted AFTER every path that can still refuse",
@@ -151,7 +170,7 @@ async function main() {
     );
     check(
       "it is still counted exactly once",
-      (s.match(/bufferImpression\(chosen\.id\)/g) ?? []).length === 1
+      (s.match(/bufferImpression\(\s*chosen\.id/g) ?? []).length === 1
     );
   }
 
@@ -346,6 +365,414 @@ async function main() {
     Number(houseSpend._sum.spentTotal ?? 0) === 0,
     String(houseSpend._sum.spentTotal)
   );
+
+  /* C — the daily rollup is not a revenue column.
+   *
+   * `AdCampaign.spentTotal` was corrected when house inventory stopped billing
+   * itself; `AdDailyStat.spendUsd` never was, and still holds $1.95 of demo/house
+   * self-billing against $1.15 of real advertiser spend. Every surface that sums
+   * that column was therefore reporting ad revenue at ~2.7x — next to
+   * `revenue.lifetime`, which is derived from `spentTotal` and was right. The
+   * check above only looked at `spentTotal`, so it stayed green throughout.
+   */
+  console.log("\nC. House spend never counts as revenue in the rollup");
+  for (const [file, label] of [
+    ["app/api/admin/ads/analytics/route.ts", "the dashboard"],
+    ["app/api/admin/ads/report/route.ts", "the report"],
+    ["app/api/admin/ads/report/export/route.ts", "the CSV"],
+  ] as const) {
+    const c = code(file);
+    // The spend accumulator must sit behind a house/network guard, not sum blind.
+    const guarded =
+      /if\s*\(\s*!\s*(?:a\.campaign\?\.)?(?:house|isHouse)[\s\S]{0,120}?spend/.test(c) ||
+      /if\s*\(earning\.has\([\s\S]{0,60}?spendUsd/.test(c);
+    check(`${label} gates spend on earning inventory`, guarded);
+  }
+
+  const allStats = await prisma.adDailyStat.findMany({
+    select: { adId: true, clicks: true, impressions: true, spendUsd: true },
+  });
+  const allAds = await prisma.ad.findMany({
+    select: {
+      id: true,
+      type: true,
+      clicks: true,
+      impressions: true,
+      campaign: { select: { isHouse: true } },
+    },
+  });
+  const adById = new Map(allAds.map((a) => [a.id, a]));
+  const earningSpend = allStats.reduce((sum, s) => {
+    const a = adById.get(s.adId);
+    if (!a || a.campaign?.isHouse || a.type === "ADSENSE" || a.type === "GAM") return sum;
+    return sum + Number(s.spendUsd);
+  }, 0);
+  const paidSpentTotal = await prisma.adCampaign.aggregate({
+    where: { isHouse: false },
+    _sum: { spentTotal: true },
+  });
+  const lifetime = Number(paidSpentTotal._sum.spentTotal ?? 0);
+  check(
+    "rollup revenue, filtered, reconciles with lifetime billed spend",
+    Math.abs(earningSpend - lifetime) < 0.01,
+    `rollup ${earningSpend.toFixed(4)} vs spentTotal ${lifetime.toFixed(4)}`
+  );
+
+  /* D — a date range has to change the ad revenue figure.
+   *
+   * `AdCampaign.spentTotal` is a lifetime counter with no date on it, so every
+   * panel reading it reported the all-time total inside a filtered window —
+   * the range control moved twelve numbers and left this one still. The per-day
+   * data is in `AdDailyStat`; `src/lib/ad-revenue.ts` is now the one place that
+   * sums it, through the same house/network gate section C checks for.
+   */
+  console.log("\nD. Windowed ad revenue is real");
+  {
+    const lib = code("lib/ad-revenue.ts");
+    check(
+      "the windowed sum reads AdDailyStat, not spentTotal",
+      /adDailyStat\.findMany/.test(lib) && !/spentTotal/.test(lib.replace(/[\s\S]*?export /, "export "))
+    );
+    check(
+      "it excludes house inventory",
+      /campaign\.isHouse/.test(lib) || /isHouse/.test(lib)
+    );
+    check(
+      "…and network inventory, by the shared predicate",
+      /export function isNetworkAdType/.test(lib)
+    );
+    check(
+      "the other panels use that predicate instead of their own copy",
+      ["app/api/admin/ads/analytics/route.ts",
+       "app/api/admin/ads/report/route.ts",
+       "app/api/admin/ads/report/export/route.ts"].every((f) =>
+        /isNetworkAdType/.test(code(f))
+      ),
+      "a fifth copy is how the figures start disagreeing"
+    );
+    check(
+      "the ads dashboard shows the windowed revenue beside the lifetime one",
+      /label=\{`Revenue \(\$\{days\}d\)`\}/.test(
+        code("components/admin/ads/ad-manager-view.tsx")
+      )
+    );
+
+    // Runtime: a window wide enough to hold everything must equal the filtered
+    // rollup above, and a window before the platform existed must be zero.
+    const { adRevenueWindow } = await import("../src/lib/ad-revenue");
+    const all = await adRevenueWindow(new Date("2000-01-01"), new Date());
+    check(
+      "an all-time window equals the house/network-filtered rollup",
+      Math.abs(all.usd - earningSpend) < 0.01,
+      `window ${all.usd.toFixed(4)} vs rollup ${earningSpend.toFixed(4)}`
+    );
+    const perSpace = [...all.byPlacementId.values()].reduce((x, v) => x + v.usd, 0);
+    check(
+      "the per-space split adds up to the total",
+      Math.abs(perSpace - all.usd) < 0.01,
+      `${perSpace.toFixed(4)} vs ${all.usd.toFixed(4)}`
+    );
+    const none = await adRevenueWindow(new Date("2001-01-01"), new Date("2001-12-31"));
+    check("a window with no days in it earns nothing", none.usd === 0);
+    console.log(
+      `   window carries ${all.houseImpressions} house and ${all.networkImpressions} network impression(s), earning $0 by design`
+    );
+
+    // Still lifetime, and owned by the finance side — reported, not edited.
+    const revenueLib = code("lib/finance/revenue.ts");
+    if (/spentTotal/.test(revenueLib)) {
+      console.log(
+        "   NOTE: src/lib/finance/revenue.ts still reads AdCampaign.spentTotal (lifetime) — swap that aggregate for adRevenueWindow(from, to) to make /admin/finance honour its date filter"
+      );
+    }
+  }
+  const blindSpend = allStats.reduce((s, r) => s + Number(r.spendUsd), 0);
+  console.log(
+    `   unfiltered rollup would report $${blindSpend.toFixed(4)} against $${lifetime.toFixed(4)} of real revenue`
+  );
+
+  /* C2 — CTR cannot exceed 100%.
+   *
+   * A click is deduped per (ad, viewer, bucket) and so is an impression. When the
+   * click window was the SHORTER of the two, a returning viewer banked a second
+   * billed click inside one impression's window — 4 clicks on 3 impressions, live.
+   */
+  const ev = code("lib/ad-events.ts");
+  const clickMs = Number(/CLICK_COOLDOWN_MS\s*=\s*([\d_]+)/.exec(ev)?.[1]?.replace(/_/g, ""));
+  const viewMs = Number(/VIEW_COOLDOWN_MS\s*=\s*([\d_]+)/.exec(ev)?.[1]?.replace(/_/g, ""));
+  check(
+    "the click dedup window is at least as long as the view window",
+    Number.isFinite(clickMs) && Number.isFinite(viewMs) && clickMs >= viewMs,
+    `click ${clickMs}ms vs view ${viewMs}ms`
+  );
+  const impossible = allStats.filter((s) => s.clicks > s.impressions);
+  console.log(
+    `   ${impossible.length} daily row(s) still carry clicks > impressions (historic; the window fix stops new ones)`
+  );
+
+  /* D1 — every ad event carries a country, and it is decided in ONE place.
+   *
+   * Nothing recorded a country on an ad event at all, so the owner's question
+   * ("which country are my clicks and impressions coming from?") had no answer.
+   * The risk in fixing it is not that the number is missing — it is that the
+   * impression path and the click path each resolve a country their own way and
+   * quietly disagree, which turns per-country CTR into a ratio of two different
+   * populations. These assert against code with comments stripped.
+   */
+  console.log("\nD1. Ad events record a country, resolved in one place");
+  {
+    const geo = code("lib/ad-geo.ts");
+    const events = code("lib/ad-events.ts");
+    const serve = code("lib/ad-serve.ts");
+    const counters = code("lib/ad-counters.ts");
+    const adStats = code("lib/ad-stats.ts");
+    const inRecordClick = events.split("export async function recordClick")[1] ?? "";
+
+    check(
+      "the edge country header is the primary source",
+      /x-vercel-ip-country/.test(geo)
+    );
+    check(
+      "unknown is an explicit stored value, not a null",
+      /UNKNOWN_COUNTRY\s*=\s*"ZZ"/.test(geo)
+    );
+    check(
+      "User.country is the FALLBACK, read only after the header",
+      geo.indexOf("headerCountry()") > -1 &&
+        geo.indexOf("const fromEdge") < geo.indexOf("user.findUnique"),
+      "the profile is a weak source — 18 of 48 accounts have one, anonymous viewers none"
+    );
+    check(
+      "both event paths resolve country through the shared resolver",
+      /resolveEventCountry/.test(events) && /resolveEventCountry/.test(serve)
+    );
+    check(
+      "the served-impression counter is given a country",
+      /bufferImpression\([\s\S]{0,200}resolveEventCountry/.test(serve)
+    );
+    // Was: "the beacon impression path is given a country".
+    //
+    // That assertion described a world with TWO impression bases. The beacon was
+    // the only server-side counter for IN_FEED, so it had to tag a country —
+    // while the other 24 spaces counted at delivery. Counting on one basis
+    // (delivery, in `serveAd`/`serveFeedAds`) is the fix; the beacon now writes
+    // only the deduped `AdEngagement` row, so the thing to assert is that it
+    // does NOT count, or every feed ad would be counted twice.
+    check(
+      "the beacon no longer counts — one impression basis, at delivery",
+      !/bufferImpression\(/.test(events)
+    );
+    check(
+      "recordClick resolves the country ONCE, above every branch",
+      (inRecordClick.match(/resolveEventCountry/g) ?? []).length === 1,
+      "resolving per-branch is how an impression and its click end up in different buckets"
+    );
+    check(
+      "every rollup write in recordClick carries that country",
+      (inRecordClick.match(/bumpAdDailyStat\(/g) ?? []).length === 4 &&
+        (inRecordClick.match(/bumpAdDailyStat\([\s\S]{0,140}?country\s*\)/g) ?? [])
+          .length === 4,
+      "a bumpAdDailyStat call without it silently files the click under Unknown"
+    );
+    check(
+      "the impression buffer keys on ad AND country",
+      /KEY_SEP/.test(counters) && /\$\{adId\}\$\{KEY_SEP\}\$\{country/.test(counters)
+    );
+    check(
+      "the per-ad total is re-derived from the per-country buckets",
+      /perAd\.set\(adId, \(perAd\.get\(adId\) \?\? 0\) \+ count\)/.test(counters) &&
+        /adCountryDailyStat\.upsert/.test(counters),
+      "AdDailyStat and AdCountryDailyStat must come out of the same counts or the breakdown will not sum to the total"
+    );
+    check(
+      "the click rollup writes the country row too",
+      /export async function bumpAdCountryDailyStat/.test(adStats) &&
+        /await bumpAdCountryDailyStat\(adId, country, inc\)/.test(adStats)
+    );
+    check(
+      "the country rollup is NOT wrapped in a $transaction",
+      !/\$transaction/.test(adStats),
+      "Accelerate rejects a transaction over 15s (P6005), and this sits in front of a click bill"
+    );
+  }
+
+  /* D2 — the country panel must not disagree with the panel beside it.
+   *
+   * `AdDailyStat.spendUsd` carries $1.95 of stale HOUSE self-billing that is not
+   * revenue, and network (AdSense/GAM) revenue never reaches this database at
+   * all. The rest of the ad report already gates spend on earning inventory; a
+   * per-country panel that summed spend blind would sit on the same screen
+   * reporting a different number for the same money.
+   */
+  console.log(
+    "\nD2. The country breakdown uses the same revenue gate, and keeps its unknowns"
+  );
+  {
+    const report = code("app/api/admin/ads/report/route.ts");
+    const exp = code("app/api/admin/ads/report/export/route.ts");
+    const ui = code("components/admin/ads/ad-manager-view.tsx");
+
+    const gate = /!a\.campaign\?\.isHouse && !isNetworkType\(a\.type\)/;
+    check("the report's country spend passes the house/network gate", gate.test(report));
+    check("the CSV's country spend passes the same gate", gate.test(exp));
+    check(
+      "the country rollup is grouped by adId too, so the gate can be applied",
+      /by: \["adId", "country"\]/.test(report) && /by: \["adId", "country"\]/.test(exp),
+      "grouping by country alone makes the house/network gate impossible to apply"
+    );
+    check(
+      "groupBy rows are re-shaped and cast (Accelerate collapses them to {})",
+      /as unknown as/.test(report) && /as unknown as/.test(exp)
+    );
+    check(
+      "the report honours the date range and the placement/campaign filters",
+      /date: \{ gte: since \}/.test(report) &&
+        /a\.placement\?\.id === placementId/.test(report) &&
+        /a\.campaign\?\.id === campaignId/.test(report)
+    );
+    check(
+      "the CSV honours the same filters, so it cannot disagree with the screen",
+      /a\.placement\?\.id === placementId/.test(exp) &&
+        /a\.campaign\?\.id === campaignId/.test(exp)
+    );
+    check(
+      "the CSV exposes a country scope",
+      /"country"/.test(exp) && /country_code/.test(exp) && /impression_share_pct/.test(exp)
+    );
+    check(
+      "unknown traffic is a row, never dropped",
+      /r\.country \|\| UNKNOWN_COUNTRY/.test(report) && /unknownShare/.test(report),
+      "a country chart that drops unknowns reports certainty that does not exist"
+    );
+    check(
+      "the unknown share is stated on screen",
+      /unknownShare/.test(ui) && /unknownImpressions/.test(ui),
+      "the share of untagged traffic is itself the finding"
+    );
+    check(
+      "the admin can sort the breakdown",
+      /countrySort/.test(report) && /countrySort/.test(ui)
+    );
+  }
+
+  /* D3 — the stored data itself. */
+  console.log("\nD3. Recorded country data");
+  try {
+    const countryRows = (await prisma.adCountryDailyStat.groupBy({
+      by: ["country"],
+      _sum: { impressions: true, clicks: true },
+    })) as unknown as Array<{
+      country: string;
+      _sum: { impressions: number | null; clicks: number | null };
+    }>;
+    const totalImpr = countryRows.reduce((t, r) => t + (r._sum.impressions ?? 0), 0);
+    const unknownImpr =
+      countryRows.find((r) => r.country === "ZZ")?._sum.impressions ?? 0;
+    check(
+      "no country row is stored with a blank or non-ISO code",
+      countryRows.every((r) => /^[A-Z]{2}$/.test(r.country)),
+      countryRows.map((r) => r.country).join(",") || "(no rows yet)"
+    );
+    console.log(
+      `   ${countryRows.length} country bucket(s), ${totalImpr} impression(s); ` +
+        `${totalImpr > 0 ? ((unknownImpr / totalImpr) * 100).toFixed(1) : "0.0"}% unknown`
+    );
+    if (totalImpr === 0) {
+      console.log(
+        "   (nothing tagged yet — the rollup starts the day it ships; history is not backfillable)"
+      );
+    }
+  } catch (e) {
+    // P2021 = the table is not there yet. Applying the migration to the live DB
+    // is the owner'''s call, so a pending migration is a STATE, not a failure —
+    // but it must be said out loud rather than passing quietly.
+    const code2 = (e as { code?: string })?.code;
+    if (code2 === "P2021") {
+      console.log(
+        "   SKIPPED — AdCountryDailyStat does not exist in this database yet." +
+          " Apply it with: npx prisma migrate deploy"
+      );
+    } else {
+      check("the country rollup table is readable", false, String(code2 ?? e));
+    }
+  }
+
+  /* -- One impression basis, one canonical impression counter -------------- */
+  //
+  // Two defects lived here, both of them "the number is wrong but plausible":
+  //
+  //  1. IN_FEED counted on a different basis from every other space -- nothing
+  //     server-side, only a client beacon deduped per (ad, viewer, minute),
+  //     while the other 24 count at delivery with no dedup. In the same report
+  //     table the feed therefore looked about an order of magnitude weaker for
+  //     a reason that has nothing to do with performance.
+  //  2. `Ad.impressions` (advertiser dashboard) and `AdDailyStat` (admin) had
+  //     drifted 72 apart across 5 ads, in both directions.
+  {
+    const serve = code("lib/ad-serve.ts");
+    const feedBlock = serve.slice(
+      serve.indexOf("export async function serveFeedAds")
+    );
+    check(
+      "serveFeedAds counts impressions server-side, like every other space",
+      /bufferImpression\(/.test(feedBlock)
+    );
+    check(
+      "serveFeedAds records fill data, like every other placement",
+      /bufferServeOutcome\(/.test(feedBlock)
+    );
+    // If the beacon still incremented the counter, every feed ad would now be
+    // counted twice -- once at delivery and once on render.
+    check(
+      "the client view beacon no longer increments the impression counter",
+      !/bufferImpression\(/.test(code("lib/ad-events.ts"))
+    );
+  }
+  {
+    // `AdDailyStat` is canonical. Both surfaces must read it, or they go back to
+    // quoting different impression totals for the same ad.
+    for (const f of [
+      "app/api/advertiser/campaigns/route.ts",
+      "app/api/advertiser/campaigns/[id]/route.ts",
+    ]) {
+      const c = code(f);
+      const short = f.split("/").slice(-2).join("/");
+      check(
+        `${short} reads impressions from AdDailyStat`,
+        /lifetimeImpressionsByAd\(/.test(c)
+      );
+      check(
+        `${short} no longer sums Ad.impressions`,
+        !/\ba\.impressions\b|\bad\.impressions\b/.test(c)
+      );
+    }
+  }
+  {
+    // The historic drift is REPORTED, not asserted away. It pre-dates the
+    // buffered counter that now writes both in one transaction, and correcting a
+    // billing-adjacent counter to make a number look tidy is how history stops
+    // being history. If this ever starts growing, the two writes have come apart.
+    try {
+      const perAd = (await prisma.adDailyStat.groupBy({
+        by: ["adId"],
+        _sum: { impressions: true },
+      })) as unknown as { adId: string; _sum: { impressions: number | null } }[];
+      const allAds = (await prisma.ad.findMany({
+        select: { id: true, impressions: true },
+      })) as unknown as { id: string; impressions: number }[];
+      const daily = new Map(perAd.map((r) => [r.adId, r._sum.impressions ?? 0]));
+      const drifted = allAds
+        .map((a) => ({ ad: a.impressions, day: daily.get(a.id) ?? 0 }))
+        .filter((r) => r.ad !== r.day);
+      const drift = drifted.reduce((t, r) => t + Math.abs(r.ad - r.day), 0);
+      console.log(
+        `   historic Ad.impressions vs AdDailyStat drift: ${drift} across ` +
+          `${drifted.length} ad(s) - inert, nothing user-facing reads Ad.impressions`
+      );
+    } catch {
+      console.log("   (drift check skipped - stats unreadable)");
+    }
+  }
 
   console.log(
     `\n${passed} passed, ${failures.length} failed` +

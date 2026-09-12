@@ -37,6 +37,8 @@ export function AdminDepositsView({ canProcess = false }: { canProcess?: boolean
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Per-deposit "amount actually received", keyed by deposit id. */
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
   const [exporting, setExporting] = useState(false);
 
   const load = useCallback(() => {
@@ -52,14 +54,38 @@ export function AdminDepositsView({ canProcess = false }: { canProcess?: boolean
   }, [status, method]);
   useEffect(() => { load(); }, [load]);
 
-  const review = async (id: string, action: "approve" | "reject") => {
+  const review = async (id: string, action: "approve" | "reject", claimed?: number) => {
     if (action === "reject" && !(await confirmDialog({ title: "Reject this deposit?", tone: "danger", confirmLabel: "Reject" }))) return;
+    // What the admin typed in the "Received" box, if it differs from what the
+    // user claimed. Sent only on approve — a rejection credits nothing.
+    const typed = amounts[id];
+    const received = typed === undefined || typed === "" ? null : Number(typed);
+    if (action === "approve" && received !== null && (!Number.isFinite(received) || received <= 0)) {
+      toast.error("Enter the amount actually received");
+      return;
+    }
+    if (
+      action === "approve" &&
+      received !== null &&
+      claimed !== undefined &&
+      Math.abs(received - claimed) >= 0.005 &&
+      !(await confirmDialog({
+        title: `Credit ${usd(received)} instead of ${usd(claimed)}?`,
+        description: "The user sees the original amount and the correction on their deposit, and it is written to the audit log.",
+        confirmLabel: "Credit that amount",
+      }))
+    ) {
+      return;
+    }
     setBusyId(id);
     try {
       const res = await fetch(`/api/admin/deposits/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({
+          action,
+          ...(action === "approve" && received !== null ? { amount: received } : {}),
+        }),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(d.error ?? "Failed");
@@ -176,8 +202,23 @@ export function AdminDepositsView({ canProcess = false }: { canProcess?: boolean
               </div>
 
               {canProcess && d.status === "PENDING" && (
-                <div className="flex gap-2 shrink-0">
-                  <button onClick={() => review(d.id, "approve")} disabled={busyId === d.id} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">
+                <div className="flex flex-wrap items-end gap-2 shrink-0">
+                  {/* The amount above is what the USER typed. This is what the
+                      slip says. Blank credits the claim unchanged. */}
+                  <div className="w-28">
+                    <label className="mb-1 block text-[11px] text-slate-400">Received</label>
+                    <input
+                      type="number"
+                      step={0.01}
+                      min={0}
+                      placeholder={String(Number(d.amount))}
+                      value={amounts[d.id] ?? ""}
+                      onChange={(e) => setAmounts((a) => ({ ...a, [d.id]: e.target.value }))}
+                      disabled={busyId === d.id}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                    />
+                  </div>
+                  <button onClick={() => review(d.id, "approve", Number(d.amount))} disabled={busyId === d.id} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold disabled:opacity-50">
                     <Check className="w-3.5 h-3.5" /> Approve
                   </button>
                   <button onClick={() => review(d.id, "reject")} disabled={busyId === d.id} className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-red-400 text-xs font-semibold disabled:opacity-50">

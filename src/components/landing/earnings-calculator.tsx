@@ -135,15 +135,15 @@ export function EarningsCalculator(props: Props) {
   return (
     <section
       id="calculator"
-      className="relative py-16 sm:py-24 px-4 scroll-mt-20 overflow-hidden bg-(--mk-band)"
+      className="relative mk-section px-4 scroll-mt-20 overflow-hidden bg-(--mk-band)"
     >
       <div className="max-w-6xl mx-auto">
         <div className="text-center mb-8 sm:mb-12">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 text-xs font-semibold mb-4">
+          <span className="mk-eyebrow mb-4">
             <Calculator className="w-3.5 h-3.5" />
             {v.badge}
           </span>
-          <h2 className="text-3xl sm:text-4xl md:text-5xl font-extrabold text-(--mk-text) tracking-tight">
+          <h2 className="mk-h2 text-(--mk-text)">
             {v.heading}
           </h2>
           <p className="text-(--mk-muted) mt-3 max-w-xl mx-auto text-sm sm:text-base leading-relaxed">
@@ -252,7 +252,7 @@ export function EarningsCalculator(props: Props) {
                       <button
                         type="button"
                         onClick={() => adjustTasks(-5)}
-                        className="w-7 h-7 rounded-lg bg-(--mk-surface) hover:bg-(--mk-surface-2) border border-(--mk-border) flex items-center justify-center text-(--mk-muted) transition-colors disabled:opacity-30"
+                        className="mk-press w-7 h-7 rounded-lg bg-(--mk-surface) hover:bg-(--mk-surface-2) border border-(--mk-border) flex items-center justify-center text-(--mk-muted) disabled:opacity-30"
                         disabled={dailyTasks <= 0}
                         aria-label="Decrease daily tasks"
                       >
@@ -264,7 +264,7 @@ export function EarningsCalculator(props: Props) {
                       <button
                         type="button"
                         onClick={() => adjustTasks(5)}
-                        className="w-7 h-7 rounded-lg bg-(--mk-surface) hover:bg-(--mk-surface-2) border border-(--mk-border) flex items-center justify-center text-(--mk-muted) transition-colors disabled:opacity-30"
+                        className="mk-press w-7 h-7 rounded-lg bg-(--mk-surface) hover:bg-(--mk-surface-2) border border-(--mk-border) flex items-center justify-center text-(--mk-muted) disabled:opacity-30"
                         disabled={dailyTasks >= 500}
                         aria-label="Increase daily tasks"
                       >
@@ -491,7 +491,7 @@ export function EarningsCalculator(props: Props) {
 
                   {/* Stat cards */}
                   <div className="grid grid-cols-3 gap-2 sm:gap-3 mt-5">
-                    <div className="min-w-0 rounded-xl bg-(--mk-surface) border border-(--mk-border) shadow-sm p-2.5 sm:p-3 text-center">
+                    <div className="min-w-0 rounded-xl mk-card p-2.5 sm:p-3 text-center">
                       <ListChecks className="w-4 h-4 text-indigo-600 mx-auto mb-1" />
                       <p className="text-[9px] sm:text-[10px] uppercase font-bold text-(--mk-subtle) tracking-wider">
                         From Tasks
@@ -501,7 +501,7 @@ export function EarningsCalculator(props: Props) {
                       </p>
                       <p className="text-[9px] text-(--mk-subtle) mt-0.5">/mo</p>
                     </div>
-                    <div className="min-w-0 rounded-xl bg-(--mk-surface) border border-(--mk-border) shadow-sm p-2.5 sm:p-3 text-center">
+                    <div className="min-w-0 rounded-xl mk-card p-2.5 sm:p-3 text-center">
                       <Users className="w-4 h-4 text-violet-600 mx-auto mb-1" />
                       <p className="text-[9px] sm:text-[10px] uppercase font-bold text-(--mk-subtle) tracking-wider">
                         From Team
@@ -511,7 +511,7 @@ export function EarningsCalculator(props: Props) {
                       </p>
                       <p className="text-[9px] text-(--mk-subtle) mt-0.5">/mo</p>
                     </div>
-                    <div className="min-w-0 rounded-xl bg-(--mk-surface) border border-(--mk-border) shadow-sm p-2.5 sm:p-3 text-center">
+                    <div className="min-w-0 rounded-xl mk-card p-2.5 sm:p-3 text-center">
                       <Coins className="w-4 h-4 text-amber-500 mx-auto mb-1" />
                       <p className="text-[9px] sm:text-[10px] uppercase font-bold text-(--mk-subtle) tracking-wider">
                         Daily
@@ -541,7 +541,7 @@ export function EarningsCalculator(props: Props) {
                   {/* CTA */}
                   <Link
                     href="/register"
-                    className="group mt-5 w-full inline-flex items-center justify-center gap-2 py-3.5 sm:py-4 rounded-xl bg-linear-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm sm:text-base font-bold transition-all shadow-lg shadow-indigo-600/25 active:scale-[0.99]"
+                    className="mk-press group mt-5 w-full inline-flex items-center justify-center gap-2 py-3.5 sm:py-4 rounded-xl bg-linear-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm sm:text-base font-bold shadow-lg shadow-indigo-600/25 active:scale-[0.99]"
                   >
                     Start Earning Now
                     <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />

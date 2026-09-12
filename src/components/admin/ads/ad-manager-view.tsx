@@ -80,6 +80,11 @@ interface Placement {
   interstitialSeconds?: number | null;
   _count?: { ads: number };
   stats?: PlacementStats;
+  /** Billable revenue and traffic for this space over the last 30 days. */
+  recent?: { days: number; usd: number; impressions: number; clicks: number };
+  /** What a click here costs today — own rate, or the global one. */
+  effectiveCpcUsd?: number;
+  usesGlobalRate?: boolean;
 }
 interface Ad {
   id: string;
@@ -180,7 +185,6 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   const [adFilter, setAdFilter] = useState({ status: "", placement: "", q: "" });
   const [campModal, setCampModal] = useState<Campaign | "new" | null>(null);
   const [campDetail, setCampDetail] = useState<string | null>(null);
-  const [newPlacement, setNewPlacement] = useState("");
   const [demoBusy, setDemoBusy] = useState(false);
   const [rotationSeconds, setRotationSeconds] = useState(12);
   const [rotationBusy, setRotationBusy] = useState(false);
@@ -386,12 +390,61 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
   // Badge hint only — the queue itself counts server-side (this list is capped).
   const pendingCount = ads.filter((a) => a.status?.toUpperCase() === "PENDING").length;
 
-  const deletePlacement = async (id: string) => {
-    if (!(await confirmDialog({ title: "Delete this placement?", tone: "danger", confirmLabel: "Delete" }))) return;
+  /**
+   * Retire a dead space. Only ever offered for a NON-canonical one, and only
+   * the admin can ask for it: the route refuses while any ad is still inside,
+   * refuses outright for a real mounted space, and writes an audit row —
+   * retiring a space also drops its bookings and serve stats.
+   */
+  const deletePlacement = async (id: string, name: string) => {
+    if (
+      !(await confirmDialog({
+        title: `Retire the "${name}" ad space?`,
+        description:
+          "It renders on no page. Its bookings and serve history go with it. The ads that were in it are not touched — move them first if any are left.",
+        tone: "danger",
+        confirmLabel: "Retire",
+      }))
+    )
+      return;
     const res = await fetch(`/api/admin/ads/placements/${id}`, { method: "DELETE" });
     const d = await res.json().catch(() => ({}));
     if (!res.ok) return toast.error(d.error ?? "Failed");
-    toast.success("Deleted");
+    toast.success(`Retired "${name}"`);
+    loadAll();
+  };
+  /**
+   * Move every ad out of a space that renders nowhere.
+   *
+   * `QW` sat in the database outside the canonical list with two ACTIVE, funded
+   * ads inside it that could never serve once — and no screen said so. Deleting
+   * the space is blocked while it holds ads (rightly: they are someone's ads),
+   * so this is the operation that actually unblocks them.
+   */
+  const reassignPlacement = async (p: Placement, targetId: string) => {
+    if (!targetId) return;
+    const res = await fetch(`/api/admin/ads/placements/${p.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ targetPlacementId: targetId }),
+    });
+    const d = await res.json().catch(() => ({}));
+    if (!res.ok) return toast.error(d.error ?? "Failed");
+    // A partial move is the normal outcome when the stranded ads are different
+    // sizes: the ones that fit are moved, the rest stay put and are named. Say
+    // both numbers — "Moved 1 ad" while a second silently stayed behind is how
+    // an admin concludes the job is done when it is not.
+    if (d.skipped > 0) {
+      toast.error(
+        `Moved ${d.moved} to ${d.to}. ${d.skipped} couldn't go: ${
+          d.problems?.[0]?.reason ?? "wrong size or type for that space"
+        }`
+      );
+    } else {
+      toast.success(
+        `Moved ${d.moved} ad(s) to ${d.to}. This space is empty now — retire it with the bin icon.`
+      );
+    }
     loadAll();
   };
   const togglePlacement = async (p: Placement) => {
@@ -436,18 +489,6 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ interstitialSeconds: secs }),
     });
-    loadAll();
-  };
-  const addPlacement = async () => {
-    if (!newPlacement.trim()) return;
-    const res = await fetch("/api/admin/ads/placements", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newPlacement }),
-    });
-    if (!res.ok) return toast.error("Failed");
-    setNewPlacement("");
-    toast.success("Placement added");
     loadAll();
   };
   const deleteAd = async (id: string) => {
@@ -582,7 +623,7 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
             <t.icon className="w-4 h-4" />
             {t.label}
             {t.id === "approvals" && pendingCount > 0 && (
-              <span className="ml-0.5 min-w-4.5 px-1 h-4.5 grid place-items-center rounded-full bg-amber-500 text-slate-950 text-[10px] font-bold">
+              <span className="ml-0.5 min-w-4.5 px-1 h-4.5 grid place-items-center rounded-full bg-amber-500 text-(--app-on-bright) text-[10px] font-bold">
                 {pendingCount}
               </span>
             )}
@@ -884,19 +925,49 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                 </div>
               )}
 
-              {canManage && (
-                <div className="flex gap-2 max-w-md">
-                  <input
-                    value={newPlacement}
-                    onChange={(e) => setNewPlacement(e.target.value)}
-                    placeholder="ADD CUSTOM SPACE (e.g. HOME_HERO)"
-                    className="flex-1 px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm placeholder:text-slate-600"
-                  />
-                  <button onClick={addPlacement} className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold">
-                    <Plus className="w-4 h-4" /> Add
-                  </button>
-                </div>
-              )}
+              {/* The "ADD CUSTOM SPACE" box that used to live here is gone.
+                  An ad space is a <AdRenderer> mounted in a page: typing a name
+                  into a box creates a database row that renders nowhere, which
+                  is precisely how `QW` came to exist and hold two funded ads
+                  that could never serve. The create API has refused
+                  non-canonical names since; the box could only ever 400. */}
+              {/* Rate-card discoverability.
+                  The per-space rate card has existed and worked since it
+                  shipped, and not one of the 29 spaces has ever had a price set
+                  — every click on every space bills the single global default.
+                  The controls were on each card, several scrolls down, with
+                  nothing saying they were all empty. This states the fact and
+                  points at the fix; it deliberately suggests no prices, because
+                  what a space is worth is the owner's call, not a default. */}
+              {(() => {
+                const priced = placements.filter((p) => p.cpcUsd != null).length;
+                if (placements.length === 0) return null;
+                return (
+                  <div
+                    className={cn(
+                      "rounded-xl border p-3 mb-1",
+                      priced === 0
+                        ? "border-amber-500/40 bg-amber-500/10"
+                        : "border-slate-800 bg-slate-900/40"
+                    )}
+                  >
+                    <p className="text-xs text-slate-200">
+                      <span className="font-bold">
+                        {priced} of {placements.length}
+                      </span>{" "}
+                      spaces have their own click price. The rest bill the global
+                      default of{" "}
+                      <span className="font-bold text-white">{usd(cpcUsd)}</span>{" "}
+                      per click.
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      {priced === 0
+                        ? "So a click on Withdrawal — the longest-dwell page on the platform — earns exactly what a click on a slot nobody scrolls to earns. Set a price on the high-value spaces below (the “Click price” box on each card); leave it blank to keep the global rate."
+                        : "Blank means “use the global rate”. Spend already billed is never re-priced — each click snapshots the rate in force at the time."}
+                    </p>
+                  </div>
+                );
+              })()}
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                 {placements.map((p) => (
                   <AdSpaceCard
@@ -909,7 +980,11 @@ export function AdManagerView({ canManage }: { canManage: boolean }) {
                     onSetRotation={(secs) => setPlacementRotation(p, secs)}
                     onSetInterstitial={(secs) => setPlacementInterstitial(p, secs)}
                     onSetRate={(patch) => setPlacementRate(p, patch)}
-                    onDelete={() => deletePlacement(p.id)}
+                    onDelete={() => deletePlacement(p.id, p.name)}
+                    reassignTargets={placements
+                      .filter((t) => t.id !== p.id && CANONICAL_NAMES.has(t.name))
+                      .map((t) => ({ id: t.id, name: t.name }))}
+                    onReassign={(targetId) => reassignPlacement(p, targetId)}
                   />
                 ))}
               </div>
@@ -1077,6 +1152,8 @@ function AdSpaceCard({
   onSetInterstitial,
   onSetRate,
   onDelete,
+  reassignTargets,
+  onReassign,
 }: {
   placement: Placement;
   canManage: boolean;
@@ -1088,6 +1165,9 @@ function AdSpaceCard({
   onSetInterstitial: (secs: number | null) => void;
   onSetRate: (patch: { cpcUsd?: number | null; monthlyUsd?: number | null; isRentable?: boolean }) => void;
   onDelete: () => void;
+  /** Real, mounted spaces a stranded ad can be moved into. */
+  reassignTargets: { id: string; name: string }[];
+  onReassign: (targetPlacementId: string) => void;
 }) {
   // Effective interval for this space: its own override, else the global default.
   const effectiveRotation = p.rotationSeconds ?? rotationSeconds;
@@ -1147,6 +1227,54 @@ function AdSpaceCard({
                 Custom space — only renders where you mount &lt;AdRenderer placement=&quot;{p.name}&quot;&gt; in code.
               </p>
             )
+          )}
+          {/* Stranded ads.
+              A space outside the canonical list is mounted on no page, so an ad
+              inside it is ACTIVE, approved, funded — and structurally unable to
+              serve, forever, with nothing anywhere saying so. `QW` held two.
+              The ads are never deleted on the admin's behalf; this says what is
+              wrong and offers the one move that fixes it. */}
+          {isCustom && stats.totalAds > 0 && (
+            <div className="mt-2 rounded-lg border border-red-500/40 bg-red-500/10 p-2 space-y-1.5">
+              <p className="text-[11px] font-semibold text-red-300">
+                {stats.totalAds} ad{stats.totalAds === 1 ? "" : "s"} stranded here
+                {stats.activeAds > 0 ? ` (${stats.activeAds} active)` : ""} — this
+                space renders on no page, so they can never serve.
+              </p>
+              {canManage && reassignTargets.length > 0 && (
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    e.target.value = "";
+                    if (v) onReassign(v);
+                  }}
+                  className="w-full px-2 py-1 bg-slate-800 border border-slate-700 rounded-md text-white text-[11px]"
+                >
+                  <option value="">Move these ads to…</option>
+                  {reassignTargets.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {PLACEMENT_LABEL[t.name] ?? t.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
+          {/* Empty and dead: the reassignment is done and the row is all that
+              is left. Say so, rather than leaving a bin icon to be noticed. */}
+          {isCustom && stats.totalAds === 0 && canManage && (
+            <div className="mt-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2">
+              <p className="text-[11px] text-amber-200">
+                Empty and renders on no page.{" "}
+                <button
+                  onClick={onDelete}
+                  className="font-bold underline underline-offset-2 hover:text-white"
+                >
+                  Retire this space
+                </button>
+              </p>
+            </div>
           )}
           {stats.activeAds > 1 && (
             <p className="text-[10px] text-emerald-400/80 mt-1">
@@ -1231,6 +1359,34 @@ function AdSpaceCard({
       {canManage && (
         <div className="pt-1 border-t border-slate-800 space-y-1.5">
           <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">Rate card</p>
+          {/* What this space earns, and what a click in it is worth right now.
+              Pricing a space used to be a guess: the box below was blank, the
+              only figures on the card were lifetime impressions, and nothing
+              said whether the space had ever made a penny. These two lines are
+              the facts the decision needs — no price is suggested, because
+              what a space is worth is the owner's call. */}
+          <div className="rounded-lg bg-slate-800/50 px-2 py-1.5 space-y-0.5">
+            <p className="text-[11px] text-slate-300">
+              Last {p.recent?.days ?? 30} days:{" "}
+              <span className="font-bold text-white tabular-nums">
+                {usd(p.recent?.usd ?? 0)}
+              </span>{" "}
+              <span className="text-slate-500">
+                from {(p.recent?.impressions ?? 0).toLocaleString()} impressions ·{" "}
+                {(p.recent?.clicks ?? 0).toLocaleString()} clicks
+              </span>
+            </p>
+            <p className="text-[10px] text-slate-500">
+              A click here bills{" "}
+              <span className="font-semibold text-slate-300">
+                {usd(p.effectiveCpcUsd ?? cpcUsd)}
+              </span>{" "}
+              {p.usesGlobalRate === false ? "(this space's own rate)" : "(global rate)"}
+              {(p.recent?.clicks ?? 0) === 0 && (p.recent?.impressions ?? 0) > 0
+                ? " — impressions but no clicks yet"
+                : ""}
+            </p>
+          </div>
           <div className="flex items-center gap-2 text-[11px] text-slate-400">
             <label className="whitespace-nowrap w-20">Per click $</label>
             <input
@@ -1327,6 +1483,34 @@ interface PlacementRow extends ReportRow {
   fillRate: number | null;
 }
 interface CampaignRow extends ReportRow { title: string }
+/** One country's slice of the window — see /api/admin/ads/report. */
+interface CountryRow {
+  code: string;
+  label: string;
+  /** Emoji flag from the canonical `Country` table; "" for the unknown bucket. */
+  flag?: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  spend: number;
+  /** Share of the window's impressions, 0-100. */
+  share: number;
+}
+interface CountryTotals {
+  impressions: number;
+  clicks: number;
+  spend: number;
+  unknownImpressions: number;
+  unknownShare: number;
+  countries: number;
+}
+const COUNTRY_SORTS = [
+  { key: "impressions", label: "Impr" },
+  { key: "clicks", label: "Clicks" },
+  { key: "ctr", label: "CTR" },
+  { key: "spend", label: "Revenue" },
+] as const;
+type CountrySortKey = (typeof COUNTRY_SORTS)[number]["key"];
 const RANGES = [7, 14, 30, 90];
 
 /**
@@ -1384,13 +1568,18 @@ function AnalyticsTab() {
   const [perAd, setPerAd] = useState<AdRow[]>([]);
   const [perPlacement, setPerPlacement] = useState<PlacementRow[]>([]);
   const [perCampaign, setPerCampaign] = useState<CampaignRow[]>([]);
+  const [perCountry, setPerCountry] = useState<CountryRow[]>([]);
+  const [countryTotals, setCountryTotals] = useState<CountryTotals | null>(null);
+  const [countrySort, setCountrySort] = useState<CountrySortKey>("impressions");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let active = true;
     Promise.all([
       fetch(`/api/admin/ads/analytics?days=${days}`).then((r) => r.json()),
-      fetch(`/api/admin/ads/report?days=${days}`).then((r) => r.json()),
+      fetch(
+        `/api/admin/ads/report?days=${days}&countrySort=${countrySort}`
+      ).then((r) => r.json()),
     ])
       .then(([a, rep]) => {
         if (!active) return;
@@ -1400,13 +1589,15 @@ function AnalyticsTab() {
         setPerAd(rep.perAd ?? []);
         setPerPlacement(rep.perPlacement ?? []);
         setPerCampaign(rep.perCampaign ?? []);
+        setPerCountry(rep.perCountry ?? []);
+        setCountryTotals(rep.countryTotals ?? null);
       })
       .catch(() => {})
       .finally(() => active && setLoading(false));
     return () => {
       active = false;
     };
-  }, [days]);
+  }, [days, countrySort]);
 
   const maxImp = Math.max(1, ...series.map((s) => s.impressions));
   const spend = series.reduce((s, d) => s + d.spendUsd, 0);
@@ -1419,7 +1610,7 @@ function AnalyticsTab() {
           {/* Ads were the one money domain with no export at all. */}
           <div className="inline-flex items-center gap-1">
             <span className="text-[11px] text-slate-500">Export</span>
-            {(["ad", "placement", "campaign", "daily"] as const).map((scope) => (
+            {(["ad", "placement", "campaign", "country", "daily"] as const).map((scope) => (
               <a
                 key={scope}
                 href={`/api/admin/ads/report/export?days=${days}&scope=${scope}`}
@@ -1454,6 +1645,12 @@ function AnalyticsTab() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* The windowed figure FIRST, because the range picker above it is the
+            control an admin just used. `revenue.windowSpend` sums AdDailyStat
+            through the house/network gate; `lifetime` is AdCampaign.spentTotal
+            and is not affected by the range at all — kept, beside it, labelled,
+            rather than left as the only "Revenue" on a filtered screen. */}
+        <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.windowSpend)}`} label={`Revenue (${days}d)`} tone="emerald" />
         <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.lifetime)}`} label="Revenue (lifetime)" tone="emerald" />
         <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.ecpm)}`} label={`eCPM (${days}d)`} tone="purple" />
         <StatCard icon={<BarChart3 className="w-5 h-5" />} value={`${usd(revenue.unspent)}`} label="Advertiser budget unspent" tone="amber" />
@@ -1528,6 +1725,18 @@ function AnalyticsTab() {
           ))}
         </ReportTable>
       </div>
+      <CountryBreakdown
+        rows={perCountry}
+        totals={countryTotals}
+        sort={countrySort}
+        onSort={(k) => {
+          setLoading(true);
+          setCountrySort(k);
+        }}
+        days={days}
+        loading={loading}
+      />
+
       <div className="space-y-1">
         <p className="text-[10px] text-slate-500">
           Network (AdSense / Ad Manager) ads show served impressions only — their clicks &amp; revenue are in the network&apos;s own console.
@@ -1723,6 +1932,147 @@ function CampaignDetailModal({
         </div>
       )}
     </ModalShell>
+  );
+}
+
+/**
+ * Where the impressions and clicks actually came from.
+ *
+ * Nothing recorded a country on an ad event until this shipped, so the honest
+ * part of this panel is the "Unknown" disclosure, not the table: every row
+ * counted before the rollup existed, plus anything served without an edge
+ * country header, sits in one bucket and it is stated on screen as a share.
+ * Hiding it would turn "I could only identify 4% of my traffic" into "100% of
+ * my traffic is from Bangladesh", which is the kind of number an owner sells
+ * inventory on.
+ */
+function CountryBreakdown({
+  rows,
+  totals,
+  sort,
+  onSort,
+  days,
+  loading,
+}: {
+  rows: CountryRow[];
+  totals: CountryTotals | null;
+  sort: CountrySortKey;
+  onSort: (k: CountrySortKey) => void;
+  days: number;
+  loading: boolean;
+}) {
+  const max = Math.max(1, ...rows.map((r) => r.impressions));
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 space-y-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-bold">
+          By country · last {days} days
+          {totals ? ` · ${totals.countries} identified` : ""}
+        </p>
+        <div className="inline-flex items-center gap-1">
+          <span className="text-[10px] text-slate-500">Sort</span>
+          {COUNTRY_SORTS.map((o) => (
+            <button
+              key={o.key}
+              onClick={() => onSort(o.key)}
+              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold ${sort === o.key ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-xs text-slate-500 py-6 text-center">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-slate-500 py-6 text-center">
+          No country-tagged ad events in this window yet. Countries are recorded
+          from the moment an ad is served or clicked — history before that is not
+          backfillable.
+        </p>
+      ) : (
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider text-slate-500">
+                <th className="text-left pb-1.5">Country</th>
+                <th className="text-right pb-1.5">Impr</th>
+                <th className="text-right pb-1.5">Share</th>
+                <th className="text-right pb-1.5">Clicks</th>
+                <th className="text-right pb-1.5">CTR</th>
+                <th className="text-right pb-1.5">Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const unknown = r.code === "ZZ";
+                return (
+                  <tr key={r.code} className="border-t border-slate-800">
+                    {/* Flag + full name + code, all three.
+                        A column of bare ISO codes is a column the owner has to
+                        decode before he can read his own revenue; the name comes
+                        from the same `Country` table the targeting dropdown
+                        offers, so the report names a country exactly as it was
+                        named when it was bought. The code stays because it is
+                        what the data actually holds. */}
+                    <td className="py-1.5 pr-2 truncate max-w-48">
+                      {r.flag ? <span className="mr-1">{r.flag}</span> : null}
+                      <span className={unknown ? "text-amber-300" : "text-white"}>
+                        {r.label}
+                      </span>{" "}
+                      <span className="text-[10px] text-slate-500">
+                        {unknown ? "(no country recorded)" : `(${r.code})`}
+                      </span>
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      {r.impressions.toLocaleString()}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      <span className="inline-flex items-center gap-1.5 justify-end">
+                        <span className="hidden sm:block h-1.5 w-10 rounded-full bg-slate-800 overflow-hidden">
+                          <span
+                            className={`block h-full rounded-full ${unknown ? "bg-amber-500" : "bg-blue-500"}`}
+                            style={{ width: `${(r.impressions / max) * 100}%` }}
+                          />
+                        </span>
+                        {r.share.toFixed(1)}%
+                      </span>
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      {r.clicks.toLocaleString()}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      {r.ctr.toFixed(2)}%
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-300">
+                      {usd(r.spend)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {totals && totals.impressions > 0 && (
+        <p className="text-[10px] text-amber-300/90">
+          <b>{totals.unknownShare.toFixed(1)}%</b> of impressions in this window
+          ({totals.unknownImpressions.toLocaleString()} of{" "}
+          {totals.impressions.toLocaleString()}) have no country. Countries are
+          read from the request at the edge; anything recorded before country
+          tracking shipped, and any request that arrives without it, counts as
+          Unknown. It is listed above rather than dropped — the remaining shares
+          would otherwise renormalise and read as certainty you do not have.
+        </p>
+      )}
+      <p className="text-[10px] text-slate-500">
+        <b>Revenue</b> here uses the same gate as the tables above: house and
+        network impressions earn nothing into this database, so they add
+        impressions and clicks to a country but never spend.
+      </p>
+    </div>
   );
 }
 

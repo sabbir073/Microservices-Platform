@@ -27,7 +27,7 @@ const buttonVariants = cva(
           "bg-red-500 text-white shadow-lg shadow-red-600/20 hover:bg-red-600 hover:-translate-y-0.5 focus-visible:ring-red-500",
         success:
           "bg-emerald-500 text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-600 hover:-translate-y-0.5 focus-visible:ring-emerald-500",
-        gold: "bg-linear-to-br from-amber-400 to-yellow-600 text-gray-950 shadow-lg shadow-amber-500/25 hover:brightness-110 hover:-translate-y-0.5 focus-visible:ring-amber-500",
+        gold: "bg-linear-to-br from-amber-400 to-yellow-600 text-(--app-on-bright) shadow-lg shadow-amber-500/25 hover:brightness-110 hover:-translate-y-0.5 focus-visible:ring-amber-500",
         link: "text-indigo-400 underline-offset-4 hover:underline",
       },
       size: {
