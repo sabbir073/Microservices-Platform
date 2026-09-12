@@ -27,7 +27,7 @@ const ROWS = [
 
 export function HeroProduct() {
   return (
-    <div className="relative mx-auto w-full max-w-[380px] lg:max-w-[420px]">
+    <div className="relative mx-auto w-full min-w-0 max-w-[380px] lg:max-w-[420px]">
       {/* Brand glow behind the frame — gives the mock a place to sit rather
           than floating on the page. */}
       <div

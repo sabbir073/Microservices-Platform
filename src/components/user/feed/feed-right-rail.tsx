@@ -478,7 +478,7 @@ export function FeedRightRail({
     quickEarn:
       quickTiles.length > 0 ? (
         <Card title="Quick Earn" icon={<Zap className="w-4 h-4 text-gray-400" />}>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 [&>*:last-child:nth-child(odd)]:col-span-2">
             {quickTiles.map((q) => {
               const Icon = QUICK_EARN_ICONS[q.icon] ?? Zap;
               return (

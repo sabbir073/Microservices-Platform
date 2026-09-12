@@ -41,7 +41,7 @@ export default function ContactPage() {
         <p className="mt-4 text-(--mk-muted) max-w-xl mx-auto">Questions, feedback, or need a hand? Our team is here 24/7 and typically replies within a few hours.</p>
       </div>
 
-      <div className="mt-12 grid gap-6 lg:grid-cols-[1fr_1.4fr]">
+      <div className="mt-12 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         {/* Info */}
         <div className="space-y-4">
           {[

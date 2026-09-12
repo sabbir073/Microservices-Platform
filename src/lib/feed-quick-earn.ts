@@ -1,4 +1,6 @@
 import {
+  CalendarCheck,
+  ListTodo,
   PlayCircle,
   Zap,
   Gamepad2,
@@ -41,6 +43,10 @@ export interface QuickEarnTile {
 
 /** Curated icon set the admin can pick from (key → lucide component). */
 export const QUICK_EARN_ICONS: Record<string, LucideIcon> = {
+  // These two mirror the feed toolbar exactly (`feed-quick-links.tsx`), so the
+  // same destination is not drawn as two different things in two places.
+  calendarCheck: CalendarCheck,
+  listTodo: ListTodo,
   playCircle: PlayCircle,
   zap: Zap,
   gamepad: Gamepad2,
@@ -130,17 +136,15 @@ export const COLOR_OPTIONS = Object.keys(COLOR_CLASSES).map((key) => ({
 /** The shipped default tiles (used when no admin config exists). */
 export const DEFAULT_QUICK_EARN: QuickEarnTile[] = [
   { id: "qe-dashboard", label: "Dashboard", href: "/dashboard", icon: "layoutDashboard", color: "indigo", enabled: true },
-  { id: "qe-mission", label: "Mission", href: "/daily-mission", icon: "target", color: "violet", enabled: true },
-  { id: "qe-tasks", label: "Task", href: "/tasks", icon: "zap", color: "sky", enabled: true },
-  { id: "qe-leaderboard", label: "Leaderboard", href: "/leaderboard", icon: "trophy", color: "amber", enabled: true },
+  { id: "qe-mission", label: "Mission", href: "/daily-mission", icon: "calendarCheck", color: "violet", enabled: true },
+  { id: "qe-tasks", label: "Task", href: "/tasks", icon: "listTodo", color: "sky", enabled: true },
   { id: "qe-quizzes", label: "Quiz Games", href: "/quizzes", icon: "brain", color: "purple", enabled: true },
   { id: "qe-lottery", label: "Lottery", href: "/lottery", icon: "ticket", color: "rose", enabled: true },
-  { id: "qe-referral", label: "My Team", href: "/referrals", icon: "users", color: "emerald", enabled: true },
   { id: "qe-course", label: "Course", href: "/courses", icon: "graduation", color: "cyan", enabled: true },
-  { id: "qe-marketplace", label: "Marketplace", href: "/marketplace", icon: "shopping", color: "pink", enabled: true },
   { id: "qe-packages", label: "Packages", href: "/packages", icon: "package", color: "orange", enabled: true },
   { id: "qe-advertiser", label: "Create Ad", href: "/advertiser", icon: "megaphone", color: "indigo", enabled: true },
   { id: "qe-games", label: "Games", href: "/games", icon: "gamepad", color: "violet", enabled: true },
+  { id: "qe-events", label: "Events", href: "/events", icon: "gift", color: "rose", enabled: true },
 ];
 
 /** Coerce stored data into valid tiles; falls back to defaults when empty. */

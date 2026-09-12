@@ -1508,6 +1508,37 @@ function main() {
       );
     }
 
+    /* ── 7f-ter. A grid column has to be allowed to shrink ────────────────
+       A `1fr` track is `minmax(auto, 1fr)`, so it refuses to go below its
+       widest child. Anything inside that is wider than a phone grows the
+       column instead of wrapping, and the hero's own `overflow-hidden` then
+       cuts the overflow off — which is what "the hero is shifted right and
+       cut" was. Same class of bug as a flex child without `min-w-0`, which
+       needed fixing in 76 places elsewhere. */
+    {
+      const files: string[] = [];
+      const walk = (dir: string) => {
+        for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+          const rel = `${dir}/${e.name}`;
+          if (e.isDirectory()) walk(rel);
+          else if (e.name.endsWith(".tsx")) files.push(rel);
+        }
+      };
+      walk("src/components/landing");
+      walk("src/app/(marketing)");
+      const unshrinkable: string[] = [];
+      for (const f of files) {
+        for (const m of read(f).matchAll(/grid-cols-\[[^\]]*fr[^\]]*\]/g)) {
+          if (!m[0].includes("minmax(0")) unshrinkable.push(`${f} ${m[0]}`);
+        }
+      }
+      check(
+        "every fr grid track on the marketing surface can shrink",
+        unshrinkable.length === 0,
+        unshrinkable.join(", ")
+      );
+    }
+
     /* ── 7g. Nothing became unreachable ───────────────────────────────────
        Two header controls moved into the account menu. Moved is fine; gone
        is not, and the difference is one `git grep` nobody runs. */

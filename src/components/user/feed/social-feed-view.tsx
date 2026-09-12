@@ -197,10 +197,14 @@ export function SocialFeedView({
                dim on a dark track is the universal look of "you cannot press
                this". Both halves also keep their label at every width; hiding
                the text below `sm` left two bare icons with nothing to compare. */
+            // `hidden sm:inline-flex` — the owner asked for this off on a
+            // phone. On a narrow toolbar it was competing for the same row as
+            // the six shortcuts, and sorting a feed is a desktop-sized
+            // decision; the default (For You) is the one nearly everyone keeps.
             <div
               role="group"
               aria-label="Sort posts"
-              className="inline-flex shrink-0 overflow-hidden rounded-(--app-r-chip) border border-(--app-line) bg-(--app-surface-2) p-0.5"
+              className="hidden sm:inline-flex shrink-0 overflow-hidden rounded-(--app-r-chip) border border-(--app-line) bg-(--app-surface-2) p-0.5"
             >
               {(["recent", "trending"] as const).map((s) => (
                 <button

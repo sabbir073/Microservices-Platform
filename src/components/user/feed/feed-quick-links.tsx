@@ -77,7 +77,7 @@ export function FeedQuickLinks({
 
   return (
     <ScrollFadeRow className={`min-w-0 flex-1 ${className}`}>
-      <div className="flex items-center gap-1">
+      <div className="flex items-center gap-2 sm:gap-1">
         {visible.map((l) => (
           <Link
             key={l.href}
@@ -86,7 +86,20 @@ export function FeedQuickLinks({
             title={l.label}
             // 44px, written on the element itself — the toolbar's other
             // controls match, and a shortcut row on a phone is pure tap target.
-            className="app-tap app-press inline-flex shrink-0 items-center gap-1.5 rounded-(--app-r-chip) px-2.5 text-xs font-bold text-gray-300 hover:bg-(--app-surface-2) hover:text-white"
+            // Each one is a filled chip with its own edge, not a bare icon on
+            // the bar. Six unlabelled glyphs 4px apart read as one strip of
+            // decoration — there is nothing to tell you where one target ends
+            // and the next begins, which is exactly what "they stick together"
+            // means. A surface plus a border draws the target; the padding and
+            // the gap keep the targets apart.
+            // The chip is a PHONE treatment. Six unlabelled glyphs 4px apart
+            // read as one strip of decoration there, with nothing to say where
+            // one target ends — so on a phone each gets its own surface and
+            // edge. From `sm` up the toolbar also carries the sort control and
+            // the panel handle, and six bordered chips beside those pushed the
+            // row past its width. So the chrome drops away and it goes back to
+            // plain text buttons, which is what fits.
+            className="app-tap app-press inline-flex shrink-0 items-center gap-1.5 rounded-(--app-r-chip) border border-(--app-line) bg-(--app-surface-2) px-0 text-xs font-bold text-gray-200 hover:border-(--app-accent-edge) hover:text-white sm:border-transparent sm:bg-transparent sm:px-2.5 sm:text-gray-300 sm:hover:border-transparent sm:hover:bg-(--app-surface-2) sm:hover:text-white"
           >
             <l.icon className="h-4.5 w-4.5 shrink-0" />
             <span className="hidden sm:inline">{l.short}</span>

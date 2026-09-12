@@ -154,7 +154,7 @@ export function MobileEarnBlock({
             <Zap className="w-4 h-4 text-gray-400" />
             <h2 className="t-section text-white">Quick Earn</h2>
           </div>
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 [&>*:last-child:nth-child(3n+1)]:col-span-3 sm:[&>*:last-child:nth-child(3n+1)]:col-span-1">
             {tiles.map((q) => {
               const Icon = QUICK_EARN_ICONS[q.icon] ?? Zap;
               return (
