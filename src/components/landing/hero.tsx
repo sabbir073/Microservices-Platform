@@ -63,9 +63,9 @@ export function Hero(props: Props) {
       />
 
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
-        <div className="grid items-center gap-12 lg:gap-14 lg:grid-cols-[1.05fr_0.95fr]">
+        <div className="grid items-center gap-12 lg:gap-14 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
           {/* ── Claim + action ── */}
-          <div className="mk-in text-center lg:text-left max-w-2xl mx-auto lg:mx-0">
+          <div className="mk-in min-w-0 text-center lg:text-left max-w-2xl mx-auto lg:mx-0">
             <div className="mk-card inline-flex max-w-full items-center gap-2 px-3 sm:px-4 py-1.5 rounded-full mb-6">
               <span className="relative flex h-2 w-2 shrink-0">
                 <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
@@ -76,7 +76,7 @@ export function Hero(props: Props) {
               </span>
             </div>
 
-            <h1 className="mk-h1 mb-5">
+            <h1 className="mk-h1 mb-5 break-words">
               <span className="block text-(--mk-text)">{v.title_line1}</span>
               <span className="block bg-linear-to-r from-indigo-600 via-violet-600 to-fuchsia-600 bg-clip-text text-transparent">
                 {v.title_line2}
@@ -121,7 +121,7 @@ export function Hero(props: Props) {
           </div>
 
           {/* ── Proof: the product itself ── */}
-          <div className="mk-in mk-in-2 lg:pl-4">
+          <div className="mk-in mk-in-2 min-w-0 lg:pl-4">
             <HeroProduct />
           </div>
         </div>

@@ -126,10 +126,28 @@ async function main() {
   check("an empty token is rejected", verifyWatchToken("", U1, A1) === null);
   check("garbage is rejected", verifyWatchToken("not.a.token", U1, A1) === null);
   {
-    // Flip one character of the signature.
+    // Flip a bit in the DECODED signature, then re-encode.
+    //
+    // This used to swap the last base64 character, which does not reliably
+    // change anything: a 32-byte HMAC encodes to 43 base64 characters and the
+    // last one carries only 2 significant bits, so four different characters
+    // decode to identical bytes. Verification compares decoded bytes — which is
+    // correct — so the "tampered" token was sometimes byte-identical to the real
+    // one and legitimately verified. The suite went red at random, on a check
+    // about forged signatures, which is the worst kind of false alarm to have.
     const [body, sig] = t.split(".");
-    const tampered = `${body}.${sig.slice(0, -1)}${sig.slice(-1) === "A" ? "B" : "A"}`;
-    check("a tampered signature is rejected", verifyWatchToken(tampered, U1, A1) === null);
+    const raw = Buffer.from(sig.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+    raw[0] ^= 0x01;
+    const tampered = `${body}.${raw
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "")}`;
+    check(
+      "a tampered signature is rejected",
+      tampered !== t && verifyWatchToken(tampered, U1, A1) === null,
+      "the token must differ from the original, or this proves nothing"
+    );
   }
   {
     // Re-sign a body whose payload claims a different user — the signature is

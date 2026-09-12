@@ -155,7 +155,7 @@ export function EarningsCalculator(props: Props) {
           <div className="absolute -inset-px rounded-[1.75rem] bg-linear-to-br from-indigo-500/20 via-violet-500/20 to-emerald-500/20" />
 
           <div className="relative rounded-3xl border border-(--mk-border) bg-(--mk-surface) overflow-hidden shadow-xl shadow-black/5">
-            <div className="grid lg:grid-cols-[1.1fr_1fr] gap-0">
+            <div className="grid lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] gap-0">
               {/* LEFT — Inputs */}
               <div className="p-5 sm:p-7 lg:p-8 border-b lg:border-b-0 lg:border-r border-(--mk-border) space-y-6 sm:space-y-7">
                 {/* Plan picker */}

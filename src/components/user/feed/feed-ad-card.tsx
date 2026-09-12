@@ -237,7 +237,7 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
      creative is shown whole. It stays inside the same anchor, so a tap on it is
      still the one recorded click. */
   const headlineRow = (lead || accent) ? (
-    <span className="flex items-center gap-2 px-3 pt-3">
+    <span className="flex items-center gap-2 px-4 pt-3 pb-1">
       <span className="line-clamp-2 min-w-0 flex-1 text-lg font-extrabold leading-tight text-(--app-ink)">
         {lead}
         {accent ? (
@@ -284,8 +284,8 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
         </span>
       </button>
 
-      <div className="p-4">
-        <div className="flex items-start gap-3">
+      <div className="px-4 pb-3 pt-2">
+        <div className="flex items-start gap-2.5">
           {ad.author.avatar ? (
             <SmartImage
               src={ad.author.avatar}
@@ -363,7 +363,7 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
 
         {/* Both buttons navigate and both bill — see the note in ad-renderer. */}
         {url && (
-          <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="mt-3.5 grid grid-cols-2 gap-2.5">
             <a
               {...linkProps}
               className="app-tap-row app-press flex items-center justify-center rounded-(--app-r-control) border border-(--app-line) bg-(--app-surface-2) px-3 text-center text-sm font-bold text-gray-100"

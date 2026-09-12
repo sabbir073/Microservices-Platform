@@ -554,7 +554,7 @@ export function AdRenderer({
           the photo instead: no scrim, and the creative is shown whole. Still
           inside the same anchor, so a tap is the same recorded click. */}
       {(lead || accent) && (
-        <span className="flex items-center gap-2 px-3 pt-2.5">
+        <span className="flex items-center gap-2 px-4 pt-2.5 pb-1">
           <span
             className={cn(
               "min-w-0 flex-1 font-extrabold leading-tight text-(--app-ink)",

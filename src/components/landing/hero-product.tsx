@@ -27,7 +27,7 @@ const ROWS = [
 
 export function HeroProduct() {
   return (
-    <div className="relative mx-auto w-full max-w-[380px] lg:max-w-[420px]">
+    <div className="relative mx-auto w-full min-w-0 max-w-[380px] lg:max-w-[420px]">
       {/* Brand glow behind the frame — gives the mock a place to sit rather
           than floating on the page. */}
       <div
@@ -39,14 +39,14 @@ export function HeroProduct() {
         {/* App header */}
         <div className="flex items-center gap-3 px-1 pb-3">
           <span className="w-9 h-9 shrink-0 rounded-full bg-linear-to-br from-indigo-500 to-violet-600 text-white text-sm font-bold flex items-center justify-center">
-            R
+            M
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[11px] text-(--mk-subtle) leading-tight">
               Good evening
             </span>
             <span className="block text-sm font-semibold text-(--mk-text) truncate leading-tight">
-              Rafiqul I.
+              Michael R.
             </span>
           </span>
           <span className="relative w-9 h-9 shrink-0 rounded-xl border border-(--mk-border) flex items-center justify-center text-(--mk-muted)">
