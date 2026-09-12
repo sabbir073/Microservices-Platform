@@ -878,13 +878,37 @@ html[data-theme="light"] .text-white { color: var(--app-ink) !important; }
    panel someone adds inherits the right behaviour instead of repeating the
    bug. `.on-media` is the opt-in for a bare scrim that is none of these.
    ───────────────────────────────────────────────────────────────────────── */
+/* Note the missing bare `.on-media` / `.app-accent` selectors: forcing the
+   colour on the CONTAINER cascaded into every descendant, including ones that
+   deliberately set their own — the white arrow button on an ad creative
+   inherited white and became a blank white circle. Only elements that ASKED
+   for white are corrected. */
 html[data-theme="light"] .app-accent .text-white,
 html[data-theme="light"] .app-accent .text-gray-200,
 html[data-theme="light"] .app-accent .text-gray-300,
-html[data-theme="light"] .on-media .text-white,
-html[data-theme="light"] .on-media,
-html[data-theme="light"] .app-accent {
+html[data-theme="light"] .on-media .text-white {
   color: #ffffff !important;
+}
+
+/* Any element painting a GRADIENT is a dark surface by construction — every
+   gradient in this app runs through the brand or a deep hue, never through
+   white. So white text on one stays white, whatever the theme.
+   This is the same rule as `.app-accent` above, reached by what an element
+   DOES rather than by which class it opted into: 240 gradient surfaces exist
+   across the app and marking each one by hand is a list that goes stale. The
+   banner carousel is why this is here — its headline rendered black on a blue
+   gradient in light mode.
+   `bg-clip-text` gradients are untouched: those carry `text-transparent`, not
+   `text-white`, so they never match. */
+html[data-theme="light"] [class*="bg-linear-to"] .text-white,
+html[data-theme="light"] [class*="bg-linear-to"].text-white,
+html[data-theme="light"] [class*="bg-gradient-to"] .text-white,
+html[data-theme="light"] [class*="bg-gradient-to"].text-white {
+  color: #ffffff !important;
+}
+html[data-theme="light"] [class*="bg-linear-to"] [class*="text-white/"],
+html[data-theme="light"] [class*="bg-gradient-to"] [class*="text-white/"] {
+  color: rgb(255 255 255 / 0.9) !important;
 }
 /* The translucent-white tints used beside those figures (`text-white/90`)
    resolve through `color-mix` off the same value, so they follow it. */

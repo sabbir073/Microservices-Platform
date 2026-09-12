@@ -108,7 +108,12 @@ export function BannerSlider({
           const grad =
             s.bgGradient ?? FALLBACK_GRADIENTS[i % FALLBACK_GRADIENTS.length];
           const cls = cn(
-            "absolute inset-0 transition-opacity duration-700 flex items-center px-5",
+            // `on-media`: this slide is ALWAYS a colour gradient, a photo or a
+            // video — never the page surface. Without it, light mode's
+            // `.text-white → ink` rule turned every banner headline black on a
+            // blue gradient, because that rule is written for neutral surfaces
+            // and cannot tell that this one does not flip with the theme.
+            "on-media absolute inset-0 transition-opacity duration-700 flex items-center px-5",
             "bg-linear-to-br",
             grad,
             i === active ? "opacity-100" : "opacity-0 pointer-events-none"
@@ -184,7 +189,7 @@ export function BannerSlider({
             type="button"
             onClick={prev}
             aria-label="Previous slide"
-            className="absolute left-1.5 top-1/2 -translate-y-1/2 h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center rounded-full bg-black/35 text-white opacity-0 group-hover/banner:opacity-100 focus-visible:opacity-100 transition-opacity z-20"
+            className="absolute left-1.5 top-1/2 -translate-y-1/2 h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center rounded-full bg-black/35 on-media text-white opacity-0 group-hover/banner:opacity-100 focus-visible:opacity-100 transition-opacity z-20"
           >
             <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
               <path d="M12.5 5l-5 5 5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -194,7 +199,7 @@ export function BannerSlider({
             type="button"
             onClick={next}
             aria-label="Next slide"
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center rounded-full bg-black/35 text-white opacity-0 group-hover/banner:opacity-100 focus-visible:opacity-100 transition-opacity z-20"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 sm:h-8 sm:w-8 flex items-center justify-center rounded-full bg-black/35 on-media text-white opacity-0 group-hover/banner:opacity-100 focus-visible:opacity-100 transition-opacity z-20"
           >
             <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4" aria-hidden="true">
               <path d="M7.5 5l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />

@@ -88,28 +88,8 @@ const MIN_ROTATE_MS = 25_000;
    None of them fetches anything: the renderer is mounted on 27 spaces and a
    single extra request per render would be 27 extra requests per page view. */
 
-/**
- * Text over a photo has no measurable backdrop, so it gets its own.
- *
- * Two stops rather than a long fade: the fade is decorative and lives ABOVE the
- * text, while the band the text actually sits on never drops below 0.86 alpha.
- * A single gradient tall enough to look good put the second line of a headline
- * at roughly 0.43 alpha on a short creative, which is where white-on-photo
- * stops being readable. Measured against this band (worst case: a pure white
- * creative behind it) in scripts/verify-ads-coverage.ts.
- */
-const TEXT_BAND = "linear-gradient(to top, rgba(8,9,14,0.95), rgba(8,9,14,0.86))";
-/** The decorative half — blends the band into the creative above it. */
-const TEXT_BAND_FADE = "linear-gradient(to top, rgba(8,9,14,0.86), rgba(8,9,14,0))";
 /** The brand pill, same family, one step lighter because it carries less text. */
 const CHIP_BG = "rgba(8,9,14,0.78)";
-/**
- * The accented word, lightened off the accent rail so it clears 4.5:1 on the
- * band in every accent AND in both themes. Mixing 65% white into any hue floors
- * the result well above the band; `--app-rail-a` alone measured 4.49:1 on
- * indigo, which is under the floor by a hair.
- */
-const ACCENT_ON_MEDIA = "color-mix(in srgb, var(--app-rail-a) 35%, #ffffff)";
 
 /** Hostname of a destination, for when the payload carries no brand name. */
 function hostOf(u?: string): string | null {
@@ -567,44 +547,40 @@ export function AdRenderer({
           {brand}
         </span>
       </span>
-      <span className="on-media pointer-events-none absolute inset-x-0 bottom-0 z-10 block">
-        {/* The decorative half sits directly on top of the band rather than at
-            a guessed offset, so the two can never separate on a short
-            creative. */}
-        <span
-          className="block h-10"
-          style={{ backgroundImage: TEXT_BAND_FADE }}
-        />
-        <span
-          className="flex items-end gap-2 px-3 py-2.5"
-          style={{ backgroundImage: TEXT_BAND }}
-        >
-        <span
-          className={cn(
-            "min-w-0 flex-1 font-extrabold leading-tight text-white",
-            big ? "text-lg line-clamp-2" : "text-sm line-clamp-1"
-          )}
-        >
-          {lead}
-          {accent ? (
-            <span style={{ color: ACCENT_ON_MEDIA }}>
-              {lead ? " " : ""}
-              {accent}
+      {/* The headline sits UNDER the creative, not on it.
+          It used to be overlaid on a black gradient band, and that band is what
+          the owner reported as a black shadow across every ad. Light text on an
+          arbitrary photo always needs something darkened, so the text moved off
+          the photo instead: no scrim, and the creative is shown whole. Still
+          inside the same anchor, so a tap is the same recorded click. */}
+      {(lead || accent) && (
+        <span className="flex items-center gap-2 px-3 pt-2.5">
+          <span
+            className={cn(
+              "min-w-0 flex-1 font-extrabold leading-tight text-(--app-ink)",
+              big ? "text-lg line-clamp-2" : "text-sm line-clamp-1"
+            )}
+          >
+            {lead}
+            {accent ? (
+              <span className="text-(--app-info)">
+                {lead ? " " : ""}
+                {accent}
+              </span>
+            ) : null}
+          </span>
+          {hasUrl ? (
+            <span
+              className={cn(
+                "app-accent grid shrink-0 place-items-center rounded-full",
+                big ? "h-11 w-11" : "h-9 w-9"
+              )}
+            >
+              <ArrowUpRight className={big ? "h-5 w-5" : "h-4 w-4"} />
             </span>
           ) : null}
         </span>
-        {hasUrl ? (
-          <span
-            className={cn(
-              "grid shrink-0 place-items-center rounded-full bg-white text-black shadow-lg",
-              big ? "h-11 w-11" : "h-9 w-9"
-            )}
-          >
-            <ArrowUpRight className={big ? "h-5 w-5" : "h-4 w-4"} />
-          </span>
-        ) : null}
-        </span>
-      </span>
+      )}
     </>
   );
   // Merge the rotation fade into the outer style.

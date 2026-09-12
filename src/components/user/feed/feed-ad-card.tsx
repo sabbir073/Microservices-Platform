@@ -48,10 +48,7 @@ function displayUrl(u: string): string {
    two files are the only places white text sits on an unknown creative, and
    they must agree, so the values are asserted against each other in
    scripts/verify-ads-coverage.ts. */
-const TEXT_BAND = "linear-gradient(to top, rgba(8,9,14,0.95), rgba(8,9,14,0.86))";
-const TEXT_BAND_FADE = "linear-gradient(to top, rgba(8,9,14,0.86), rgba(8,9,14,0))";
 const CHIP_BG = "rgba(8,9,14,0.78)";
-const ACCENT_ON_MEDIA = "color-mix(in srgb, var(--app-rail-a) 35%, #ffffff)";
 
 /**
  * Split the ad copy into a headline and the description under the creative.
@@ -229,35 +226,34 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
           </span>
         </span>
 
-        {/* Headline band + arrow. Both are inside the anchor below, so a tap
-            anywhere here is the same recorded click. */}
-        <span className="on-media pointer-events-none absolute inset-x-0 bottom-0 z-10 block">
-          <span
-            className="block h-10"
-            style={{ backgroundImage: TEXT_BAND_FADE }}
-          />
-          <span
-            className="flex items-end gap-2 px-3 py-2.5"
-            style={{ backgroundImage: TEXT_BAND }}
-          >
-            <span className="line-clamp-2 min-w-0 flex-1 text-lg font-extrabold leading-tight text-white">
-              {lead}
-              {accent ? (
-                <span style={{ color: ACCENT_ON_MEDIA }}>
-                  {lead ? " " : ""}
-                  {accent}
-                </span>
-              ) : null}
-            </span>
-            {url ? (
-              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-black shadow-lg">
-                <ArrowUpRight className="h-5 w-5" />
-              </span>
-            ) : null}
-          </span>
-      </span>
-    </div>
+      </div>
   );
+
+  /* The headline sits UNDER the creative, not on it.
+     It used to be overlaid on a black gradient band, and that band is what the
+     owner kept reporting as a black shadow across every ad. There is no way to
+     put light text on an arbitrary photo without darkening something, so the
+     text moved off the photo instead — no scrim, nothing to darken, and the
+     creative is shown whole. It stays inside the same anchor, so a tap on it is
+     still the one recorded click. */
+  const headlineRow = (lead || accent) ? (
+    <span className="flex items-center gap-2 px-3 pt-3">
+      <span className="line-clamp-2 min-w-0 flex-1 text-lg font-extrabold leading-tight text-(--app-ink)">
+        {lead}
+        {accent ? (
+          <span className="text-(--app-info)">
+            {lead ? " " : ""}
+            {accent}
+          </span>
+        ) : null}
+      </span>
+      {url ? (
+        <span className="app-accent grid h-11 w-11 shrink-0 place-items-center rounded-full">
+          <ArrowUpRight className="h-5 w-5" />
+        </span>
+      ) : null}
+    </span>
+  ) : null;
 
   return (
     <article
@@ -267,9 +263,13 @@ export function FeedAdCard({ ad }: { ad: FeedAd }) {
       {url ? (
         <a {...linkProps} className="app-press block" aria-label={`${headline || brand} — ${brand}`}>
           {creative}
+          {headlineRow}
         </a>
       ) : (
-        creative
+        <>
+          {creative}
+          {headlineRow}
+        </>
       )}
 
       {/* Dismiss (×) — over the creative, never over a button. */}

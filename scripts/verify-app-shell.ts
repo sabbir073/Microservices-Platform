@@ -1476,6 +1476,21 @@ function main() {
       "…and the same holds over a creative or a scrim",
       /html\[data-theme="light"\][\s\S]{0,400}\.on-media/.test(themeCss)
     );
+    // Reached by what an element DOES, not by a class it opted into: there are
+    // ~240 gradient surfaces and a hand-kept list of them goes stale. The banner
+    // carousel is why — its headline rendered black on a blue gradient.
+    check(
+      "white text on ANY gradient stays white in light mode",
+      /\[class\*="bg-linear-to"\]\s*\.text-white/.test(themeCss) &&
+        /\[class\*="bg-gradient-to"\]\s*\.text-white/.test(themeCss),
+      "a per-component list of gradients is a list that goes out of date"
+    );
+    check(
+      "…and the banner carousel says outright that its slide is a media surface",
+      /on-media absolute inset-0/.test(
+        read("src/components/user/primitives/banner-slider.tsx")
+      )
+    );
     check(
       "the media well is dark in BOTH themes",
       (themeCss.match(/--app-media-well:/g) ?? []).length === 2,

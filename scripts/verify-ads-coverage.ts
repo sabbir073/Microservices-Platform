@@ -792,22 +792,28 @@ async function main() {
       return v ? token(v[1], theme) : raw;
     };
 
-    // The band the overlaid text sits on, taken from the component so retuning
-    // it there either stays inside the floor or fails here.
-    const bandAlpha = Math.min(
-      ...[...src(REND).matchAll(/rgba\(8,9,14,(0\.\d+)\)/g)]
-        .map((m) => Number(m[1]))
-        .filter((a) => a > 0.8)
-    );
+    // The headline is no longer ON the creative, so there is no band to measure.
+    // It was overlaid on a dark gradient, and that gradient is what the owner
+    // reported as a black shadow across every ad; the text moved below the
+    // picture instead. Measured where it actually sits now — on the card, in
+    // both themes — which is a stronger check than the old one, because it no
+    // longer depends on the advertiser's creative at all.
     const chipAlpha = Number(
       src(REND).match(/const CHIP_BG = "rgba\(8,9,14,(0\.\d+)\)"/)?.[1] ?? 0
     );
-    // Worst case: a pure white creative behind the band.
-    const band = flatten([8, 9, 14], bandAlpha, "#ffffff");
+    // Worst case for the chip, which IS still on the creative: a pure white photo.
     const chip = flatten([8, 9, 14], chipAlpha, "#ffffff");
 
+    check(
+      "no dark scrim is painted over a creative any more",
+      !/rgba\(8,9,14,0\.(8|9)/.test(src(REND)) &&
+        !/rgba\(8,9,14,0\.(8|9)/.test(src(FEED)),
+      "the band under the headline is what read as a black shadow on every ad"
+    );
+
     const rows: [string, string, string, number][] = [
-      ["headline — white on the band, over a WHITE photo", "#ffffff", band, 4.5],
+      ["headline — ink on the card (dark)", token("--app-ink", "dark"), token("--app-surface", "dark"), 4.5],
+      ["headline — ink on the card (light)", token("--app-ink", "light"), token("--app-surface", "light"), 4.5],
       ["brand chip — white on the pill, over a WHITE photo", "#ffffff", chip, 4.5],
       ["description — gray-300 on the card (dark)", token("--color-gray-300", "dark"), token("--app-surface", "dark"), 4.5],
       ["description — gray-300 on the card (light)", token("--color-gray-300", "light"), token("--app-surface", "light"), 4.5],
@@ -833,20 +839,27 @@ async function main() {
     const rails = [...cssText.matchAll(/--app-rail-a:\s*(#[0-9a-fA-F]{6})/g)].map(
       (m) => m[1]
     );
-    let worst = { rail: "", r: Infinity };
-    for (const rail of rails) {
-      const r = ratio(mixWhite(rail, part), band);
-      if (r < worst.r) worst = { rail, r };
+    // The accented word moved off the creative with the rest of the headline.
+    // It is no longer the rail lightened with white — that mix existed only to
+    // lift the rail off a dark band, and on a light card it would be nearly
+    // invisible (1.00:1 measured). The component uses `--app-info`, the brand's
+    // own text colour, which is defined and measured for BOTH themes.
+    let worst = { r: Infinity, theme: "" };
+    for (const theme of ["dark", "light"] as const) {
+      const r = ratio(token("--app-info", theme), token("--app-surface", theme));
+      if (r < worst.r) worst = { r, theme };
     }
     check(
-      `accented word — worst of ${rails.length} accents (${worst.rail}) on the band — ${worst.r.toFixed(2)}:1`,
-      rails.length > 0 && worst.r >= 4.5
+      `accented word — brand ink on the card (worst: ${worst.theme}) — ${worst.r.toFixed(2)}:1`,
+      worst.r >= 4.5
     );
-    // And the reason the mix exists at all: the raw rail does NOT clear the
-    // floor on this band, so nobody may "simplify" it back.
-    const rawWorst = Math.min(...rails.map((rail) => ratio(rail, band)));
+    check(
+      "the white-lightened rail is gone with the band it existed for",
+      !/mixWhite\(rail/.test(src(REND)) && !/ACCENT_ON_MEDIA/.test(src(REND)),
+      "that mix only made sense over a dark scrim; on a light card it disappears"
+    );
     console.log(
-      `   the raw accent rail would measure ${rawWorst.toFixed(2)}:1 on the same band — that is why it is lightened`
+      `   ${rails.length} accent rails are still measured for the nav marker above`
     );
   }
 
