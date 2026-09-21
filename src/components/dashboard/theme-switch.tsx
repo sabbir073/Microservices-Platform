@@ -30,7 +30,11 @@ export function ThemeSwitch({
   className?: string;
   withLabel?: boolean;
 }) {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, canChangeTheme } = useTheme();
+
+  // Admin switch off: render nothing. The provider also refuses to act on
+  // setTheme, so the guard holds even if some other surface renders a control.
+  if (!canChangeTheme) return null;
 
   // `theme` may be "system"; ask the document what actually got applied so the
   // icon never contradicts the screen.
@@ -52,7 +56,7 @@ export function ThemeSwitch({
       className={
         className ||
         // 44px so it is a real tap target on a phone, not a decorative icon.
-        "app-tap app-press inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:bg-(--shell-hover) hover:text-white"
+        "app-tap app-press inline-flex items-center justify-center rounded-(--app-r-control) text-(--app-ink-2) hover:bg-(--shell-hover) hover:text-white"
       }
     >
       {isLight ? (

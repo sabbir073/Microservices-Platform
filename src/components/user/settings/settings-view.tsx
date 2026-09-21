@@ -51,7 +51,7 @@ function Section({
     <div className="glass rounded-2xl p-4 sm:p-6">
       <div className="mb-6">
         <h3 className="font-semibold text-white">{title}</h3>
-        {description && <p className="text-sm text-gray-500 mt-1">{description}</p>}
+        {description && <p className="text-sm text-(--app-ink-3) mt-1">{description}</p>}
       </div>
       {children}
     </div>
@@ -76,7 +76,7 @@ function Toggle({
         disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
       />
-      <div className="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-500 peer-disabled:opacity-50"></div>
+      <div className="w-11 h-6 bg-(--app-surface-2) rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-(--app-cta) peer-disabled:opacity-50"></div>
     </label>
   );
 }
@@ -90,7 +90,8 @@ export function SettingsView({
   language: languageInit,
 }: Props) {
   const router = useRouter();
-  const { theme, setTheme, accent, setAccent } = useTheme();
+  const { theme, setTheme, accent, setAccent, accentIsDefault, canChangeTheme } =
+    useTheme();
   const [emailNotif, setEmailNotif] = useState(emailNotifInit);
   const [pushNotif, setPushNotif] = useState(pushNotifInit);
   const [twoFA, setTwoFA] = useState(twoFAInit);
@@ -147,8 +148,10 @@ export function SettingsView({
     setTheme(mode);
     patchProfile({ theme: mode });
   };
-  const applyAccent = (id: (typeof ACCENTS)[number]) => {
+  const applyAccent = (id: (typeof ACCENTS)[number] | null) => {
     setAccent(id);
+    // `null` on the profile too, or the server would keep handing the old
+    // choice back on the next device the user signs in on.
     patchProfile({ themeAccent: id });
   };
 
@@ -252,18 +255,18 @@ export function SettingsView({
   };
 
   const inputCls =
-    "w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500";
+    "w-full px-3 py-2 bg-(--app-surface-2) border border-(--app-line) rounded-lg text-(--app-ink) text-sm placeholder:text-(--app-ink-3) focus:outline-none focus:border-(--app-accent-edge)";
 
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-white">Settings</h1>
-        <p className="text-gray-400 mt-1">Manage your account settings</p>
+        <p className="text-(--app-ink-3) mt-1">Manage your account settings</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1">
-          <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
+          <div className="bg-(--app-surface) rounded-xl border border-(--app-line) p-4">
             <nav className="space-y-1">
               {[
                 { icon: User, label: "Account", href: "#account" },
@@ -274,7 +277,7 @@ export function SettingsView({
                 <a
                   key={item.label}
                   href={item.href}
-                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition-colors"
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-(--app-ink-3) hover:text-white hover:bg-(--app-surface-2) transition-colors"
                 >
                   <item.icon className="w-5 h-5" />
                   {item.label}
@@ -290,27 +293,27 @@ export function SettingsView({
             <Section title="Account" description="Manage your account information">
               <Link
                 href="/profile"
-                className="flex items-center justify-between py-4 border-b border-gray-800 hover:bg-gray-800/50 -mx-2 px-2 rounded-lg"
+                className="flex items-center justify-between py-4 border-b border-(--app-line) hover:bg-(--app-surface-2)/50 -mx-2 px-2 rounded-lg"
               >
                 <div className="flex items-center gap-4">
-                  <div className="p-2 bg-gray-800 rounded-lg">
-                    <User className="w-5 h-5 text-gray-400" />
+                  <div className="p-2 bg-(--app-surface-2) rounded-lg">
+                    <User className="w-5 h-5 text-(--app-ink-3)" />
                   </div>
                   <div>
                     <p className="font-medium text-white">Edit Profile</p>
-                    <p className="text-sm text-gray-500">Update your name, bio, and avatar</p>
+                    <p className="text-sm text-(--app-ink-3)">Update your name, bio, and avatar</p>
                   </div>
                 </div>
-                <ChevronRight className="w-5 h-5 text-gray-500" />
+                <ChevronRight className="w-5 h-5 text-(--app-ink-3)" />
               </Link>
               <div className="flex items-center justify-between py-4">
                 <div className="flex items-center gap-4">
-                  <div className="p-2 bg-gray-800 rounded-lg">
-                    <Mail className="w-5 h-5 text-gray-400" />
+                  <div className="p-2 bg-(--app-surface-2) rounded-lg">
+                    <Mail className="w-5 h-5 text-(--app-ink-3)" />
                   </div>
                   <div>
                     <p className="font-medium text-white">Email Address</p>
-                    <p className="text-sm text-gray-500 break-all">{email || "Not set"}</p>
+                    <p className="text-sm text-(--app-ink-3) break-all">{email || "Not set"}</p>
                   </div>
                 </div>
                 <span className="text-sm text-emerald-400 shrink-0">Verified</span>
@@ -325,14 +328,14 @@ export function SettingsView({
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="font-medium text-white">Push Notifications</p>
-                    <p className="text-sm text-gray-500">Receive notifications on your device</p>
+                    <p className="text-sm text-(--app-ink-3)">Receive notifications on your device</p>
                   </div>
                   <Toggle checked={pushNotif} onChange={onPushNotif} disabled={savingPref} />
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="font-medium text-white">Email Notifications</p>
-                    <p className="text-sm text-gray-500">Receive updates via email</p>
+                    <p className="text-sm text-(--app-ink-3)">Receive updates via email</p>
                   </div>
                   <Toggle checked={emailNotif} onChange={onEmailNotif} disabled={savingPref} />
                 </div>
@@ -343,17 +346,17 @@ export function SettingsView({
           {/* Security */}
           <div id="security">
             <Section title="Security" description="Keep your account secure">
-              <div className="py-4 border-b border-gray-800">
+              <div className="py-4 border-b border-(--app-line)">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-4">
-                    <div className="p-2 bg-gray-800 rounded-lg">
-                      <Key className="w-5 h-5 text-gray-400" />
+                    <div className="p-2 bg-(--app-surface-2) rounded-lg">
+                      <Key className="w-5 h-5 text-(--app-ink-3)" />
                     </div>
                     <div>
                       <p className="font-medium text-white">
                         {hasPassword ? "Change Password" : "Set a Password"}
                       </p>
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-(--app-ink-3)">
                         {hasPassword
                           ? "Update your password regularly"
                           : "You sign in with Google. Add a password to sign in with your email too."}
@@ -363,7 +366,7 @@ export function SettingsView({
                   {hasPassword ? (
                     <button
                       onClick={() => setShowPwForm((v) => !v)}
-                      className="text-sm text-indigo-400 hover:text-indigo-300 shrink-0"
+                      className="text-sm text-(--app-accent-ink) hover:text-(--app-accent-ink) shrink-0"
                     >
                       {showPwForm ? "Cancel" : "Change"}
                     </button>
@@ -371,7 +374,7 @@ export function SettingsView({
                     <button
                       onClick={sendPasswordSetup}
                       disabled={pwBusy}
-                      className="text-sm text-indigo-400 hover:text-indigo-300 shrink-0 disabled:opacity-50"
+                      className="text-sm text-(--app-accent-ink) hover:text-(--app-accent-ink) shrink-0 disabled:opacity-50"
                     >
                       {pwBusy ? "Sending…" : "Set password"}
                     </button>
@@ -403,7 +406,7 @@ export function SettingsView({
                     <button
                       onClick={changePassword}
                       disabled={pwBusy}
-                      className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-semibold disabled:opacity-50"
+                      className="w-full inline-flex items-center justify-center gap-1.5 py-2 rounded-lg bg-(--app-cta) hover:bg-(--app-cta) text-(--app-on-cta) text-sm font-semibold disabled:opacity-50"
                     >
                       {pwBusy && <Loader2 className="w-4 h-4 animate-spin" />}
                       Update password
@@ -414,12 +417,12 @@ export function SettingsView({
 
               <div className="flex items-center justify-between gap-3 py-4">
                 <div className="flex items-center gap-4">
-                  <div className="p-2 bg-gray-800 rounded-lg">
-                    <Shield className="w-5 h-5 text-gray-400" />
+                  <div className="p-2 bg-(--app-surface-2) rounded-lg">
+                    <Shield className="w-5 h-5 text-(--app-ink-3)" />
                   </div>
                   <div>
                     <p className="font-medium text-white">Two-Factor Authentication</p>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-(--app-ink-3)">
                       {twoFA ? "Enabled — extra security is on" : "Add an extra layer of security"}
                     </p>
                   </div>
@@ -434,7 +437,7 @@ export function SettingsView({
                 ) : (
                   <Link
                     href="/2fa-setup"
-                    className="text-sm text-indigo-400 hover:text-indigo-300 shrink-0"
+                    className="text-sm text-(--app-accent-ink) hover:text-(--app-accent-ink) shrink-0"
                   >
                     Enable
                   </Link>
@@ -449,16 +452,21 @@ export function SettingsView({
               <div className="space-y-4">
                 <div className="space-y-3">
                   <div className="flex items-center gap-4">
-                    <div className="p-2 bg-gray-800 rounded-lg">
-                      <Moon className="w-5 h-5 text-gray-400" />
+                    <div className="p-2 bg-(--app-surface-2) rounded-lg">
+                      <Moon className="w-5 h-5 text-(--app-ink-3)" />
                     </div>
                     <div>
                       <p className="font-medium text-white">Theme</p>
-                      <p className="text-sm text-gray-500">Choose your appearance & accent color</p>
+                      <p className="text-sm text-(--app-ink-3)">Choose your appearance & accent color</p>
                     </div>
                   </div>
-                  {/* Mode segmented control */}
-                  <div className="grid grid-cols-3 gap-2">
+                  {/* Mode segmented control. Hidden when the admin has not
+                      granted theme choice — a picker that refuses to act reads
+                      as a broken app, not as a policy. */}
+                  <div
+                    className="grid grid-cols-3 gap-2"
+                    hidden={!canChangeTheme}
+                  >
                     {(
                       [
                         { id: "dark", label: "Dark", Icon: Moon },
@@ -472,8 +480,8 @@ export function SettingsView({
                         className={cn(
                           "flex flex-col items-center gap-1.5 rounded-xl border px-3 py-3 text-sm font-medium transition-all",
                           theme === id
-                            ? "border-indigo-500 bg-indigo-500/10 text-white"
-                            : "border-gray-800 bg-gray-800/40 text-gray-400 hover:text-white hover:border-gray-700"
+                            ? "border-(--app-accent-edge) bg-(--app-cta)/10 text-(--app-on-cta)"
+                            : "border-(--app-line) bg-(--app-surface-2)/40 text-(--app-ink-3) hover:text-white hover:border-(--app-line)"
                         )}
                       >
                         <Icon className="w-5 h-5" />
@@ -483,18 +491,39 @@ export function SettingsView({
                   </div>
                   {/* Accent swatches */}
                   <div>
-                    <p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-2">
+                    <p className="text-xs text-(--app-ink-3) uppercase tracking-wider font-bold mb-2">
                       Accent Color
                     </p>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Default, first and set apart.
+                        * Picking a colour used to be a one-way door: the
+                        * picker could set a preference but nothing could
+                        * clear one, so a user who had ever tapped a swatch
+                        * could never get back to the platform's own colour —
+                        * or see it change when the platform's did. */}
+                      <button
+                        onClick={() => applyAccent(null)}
+                        className={cn(
+                          "app-press h-8 rounded-full border px-3 text-xs font-bold transition-all",
+                          accentIsDefault
+                            ? "border-(--app-accent-edge) bg-(--app-nav-wash) text-(--app-nav-on)"
+                            : "border-(--app-line) text-(--app-ink-3) hover:text-(--app-ink)"
+                        )}
+                        title="Use the platform's own colour"
+                      >
+                        Default
+                      </button>
+                      <span className="h-6 w-px bg-(--app-line)" aria-hidden />
                       {ACCENTS.map((id) => (
                         <button
                           key={id}
                           onClick={() => applyAccent(id)}
                           style={{ background: ACCENT_GRADIENT[id] ?? ACCENT_HEX[id] }}
                           className={cn(
-                            "w-8 h-8 rounded-full ring-2 ring-offset-2 ring-offset-gray-900 transition-all capitalize",
-                            accent === id ? "ring-white" : "ring-transparent hover:ring-white/40"
+                            "w-8 h-8 rounded-full ring-2 ring-offset-2 ring-offset-(--app-surface) transition-all capitalize",
+                            accent === id && !accentIsDefault
+                              ? "ring-white"
+                              : "ring-transparent hover:ring-white/40"
                           )}
                           title={id}
                         />
@@ -504,18 +533,18 @@ export function SettingsView({
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-4">
-                    <div className="p-2 bg-gray-800 rounded-lg">
-                      <Globe className="w-5 h-5 text-gray-400" />
+                    <div className="p-2 bg-(--app-surface-2) rounded-lg">
+                      <Globe className="w-5 h-5 text-(--app-ink-3)" />
                     </div>
                     <div>
                       <p className="font-medium text-white">Language</p>
-                      <p className="text-sm text-gray-500">Select your preferred language</p>
+                      <p className="text-sm text-(--app-ink-3)">Select your preferred language</p>
                     </div>
                   </div>
                   <select
                     value={language}
                     onChange={(e) => onLanguage(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-indigo-500"
+                    className="bg-(--app-surface-2) border border-(--app-line) rounded-lg px-3 py-1.5 text-sm text-(--app-ink) focus:outline-none focus:border-(--app-accent-edge)"
                   >
                     <option value="en">English</option>
                     <option value="bn">বাংলা</option>
@@ -530,7 +559,7 @@ export function SettingsView({
             <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
               <div>
                 <p className="font-medium text-red-400">Delete Account</p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-(--app-ink-3)">
                   Permanently delete your account and all data
                 </p>
               </div>
@@ -547,9 +576,9 @@ export function SettingsView({
 
       {showDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
-          <div className="bg-gray-900 rounded-2xl border border-gray-800 p-6 max-w-sm w-full">
+          <div className="bg-(--app-surface) rounded-2xl border border-(--app-line) p-6 max-w-sm w-full">
             <h3 className="text-lg font-bold text-white">Delete account?</h3>
-            <p className="text-sm text-gray-400 mt-2">
+            <p className="text-sm text-(--app-ink-3) mt-2">
               This blocks your login and removes your personal data. Type{" "}
               <span className="font-mono text-red-400">DELETE</span> to confirm.
             </p>
@@ -565,7 +594,7 @@ export function SettingsView({
                   setShowDelete(false);
                   setDeleteConfirm("");
                 }}
-                className="flex-1 py-2 rounded-lg bg-gray-800 text-white text-sm font-semibold"
+                className="flex-1 py-2 rounded-lg bg-(--app-surface-2) text-(--app-ink) text-sm font-semibold"
               >
                 Cancel
               </button>

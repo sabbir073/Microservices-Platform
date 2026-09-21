@@ -102,6 +102,75 @@ export interface ArticlePage {
   popupClickCount?: number;
 }
 
+/**
+ * How the worker is required to ARRIVE at the publisher's page.
+ *
+ * The journey itself — popups, dwell, scroll, the key at the end — is
+ * identical in all three modes and is not touched by any of this. The only
+ * thing that changes is where the visitor comes from, and therefore what the
+ * publisher's own analytics record as the traffic source.
+ *
+ *   direct    Today's flow. We hand the worker a link carrying a signed token
+ *             and they click it. Absent config means this, so every task that
+ *             exists right now keeps behaving exactly as it does.
+ *   search    The worker is given a keyword and a site NAME, searches for it,
+ *             and clicks the organic result. Arrival is evidenced by the
+ *             referrer being a search engine.
+ *   referral  The worker opens a public social post, and clicks the link
+ *             inside it. Arrival is evidenced by a tag WE mint and the admin
+ *             pastes into that link — a tag survives the in-app browsers that
+ *             strip referrers, which is most of the mobile social traffic.
+ *
+ * The two non-direct modes have no signed token in the URL, because neither an
+ * organic search result nor a public post can carry one: the post link is the
+ * same for every reader. They do not need one. The embed knows its task from
+ * the `data-task` attribute on its own script tag; the key is the proof of who
+ * did the work, and it is bound to a user when it is submitted.
+ */
+export type ArticleEntryMode = "direct" | "search" | "referral";
+
+/** Which search engines' referrers count as a search arrival. */
+export type ArticleSearchEngine = "google" | "bing" | "any";
+
+/**
+ * What to do when the arrival source cannot be determined at all.
+ *
+ * A browser that sends no referrer is indistinguishable from a worker who
+ * typed the domain into the address bar — the two look identical from the
+ * page, and no amount of code separates them. So it is a policy question, not
+ * a technical one, and the admin answers it:
+ *
+ *   review  let them through, and send the submission to manual review
+ *   block   refuse to start the journey
+ *
+ * `review` is the default because blocking punishes a worker for a privacy
+ * setting they may not know they have.
+ */
+export type ArticleUnknownSourcePolicy = "review" | "block";
+
+export interface ArticleEntryConfig {
+  mode: ArticleEntryMode;
+  /** search: what the worker is told to type into the search box. */
+  searchKeyword?: string;
+  /** search: whose referrer counts. Default "any". */
+  searchEngine?: ArticleSearchEngine;
+  /** referral: the public post the worker opens first. */
+  postUrl?: string;
+  /**
+   * referral + search: the page on the publisher's site the worker must land
+   * on. It has to be one of `pages` — the embed only exists there, so a
+   * landing page without it is a journey that can never start.
+   */
+  landingUrl?: string;
+  /**
+   * referral: the tag minted for this task. The admin pastes the tagged link
+   * into their post; the embed reads it back from `location.search`.
+   */
+  srcTag?: string;
+  /** Default "review". See ArticleUnknownSourcePolicy. */
+  onUnknownSource?: ArticleUnknownSourcePolicy;
+}
+
 export interface ArticleConfig {
   /** @deprecated v1 single-link mode — kept for backward compat. */
   links: ArticleLink[];
@@ -147,6 +216,12 @@ export interface ArticleConfig {
    * reading — the next prompt will appear soon"). Admin-configured.
    */
   popupAfterClickMessage?: string;
+
+  /**
+   * v4: where the worker must come FROM. Absent means "direct", which is what
+   * every existing task is, so nothing that exists today changes.
+   */
+  entry?: ArticleEntryConfig;
 
   /**
    * BUYER "write an article" variant.
@@ -203,6 +278,246 @@ export function emptyArticleConfig(): ArticleConfig {
     popupAfterClickMessage:
       "Nice — keep reading, the next prompt will appear soon.",
   };
+}
+
+/**
+ * Hosts whose referrer counts as "arrived from a search".
+ *
+ * Google is matched by prefix because it runs a country domain per market —
+ * google.co.uk, google.com.bd and a hundred others — and a worker in Dhaka
+ * searching on google.com.bd is doing exactly what was asked of them.
+ */
+export const SEARCH_ENGINE_HOSTS: Record<ArticleSearchEngine, string[]> = {
+  google: ["google."],
+  bing: ["bing.com"],
+  any: [
+    "google.",
+    "bing.com",
+    "duckduckgo.com",
+    "search.yahoo.",
+    "yandex.",
+    "ecosia.org",
+    "search.brave.com",
+    "baidu.com",
+  ],
+};
+
+/**
+ * Link shims the social platforms bounce outbound clicks through. A reader who
+ * taps a link in a Facebook post does not arrive with `facebook.com` as the
+ * referrer — they arrive from `l.facebook.com`, or from nothing at all if the
+ * in-app browser stripped it. These are corroboration only: the `srcTag` on
+ * the link is what actually carries the proof.
+ */
+export const SOCIAL_REFERRER_SHIMS = [
+  "l.facebook.com",
+  "lm.facebook.com",
+  "m.facebook.com",
+  "l.instagram.com",
+  "t.co",
+  "out.reddit.com",
+  "lnkd.in",
+  "away.vk.com",
+  "youtube.com",
+  "t.me",
+];
+
+/** Does `host` count as an arrival from `engine`? */
+export function isSearchEngineHost(
+  host: string,
+  engine: ArticleSearchEngine = "any"
+): boolean {
+  const h = host.toLowerCase().replace(/^www\./, "");
+  return (SEARCH_ENGINE_HOSTS[engine] ?? SEARCH_ENGINE_HOSTS.any).some((m) =>
+    m.endsWith(".") ? h.startsWith(m) || h.includes(`.${m}`) : h === m || h.endsWith(`.${m}`)
+  );
+}
+
+/**
+ * Mint the tag the admin pastes into their social post.
+ *
+ * Short enough to survive a link preview without looking like tracking cruft,
+ * long enough that guessing one is not worth anyone's time. Minted once per
+ * task and then stable — regenerating it would silently break every post that
+ * is already live.
+ */
+export function mintArticleSrcTag(): string {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 8; i++) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return out;
+}
+
+/** The query parameter the srcTag travels in. */
+export const ARTICLE_SRC_PARAM = "src";
+
+/**
+ * The link the admin is told to paste into their post: the landing page with
+ * the task's tag attached. Built in one place so the admin UI, the validator
+ * and the embed cannot disagree about its shape.
+ */
+export function buildTaggedLandingUrl(
+  landingUrl: string,
+  srcTag: string
+): string {
+  try {
+    const u = new URL(landingUrl);
+    u.searchParams.set(ARTICLE_SRC_PARAM, srcTag);
+    return u.toString();
+  } catch {
+    return landingUrl;
+  }
+}
+
+/**
+ * Normalise whatever is stored in the JSON column into a config we can trust.
+ *
+ * Defensive on purpose: `articleConfig` is a JSON column, so a half-written
+ * row, an older shape or a hand-edited value can all arrive here. An
+ * unrecognised mode becomes "direct", which is the behaviour that was there
+ * before any of this existed — the safe direction to fail in.
+ */
+export function coerceArticleEntry(
+  raw: unknown
+): ArticleEntryConfig | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  const mode = r.mode;
+  if (mode !== "search" && mode !== "referral") return undefined;
+
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const engine = r.searchEngine;
+  const policy = r.onUnknownSource;
+
+  return {
+    mode,
+    searchKeyword: str(r.searchKeyword) || undefined,
+    searchEngine:
+      engine === "google" || engine === "bing" || engine === "any"
+        ? engine
+        : "any",
+    postUrl: str(r.postUrl) || undefined,
+    landingUrl: str(r.landingUrl) || undefined,
+    srcTag: str(r.srcTag) || undefined,
+    onUnknownSource: policy === "block" ? "block" : "review",
+  };
+}
+
+/** The effective mode, treating anything unreadable as today's behaviour. */
+export function articleEntryMode(cfg: ArticleConfig | null): ArticleEntryMode {
+  return coerceArticleEntry(cfg?.entry)?.mode ?? "direct";
+}
+
+/**
+ * What the embed concluded about how this visitor arrived.
+ *
+ *   search / referral  the arrival matched what the task asks for
+ *   unknown            no referrer and no tag — which is ALSO what a typed-in
+ *                      address looks like. The two are indistinguishable from
+ *                      the page, so this is a held verdict, not a guilty one.
+ *   mismatch           a referrer was present and it was the wrong one
+ */
+export type ArticleEntryVerdict =
+  | "search"
+  | "referral"
+  | "unknown"
+  | "mismatch";
+
+export interface ArticleEntryEvidence {
+  verdict: ArticleEntryVerdict;
+  /** Host of `document.referrer`, or "" when there was none. */
+  referrerHost: string;
+  /** Whether the landing URL carried the task's tag (referral mode). */
+  taggedMatch: boolean;
+}
+
+/**
+ * Judge an arrival. Pure, so the rules can be tested without a browser.
+ *
+ * The honest limit, stated where the decision is made: `document.referrer` and
+ * the landing URL are both reported BY the page, and a page runs in the
+ * visitor's browser. Someone with developer tools can claim whatever they
+ * like. That is true of every client-side signal, including the dwell and
+ * scroll gates this feature sits beside, and the bar here is the same one:
+ * enough that ordinary shortcuts do not pay, not a proof against a determined
+ * forger. What actually bounds the loss is that keys are finite, single-use,
+ * and bound to the first account that submits them.
+ */
+export function evaluateArticleEntry(
+  entry: ArticleEntryConfig,
+  referrer: string,
+  landingUrl: string
+): ArticleEntryEvidence {
+  let referrerHost = "";
+  try {
+    if (referrer) referrerHost = new URL(referrer).host.toLowerCase();
+  } catch {
+    referrerHost = "";
+  }
+
+  let taggedMatch = false;
+  if (entry.mode === "referral" && entry.srcTag) {
+    try {
+      taggedMatch =
+        new URL(landingUrl).searchParams.get(ARTICLE_SRC_PARAM) ===
+        entry.srcTag;
+    } catch {
+      taggedMatch = false;
+    }
+  }
+
+  if (entry.mode === "search") {
+    if (!referrerHost) return { verdict: "unknown", referrerHost, taggedMatch };
+    return {
+      verdict: isSearchEngineHost(referrerHost, entry.searchEngine ?? "any")
+        ? "search"
+        : "mismatch",
+      referrerHost,
+      taggedMatch,
+    };
+  }
+
+  // Referral. The tag is the evidence; the referrer only corroborates, because
+  // the in-app browsers that carry most social traffic strip it. A tagged
+  // arrival is accepted whatever the referrer says — including none at all.
+  if (taggedMatch) {
+    return { verdict: "referral", referrerHost, taggedMatch };
+  }
+  if (!referrerHost) return { verdict: "unknown", referrerHost, taggedMatch };
+
+  let postHost = "";
+  try {
+    if (entry.postUrl) postHost = new URL(entry.postUrl).host.toLowerCase();
+  } catch {
+    postHost = "";
+  }
+  const bare = referrerHost.replace(/^www\./, "");
+  const fromSocial =
+    (postHost && (bare === postHost.replace(/^www\./, "") || bare.endsWith(`.${postHost.replace(/^www\./, "")}`))) ||
+    SOCIAL_REFERRER_SHIMS.some((h) => bare === h || bare.endsWith(`.${h}`));
+
+  return {
+    verdict: fromSocial ? "referral" : "mismatch",
+    referrerHost,
+    taggedMatch,
+  };
+}
+
+/** Does this verdict satisfy the task, given the admin's strictness? */
+export function entryVerdictAllows(
+  entry: ArticleEntryConfig,
+  verdict: ArticleEntryVerdict
+): { start: boolean; autoApprove: boolean } {
+  if (verdict === entry.mode) return { start: true, autoApprove: true };
+  if (verdict === "unknown") {
+    const block = entry.onUnknownSource === "block";
+    // Let them work, but the submission is reviewed by a person. Never both
+    // allow the journey and then auto-approve on evidence we do not have.
+    return { start: !block, autoApprove: false };
+  }
+  return { start: false, autoApprove: false };
 }
 
 export function validateArticleConfig(
@@ -310,6 +625,95 @@ export function validateArticleConfig(
     ) {
       return { ok: false, error: "Engagement mode must be 'natural' or 'fast'" };
     }
+
+    // ── Arrival source ───────────────────────────────────────────────────
+    // Only reached when the admin has actually chosen a non-direct mode;
+    // `coerceArticleEntry` returns undefined for anything else, so a task
+    // that has never heard of this feature skips the whole block.
+    const entry = coerceArticleEntry(cfg.entry);
+    if (entry) {
+      // The landing page is where the journey begins, and the journey only
+      // exists where the embed is. A landing URL on a host that carries no
+      // page is a task that can never start — worth refusing at save time
+      // rather than discovering from a worker's complaint.
+      if (!entry.landingUrl) {
+        return {
+          ok: false,
+          error: "Set the landing page the worker must arrive on",
+        };
+      }
+      let landingHost = "";
+      try {
+        landingHost = new URL(entry.landingUrl).host.toLowerCase();
+      } catch {
+        return {
+          ok: false,
+          error: `Invalid landing URL: ${entry.landingUrl}`,
+        };
+      }
+      const pageHosts = new Set(
+        pages
+          .map((pg) => {
+            try {
+              return new URL(pg.url).host.toLowerCase();
+            } catch {
+              return "";
+            }
+          })
+          .filter(Boolean)
+      );
+      if (!pageHosts.has(landingHost)) {
+        return {
+          ok: false,
+          error:
+            `The landing page (${landingHost}) is not one of this task's pages. ` +
+            `The embed only runs on those, so the journey could never start.`,
+        };
+      }
+
+      if (entry.mode === "search") {
+        if (!entry.searchKeyword) {
+          return {
+            ok: false,
+            error: "Set the keyword the worker is told to search for",
+          };
+        }
+        if (entry.searchKeyword.length > 120) {
+          return {
+            ok: false,
+            error: "Search keyword must be 120 chars or fewer",
+          };
+        }
+      }
+
+      if (entry.mode === "referral") {
+        if (!entry.postUrl) {
+          return {
+            ok: false,
+            error: "Set the social post the worker opens first",
+          };
+        }
+        try {
+          new URL(entry.postUrl);
+        } catch {
+          return { ok: false, error: `Invalid post URL: ${entry.postUrl}` };
+        }
+        // The tag is what proves the arrival when the referrer is stripped,
+        // which is most of mobile social traffic. Without it this mode has
+        // no evidence at all, so it is not optional.
+        if (!entry.srcTag) {
+          return {
+            ok: false,
+            error:
+              "This task has no source tag yet — reopen the entry section so one is minted, then paste the tagged link into your post",
+          };
+        }
+        if (!/^[a-z0-9]{6,16}$/.test(entry.srcTag)) {
+          return { ok: false, error: "Source tag must be 6-16 letters/digits" };
+        }
+      }
+    }
+
     return { ok: true };
   }
 

@@ -54,7 +54,7 @@ export default function AboutPage() {
 
       <Section width="narrow">
         <GlassCard className="sm:p-10">
-          <div className="mb-4 inline-flex items-center gap-2 text-indigo-600">
+          <div className="mb-4 inline-flex items-center gap-2 text-(--mk-accent)">
             <Target className="w-5 h-5" />
             <span className="text-sm font-bold uppercase tracking-wider">Our mission</span>
           </div>
@@ -77,7 +77,7 @@ export default function AboutPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           {VALUES.map((v) => (
             <GlassCard key={v.title}>
-              <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-linear-to-br from-blue-500 to-purple-600">
+              <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl bg-linear-to-br from-(--mk-grad-a) to-(--mk-grad-b)">
                 <v.icon className="h-5 w-5 text-white" />
               </div>
               <h3 className="text-lg font-bold text-(--mk-text)">{v.title}</h3>
@@ -93,7 +93,7 @@ export default function AboutPage() {
           {MILESTONES.map((m) => (
             <div key={m.title} className="flex gap-4">
               <div className="flex flex-col items-center">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-linear-to-br from-blue-500 to-purple-600 text-xs font-bold text-white">
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-linear-to-br from-(--mk-grad-a) to-(--mk-grad-b) text-xs font-bold text-white">
                   {m.year}
                 </div>
               </div>
@@ -108,7 +108,7 @@ export default function AboutPage() {
 
       <Section>
         <GlassCard className="text-center sm:p-12">
-          <div className="mb-3 inline-flex items-center gap-2 text-emerald-600">
+          <div className="mb-3 inline-flex items-center gap-2 text-(--mk-success)">
             <TrendingUp className="w-5 h-5" />
             <span className="text-sm font-bold uppercase tracking-wider">Join us</span>
           </div>

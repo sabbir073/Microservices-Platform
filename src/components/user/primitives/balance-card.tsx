@@ -154,7 +154,7 @@ export function BalanceCard({
       {/* Withdraw is the primary action, so on a gradient panel it is the solid
           WHITE button — the strongest contrast available here (up to 5.7:1 the
           other way). A second gradient button on a gradient panel would be
-          invisible, which is what the old "from-indigo-600" button did. */}
+          invisible, which is what the old "from-(--app-grad-a)" button did. */}
       {!compact && (
         <div
           className={cn(
@@ -172,7 +172,7 @@ export function BalanceCard({
           )}
           <Link
             href={withdrawHref}
-            className="app-press app-tap-row inline-flex items-center justify-center gap-1.5 rounded-(--app-r-control) bg-white text-(--app-grad-a) text-sm font-extrabold hover:bg-white/90"
+            className="app-press app-tap-row inline-flex items-center justify-center gap-1.5 rounded-(--app-r-control) app-on-white bg-white text-sm font-extrabold hover:bg-white/90"
           >
             Withdraw <ArrowUpRight className="w-4 h-4" />
           </Link>

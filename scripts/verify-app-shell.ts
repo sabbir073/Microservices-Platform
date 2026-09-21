@@ -66,6 +66,21 @@ const code = (p: string) =>
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .replace(/^\s*\/\/.*$/gm, "");
 
+/** Every user-facing .tsx, for scans that must not miss a component. */
+function mainTsx(): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const e of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+      const rel = `${dir}/${e.name}`;
+      if (e.isDirectory()) walk(rel);
+      else if (e.name.endsWith(".tsx")) out.push(rel);
+    }
+  };
+  walk("src/components/user");
+  walk("src/components/dashboard");
+  return out;
+}
+
 function main() {
   console.log("\n=== App shell ===\n");
 
@@ -289,6 +304,180 @@ function main() {
         "…and gives the space back when it unmounts",
         /setProperty\(NAV_HEIGHT_VAR, "0px"\)/.test(bar)
       );
+
+      // The primary tab is pulled up out of the bar with `-mt-5`, so it floats
+      // above it — and `offsetHeight` cannot see a child that overflows
+      // upward. Anything clearing the nav by that number still sat under the
+      // raised button: on the feed it covered the like row of whichever post
+      // landed at the bottom of the screen.
+      check(
+        "the measurement includes the tab that floats above the bar",
+        /getBoundingClientRect\(\)/.test(bar) &&
+          /window\.innerHeight - top/.test(bar),
+        "offsetHeight misses the raised primary tab by its whole overhang"
+      );
+      check(
+        "…and is redone when the viewport moves",
+        /addEventListener\("resize", sync\)/.test(bar) &&
+          /orientationchange/.test(bar),
+        "a viewport-relative measurement goes stale on rotation and on a toolbar sliding away"
+      );
+
+      // Every page under (main) sits above that nav, so the shell reserves the
+      // measured height rather than a constant. The old 6rem ignored the
+      // device safe area and the raised tab, which is why the last row of a
+      // page was cut off.
+      const layout = read("src/app/(main)/layout.tsx");
+      check(
+        "the shell reserves the nav's measured height, not a guess",
+        /pb-\[calc\(var\(--bottom-nav-h,6rem\)\+1rem\+var\(--anchor-ad-h,0px\)\)\]/.test(
+          layout
+        ),
+        "a flat 6rem leaves the last thing on the page under the nav"
+      );
+    }
+
+    /* A single photo does not get to own the screen. */
+    {
+      const card = read("src/components/user/feed/feed-post-card.tsx");
+      check(
+        "a lone photo is capped by ratio, not by 70vh",
+        /max-h-\[min\(70vh,125vw\)\]/.test(card),
+        "a 645x1159 post filled seven tenths of a phone and pushed the like row off"
+      );
+      check(
+        "…and is still shown whole rather than cropped",
+        /object-contain/.test(card),
+        "cropping somebody's screenshot to tidy the feed is not ours to decide"
+      );
+      // The header rows are squeezed from both sides; without these a two-word
+      // name wrapped mid-name and "2 months ago" broke across two lines.
+      check(
+        "the author name truncates instead of wrapping",
+        /t-card-title truncate/.test(card) && /flex min-w-0 items-center gap-1\.5/.test(card)
+      );
+      check(
+        "the post age stays on one line",
+        /shrink-0 whitespace-nowrap/.test(card)
+      );
+
+      // The reactions row belongs to the post. A banner above it ran between
+      // what somebody wrote and the buttons for reacting to it, splitting the
+      // card in two — "under the post" means after the whole post.
+      const reactionsAt = card.indexOf("{/* Reactions row.");
+      const bannerAt = card.indexOf("placement=\"FEED_POST_BELOW\"");
+      check(
+        "the sponsor banner sits after the reactions row, not through the post",
+        reactionsAt > 0 && bannerAt > reactionsAt,
+        "above the row it cuts the post off from its own buttons"
+      );
+    }
+
+    /* The photo viewer must be escapable. */
+    {
+      const zoom = read("src/components/user/primitives/image-zoom-modal.tsx");
+      // It holds the page still while open, so the two things a reader tries
+      // — scrolling, and tapping the picture — both have to lead somewhere.
+      // Tapping the photo used to be swallowed by `stopPropagation`, which on
+      // a phone means the biggest target on screen did nothing and the app
+      // read as frozen.
+      check(
+        "tapping the photo closes the viewer",
+        /<img[\s\S]{0,300}onClick=\{onClose\}/.test(zoom) &&
+          !/<img[\s\S]{0,300}onClick=\{\(e\) => e\.stopPropagation\(\)\}/.test(zoom),
+        "a photo that swallows the tap is why the app felt stuck"
+      );
+      check(
+        "dragging down dismisses it",
+        /onTouchStart=/.test(zoom) &&
+          /onTouchEnd=\{endDrag\}/.test(zoom) &&
+          /dy > 90/.test(zoom),
+        "the gesture already in the reader's fingers when scrolling fails"
+      );
+      check(
+        "…and a cancelled touch does not leave it half-dragged",
+        /onTouchCancel=\{endDrag\}/.test(zoom)
+      );
+      check(
+        "the close button clears the notch",
+        /env\(safe-area-inset-top\)/.test(zoom)
+      );
+      // Blanking `overflow` hands scrolling back to a page that something
+      // else may still be holding still.
+      check(
+        "closing restores the page's previous scroll state, not a blank one",
+        /const previous = document\.body\.style\.overflow/.test(zoom) &&
+          /document\.body\.style\.overflow = previous/.test(zoom)
+      );
+    }
+
+    /* A white control on an accent surface keeps readable ink. */
+    {
+      const css = read("src/app/globals.css");
+      check(
+        "there is a named exception for a control on its own white ground",
+        /\.app-on-white \{/.test(css) &&
+          /html\[data-theme="light"\] \.app-accent \.app-on-white/.test(css),
+        "the family rule paints every themed descendant white, which is invisible on a white pill"
+      );
+      // The ink is per-control, not one colour for everything the exemption
+      // rescues: the rail's Claim button is near-black on white, the balance
+      // card's is indigo, the ad's brand monogram is black. Imposing one would
+      // have traded an invisible control for a wrong-coloured one.
+      check(
+        "the exemption lets each control keep its own ink",
+        /var\(--app-on-white-ink, var\(--app-grad-a\)\)/.test(css),
+        "one hard-coded colour would repaint every control it rescues"
+      );
+
+      /* Every control that sits on a SOLID light ground inside an accent or
+         on-media surface. The first pass looked for `bg-white` only and missed
+         the desktop rail, whose button is `bg-(--app-bright)` — the same
+         white, named by a token. That is why the owner still saw a blank pill
+         after the "fix". */
+      const LIGHT_GROUND = /(bg-white(?![/\w])|bg-\(--app-bright\))/;
+      const offenders: string[] = [];
+      for (const f of mainTsx()) {
+        const src = read(f);
+        // Only a file that RENDERS an accent or on-media surface can hold the
+        // defect. Without this the scan flagged filter chips in the task
+        // lists, which sit on an ordinary card and are correct — and a check
+        // that cries wolf is one people learn to skip past.
+        if (!/on-media|app-accent/.test(src)) continue;
+        const lines = src.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (!LIGHT_GROUND.test(line)) continue;
+          // A `text-` colour class on the same element is what the family rule
+          // catches. `text-white` is already white and wants to be.
+          if (!/text-\(--|text-black|text-\[#/.test(line)) continue;
+          if (/app-on-white/.test(line)) continue;
+          // Inside the surface, not merely in the same file: the ad card's
+          // buttons sit below its creative and are unaffected, while the brand
+          // monogram a few lines above them is not.
+          const near = lines.slice(Math.max(0, i - 6), i).join(" ");
+          if (!/on-media|app-accent/.test(near)) continue;
+          offenders.push(`${f.split("/").pop()}:${i + 1}`);
+        }
+      }
+      check(
+        "no control on a light ground is left to the family rule",
+        offenders.length === 0,
+        offenders.join(" | ")
+      );
+
+      for (const f of [
+        "src/components/user/feed/mobile-earn-block.tsx",
+        "src/components/user/primitives/balance-card.tsx",
+        "src/components/user/feed/feed-right-rail.tsx",
+        "src/components/user/feed/feed-ad-card.tsx",
+      ]) {
+        check(
+          `${f.split("/").pop()} carries the exemption`,
+          /app-on-white/.test(read(f)),
+          "white-on-white: the control renders as a blank shape in light mode"
+        );
+      }
     }
 
     // A bar that is `md:hidden` but polls on `max-width: 1023px` runs a 60s
@@ -300,12 +489,17 @@ function main() {
       bar.match(/max-width: \d+px/)?.[0]
     );
 
-    // Rail width and content offset are two numbers that must agree at BOTH
-    // tiers; if either drifts the content sits under the rail or leaves a gap.
+    // Rail width and content offset are two numbers that must agree; if either
+    // drifts the content sits under the rail or leaves a gap. What matters is
+    // that they MATCH, not what the number is — the design document says 260
+    // and at 260 the label, its icon and a badge crowd one another, which the
+    // owner read as squeezed. So the check reads the width the sidebar
+    // declares and holds the layout to the same figure.
+    const railPx = sb.match(/md:w-\[(\d+)px\]/)?.[1];
     check(
-      "content is offset by the rail width at md and at lg",
-      /md:w-64 lg:w-72/.test(sb) && /md:pl-64 lg:pl-72/.test(layout),
-      layout.match(/md:pl-\d+ lg:pl-\d+/)?.[0]
+      "content is offset by the rail width",
+      Boolean(railPx) && new RegExp(`md:pl-\\[${railPx}px\\]`).test(layout),
+      `rail ${railPx ?? "?"}px vs ${layout.match(/md:pl-\[\d+px\]/)?.[0] ?? "no offset"}`
     );
     check(
       "the page's bottom reserve drops where the tab bar does",
@@ -716,6 +910,78 @@ function main() {
           `${f || "?"} on ${b || "?"} = ${r.toFixed(2)}`
         );
       }
+    }
+
+    /* 6c-ii. The brand pair is two pairs, and swapping them is invisible until
+       someone opens the other theme.
+
+       `--mk-grad-*` is the SOLID pair: it fills buttons and bands, and white
+       ink sits ON it, so both stops have to stay dark enough for that ink in
+       either theme. `--mk-rail-*` is the BRIGHT pair: it paints ON the page —
+       clipped headlines, progress bars, small tiles — so it has to flip per
+       theme or it vanishes into one of the two grounds.
+
+       A clipped headline written with grad-* renders dark green on a near-black
+       page. That is the specific mistake these two checks exist to catch, and
+       it is not visible in the theme the author happened to be looking at. */
+    for (const theme of ["light", "dark"]) {
+      for (const stop of ["mk-grad-a", "mk-grad-b"]) {
+        const f = hexOf(theme, stop);
+        const r = f ? ratio("#ffffff", f) : 0;
+        check(
+          `${theme}: white ink on ${stop} clears 4.5:1`,
+          r >= 4.5,
+          `#ffffff on ${f || "?"} = ${r.toFixed(2)}`
+        );
+      }
+      for (const stop of ["mk-rail-a", "mk-rail-b"]) {
+        const f = hexOf(theme, stop);
+        const b = hexOf(theme, "mk-bg");
+        const r = f && b ? ratio(f, b) : 0;
+        check(
+          `${theme}: ${stop} clears 4.5:1 on the page it is painted on`,
+          r >= 4.5,
+          `${f || "?"} on ${b || "?"} = ${r.toFixed(2)}`
+        );
+      }
+      const cta = hexOf(theme, "mk-cta");
+      const onCta = hexOf(theme, "mk-on-cta");
+      const r = cta && onCta ? ratio(onCta, cta) : 0;
+      check(
+        `${theme}: mk-on-cta on mk-cta clears 4.5:1`,
+        r >= 4.5,
+        `${onCta || "?"} on ${cta || "?"} = ${r.toFixed(2)}`
+      );
+    }
+
+    /* And the rule itself: no clipped-text gradient may use the solid pair. */
+    {
+      const offenders: string[] = [];
+      const under = (dir: string): string[] => {
+        const out: string[] = [];
+        const walk = (d: string) => {
+          for (const e of fs.readdirSync(path.join(root, d), { withFileTypes: true })) {
+            const rel = `${d}/${e.name}`;
+            if (e.isDirectory()) walk(rel);
+            else if (e.name.endsWith(".tsx")) out.push(rel);
+          }
+        };
+        walk(dir);
+        return out;
+      };
+      for (const f of under("src/components/landing")
+        .concat(under("src/components/marketing"))
+        .concat(under("src/app/(marketing)"))) {
+        const body = read(f);
+        for (const m of body.match(/class(?:Name)?="[^"]*bg-clip-text[^"]*"/g) ?? []) {
+          if (/-\(--mk-grad-[ab]\)/.test(m)) offenders.push(f);
+        }
+      }
+      check(
+        "clipped headlines use the bright pair, never the solid one",
+        offenders.length === 0,
+        offenders.join(", ")
+      );
     }
 
     /* 6d. The scale exists and is used, rather than being retyped. Six
@@ -1709,6 +1975,58 @@ function main() {
         ([token, want, theme]) =>
           (theme === "light" ? lightDecls : rootDecls).get(token) !== want
       );
+      /* Nobody may hard-code an accent outside the table.
+         The pre-paint script stamped `data-accent="indigo"` on every visitor —
+         including one who had never opened the picker — so the per-accent rule
+         always won and the :root default was unreachable. Changing
+         DEFAULT_ACCENT did nothing at all on screen, which is exactly how it
+         was reported: "everything looks the same". */
+      {
+        const boot = read("src/app/layout.tsx");
+        check(
+          "the pre-paint script only sets data-accent when the user chose one",
+          /getItem\('earngpt-accent'\);if\(a\)\{/.test(boot) &&
+            !/earngpt-accent'\)\|\|'/.test(boot),
+          "a literal fallback here overrides the default for everyone, forever"
+        );
+        const provider = read("src/components/providers/theme-provider.tsx");
+        check(
+          "the provider's fallback comes from the table",
+          /useState<Accent>\(DEFAULT_ACCENT as Accent\)/.test(provider),
+          "a second copy of the default is how the two drift apart"
+        );
+
+        /* Choosing a colour must not be a one-way door.
+           The picker could set a preference and nothing could clear one, so a
+           user who had ever tapped a swatch could never see the platform's own
+           colour again — or see it change when the platform's did. */
+        check(
+          "an accent can be cleared back to the platform's",
+          /localStorage\.removeItem\(ACCENT_KEY\)/.test(provider) &&
+            /removeAttribute\("data-accent"\)/.test(provider),
+          "clearing the attribute is not a state change the effect can express"
+        );
+        for (const f of [
+          "src/components/user/settings/settings-view.tsx",
+          "src/components/user/profile/profile-edit-tabs.tsx",
+        ]) {
+          const picker = read(f);
+          check(
+            `${f.split("/").pop()} offers Default beside the swatches`,
+            /applyAccent\(null\)/.test(picker) && /accentIsDefault/.test(picker),
+            "the two pickers must offer the same choices"
+          );
+        }
+        // And the server has to accept it, or the column hands the old colour
+        // back on the next sign-in.
+        const api = read("src/app/api/profile/route.ts");
+        check(
+          "the profile API accepts a cleared accent",
+          /body\.themeAccent !== null && !validAccents\.includes/.test(api) &&
+            !/themeAccent: u\.themeAccent \?\? "indigo"/.test(api)
+        );
+      }
+
       check(
         "the no-accent default matches the default accent's row exactly",
         wrong.length === 0,
@@ -1848,24 +2166,57 @@ function main() {
        one flat field and a drop shadow was the only thing suggesting depth.
        Four planes, each a real step from the next, in both directions. */
     const { planes } = paletteTable(audit.cascade);
+    const planeOf = (theme: "dark" | "light", name: string) =>
+      planes(theme).find(([n]) => n === name)![1];
+
+    /* The floor is 1.5 L*, not the round 2 I first wrote, and the reason is
+       worth stating: both design documents build their stack at roughly this
+       step and pair every plane with a hairline border —
+         dark   chrome #0f172a 7.96 -> card #131b2e 9.95   (1.99)
+         light  tile #f1f5f9 96.35 -> page #f8fafc 98.18   (1.83)
+       A round 2 would have failed the design's own values by two hundredths,
+       which is a number I picked, not a number anyone can see. What does have
+       to hold is that planes which TOUCH can be told apart, and that a card
+       always has an edge so it reads against a canvas this close to it. */
+    const FLOOR = 1.5;
     for (const theme of ["dark", "light"] as const) {
+      // Chrome and card never meet: the canvas always runs between them, so
+      // they are allowed to be the same white — which is exactly what the
+      // light template does, with a white sidebar and white cards on a tinted
+      // feed. The pairs below are the ones that actually share an edge.
+      const TOUCHING: [string, string][] = [
+        ["page", "chrome"],
+        ["page", "card"],
+        ["card", "tile / raised"],
+      ];
+      for (const [a, b] of TOUCHING) {
+        const la = lstar(planeOf(theme, a));
+        const lb = lstar(planeOf(theme, b));
+        check(
+          `${theme}: ${a} and ${b} touch, and can be told apart`,
+          Math.abs(la - lb) >= FLOOR,
+          `${toHex(planeOf(theme, a))} L*${la.toFixed(2)} vs ${toHex(
+            planeOf(theme, b)
+          )} L*${lb.toFixed(2)} — step ${Math.abs(la - lb).toFixed(2)}`
+        );
+      }
       const ordered = planes(theme)
         .filter(([n]) => n !== "line")
         .sort((a, b) => lstar(a[1]) - lstar(b[1]));
-      const steps = ordered
-        .slice(1)
-        .map(([, rgb], i) => lstar(rgb) - lstar(ordered[i][1]));
-      check(
-        `${theme}: the four planes are four distinct surfaces (min step ≥ 2 L*)`,
-        steps.every((s) => s >= 2),
-        ordered
-          .map(([n, rgb]) => `${n} ${toHex(rgb)} L*${lstar(rgb).toFixed(1)}`)
-          .join(" < ")
+      console.log(
+        `       ${theme}: ` +
+          ordered
+            .map(([n, rgb]) => `${n} ${toHex(rgb)} L*${lstar(rgb).toFixed(1)}`)
+            .join(" ≤ ")
       );
+    }
+    /* …and the edge itself, which is what makes a ~2 L* step legible at all. */
+    {
+      const sheet = read("src/app/globals.css");
       check(
-        `${theme}: chrome and card are not the same colour`,
-        toHex(planes(theme).find(([n]) => n === "chrome")![1]) !==
-          toHex(planes(theme).find(([n]) => n === "card")![1])
+        "a card carries a declared border in both themes",
+        (sheet.match(/--app-line:\s*[^;]+;/g) ?? []).length >= 2,
+        "one --app-line declaration means one theme has no card edge"
       );
     }
 

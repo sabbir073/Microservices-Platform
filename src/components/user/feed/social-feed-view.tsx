@@ -143,7 +143,7 @@ export function SocialFeedView({
     // genuinely spare.
     <div className="mx-auto w-full max-w-5xl xl:max-w-6xl flex justify-center gap-6">
       {/* Center feed column (FB/Twitter-width) */}
-      <div className="w-full max-w-xl xl:max-w-[42rem] min-w-0 space-y-4">
+      <div className="w-full max-w-[36rem] 2xl:max-w-[40rem] min-w-0 space-y-4">
         {/* ONE toolbar for everything that steers the feed.
             It replaces a tab strip at the top of the column and a sort toggle
             floating on its own line further down — two rows, in two places, each
@@ -175,7 +175,7 @@ export function SocialFeedView({
                     "app-tap-row app-press inline-flex shrink-0 items-center gap-1.5 rounded-(--app-r-chip) px-3 text-sm font-bold",
                     isActive
                       ? "app-accent-soft"
-                      : "text-gray-400 hover:text-white"
+                      : "text-(--app-ink-3) hover:text-white"
                   )}
                 >
                   <t.icon className="h-4.5 w-4.5" />
@@ -224,7 +224,7 @@ export function SocialFeedView({
                     "app-press inline-flex h-10 items-center gap-1.5 rounded-[calc(var(--app-r-chip)-2px)] px-3 text-xs font-bold",
                     sort === s
                       ? "app-accent shadow-(--app-e1)"
-                      : "text-gray-200 hover:bg-(--app-surface)"
+                      : "text-(--app-ink) hover:bg-(--app-surface-2)"
                   )}
                 >
                   {s === "recent" ? (
@@ -244,7 +244,7 @@ export function SocialFeedView({
             type="button"
             onClick={() => setRailOpen(true)}
             aria-label="Open earnings and discovery panel"
-            className="app-tap app-press inline-flex shrink-0 items-center justify-center rounded-(--app-r-chip) border border-(--app-line) bg-(--app-surface-2) text-gray-300 hover:text-white xl:hidden"
+            className="app-tap app-press inline-flex shrink-0 items-center justify-center rounded-(--app-r-chip) border border-(--app-line) bg-(--app-surface-2) text-(--app-ink-2) hover:text-white xl:hidden"
           >
             <PanelRight className="h-4.5 w-4.5" />
           </button>
@@ -283,7 +283,7 @@ export function SocialFeedView({
           The aside is deliberately left to stretch to the row height: `sticky`
           needs a taller ancestor to travel inside, so adding `self-start` here
           would shrink it to its content and stop the stickiness working. */}
-      <aside className="hidden xl:block w-80 2xl:w-[26rem] shrink-0">
+      <aside className="hidden xl:block w-80 2xl:w-[23.75rem] shrink-0">
         {/* The rail scrolls on its own.
             `sticky` alone pinned this column 80px below the header and then let
             it move with the page — so once the widgets were taller than the
@@ -617,7 +617,7 @@ function FeedTab({
         <div className="sticky top-2 z-20 flex justify-center">
           <button
             onClick={showNewActivity}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-indigo-500 text-white text-sm font-semibold shadow-lg hover:bg-indigo-600 transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-(--app-cta) text-(--app-on-cta) text-sm font-semibold shadow-lg hover:bg-(--app-cta) transition-colors"
           >
             <ArrowUp className="w-4 h-4" />
             New posts
@@ -703,7 +703,7 @@ function FeedTab({
           <div ref={sentinelRef} className="h-1" />
           {loadingMore && <ListSkeleton rows={2} />}
           {!hasMore && (
-            <p className="text-center text-[11px] text-gray-600 py-4">
+            <p className="text-center text-[11px] text-(--app-ink-3) py-4">
               You&apos;re all caught up.
             </p>
           )}

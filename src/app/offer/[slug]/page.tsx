@@ -53,8 +53,8 @@ export default async function OfferPage({ params, searchParams }: PageProps) {
   return (
     <main
       className={cn(
-        "min-h-screen text-slate-200 bg-linear-to-br",
-        offer.bgGradient || "from-slate-950 via-slate-900 to-indigo-950"
+        "min-h-screen text-(--app-ink) bg-linear-to-br",
+        offer.bgGradient || "from-(--app-page) via-(--app-surface) to-(--app-surface-2)"
       )}
     >
       {offer.status !== "PUBLISHED" && (
@@ -68,7 +68,7 @@ export default async function OfferPage({ params, searchParams }: PageProps) {
       <footer className="py-8 text-center">
         <Link
           href="/"
-          className="text-xs text-slate-500 hover:text-slate-300"
+          className="text-xs text-(--app-ink-3) hover:text-(--app-ink-2)"
         >
           Powered by EarnGPT
         </Link>

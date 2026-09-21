@@ -69,11 +69,11 @@ export function AdblockHost() {
 
   return (
     <div className="fixed inset-0 z-10001 bg-black/95 flex items-center justify-center p-4">
-      <div className="relative w-full max-w-md rounded-2xl border border-amber-500/30 bg-gray-900 p-6 text-center">
+      <div className="relative w-full max-w-md rounded-2xl border border-amber-500/30 bg-(--app-surface) p-6 text-center">
         <button
           onClick={dismissAdblockOverlay}
           aria-label="Close"
-          className="absolute top-3 right-3 p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10"
+          className="absolute top-3 right-3 p-1.5 rounded-lg text-(--app-ink-3) hover:text-white hover:bg-white/10"
         >
           <X className="w-5 h-5" />
         </button>
@@ -81,7 +81,7 @@ export function AdblockHost() {
           <ShieldAlert className="w-7 h-7 text-amber-400" />
         </div>
         <h1 className="text-lg font-bold text-white">Ad blocker detected</h1>
-        <p className="text-sm text-gray-400 mt-1.5">
+        <p className="text-sm text-(--app-ink-3) mt-1.5">
           Please turn off your ad blocker (or anti-adblock extension) to open
           tasks, then re-check to continue.
         </p>
@@ -94,7 +94,7 @@ export function AdblockHost() {
         <button
           onClick={onRecheck}
           disabled={checking}
-          className="mt-4 w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-linear-to-r from-indigo-500 to-purple-600 text-white text-sm font-bold active:scale-[0.98] transition-transform disabled:opacity-60"
+          className="mt-4 w-full inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-lg bg-linear-to-r from-(--app-grad-a) to-(--app-grad-b) text-white text-sm font-bold active:scale-[0.98] transition-transform disabled:opacity-60"
         >
           {checking ? (
             <Loader2 className="w-4 h-4 animate-spin" />

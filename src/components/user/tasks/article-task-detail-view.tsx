@@ -276,8 +276,8 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[40vh] gap-3">
-        <Loader2 className="w-7 h-7 animate-spin text-indigo-400" />
-        <p className="text-sm text-gray-500">Loading article task…</p>
+        <Loader2 className="w-7 h-7 animate-spin text-(--app-accent-ink)" />
+        <p className="text-sm text-(--app-ink-3)">Loading article task…</p>
       </div>
     );
   }
@@ -299,7 +299,7 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
       <div className="space-y-4">
         <Link
           href="/article-tasks"
-          className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white"
+          className="inline-flex items-center gap-1.5 text-sm text-(--app-ink-3) hover:text-white"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to article tasks
@@ -324,14 +324,14 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
       {/* Back link — compact on mobile */}
       <Link
         href="/article-tasks"
-        className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-gray-400 hover:text-white transition-colors"
+        className="inline-flex items-center gap-1.5 text-xs sm:text-sm text-(--app-ink-3) hover:text-white transition-colors"
       >
         <ArrowLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         Back to article tasks
       </Link>
 
       {/* Hero */}
-      <div className="rounded-2xl border border-gray-800 bg-gray-900 overflow-hidden">
+      <div className="rounded-2xl border border-(--app-line) bg-(--app-surface) overflow-hidden">
         {task.thumbnailUrl && (
           <div className="relative w-full h-36 sm:h-52">
             <SmartImage
@@ -348,7 +348,7 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
             <div className="p-1.5 sm:p-2 rounded-lg bg-blue-500/10 text-blue-400">
               <FileText className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">
+            <span className="text-[10px] uppercase tracking-wider text-(--app-ink-3) font-bold">
               Article Task
             </span>
           </div>
@@ -356,7 +356,7 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
             {task.title}
           </h1>
           {task.description && (
-            <p className="text-sm text-gray-300 whitespace-pre-wrap wrap-break-word">
+            <p className="text-sm text-(--app-ink-2) whitespace-pre-wrap wrap-break-word">
               {task.description}
             </p>
           )}
@@ -393,12 +393,12 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
       {/* One renderer for every surface — see components/user/tasks/task-instructions. */}
       <TaskInstructions
         value={task.instructions}
-        className="rounded-xl border border-gray-800 bg-gray-900 p-3 sm:p-5"
+        className="rounded-xl border border-(--app-line) bg-(--app-surface) p-3 sm:p-5"
       />
 
       {task.instructionVideoUrl && (
         <section className="space-y-2">
-          <h2 className="text-[11px] uppercase tracking-wider text-gray-500 font-bold inline-flex items-center gap-1.5">
+          <h2 className="text-[11px] uppercase tracking-wider text-(--app-ink-3) font-bold inline-flex items-center gap-1.5">
             <VideoIcon className="w-3.5 h-3.5" />
             Instruction video
           </h2>
@@ -415,8 +415,8 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
           the user must go through the embed flow which inserts the session
           token into each URL; bypassing the embed wouldn't earn the key. */}
       {cfg && !cfg.useKeyPool && cfg.links.length > 0 && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-3 sm:p-5">
-          <h2 className="text-[11px] uppercase tracking-wider text-gray-500 font-bold mb-2 sm:mb-3">
+        <section className="rounded-xl border border-(--app-line) bg-(--app-surface) p-3 sm:p-5">
+          <h2 className="text-[11px] uppercase tracking-wider text-(--app-ink-3) font-bold mb-2 sm:mb-3">
             Article Links
           </h2>
           <div className="space-y-2">
@@ -426,18 +426,18 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
                 href={link.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-gray-950 border border-gray-800 hover:border-indigo-500/40 hover:bg-gray-950/70 transition-colors group min-w-0"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-(--app-page) border border-(--app-line) hover:border-(--app-accent-edge)/40 hover:bg-(--app-page)/70 transition-colors group min-w-0"
               >
-                <ExternalLink className="w-4 h-4 text-indigo-400 shrink-0 group-hover:scale-110 transition-transform" />
+                <ExternalLink className="w-4 h-4 text-(--app-accent-ink) shrink-0 group-hover:scale-110 transition-transform" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white truncate font-medium">
                     {link.label || `Link ${i + 1}`}
                   </p>
-                  <p className="text-[10px] text-gray-500 font-mono truncate">
+                  <p className="text-[10px] text-(--app-ink-3) font-mono truncate">
                     {link.url}
                   </p>
                 </div>
-                <ArrowRight className="w-4 h-4 text-gray-600 group-hover:text-indigo-400 shrink-0 transition-colors" />
+                <ArrowRight className="w-4 h-4 text-(--app-ink-3) group-hover:text-(--app-accent-ink) shrink-0 transition-colors" />
               </a>
             ))}
           </div>
@@ -447,26 +447,26 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
       {/* Pool-mode page list (read-only preview). The user clicks "Start"
           below to begin the embed-driven journey. */}
       {cfg?.useKeyPool && (cfg.pages?.length ?? 0) > 0 && (
-        <section className="rounded-xl border border-gray-800 bg-gray-900 p-3 sm:p-5">
-          <h2 className="text-[11px] uppercase tracking-wider text-gray-500 font-bold mb-2 sm:mb-3">
+        <section className="rounded-xl border border-(--app-line) bg-(--app-surface) p-3 sm:p-5">
+          <h2 className="text-[11px] uppercase tracking-wider text-(--app-ink-3) font-bold mb-2 sm:mb-3">
             Article Journey ({cfg.pages?.length ?? 0} pages)
           </h2>
-          <ol className="space-y-2 text-sm text-gray-300">
+          <ol className="space-y-2 text-sm text-(--app-ink-2)">
             {(cfg.pages ?? []).map((p, i) => {
               const isFinal = i === (cfg.pages?.length ?? 0) - 1;
               return (
                 <li
                   key={i}
-                  className="flex items-center gap-2 sm:gap-3 px-2.5 sm:px-3 py-2 rounded-lg bg-gray-950 border border-gray-800 min-w-0"
+                  className="flex items-center gap-2 sm:gap-3 px-2.5 sm:px-3 py-2 rounded-lg bg-(--app-page) border border-(--app-line) min-w-0"
                 >
-                  <span className="text-xs font-mono text-gray-500 shrink-0">
+                  <span className="text-xs font-mono text-(--app-ink-3) shrink-0">
                     {i + 1}.
                   </span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm text-white truncate font-medium">
                       {p.label || `Page ${i + 1}`}
                     </p>
-                    <p className="text-[10px] text-gray-500 truncate">
+                    <p className="text-[10px] text-(--app-ink-3) truncate">
                       {p.popupCount} popup{p.popupCount === 1 ? "" : "s"}
                     </p>
                   </div>
@@ -615,10 +615,10 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
       )}
 
       {submitState.kind === "ready" && !cfg?.useKeyPool && (
-        <section className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 p-3 sm:p-5 space-y-4">
+        <section className="rounded-xl border border-(--app-accent-edge)/20 bg-(--app-cta)/5 p-3 sm:p-5 space-y-4">
           <div>
             <h2 className="text-base font-bold text-white">Submit your proof</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xs text-(--app-ink-3) mt-0.5">
               Once you&apos;ve read the article(s) above, fill in what&apos;s
               required and submit for admin review.
             </p>
@@ -626,7 +626,7 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
 
           {req?.url && (
             <div>
-              <label className="block text-xs font-medium text-gray-300 mb-1.5">
+              <label className="block text-xs font-medium text-(--app-ink-2) mb-1.5">
                 Proof URL <span className="text-red-400">*</span>
               </label>
               <input
@@ -634,14 +634,14 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
                 value={proofUrl}
                 onChange={(e) => setProofUrl(e.target.value)}
                 placeholder="https://..."
-                className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-indigo-500"
+                className="w-full px-3 py-2 bg-(--app-page) border border-(--app-line) rounded-lg text-(--app-ink) text-sm placeholder:text-(--app-ink-3) focus:outline-none focus:border-(--app-accent-edge)"
               />
             </div>
           )}
 
           {req?.screenshot && (
             <div>
-              <label className="block text-xs font-medium text-gray-300 mb-1.5">
+              <label className="block text-xs font-medium text-(--app-ink-2) mb-1.5">
                 Screenshot <span className="text-red-400">*</span>
               </label>
               <ProofImageUpload
@@ -653,7 +653,7 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
 
           {req?.uniqueKey && (
             <div>
-              <label className="flex text-xs font-medium text-gray-300 mb-1.5 items-center gap-1">
+              <label className="flex text-xs font-medium text-(--app-ink-2) mb-1.5 items-center gap-1">
                 <KeyRound className="w-3.5 h-3.5" />
                 Unique Key <span className="text-red-400">*</span>
               </label>
@@ -661,7 +661,7 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
                 value={uniqueKey}
                 onChange={(e) => setUniqueKey(e.target.value)}
                 placeholder="Enter the key you found"
-                className="w-full px-3 py-2 bg-gray-950 border border-gray-700 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-amber-500 font-mono"
+                className="w-full px-3 py-2 bg-(--app-page) border border-(--app-line) rounded-lg text-(--app-ink) text-sm placeholder:text-(--app-ink-3) focus:outline-none focus:border-amber-500 font-mono"
               />
               {cfg?.uniqueKeyHint && (
                 <p className="text-[11px] text-amber-400/80 mt-1">
@@ -672,7 +672,7 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
           )}
 
           {!req?.url && !req?.screenshot && !req?.uniqueKey && (
-            <div className="rounded-lg bg-gray-950 border border-gray-800 p-3 text-xs text-gray-400">
+            <div className="rounded-lg bg-(--app-page) border border-(--app-line) p-3 text-xs text-(--app-ink-3)">
               No proof fields are required for this task. Click submit when
               you&apos;ve finished reading.
             </div>
@@ -681,14 +681,14 @@ export function ArticleTaskDetailView({ taskId }: { taskId: string }) {
           <div className="flex flex-col sm:flex-row gap-2 pt-1">
             <Link
               href="/article-tasks"
-              className="flex-1 py-2.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-sm font-semibold text-center transition-colors"
+              className="flex-1 py-2.5 rounded-lg bg-(--app-surface-2) hover:bg-(--app-surface-hover) text-(--app-ink) text-sm font-semibold text-center transition-colors"
             >
               Cancel
             </Link>
             <button
               disabled={busy}
               onClick={submit}
-              className="flex-1 py-2.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
+              className="flex-1 py-2.5 rounded-lg bg-(--app-cta) hover:bg-(--app-cta) text-(--app-on-cta) text-sm font-bold inline-flex items-center justify-center gap-1.5 disabled:opacity-50 transition-colors"
             >
               {busy ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -717,7 +717,7 @@ function RewardBadge({
     amber: "bg-amber-500/10 text-amber-400 border-amber-500/30",
     violet: "bg-violet-500/10 text-violet-400 border-violet-500/30",
     emerald: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
-    slate: "bg-slate-500/10 text-slate-300 border-slate-500/30",
+    slate: "bg-(--app-ink-3)/10 text-(--app-ink-2) border-(--app-line)/30",
   } as const;
   return (
     <span
@@ -737,6 +737,13 @@ function RewardBadge({
  * the embed redirects them back to /article-tasks/complete which
  * auto-submits the key.
  */
+/** Where to send a worker who has to search for the site themselves. */
+function searchUrlFor(engine: "google" | "bing" | "any", keyword: string) {
+  const q = encodeURIComponent(keyword);
+  if (engine === "bing") return `https://www.bing.com/search?q=${q}`;
+  return `https://www.google.com/search?q=${q}`;
+}
+
 function KeyPoolStartCard({ taskId }: { taskId: string }) {
   const [busy, setBusy] = useState(false);
   const [opened, setOpened] = useState(false);
@@ -744,6 +751,15 @@ function KeyPoolStartCard({ taskId }: { taskId: string }) {
   // time would hand the reader a new session and orphan the progress they had.
   const [articleUrl, setArticleUrl] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
+  /* How this task wants the worker to arrive. Null for the ordinary flow,
+     which is every task unless an admin says otherwise. */
+  const [entry, setEntry] = useState<{
+    mode: "search" | "referral";
+    searchKeyword: string | null;
+    searchEngine: "google" | "bing" | "any";
+    postUrl: string | null;
+    landingHost: string | null;
+  } | null>(null);
 
   const start = async () => {
     if (articleUrl) {
@@ -775,17 +791,38 @@ function KeyPoolStartCard({ taskId }: { taskId: string }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
-      const url = data.firstPageUrl as string | undefined;
-      if (!url) throw new Error("Missing first page URL");
+      const e = (data.entry ?? null) as typeof entry;
+      setEntry(e);
+
+      /* Search and referral tasks are not handed a link to the article: the
+         whole point is that the worker arrives from somewhere else. They get
+         the search page or the post instead, and the destination is described
+         rather than linked. */
+      const url = e
+        ? e.mode === "referral"
+          ? (e.postUrl ?? "")
+          : searchUrlFor(e.searchEngine, e.searchKeyword ?? "")
+        : ((data.firstPageUrl as string | undefined) ?? "");
+      if (!url) throw new Error("Missing destination for this task");
       setArticleUrl(url);
       if (tab && !tab.closed) {
         tab.location.replace(url);
         setOpened(true);
         setBlocked(false);
-        toast.success("Article journey started in a new tab", {
-          description:
-            "Complete all pages — you'll be redirected back here automatically with your key.",
-        });
+        toast.success(
+          e
+            ? e.mode === "search"
+              ? "Search opened in a new tab"
+              : "Post opened in a new tab"
+            : "Article journey started in a new tab",
+          {
+            description: e
+              ? e.mode === "search"
+                ? `Find ${e.landingHost ?? "the site"} in the results and open it from there.`
+                : "Click the link inside the post to reach the article."
+              : "Complete all pages — you'll be redirected back here automatically with your key.",
+          }
+        );
       } else {
         // The blocker won, or the reader closed the blank tab. A real link
         // that the reader clicks themselves is never blocked, so offer that
@@ -806,25 +843,95 @@ function KeyPoolStartCard({ taskId }: { taskId: string }) {
   };
 
   return (
-    <section className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 p-3 sm:p-5 space-y-3 sm:space-y-4">
+    <section className="rounded-xl border border-(--app-accent-edge)/30 bg-(--app-cta)/5 p-3 sm:p-5 space-y-3 sm:space-y-4">
       <div>
         <h2 className="text-sm sm:text-base font-bold text-white inline-flex items-center gap-2">
-          <ExternalLink className="w-4 h-4 text-indigo-400 shrink-0" />
+          <ExternalLink className="w-4 h-4 text-(--app-accent-ink) shrink-0" />
           Start the article journey
         </h2>
-        <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">
+        <p className="text-xs text-(--app-ink-3) mt-1.5 leading-relaxed">
           Visit each article page in order. Popups appear on each page —
           click them to advance. On the final page you&apos;ll receive a
           unique key to copy back to this task.
         </p>
       </div>
 
+      {/* How to get there. Shown only once the journey has started, because
+          until then we do not know which mode this task is in — and asking
+          the server up front would cost a round-trip on every article task
+          for something almost none of them need. */}
+      {entry && (
+        <div className="rounded-lg border border-(--app-accent-edge)/30 bg-(--app-surface-2) p-3 space-y-2.5">
+          <p className="t-eyebrow text-(--app-ink-3)">
+            {entry.mode === "search" ? "Find it yourself" : "Come in through the post"}
+          </p>
+
+          {entry.mode === "search" ? (
+            <>
+              <div className="space-y-1">
+                <p className="text-xs text-(--app-ink-2)">
+                  1. Search for this:
+                </p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 min-w-0 truncate rounded-(--app-r-chip) bg-(--app-page) border border-(--app-line) px-2.5 py-2 text-xs text-(--app-ink)">
+                    {entry.searchKeyword}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void navigator.clipboard?.writeText(entry.searchKeyword ?? "");
+                      toast.success("Keyword copied");
+                    }}
+                    className="app-press shrink-0 inline-flex items-center gap-1.5 rounded-(--app-r-chip) bg-(--app-cta) px-3 py-2 text-xs font-bold text-(--app-on-cta)"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <p className="text-xs text-(--app-ink-2)">
+                2. In the results, open{" "}
+                <span className="font-bold text-(--app-ink)">
+                  {entry.landingHost ?? "the site"}
+                </span>
+                .
+              </p>
+              <p className="text-[11px] text-(--app-warn) leading-relaxed">
+                Open it from the search results. Typing the address straight
+                into the bar does not count, and the article will tell you so
+                instead of starting.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs text-(--app-ink-2)">
+                1. Open the post (the button below does it).
+              </p>
+              <p className="text-xs text-(--app-ink-2)">
+                2. Click the link inside the post to reach{" "}
+                <span className="font-bold text-(--app-ink)">
+                  {entry.landingHost ?? "the article"}
+                </span>
+                .
+              </p>
+              <p className="text-[11px] text-(--app-warn) leading-relaxed">
+                Go through the post&apos;s own link. Reaching the article any
+                other way does not count.
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
       {opened && !blocked && (
         <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2.5 text-xs text-amber-200 flex items-start gap-2">
           <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
           <span className="min-w-0">
-            Article opened in a new tab. Keep this tab open — your reward
-            will land here when you finish.
+            {entry?.mode === "search"
+              ? "Search opened in a new tab. Find the site in the results and open it from there."
+              : entry?.mode === "referral"
+                ? "Post opened in a new tab. Click the link inside it to reach the article."
+                : "Article opened in a new tab."}{" "}
+            Keep this tab open — your reward will land here when you finish.
           </span>
         </div>
       )}
@@ -834,8 +941,8 @@ function KeyPoolStartCard({ taskId }: { taskId: string }) {
           <p className="flex items-start gap-2">
             <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
             <span className="min-w-0">
-              Your browser blocked the new tab. Open the article with this
-              link instead — your journey is already started.
+              Your browser blocked the new tab. Use this link instead —
+              your journey is already started.
             </span>
           </p>
           <a
@@ -846,7 +953,11 @@ function KeyPoolStartCard({ taskId }: { taskId: string }) {
             className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/20 px-2.5 py-1.5 font-semibold text-amber-100 hover:bg-amber-500/30"
           >
             <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-            Open the article
+            {entry?.mode === "search"
+              ? "Open the search"
+              : entry?.mode === "referral"
+                ? "Open the post"
+                : "Open the article"}
           </a>
         </div>
       )}
@@ -854,14 +965,27 @@ function KeyPoolStartCard({ taskId }: { taskId: string }) {
       <button
         disabled={busy}
         onClick={start}
-        className="w-full py-3 rounded-lg bg-linear-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white text-sm font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
+        className="w-full py-3 rounded-lg bg-linear-to-r from-(--app-grad-a) to-(--app-grad-b) hover:from-(--app-grad-a) hover:to-(--app-grad-b) text-white text-sm font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50 transition-colors"
       >
         {busy ? (
           <Loader2 className="w-4 h-4 animate-spin" />
         ) : (
           <ArrowRight className="w-4 h-4" />
         )}
-        {opened ? "Reopen Article" : "Start Article Journey"}
+        {/* The label has to name what the button actually opens. "Start
+            Article Journey" on a task that opens Google is a small lie, and
+            the worker finds out by landing somewhere unexpected. */}
+        {entry?.mode === "search"
+          ? opened
+            ? "Open the search again"
+            : "Open the search"
+          : entry?.mode === "referral"
+            ? opened
+              ? "Open the post again"
+              : "Open the post"
+            : opened
+              ? "Reopen Article"
+              : "Start Article Journey"}
       </button>
     </section>
   );
@@ -952,14 +1076,14 @@ function ManualKeySubmitCard({
       ? "border-emerald-500/60 bg-emerald-500/5"
       : matchState === "fail"
       ? "border-red-500/60 bg-red-500/5"
-      : "border-gray-800 bg-gray-900";
+      : "border-(--app-line) bg-(--app-surface)";
 
   const inputTone =
     matchState === "match"
       ? "border-emerald-500/60 focus:border-emerald-400"
       : matchState === "fail"
       ? "border-red-500/60 focus:border-red-400"
-      : "border-gray-700 focus:border-amber-500";
+      : "border-(--app-line) focus:border-amber-500";
 
   return (
     <section
@@ -989,7 +1113,7 @@ function ManualKeySubmitCard({
                 : "Already have your unique key?"}
             </span>
           </h3>
-          <p className="text-[11px] text-gray-500 mt-0.5 wrap-break-word">
+          <p className="text-[11px] text-(--app-ink-3) mt-0.5 wrap-break-word">
             {matchState === "match"
               ? resultMsg
               : matchState === "fail"
@@ -999,7 +1123,7 @@ function ManualKeySubmitCard({
               : "Paste it here once you've generated it on the final article page."}
           </p>
         </div>
-        <span className="text-gray-500 text-xs shrink-0 ml-2">
+        <span className="text-(--app-ink-3) text-xs shrink-0 ml-2">
           {open ? "Close" : "Open"}
         </span>
       </button>
@@ -1016,7 +1140,7 @@ function ManualKeySubmitCard({
               }
             }}
             placeholder="Paste the key you received on the final article page"
-            className={`w-full px-3 py-2 bg-gray-950 border rounded-lg text-sm font-mono text-white placeholder-gray-500 focus:outline-none transition-colors ${inputTone}`}
+            className={`w-full px-3 py-2 bg-(--app-page) border rounded-lg text-sm font-mono text-white placeholder:text-(--app-ink-3) focus:outline-none transition-colors ${inputTone}`}
           />
           {matchState === "fail" && resultMsg && (
             <p className="text-xs text-red-400 inline-flex items-center gap-1.5">

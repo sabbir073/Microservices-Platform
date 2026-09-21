@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Menu, Bell, Search, Wallet, Sparkles, Settings, LogOut, User, ChevronDown, FileText, Check, ChevronLeft } from "lucide-react";
+import { Menu, Bell, Search, Wallet, Sparkles, Settings, LogOut, User, ChevronDown, FileText, Check, ChevronLeft, Flame } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { useMobileNav } from "@/lib/stores/mobile-nav-store";
@@ -59,6 +59,8 @@ export function Header({ user, avatar }: HeaderProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [walletBalance, setWalletBalance] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [level, setLevel] = useState(0);
   // The balance is re-polled every 60s and on every pull-to-refresh, and it
   // used to change with no acknowledgement at all — the number was simply
   // different the next time you looked at it. `tick` counts real changes (not
@@ -83,6 +85,8 @@ export function Header({ user, avatar }: HeaderProps) {
         }
         prevBalance.current = next;
         setWalletBalance(next);
+        setStreak(d.streak ?? 0);
+        setLevel(d.level ?? 0);
         setUnreadCount(d.unreadCount ?? 0);
       }
     } catch (error) {
@@ -189,7 +193,7 @@ export function Header({ user, avatar }: HeaderProps) {
               <button
                 onClick={() => router.back()}
                 aria-label="Go back"
-                className="app-tap app-press -ml-1.5 inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:text-white hover:bg-(--shell-hover)"
+                className="app-tap app-press -ml-1.5 inline-flex items-center justify-center rounded-(--app-r-control) text-(--app-ink-2) hover:text-(--app-ink) hover:bg-(--shell-hover)"
               >
                 <ChevronLeft className="w-6 h-6" />
               </button>
@@ -198,7 +202,7 @@ export function Header({ user, avatar }: HeaderProps) {
               onClick={() => setIsMobileMenuOpen(true)}
               aria-label="Open menu"
               className={cn(
-                "app-tap app-press inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:text-white hover:bg-(--shell-hover)",
+                "app-tap app-press inline-flex items-center justify-center rounded-(--app-r-control) text-(--app-ink-2) hover:text-(--app-ink) hover:bg-(--shell-hover)",
                 !showBack && "-ml-1.5"
               )}
             >
@@ -224,11 +228,11 @@ export function Header({ user, avatar }: HeaderProps) {
               onClick={() => setIsSearchOpen(true)}
               className="app-press app-tap-row group w-full flex items-center gap-3 pl-3.5 pr-2 py-2 bg-(--app-surface-2) border border-(--app-line) rounded-(--app-r-control) text-left hover:border-(--app-line-strong)"
             >
-              <Search className="w-5 h-5 shrink-0 text-gray-500 group-hover:text-gray-400" />
-              <span className="t-body flex-1 min-w-0 truncate text-gray-500">
+              <Search className="w-5 h-5 shrink-0 text-(--app-ink-3) group-hover:text-(--app-ink-3)" />
+              <span className="t-body flex-1 min-w-0 truncate text-(--app-ink-3)">
                 Search tasks, people, courses…
               </span>
-              <kbd className="hidden xl:inline-block shrink-0 px-1.5 py-0.5 rounded-md border border-(--app-line) bg-(--app-surface) text-[10px] font-semibold text-gray-500">
+              <kbd className="hidden xl:inline-block shrink-0 px-1.5 py-0.5 rounded-md border border-(--app-line) bg-(--app-surface) text-[10px] font-semibold text-(--app-ink-3)">
                 {shortcutHint}
               </kbd>
             </button>
@@ -249,7 +253,7 @@ export function Header({ user, avatar }: HeaderProps) {
               type="button"
               onClick={() => setIsSearchOpen(true)}
               aria-label="Search"
-              className="app-tap app-press md:hidden inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:text-white hover:bg-(--shell-hover)"
+              className="app-tap app-press md:hidden inline-flex items-center justify-center rounded-(--app-r-control) text-(--app-ink-2) hover:text-(--app-ink) hover:bg-(--shell-hover)"
             >
               <Search className="w-5 h-5" />
             </button>
@@ -265,20 +269,37 @@ export function Header({ user, avatar }: HeaderProps) {
               aria-label={`Wallet balance: ${walletBalance.toLocaleString()} points`}
               className="app-press app-tap-row hidden sm:flex items-center gap-2 px-3 rounded-(--app-r-control) bg-(--app-surface-2) border border-(--app-line) hover:border-(--app-line-strong)"
             >
-              <Wallet className="w-4 h-4 shrink-0 text-gray-400" />
+              <Wallet className="w-4 h-4 shrink-0 text-(--app-ink-3)" />
               <span className="flex items-baseline gap-1">
                 <span
                   key={tick}
                   className={cn(
-                    "text-base font-extrabold tabular-nums tracking-tight text-white",
+                    "text-base font-extrabold tabular-nums tracking-tight text-(--app-ink)",
                     tick > 0 && "app-tick"
                   )}
                 >
                   {walletBalance.toLocaleString()}
                 </span>
-                <span className="t-eyebrow text-gray-400">PTS</span>
+                <span className="t-eyebrow text-(--app-ink-3)">PTS</span>
               </span>
             </Link>
+
+            {streak > 0 && (
+              <Link
+                href="/daily-mission"
+                aria-label={`Current streak: ${streak} ${
+                  streak === 1 ? "day" : "days"
+                }`}
+                title={`${streak}-day streak`}
+                className="app-press app-tap-row hidden md:inline-flex items-center gap-1.5 px-3 rounded-full bg-(--app-warn-soft) border border-(--app-warn-line) text-(--app-warn)"
+              >
+                <Flame className="w-3.5 h-3.5 shrink-0" aria-hidden />
+                <span className="text-sm font-extrabold tabular-nums leading-none">
+                  {streak}d
+                </span>
+                <span className="t-eyebrow hidden lg:inline">Streak</span>
+              </Link>
+            )}
 
             {/* Light/dark, back in the row.
                 It was moved into the account menu to thin out a crowded header,
@@ -302,7 +323,7 @@ export function Header({ user, avatar }: HeaderProps) {
                     ? `Notifications, ${unreadCount} unread`
                     : "Notifications"
                 }
-                className="app-tap app-press relative inline-flex items-center justify-center rounded-(--app-r-control) text-gray-300 hover:text-white hover:bg-(--shell-hover)"
+                className="app-tap app-press relative inline-flex items-center justify-center rounded-(--app-r-control) text-(--app-ink-2) hover:text-(--app-ink) hover:bg-(--shell-hover)"
               >
                 <Bell className="w-5 h-5" />
                 {unreadCount > 0 && (
@@ -323,11 +344,11 @@ export function Header({ user, avatar }: HeaderProps) {
                       top-16 opened the panel under the bar on notched devices. */}
                   <div className="fixed inset-x-2 top-[calc(4rem+env(safe-area-inset-top))] sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-88 rounded-(--app-r-card) bg-(--app-surface) border border-(--app-line) shadow-(--app-e3) z-50 overflow-hidden">
                     <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-(--app-line)">
-                      <h3 className="t-section text-white">Notifications</h3>
+                      <h3 className="t-section text-(--app-ink)">Notifications</h3>
                       {unreadCount > 0 && (
                         <button
                           onClick={handleMarkAllRead}
-                          className="app-press app-tap-row inline-flex items-center gap-1.5 px-2.5 rounded-(--app-r-chip) t-meta font-semibold text-(--app-info) hover:bg-(--app-info-soft)"
+                          className="app-press app-tap-row inline-flex items-center gap-1.5 px-2.5 rounded-(--app-r-chip) t-meta font-semibold text-(--app-accent-ink) hover:bg-(--app-nav-wash)"
                         >
                           <Check className="w-3.5 h-3.5" />
                           Mark all read
@@ -336,7 +357,7 @@ export function Header({ user, avatar }: HeaderProps) {
                     </div>
                     <div className="max-h-88 overflow-y-auto">
                       {notifications.length === 0 ? (
-                        <div className="px-4 py-10 text-center text-gray-500">
+                        <div className="px-4 py-10 text-center text-(--app-ink-3)">
                           <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
                           <p className="t-body">No notifications</p>
                         </div>
@@ -348,21 +369,21 @@ export function Header({ user, avatar }: HeaderProps) {
                             onClick={() => setIsNotificationOpen(false)}
                             className={cn(
                               "app-tap-row block px-4 py-3 border-b border-(--app-line) transition-colors hover:bg-(--app-surface-2)",
-                              !notif.isRead && "bg-(--app-info-soft)"
+                              !notif.isRead && "bg-(--app-nav-wash)"
                             )}
                           >
                             <div className="flex items-start gap-3">
                               {!notif.isRead && (
-                                <span className="w-2 h-2 mt-2 rounded-full shrink-0 bg-(--app-info)" />
+                                <span className="w-2 h-2 mt-2 rounded-full shrink-0 bg-(--app-cta)" />
                               )}
                               <div className="flex-1 min-w-0">
-                                <p className="t-card-title text-white truncate">
+                                <p className="t-card-title text-(--app-ink) truncate">
                                   {notif.title}
                                 </p>
-                                <p className="t-meta text-gray-400 mt-0.5 line-clamp-2">
+                                <p className="t-meta text-(--app-ink-3) mt-0.5 line-clamp-2">
                                   {notif.message}
                                 </p>
-                                <p className="t-meta text-gray-500 mt-1">
+                                <p className="t-meta text-(--app-ink-3) mt-1">
                                   {formatTimeAgo(notif.createdAt)}
                                 </p>
                               </div>
@@ -374,7 +395,7 @@ export function Header({ user, avatar }: HeaderProps) {
                     <Link
                       href="/notifications"
                       onClick={() => setIsNotificationOpen(false)}
-                      className="app-tap-row flex items-center justify-center px-4 t-body font-semibold text-(--app-info) hover:bg-(--app-info-soft) border-t border-(--app-line)"
+                      className="app-tap-row flex items-center justify-center px-4 t-body font-semibold text-(--app-accent-ink) hover:bg-(--app-nav-wash) border-t border-(--app-line)"
                     >
                       View all notifications
                     </Link>
@@ -398,7 +419,12 @@ export function Header({ user, avatar }: HeaderProps) {
                   name={user.name || user.email}
                   size={32}
                 />
-                <ChevronDown className="hidden sm:block w-4 h-4 text-gray-400" />
+                {level > 0 && (
+                  <span className="app-chip hidden lg:inline-flex" aria-hidden>
+                    LVL {level}
+                  </span>
+                )}
+                <ChevronDown className="hidden sm:block w-4 h-4 text-(--app-ink-3)" />
               </button>
 
               {/* Dropdown Menu */}
@@ -412,10 +438,10 @@ export function Header({ user, avatar }: HeaderProps) {
                     <div className="flex items-center gap-3 px-4 py-3.5 border-b border-(--app-line)">
                       <Avatar src={avatar} name={user.name || user.email} size={40} />
                       <div className="min-w-0">
-                        <p className="t-card-title text-white truncate">
+                        <p className="t-card-title text-(--app-ink) truncate">
                           {user.name || "User"}
                         </p>
-                        <p className="t-meta text-gray-500 truncate">
+                        <p className="t-meta text-(--app-ink-3) truncate">
                           {user.email}
                         </p>
                       </div>

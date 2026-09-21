@@ -111,13 +111,35 @@ export function BottomTabBar({
     const el = navRef.current;
     if (!el) return;
     const sync = () => {
-      root.style.setProperty(NAV_HEIGHT_VAR, `${Math.round(el.offsetHeight)}px`);
+      // Measured from the highest point the bar actually occupies, not from
+      // its own box.
+      //
+      // The primary tab is pulled up out of the bar with `-mt-5`, so it floats
+      // above it — and `offsetHeight` does not know about a child that
+      // overflows upward. Anything clearing the nav by that number was still
+      // sitting under the raised button: on the feed it covered the like and
+      // comment row of whichever post landed at the bottom of the screen.
+      const rect = el.getBoundingClientRect();
+      let top = rect.top;
+      for (const child of el.querySelectorAll("*")) {
+        const r = (child as HTMLElement).getBoundingClientRect();
+        if (r.height > 0 && r.top < top) top = r.top;
+      }
+      const height = Math.max(0, Math.round(window.innerHeight - top));
+      root.style.setProperty(NAV_HEIGHT_VAR, `${height}px`);
     };
     sync();
     const obs = new ResizeObserver(sync);
     obs.observe(el);
+    // The measurement is relative to the viewport now, so it has to be redone
+    // when the viewport moves — a rotation, or a mobile browser's toolbar
+    // sliding away, changes `innerHeight` without resizing the bar.
+    window.addEventListener("resize", sync);
+    window.addEventListener("orientationchange", sync);
     return () => {
       obs.disconnect();
+      window.removeEventListener("resize", sync);
+      window.removeEventListener("orientationchange", sync);
       root.style.setProperty(NAV_HEIGHT_VAR, "0px");
     };
   }, []);
@@ -154,7 +176,7 @@ export function BottomTabBar({
                 // add up to — a tab bar row is the most-tapped target in the
                 // app and it must not depend on the label's line height.
                 "app-press relative flex flex-col items-center justify-center gap-1 min-h-14 py-2 text-[11px] font-bold tracking-tight",
-                activeTab ? "text-(--app-info)" : "text-gray-400"
+                activeTab ? "text-(--app-accent-ink)" : "text-(--app-ink-3)"
               )}
             >
               {/* Which tab you are on was carried by colour alone (indigo
@@ -179,7 +201,7 @@ export function BottomTabBar({
                     "flex items-center justify-center w-14 h-14 rounded-(--app-r-panel) transition-all -mt-5",
                     activeTab
                       ? "app-accent app-accent-glow"
-                      : "bg-(--app-surface-2) text-gray-300 border border-(--app-line)"
+                      : "bg-(--app-surface-2) text-(--app-ink-2) border border-(--app-line)"
                   )}
                 >
                   <tab.icon className="w-6 h-6" />
@@ -199,7 +221,7 @@ export function BottomTabBar({
             setMenuOpen(true);
           }}
           aria-label={unread > 0 ? `Open menu, ${unread} unread` : "Open menu"}
-          className="app-press flex flex-col items-center justify-center gap-1 min-h-14 py-2 text-[11px] font-bold tracking-tight text-gray-400"
+          className="app-press flex flex-col items-center justify-center gap-1 min-h-14 py-2 text-[11px] font-bold tracking-tight text-(--app-ink-3)"
         >
           <span className="relative">
             <Menu className="w-5.5 h-5.5" />

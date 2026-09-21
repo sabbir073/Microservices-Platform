@@ -67,11 +67,11 @@ export default function PressPage() {
         <SectionHeading badge="Brand" tone="purple" title="Logo & colors" subtitle="Please don't alter, recolor, or stretch the logo. Keep clear space around it and use it on dark backgrounds where possible." />
         <div className="grid gap-4 sm:grid-cols-2">
           <GlassCard className="flex items-center gap-3">
-            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-linear-to-br from-blue-500 to-purple-600">
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-linear-to-br from-(--mk-grad-a) to-(--mk-grad-b)">
               <Sparkles className="h-7 w-7 text-white" />
             </div>
             <div>
-              <p className="text-lg font-bold bg-linear-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent">{COMPANY_NAME}</p>
+              <p className="text-lg font-bold bg-linear-to-r from-(--mk-rail-a) to-(--mk-rail-b) bg-clip-text text-transparent">{COMPANY_NAME}</p>
               <p className="text-xs text-(--mk-subtle)">Primary logo (mark + wordmark)</p>
             </div>
           </GlassCard>
@@ -94,7 +94,7 @@ export default function PressPage() {
 
       <Section width="narrow">
         <GlassCard className="text-center sm:p-10">
-          <div className="mb-3 inline-flex items-center gap-2 text-indigo-600">
+          <div className="mb-3 inline-flex items-center gap-2 text-(--mk-accent)">
             <Mail className="h-5 w-5" /><span className="text-sm font-bold uppercase tracking-wider">Media inquiries</span>
           </div>
           <h2 className="text-2xl font-extrabold text-(--mk-text)">Let&apos;s talk</h2>

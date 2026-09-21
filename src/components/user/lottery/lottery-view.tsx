@@ -150,7 +150,7 @@ export function LotteryView() {
           <Ticket className="w-6 h-6 text-purple-400" />
           Lottery
         </h1>
-        <p className="text-gray-400 text-sm mt-0.5">
+        <p className="text-(--app-ink-3) text-sm mt-0.5">
           Try your luck — every ticket counts.
         </p>
       </header>
@@ -201,14 +201,14 @@ export function LotteryView() {
                   key={l.id}
                   className="glass rounded-xl p-3 flex items-center gap-3"
                 >
-                  <div className="w-10 h-10 rounded-full bg-linear-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white">
+                  <div className="w-10 h-10 rounded-full bg-linear-to-br from-(--app-grad-a) to-(--app-grad-b) flex items-center justify-center text-white">
                     <Ticket className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-white truncate">
                       {l.title}
                     </p>
-                    <p className="text-[11px] text-gray-500">
+                    <p className="text-[11px] text-(--app-ink-3)">
                       {l.userTickets.count} ticket
                       {l.userTickets.count > 1 ? "s" : ""} ·{" "}
                       {l.status === "COMPLETED"
@@ -233,7 +233,7 @@ export function LotteryView() {
             {recentWinners.slice(0, 5).map((w, i) => (
               <div
                 key={i}
-                className="rounded-lg border border-gray-800 bg-gray-900 p-2.5 flex items-center gap-3"
+                className="rounded-lg border border-(--app-line) bg-(--app-surface) p-2.5 flex items-center gap-3"
               >
                 <span className="text-lg">
                   {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "🎟"}
@@ -242,7 +242,7 @@ export function LotteryView() {
                   <p className="text-sm font-semibold text-white truncate">
                     {w.userName}
                   </p>
-                  <p className="text-[11px] text-gray-500 truncate">
+                  <p className="text-[11px] text-(--app-ink-3) truncate">
                     {w.lotteryTitle} · #{w.ticketNumber}
                   </p>
                 </div>
@@ -278,7 +278,7 @@ function FeaturedLotteryCard({
   const isActive = lottery.status === "ACTIVE";
 
   return (
-    <div className="rounded-2xl bg-linear-to-br from-purple-600/30 via-pink-500/20 to-amber-400/20 border border-purple-500/40 backdrop-blur-xl p-5 shadow-2xl">
+    <div className="rounded-2xl bg-linear-to-br from-(--app-rail-a)/30 via-(--app-rail-b)/20 to-amber-400/20 border border-(--app-accent-edge)/40 backdrop-blur-xl p-5 shadow-2xl">
       <div className="flex items-center gap-2 text-purple-200">
         <Crown className="w-5 h-5 text-amber-300" />
         <p className="text-xs uppercase tracking-widest font-bold">
@@ -439,7 +439,7 @@ function LotteryRow({
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-white truncate">{lottery.title}</p>
-        <p className="text-[11px] text-gray-500">
+        <p className="text-[11px] text-(--app-ink-3)">
           {lottery.totalPrizePool.toLocaleString()} pts pool
           {lottery.prizeMode === "POOL" && " (growing)"} ·{" "}
           {format(new Date(lottery.drawDate), "MMM d")}
@@ -459,7 +459,7 @@ function LotteryRow({
           "px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap",
           isActive
             ? "bg-purple-500 hover:bg-purple-600 text-white"
-            : "bg-gray-800 text-gray-500 cursor-not-allowed"
+            : "bg-(--app-surface-2) text-(--app-ink-3) cursor-not-allowed"
         )}
       >
         {busyId === `${lottery.id}-1` ? (

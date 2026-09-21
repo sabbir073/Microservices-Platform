@@ -7,10 +7,10 @@ export const PACKAGE_TIER_STYLES: Record<
   { gradient: string; border: string; ring: string; text: string; label: string }
 > = {
   FREE: {
-    gradient: "from-slate-700 to-slate-600",
-    border: "border-slate-500/40",
-    ring: "ring-slate-400/20",
-    text: "text-slate-100",
+    gradient: "from-[#334155] to-[#475569]",
+    border: "border-(--app-line)/40",
+    ring: "ring-(--app-ink-3)/20",
+    text: "text-(--app-ink)",
     label: "Free",
   },
   STARTER: {
@@ -21,7 +21,7 @@ export const PACKAGE_TIER_STYLES: Record<
     label: "Starter",
   },
   PRO: {
-    gradient: "from-purple-600 to-pink-500",
+    gradient: "from-purple-500 to-pink-500",
     border: "border-purple-400/40",
     ring: "ring-purple-400/30",
     text: "text-purple-50",
@@ -117,7 +117,7 @@ export function LevelBadge({
 }) {
   return (
     <div
-      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 ring-1 ring-indigo-500/20"
+      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-(--app-cta)/10 border border-(--app-accent-edge)/30 ring-1 ring-(--app-accent-edge)/20"
       title={`${xp.toLocaleString()} XP — ${xpProgress}/${xpNeeded} to next level`}
     >
       <div className="relative w-5 h-5 shrink-0">
@@ -126,14 +126,14 @@ export function LevelBadge({
             cx="18"
             cy="18"
             r="15"
-            className="fill-none stroke-indigo-900/40"
+            className="fill-none stroke-(--app-line-strong)"
             strokeWidth="4"
           />
           <circle
             cx="18"
             cy="18"
             r="15"
-            className="fill-none stroke-indigo-400 transition-[stroke-dashoffset]"
+            className="fill-none stroke-(--app-accent-edge) transition-[stroke-dashoffset]"
             strokeWidth="4"
             strokeLinecap="round"
             strokeDasharray={Math.PI * 30}
@@ -141,10 +141,10 @@ export function LevelBadge({
           />
         </svg>
       </div>
-      <span className="text-xs font-extrabold text-indigo-200 uppercase tracking-wider">
+      <span className="text-xs font-extrabold text-(--app-accent-ink) uppercase tracking-wider">
         Lv {level}
       </span>
-      <span className="text-[10px] font-semibold text-indigo-400/80 tabular-nums">
+      <span className="text-[10px] font-semibold text-(--app-accent-ink)/80 tabular-nums">
         {xpPercentage}%
       </span>
     </div>
@@ -158,7 +158,7 @@ export function RankBadge({ rank }: { rank: number }) {
       ? "from-amber-500/20 to-yellow-500/20 border-amber-400/40 text-amber-300"
       : rank <= 100
       ? "from-purple-500/15 to-pink-500/15 border-purple-400/30 text-purple-200"
-      : "from-slate-700/40 to-slate-600/40 border-slate-500/30 text-slate-200";
+      : "from-[#334155]/40 to-[#475569]/40 border-(--app-line)/30 text-(--app-ink)";
   return (
     <div
       className={cn(

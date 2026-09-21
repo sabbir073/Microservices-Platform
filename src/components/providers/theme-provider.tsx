@@ -1,5 +1,7 @@
 "use client";
 
+import { DEFAULT_ACCENT } from "@/lib/accent-palette";
+
 import {
   createContext,
   useContext,
@@ -40,7 +42,12 @@ type ThemeContextType = {
   theme: Theme; // the raw preference (may be "system")
   setTheme: (theme: Theme) => void;
   accent: Accent;
-  setAccent: (accent: Accent) => void;
+  /** `null` clears the stored choice and falls back to the platform default. */
+  setAccent: (accent: Accent | null) => void;
+  /** True when no accent has been chosen, so the platform's own is showing. */
+  accentIsDefault: boolean;
+  /** Admin switch: whether this user may change the theme at all. */
+  canChangeTheme: boolean;
 };
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
@@ -65,10 +72,18 @@ export function ThemeProvider({
   children,
   defaultTheme = "dark",
   storageKey = "earngpt-theme",
+  allowUserChoice = true,
 }: {
   children: React.ReactNode;
   defaultTheme?: Theme;
   storageKey?: string;
+  /**
+   * Admin switch. When false the stored preference is ignored entirely and
+   * `setTheme` does nothing, so a control that somehow renders anyway cannot
+   * change the theme — the guard is here, not only in the markup that hides
+   * the switch.
+   */
+  allowUserChoice?: boolean;
 }) {
   // Start from defaults on BOTH server and first client render so the tree
   // renders identically (no hydration mismatch) — then hydrate the stored
@@ -76,7 +91,9 @@ export function ThemeProvider({
   // applied to <html> by the inline script in layout.tsx before first paint, so
   // there's no flash while the context catches up.
   const [theme, setThemeState] = useState<Theme>(defaultTheme);
-  const [accent, setAccentState] = useState<Accent>("indigo");
+  // From the table, not a literal: DEFAULT_ACCENT is where the launch accent
+  // is decided, and a second copy here is how the two drift apart.
+  const [accent, setAccentState] = useState<Accent>(DEFAULT_ACCENT as Accent);
 
   // Hydrate persisted preferences once, after mount. Reading localStorage here
   // (not in the useState initializer) is deliberate: it keeps the server and
@@ -84,24 +101,50 @@ export function ThemeProvider({
   // mismatch, then syncs the real preference in. The one-time setState is the
   // intended pattern for this — hence the rule disable.
   useEffect(() => {
-    const storedTheme = localStorage.getItem(storageKey) as Theme | null;
+    // With choice off, the stored preference is not read at all — the same
+    // rule the pre-paint script follows, so the two never disagree.
+    const storedTheme = allowUserChoice
+      ? (localStorage.getItem(storageKey) as Theme | null)
+      : null;
     if (storedTheme === "dark" || storedTheme === "light" || storedTheme === "system") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setThemeState(storedTheme);
     }
     const storedAccent = localStorage.getItem(ACCENT_KEY) as Accent | null;
     if (storedAccent && ACCENTS.includes(storedAccent)) setAccentState(storedAccent);
-  }, [storageKey]);
+  }, [storageKey, allowUserChoice]);
 
   const setTheme = (next: Theme) => {
+    if (!allowUserChoice) return;
     setThemeState(next);
     if (typeof window !== "undefined") localStorage.setItem(storageKey, next);
   };
 
-  const setAccent = (next: Accent) => {
-    setAccentState(next);
-    if (typeof window !== "undefined") localStorage.setItem(ACCENT_KEY, next);
+  /**
+   * Choose an accent, or go back to the platform's own.
+   *
+   * `null` is "no choice of mine" — it forgets the stored preference and drops
+   * the attribute, so the `:root` block applies and the site's default accent
+   * shows through. Without it a colour was a one-way door: the picker could
+   * set a preference but nothing could clear one, so a user who had ever
+   * tapped a swatch (or been given one by the old boot script) could never see
+   * the platform's own colour again, whatever it was changed to.
+   */
+  const setAccent = (next: Accent | null) => {
+    setAccentState(next ?? (DEFAULT_ACCENT as Accent));
+    if (typeof window === "undefined") return;
+    if (next) localStorage.setItem(ACCENT_KEY, next);
+    else localStorage.removeItem(ACCENT_KEY);
+    // The attribute is written here as well as in the effect below, because
+    // dropping it is not a state change the effect can express — `accent`
+    // still holds a value, it is simply no longer the user's.
+    if (next) document.documentElement.setAttribute("data-accent", next);
+    else document.documentElement.removeAttribute("data-accent");
   };
+
+  /** True when the accent on screen is the platform's, not a choice. */
+  const accentIsDefault =
+    typeof window !== "undefined" && !localStorage.getItem(ACCENT_KEY);
 
   // Apply the resolved theme; when "system", follow OS changes live. The inline
   // script in layout.tsx already set the correct data-theme before first paint,
@@ -135,7 +178,9 @@ export function ThemeProvider({
   // entire app (page + loading skeleton) until the client bundle hydrated,
   // defeating SSR streaming. Children now render on the server and stream in.
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, accent, setAccent }}>
+    <ThemeContext.Provider
+      value={{ theme, setTheme, accent, setAccent, accentIsDefault, canChangeTheme: allowUserChoice }}
+    >
       {children}
     </ThemeContext.Provider>
   );

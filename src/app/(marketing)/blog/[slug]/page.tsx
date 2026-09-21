@@ -35,12 +35,12 @@ export default async function BlogArticlePage({
         <ArrowLeft className="h-4 w-4" /> All articles
       </Link>
 
-      <div className="mt-6 grid place-items-center rounded-3xl bg-linear-to-br from-blue-500/20 to-purple-600/20 py-14 text-7xl">
+      <div className="mt-6 grid place-items-center rounded-3xl bg-linear-to-br from-(--mk-grad-a)/20 to-(--mk-rail-b)/20 py-14 text-7xl">
         {post.emoji}
       </div>
 
       <div className="mt-6 flex items-center gap-3 text-xs text-(--mk-muted)">
-        <span className="rounded-full bg-blue-500/10 border border-blue-500/30 text-indigo-600 px-2.5 py-1 font-semibold uppercase tracking-wider">{post.category}</span>
+        <span className="rounded-full bg-blue-500/10 border border-blue-500/30 text-(--mk-accent) px-2.5 py-1 font-semibold uppercase tracking-wider">{post.category}</span>
         <span>{formatBlogDate(post.date)}</span>
         <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3" />{post.readMinutes} min read</span>
       </div>

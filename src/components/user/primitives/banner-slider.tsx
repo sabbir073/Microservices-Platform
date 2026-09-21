@@ -22,10 +22,10 @@ interface BannerSliderProps {
 }
 
 const FALLBACK_GRADIENTS = [
-  "from-indigo-600 to-purple-600",
+  "from-(--app-grad-a) to-(--app-grad-b)",
   "from-emerald-600 to-cyan-600",
   "from-amber-500 to-pink-600",
-  "from-purple-600 to-pink-600",
+  "from-(--app-grad-a) to-pink-600",
 ];
 
 export function BannerSlider({
@@ -139,7 +139,7 @@ export function BannerSlider({
                     playsInline
                     className="absolute inset-0 w-full h-full object-cover"
                   />
-                  <div className="absolute inset-0 bg-linear-to-r from-slate-950/70 to-slate-950/30" />
+                  <div className="absolute inset-0 bg-linear-to-r from-black/70 to-black/30" />
                 </>
               )}
               <div className="relative z-10 text-white max-w-[70%]">

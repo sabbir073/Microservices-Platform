@@ -1,0 +1,819 @@
+/**
+ * verify-article-entry-modes — how a worker is required to ARRIVE.
+ *
+ * The article journey itself is not in scope here and is not touched by this
+ * feature: popups, dwell, scroll and the key at the end behave in all three
+ * modes exactly as they do today. What this suite guards is the boundary —
+ * that a task which has never heard of entry modes keeps behaving as `direct`,
+ * and that a task which opts in cannot be saved in a state where the journey
+ * could never start.
+ *
+ * Phase 1 of the plan: the config shape and its validation. Later phases add
+ * the landing API, the embed's no-token branch, and the submit-side check;
+ * this file grows with them.
+ *
+ * Run:  npx tsx --tsconfig tsconfig.script.json scripts/verify-article-entry-modes.ts
+ */
+import {
+  articleEntryMode,
+  buildTaggedLandingUrl,
+  coerceArticleEntry,
+  emptyArticleConfig,
+  isSearchEngineHost,
+  mintArticleSrcTag,
+  validateArticleConfig,
+  evaluateArticleEntry,
+  entryVerdictAllows,
+  ARTICLE_SRC_PARAM,
+  type ArticleEntryConfig,
+  type ArticleConfig,
+  type ArticlePage,
+  type ArticlePopupItem,
+} from "../src/lib/article-tasks";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+let passed = 0;
+let failed = 0;
+const failures: string[] = [];
+
+function check(label: string, ok: boolean, detail = "") {
+  if (ok) {
+    passed++;
+    console.log(`  ok   ${label}`);
+  } else {
+    failed++;
+    failures.push(label + (detail ? ` — ${detail}` : ""));
+    console.log(`  FAIL ${label}${detail ? ` — ${detail}` : ""}`);
+  }
+}
+
+/** A minimal task that already validates today, so tests vary one thing. */
+function baseConfig(): ArticleConfig {
+  return {
+    ...emptyArticleConfig(),
+    useKeyPool: true,
+    pages: [
+      {
+        url: "https://example.com/article-one",
+        popupCount: 2,
+        popups: [{ text: "Continue reading" }] as ArticlePopupItem[],
+      },
+      {
+        url: "https://example.com/article-two",
+        popupCount: 2,
+        popups: [{ text: "Next section" }] as ArticlePopupItem[],
+      },
+    ] as ArticlePage[],
+  };
+}
+
+console.log("\nverify-article-entry-modes\n");
+
+/* ══════════════════════════════════════════════════════════════════════════
+   1. Nothing that exists today changes
+   ══════════════════════════════════════════════════════════════════════════
+   Every article task on the platform right now has no `entry` at all. If any
+   of these three stop holding, this feature has reached back and altered
+   tasks it was never meant to touch. */
+{
+  const cfg = baseConfig();
+  check("a task with no entry config still validates", validateArticleConfig(cfg).ok);
+  check("…and reads as direct", articleEntryMode(cfg) === "direct");
+  check(
+    "a brand-new config declares no entry mode",
+    emptyArticleConfig().entry === undefined
+  );
+}
+
+/* Anything unreadable in the JSON column also falls back to direct rather than
+   to a half-configured gate. The safe direction to fail is the old behaviour. */
+for (const [label, raw] of [
+  ["null", null],
+  ["a string", "search"],
+  ["an unknown mode", { mode: "telepathy" }],
+  ["mode missing", { searchKeyword: "x" }],
+  ["explicitly direct", { mode: "direct" }],
+] as const) {
+  check(
+    `${label} in the entry column reads as direct`,
+    coerceArticleEntry(raw) === undefined
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   2. The normaliser fills the gaps it is allowed to fill
+   ══════════════════════════════════════════════════════════════════════════ */
+{
+  const e = coerceArticleEntry({ mode: "search" });
+  check("an unset search engine defaults to any", e?.searchEngine === "any");
+  check(
+    "an unset unknown-source policy defaults to review, not block",
+    e?.onUnknownSource === "review",
+    "blocking by default would punish a worker for a privacy setting"
+  );
+  const strict = coerceArticleEntry({ mode: "search", onUnknownSource: "block" });
+  check("…but block is honoured when chosen", strict?.onUnknownSource === "block");
+  const junk = coerceArticleEntry({ mode: "search", searchEngine: "askjeeves" });
+  check("an unrecognised engine falls back to any", junk?.searchEngine === "any");
+  const spaced = coerceArticleEntry({ mode: "search", searchKeyword: "  bd jobs  " });
+  check("values are trimmed", spaced?.searchKeyword === "bd jobs");
+  const empty = coerceArticleEntry({ mode: "search", searchKeyword: "   " });
+  check(
+    "a whitespace-only value becomes absent, not an empty string",
+    empty?.searchKeyword === undefined
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   3. A task that could never start cannot be saved
+   ══════════════════════════════════════════════════════════════════════════
+   The embed exists only on the configured pages. A landing page anywhere else
+   is a journey with no beginning, and the admin should hear that at save time
+   rather than from a worker who cannot finish. */
+{
+  const noLanding = baseConfig();
+  noLanding.entry = { mode: "search", searchKeyword: "bd jobs" };
+  const r = validateArticleConfig(noLanding);
+  check("a missing landing page is refused", !r.ok, r.error);
+
+  const wrongHost = baseConfig();
+  wrongHost.entry = {
+    mode: "search",
+    searchKeyword: "bd jobs",
+    landingUrl: "https://somewhere-else.com/page",
+  };
+  const r2 = validateArticleConfig(wrongHost);
+  check(
+    "a landing page on a host with no embed is refused",
+    !r2.ok && /not one of this task's pages/.test(r2.error ?? "")
+  );
+
+  const bad = baseConfig();
+  bad.entry = { mode: "search", searchKeyword: "x", landingUrl: "not a url" };
+  check("an unparseable landing URL is refused", !validateArticleConfig(bad).ok);
+
+  const good = baseConfig();
+  good.entry = {
+    mode: "search",
+    searchKeyword: "bd jobs",
+    landingUrl: "https://example.com/article-one",
+  };
+  check("a complete search config validates", validateArticleConfig(good).ok);
+
+  /* The landing page may carry its own query string — an admin's real URL
+     usually does — so the check is on the host, not on an exact match. */
+  const withQuery = baseConfig();
+  withQuery.entry = {
+    mode: "search",
+    searchKeyword: "bd jobs",
+    landingUrl: "https://example.com/article-one?utm_campaign=x",
+  };
+  check(
+    "a landing URL with query params still validates",
+    validateArticleConfig(withQuery).ok
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   4. Search mode needs the one thing the worker is told
+   ══════════════════════════════════════════════════════════════════════════ */
+{
+  const noKeyword = baseConfig();
+  noKeyword.entry = {
+    mode: "search",
+    landingUrl: "https://example.com/article-one",
+  };
+  check("search mode without a keyword is refused", !validateArticleConfig(noKeyword).ok);
+
+  const long = baseConfig();
+  long.entry = {
+    mode: "search",
+    searchKeyword: "x".repeat(121),
+    landingUrl: "https://example.com/article-one",
+  };
+  check("an absurd keyword is refused", !validateArticleConfig(long).ok);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   5. Referral mode needs the post AND the tag
+   ══════════════════════════════════════════════════════════════════════════
+   The tag is not a nicety. Facebook and Instagram in-app browsers strip the
+   referrer, which is most of mobile social traffic, and without the tag this
+   mode has no evidence of arrival at all. */
+{
+  const noPost = baseConfig();
+  noPost.entry = {
+    mode: "referral",
+    landingUrl: "https://example.com/article-one",
+    srcTag: "abc123",
+  };
+  check("referral without a post URL is refused", !validateArticleConfig(noPost).ok);
+
+  const noTag = baseConfig();
+  noTag.entry = {
+    mode: "referral",
+    postUrl: "https://facebook.com/post/1",
+    landingUrl: "https://example.com/article-one",
+  };
+  const r = validateArticleConfig(noTag);
+  check("referral without a source tag is refused", !r.ok, r.error);
+
+  const badTag = baseConfig();
+  badTag.entry = {
+    mode: "referral",
+    postUrl: "https://facebook.com/post/1",
+    landingUrl: "https://example.com/article-one",
+    srcTag: "NO",
+  };
+  check("a malformed tag is refused", !validateArticleConfig(badTag).ok);
+
+  const ok = baseConfig();
+  ok.entry = {
+    mode: "referral",
+    postUrl: "https://facebook.com/post/1",
+    landingUrl: "https://example.com/article-one",
+    srcTag: "k7m2qp4x",
+  };
+  check("a complete referral config validates", validateArticleConfig(ok).ok);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   6. The tag, and the link the admin is told to paste
+   ══════════════════════════════════════════════════════════════════════════ */
+{
+  const tags = new Set(Array.from({ length: 200 }, () => mintArticleSrcTag()));
+  check("minted tags match their own format", [...tags].every((t) => /^[a-z0-9]{6,16}$/.test(t)));
+  check(
+    "200 mints produced no collision",
+    tags.size === 200,
+    `${tags.size} distinct`
+  );
+  check(
+    "minted tags avoid characters that misread when copied by hand",
+    [...tags].every((t) => !/[ilo01]/.test(t)),
+    "an admin retyping a tag should not have to guess l from 1"
+  );
+
+  const tagged = buildTaggedLandingUrl("https://example.com/a?b=1", "k7m2qp4x");
+  check(
+    "the pasted link carries the tag alongside existing params",
+    tagged.includes(`${ARTICLE_SRC_PARAM}=k7m2qp4x`) && tagged.includes("b=1")
+  );
+  check(
+    "re-tagging replaces rather than appending a second one",
+    (buildTaggedLandingUrl(tagged, "zzzz9999").match(/src=/g) ?? []).length === 1
+  );
+  check(
+    "an unparseable URL is returned untouched rather than mangled",
+    buildTaggedLandingUrl("not a url", "k7m2qp4x") === "not a url"
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   7. What counts as arriving from a search
+   ══════════════════════════════════════════════════════════════════════════
+   Google runs a domain per market. A worker in Dhaka searching on
+   google.com.bd has done exactly what was asked, and a matcher that only knew
+   google.com would have failed most of this platform's users. */
+{
+  for (const host of [
+    "www.google.com",
+    "google.com.bd",
+    "www.google.co.uk",
+    "bing.com",
+    "duckduckgo.com",
+    "search.yahoo.com",
+    "yandex.com",
+  ]) {
+    check(`${host} counts as a search arrival`, isSearchEngineHost(host, "any"));
+  }
+  for (const host of ["example.com", "facebook.com", "notgoogle.com", ""]) {
+    check(`${host || "(empty)"} does not`, !isSearchEngineHost(host, "any"));
+  }
+  check(
+    "restricting to google excludes bing",
+    isSearchEngineHost("google.com.bd", "google") &&
+      !isSearchEngineHost("bing.com", "google")
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   8. Judging an arrival
+   ══════════════════════════════════════════════════════════════════════════ */
+const SEARCH: ArticleEntryConfig = {
+  mode: "search",
+  searchKeyword: "bd jobs",
+  searchEngine: "any",
+  landingUrl: "https://example.com/a",
+  onUnknownSource: "review",
+};
+const REFERRAL: ArticleEntryConfig = {
+  mode: "referral",
+  postUrl: "https://www.facebook.com/page/posts/123",
+  landingUrl: "https://example.com/a",
+  srcTag: "k7m2qp4x",
+  onUnknownSource: "review",
+};
+
+{
+  const fromGoogle = evaluateArticleEntry(
+    SEARCH,
+    "https://www.google.com/",
+    "https://example.com/a"
+  );
+  check("a Google referrer is a search arrival", fromGoogle.verdict === "search");
+
+  const fromElsewhere = evaluateArticleEntry(
+    SEARCH,
+    "https://someforum.com/thread",
+    "https://example.com/a"
+  );
+  check(
+    "a referrer from somewhere else is a mismatch",
+    fromElsewhere.verdict === "mismatch"
+  );
+
+  /* No referrer is the ambiguous case, and the one that decides whether this
+     feature is fair. A typed-in address and a stripped referrer are the same
+     thing from the page — so it is held, never called a mismatch. */
+  const typedIn = evaluateArticleEntry(SEARCH, "", "https://example.com/a");
+  check("no referrer is unknown, not mismatch", typedIn.verdict === "unknown");
+
+  const junk = evaluateArticleEntry(SEARCH, "not a url", "https://example.com/a");
+  check("an unparseable referrer is unknown, not a crash", junk.verdict === "unknown");
+
+  const engineLocked = evaluateArticleEntry(
+    { ...SEARCH, searchEngine: "google" },
+    "https://www.bing.com/",
+    "https://example.com/a"
+  );
+  check("restricting the engine rejects the other one", engineLocked.verdict === "mismatch");
+}
+
+/* Referral. The tag is the evidence; the referrer only corroborates, because
+   the in-app browsers carrying most social traffic strip it. */
+{
+  const tagged = evaluateArticleEntry(
+    REFERRAL,
+    "",
+    "https://example.com/a?src=k7m2qp4x"
+  );
+  check(
+    "a tagged arrival counts even with NO referrer at all",
+    tagged.verdict === "referral",
+    "this is the whole reason the tag exists — in-app browsers strip referrers"
+  );
+
+  const wrongTag = evaluateArticleEntry(
+    REFERRAL,
+    "",
+    "https://example.com/a?src=somethingelse"
+  );
+  check("a different task's tag does not count", wrongTag.verdict === "unknown");
+
+  const shim = evaluateArticleEntry(
+    REFERRAL,
+    "https://l.facebook.com/l.php?u=x",
+    "https://example.com/a"
+  );
+  check("Facebook's outbound shim counts as the post's referrer", shim.verdict === "referral");
+
+  const samePlatform = evaluateArticleEntry(
+    REFERRAL,
+    "https://www.facebook.com/",
+    "https://example.com/a"
+  );
+  check("the post's own host counts", samePlatform.verdict === "referral");
+
+  const elsewhere = evaluateArticleEntry(
+    REFERRAL,
+    "https://www.google.com/",
+    "https://example.com/a"
+  );
+  check(
+    "arriving from search when a post was asked for is a mismatch",
+    elsewhere.verdict === "mismatch"
+  );
+
+  const bare = evaluateArticleEntry(REFERRAL, "", "https://example.com/a");
+  check("untagged and no referrer is unknown", bare.verdict === "unknown");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   9. What a verdict permits
+   ══════════════════════════════════════════════════════════════════════════
+   The rule that keeps this honest in both directions: a held verdict lets the
+   worker do the job, and does NOT auto-approve it. Never both allow the
+   journey and then pay out on evidence we do not have. */
+{
+  const matched = entryVerdictAllows(SEARCH, "search");
+  check("a matching arrival starts and auto-approves", matched.start && matched.autoApprove);
+
+  const held = entryVerdictAllows(SEARCH, "unknown");
+  check(
+    "an unknown arrival starts but does NOT auto-approve",
+    held.start && !held.autoApprove
+  );
+
+  const strict = entryVerdictAllows({ ...SEARCH, onUnknownSource: "block" }, "unknown");
+  check("…unless the admin chose block, in which case it does not start", !strict.start);
+
+  const wrong = entryVerdictAllows(SEARCH, "mismatch");
+  check("a mismatch neither starts nor approves", !wrong.start && !wrong.autoApprove);
+
+  check(
+    "a referral verdict does not satisfy a search task",
+    !entryVerdictAllows(SEARCH, "referral").autoApprove
+  );
+  check(
+    "a search verdict does not satisfy a referral task",
+    !entryVerdictAllows(REFERRAL, "search").autoApprove
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   10. The landing route answers before the journey, not after
+   ══════════════════════════════════════════════════════════════════════════ */
+{
+  const route = readFileSync(
+    join(process.cwd(), "src/app/api/article-tasks/[taskId]/landing/route.ts"),
+    "utf8"
+  );
+  check("the landing route exists and speaks CORS", /corsResponse/.test(route));
+  check("a direct task is told so rather than judged", /mode: "direct"/.test(route));
+  check(
+    "a refused arrival is given no signed note to present later",
+    /start\s*\?\s*signArticleVisitToken/.test(route),
+    "signing one anyway would let a refused visitor claim a key"
+  );
+  check(
+    "the refusal message tells the worker what to do instead",
+    /Go back and search for/.test(route)
+  );
+  check(
+    "nothing is written — a public page costs no row per visitor",
+    !/prisma\.\w+\.(create|update|upsert|delete)/.test(route)
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   11. The embed's anonymous branch
+   ══════════════════════════════════════════════════════════════════════════
+   Everything here is about the boundary between the two flows. The journey
+   itself — popups, dwell, scroll — is shared code and is not re-tested. */
+{
+  const embed = readFileSync(
+    join(process.cwd(), "src/app/embed/article.js/route.ts"),
+    "utf8"
+  );
+
+  check(
+    "a page with no token asks the door instead of giving up",
+    /if \(!token && !visitToken\) \{\s*askTheDoor\(\);/.test(embed),
+    "this line used to be a bare return — an ordinary reader and nothing else"
+  );
+  check(
+    "a direct task still leaves the article alone",
+    /d\.mode === 'direct'/.test(embed) && /left alone/.test(embed)
+  );
+  check(
+    "a refusal says what to do instead of dying silently",
+    /if \(!d\.start\)/.test(embed) && /showNotice\(/.test(embed)
+  );
+  check(
+    "the door runs before the config, not after",
+    embed.indexOf("askTheDoor") < embed.indexOf("function begin()"),
+    "asking after the journey has started is the failure this feature exists to avoid"
+  );
+
+  /* A journey with no submission has nothing to upsert per-popup against.
+     Calling popup-progress anyway would 401 on every click. */
+  check(
+    "per-popup reporting is skipped when there is no session token",
+    /function reportProgress\(\) \{[\s\S]{0,400}?if \(!token\) return;/.test(embed)
+  );
+  check(
+    "a finished page is written into the note before moving on",
+    /recordVisitPage\(\)\.then/.test(embed),
+    "otherwise the note reaches the last page still saying the page was unread"
+  );
+  check(
+    "the next page is rebuilt from the NEW note, not the one config handed over",
+    /withVisitToken\(cfg\.nextPageUrl\)/.test(embed)
+  );
+  check(
+    "swapping the note on a URL replaces it rather than appending a second",
+    /replace\(\/\(\[\?&\]\)egv=\[\^&\]\*\/g/.test(embed)
+  );
+  check(
+    "the key is claimed with whichever proof this journey holds",
+    /token\s*\?\s*JSON\.stringify\(\{ token: token \}\)/.test(embed)
+  );
+  check(
+    "the fingerprint is coarse and derived, never an identifier we store",
+    /function browserFingerprint\(\)/.test(embed) && !/localStorage/.test(embed)
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   12. The server side of the anonymous journey
+   ══════════════════════════════════════════════════════════════════════════ */
+{
+  const progress = readFileSync(
+    join(process.cwd(), "src/app/api/article-tasks/[taskId]/visit-progress/route.ts"),
+    "utf8"
+  );
+  check(
+    "visit-progress re-signs rather than trusting what it was handed",
+    /signArticleVisitToken/.test(progress) && /verifyArticleVisitToken/.test(progress)
+  );
+  check(
+    "adding the same page twice does not grow the note",
+    /new Set\(\[\.\.\.v\.payload\.p, pageIndex\]\)/.test(progress)
+  );
+  check(
+    "finishing a long journey does not extend how long the note lives",
+    /v\.payload\.exp - Math\.floor\(Date\.now\(\) \/ 1000\)/.test(progress),
+    "re-signing with a fresh TTL would let a note be renewed indefinitely"
+  );
+
+  const key = readFileSync(
+    join(process.cwd(), "src/app/api/article-tasks/[taskId]/generate-key/route.ts"),
+    "utf8"
+  );
+  check(
+    "the verdict is re-checked server-side before a key is issued",
+    /entryVerdictAllows\(entry, verdict\)/.test(key),
+    "the door is client-side; this is not"
+  );
+  check(
+    "every page with popups must be in the note",
+    /renderedPopupCount\(p\) > 0 && !vv\.payload\.p\.includes\(i\)/.test(key)
+  );
+  check(
+    "the arrival is written onto the key, because the referrer is gone by submit time",
+    /"entrySource" = /.test(key) && /"entryReferrer" = /.test(key)
+  );
+  check(
+    "an anonymous key is left unclaimed — it binds to whoever submits it",
+    // Split on the DEFINITION, not the call: the call sits above the
+    // signed-in path, whose SQL legitimately sets claimedByUserId.
+    !/claimedByUserId" =/.test(
+      key.split("async function issueAnonymousKey")[1] ?? ""
+    )
+  );
+  check(
+    "the anonymous path is rate-limited per browser",
+    /ANON_KEYS_PER_BROWSER_PER_DAY/.test(key),
+    "a public page can be reloaded by anyone; a drainable pool will be drained"
+  );
+  check(
+    "a key already issued to someone is not handed out again",
+    /"issuedAt" IS NULL/.test(key)
+  );
+
+  const config = readFileSync(
+    join(process.cwd(), "src/app/api/article-tasks/[taskId]/embed-config/route.ts"),
+    "utf8"
+  );
+  check(
+    "embed-config accepts either proof",
+    /verifyArticleVisitToken/.test(config) && /verifyArticleTaskToken/.test(config)
+  );
+  check(
+    "the note rides to the next page the way the session token does",
+    /appendArticleVisitToken\(next\.url/.test(config)
+  );
+  check(
+    "waypoint seeding has a subject in both flows",
+    /seedSubject/.test(config),
+    "it used to read the user id, which an anonymous journey does not have"
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   13. What submitting a key decides
+   ══════════════════════════════════════════════════════════════════════════
+   The rule the owner asked for is "key matches, therefore approved", and that
+   stays exactly true for the direct flow. What these checks hold is that it
+   does not quietly become true for a journey whose arrival could not be
+   confirmed — otherwise the two new modes would ask nothing of anyone. */
+{
+  const submit = readFileSync(
+    join(process.cwd(), "src/app/api/tasks/[id]/submit/route.ts"),
+    "utf8"
+  );
+
+  check(
+    "the key's arrival evidence is read when it is claimed",
+    /entrySource: true/.test(submit) && /entryReferrer: true/.test(submit)
+  );
+  check(
+    "a key with no evidence decides exactly as it always did",
+    /if \(keyRow\.entrySource\) \{/.test(submit),
+    "every key issued before this feature has a null entrySource, and must be untouched by it"
+  );
+  check(
+    "an unconfirmed arrival blocks auto-approval",
+    /!articleEntryHold &&/.test(submit)
+  );
+
+  /* The important half: it blocks the PAYOUT, never the submission. The popups
+     were all clicked — that is what holding a key means — so the work exists
+     and only the route in is in doubt. */
+  check(
+    "an unconfirmed arrival is never turned into a rejection",
+    !/articleEntryHold[\s\S]{0,200}SubmissionStatus\.REJECTED/.test(submit),
+    "rejecting would throw away work that was demonstrably done"
+  );
+  check(
+    "the reason reaches the field the review screen shows",
+    /articleEntryHold \? \{ feedback: articleEntryHold \}/.test(submit),
+    "a reason buried in a JSON blob is a reason nobody reads"
+  );
+  check(
+    "what was actually observed is kept for the reviewer",
+    /articleEntryEvidence = \{[\s\S]{0,200}referrer: keyRow\.entryReferrer/.test(
+      submit
+    ) && /submissionMetadata\.articleEntry = articleEntryEvidence/.test(submit)
+  );
+
+  /* An admin who switches the mode off after keys are out has changed the
+     rules mid-journey. The worker cannot know that, and must not lose for it. */
+  check(
+    "a mode switched off after issue holds rather than punishes",
+    /no longer requires a specific entry route/.test(submit)
+  );
+
+  /* Staleness is a suspicion, not a verdict. */
+  check(
+    "a stale key is held, not killed",
+    /ARTICLE_KEY_FRESH_MINUTES/.test(submit) &&
+      /Held, not killed/.test(submit)
+  );
+  check(
+    "the freshness window is long enough for a real multi-page read",
+    /const ARTICLE_KEY_FRESH_MINUTES = (\d+)/.test(submit) &&
+      Number(submit.match(/const ARTICLE_KEY_FRESH_MINUTES = (\d+)/)?.[1]) >= 60,
+    "dwell gates plus several pages plus walking back to EarnGPT is not a five-minute errand"
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   14. The admin control, and whether it reaches the column
+   ══════════════════════════════════════════════════════════════════════════
+   This platform has shipped 44 settings that wrote a row nothing read, and
+   one that wrote a different key than the code read. A control that renders
+   is not a control that works, so these follow the value from the form to the
+   database and back. */
+{
+  const builder = readFileSync(
+    join(process.cwd(), "src/app/admin/tasks/_components/ArticleTaskBuilder.tsx"),
+    "utf8"
+  );
+  const save = readFileSync(
+    join(process.cwd(), "src/app/api/admin/tasks/[id]/article-config/route.ts"),
+    "utf8"
+  );
+
+  check("the builder offers the three modes", /ARRIVAL_MODES/.test(builder));
+  check(
+    "the save route accepts `entry` at all",
+    /entry: z\s*\n?\s*\.object\(/.test(save),
+    "the patch schema is .strict(), so a field it does not name is dropped and Save reports success"
+  );
+  check(
+    "the schema only accepts the two real modes",
+    /mode: z\.enum\(\["search", "referral"\]\)/.test(save),
+    "there is no stored `direct` — absent is direct, and a second spelling is how the two drift apart"
+  );
+
+  /* Turning the feature back OFF is the half that a shallow merge cannot
+     express, and the half that is easy to leave broken: the switch flips in
+     the UI, the patch omits the field, the server merges nothing, and the
+     mode stays on. */
+  check(
+    "choosing Direct sends an explicit removal, not an omission",
+    /entry: null as unknown/.test(builder),
+    "omitting it would save as 'unchanged' and the mode would silently stay on"
+  );
+  check(
+    "the save route accepts that null",
+    /\.nullable\(\)/.test(save)
+  );
+  check(
+    "…and turns it back into an absent field",
+    /if \(entryPatch === null\) delete merged\.entry;/.test(save)
+  );
+  check(
+    "the removal is handled outside the spread that cannot express it",
+    /const \{ entry: entryPatch, \.\.\.restPatch \} = patch;/.test(save)
+  );
+  check(
+    "a null in the column still reads as direct in the form",
+    /value\.entry \?\? undefined/.test(builder)
+  );
+
+  /* The tag is minted once. Regenerating it on every render would break every
+     post already carrying the old one, silently, at some later date. */
+  check(
+    "the tag is minted once and then left alone",
+    /entry\?\.srcTag \|\| mintArticleSrcTag\(\)/.test(builder)
+  );
+  check(
+    "the admin is given the tagged link to paste, not asked to build it",
+    /buildTaggedLandingUrl\(entry\.landingUrl, entry\.srcTag\)/.test(builder) &&
+      /Put THIS link in your post/.test(builder)
+  );
+  check(
+    "the landing page is chosen from the task's own pages",
+    /pageUrls\.map\(/.test(builder),
+    "a free-text field here is how you get a landing page the embed does not run on"
+  );
+  check(
+    "search mode warns against handing over a clickable URL",
+    /not a clickable link/.test(builder),
+    "if they can paste the URL they will, and pasting it is not a search"
+  );
+  check(
+    "the unknown-source choice explains what each side costs",
+    /Reviewing costs you a look; blocking costs you them/.test(builder)
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   15. What the worker is shown
+   ══════════════════════════════════════════════════════════════════════════
+   The door refuses a wrong arrival politely, but a worker who was never told
+   what to do will hit it every time. These hold the two halves that make the
+   instruction and the refusal agree with each other. */
+{
+  const view = readFileSync(
+    join(process.cwd(), "src/components/user/tasks/article-task-detail-view.tsx"),
+    "utf8"
+  );
+  const start = readFileSync(
+    join(process.cwd(), "src/app/api/article-tasks/[taskId]/start/route.ts"),
+    "utf8"
+  );
+
+  /* The single most important line in this phase. Hand a search task a ready
+     link to the article and the worker will click it — a direct arrival, which
+     the door then refuses, for doing exactly what the page offered. */
+  check(
+    "a non-direct task is not handed a link to the article",
+    /const firstPageUrl = entry \? null :/.test(start),
+    "offering one would invite the very arrival the task refuses"
+  );
+  check(
+    "the site is named, never linked, for a search task",
+    /landingHost/.test(start) && !/landingUrl,/.test(start.split("return NextResponse.json")[1] ?? ""),
+    "a URL in the payload is a URL the worker can paste, and pasting is not searching"
+  );
+  check(
+    "the start payload describes the arrival the task wants",
+    /mode: entry\.mode/.test(start) && /searchKeyword: entry\.searchKeyword/.test(start)
+  );
+
+  check(
+    "the worker gets the keyword with a copy button",
+    /Keyword copied/.test(view)
+  );
+  check(
+    "search mode opens the search engine, not the article",
+    /searchUrlFor\(e\.searchEngine/.test(view)
+  );
+  check(
+    "referral mode opens the post",
+    /e\.postUrl \?\? ""/.test(view)
+  );
+  check(
+    "the worker is warned that typing the address does not count",
+    /Typing the address straight/.test(view),
+    "otherwise the first thing they learn is a refusal they did not expect"
+  );
+
+  /* A label that says "Start Article Journey" on a button that opens Google
+     is a small lie, and the worker discovers it by arriving somewhere they did
+     not expect. */
+  check(
+    "the button names what it actually opens",
+    /"Open the search"/.test(view) && /"Open the post"/.test(view)
+  );
+  check(
+    "the blocked-tab fallback opens the same destination",
+    /entry\?\.mode === "search"\s*\n?\s*\? "Open the search"/.test(view)
+  );
+  check(
+    "the direct flow's wording is untouched",
+    /"Start Article Journey"/.test(view) && /"Reopen Article"/.test(view),
+    "every existing article task still reads exactly as it did"
+  );
+}
+
+console.log(
+  `\n${passed} passed, ${failed} failed\n` +
+    (failures.length ? failures.map((f) => `  · ${f}`).join("\n") + "\n" : "")
+);
+if (failed > 0) process.exitCode = 1;

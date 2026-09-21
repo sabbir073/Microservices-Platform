@@ -517,16 +517,21 @@ export const FeedPostCard = memo(function FeedPostCard({
             />
           </Link>
           <div className="flex-1 min-w-0">
-            <div className="inline-flex items-center gap-1.5">
+            {/* `min-w-0` and `truncate`, because this row is squeezed from
+              * both sides — a level chip and a Follow button — and without
+              * them a two-word name wrapped mid-name on a phone: "Super" on
+              * one line, "Admin" on the next. A name that is too long is
+              * shortened with an ellipsis; it never becomes two lines. */}
+            <div className="flex min-w-0 items-center gap-1.5">
               <Link
                 href={post.user ? profileHref(post.user) : "#"}
-                className="t-card-title text-white hover:text-(--app-info) transition-colors"
+                className="t-card-title truncate text-white hover:text-(--app-accent-ink) transition-colors"
               >
                 {post.user?.name ?? "Anonymous"}
               </Link>
               {post.user?.isBlueVerified && (
                 <CheckCircle
-                  className="w-4 h-4 shrink-0 text-(--app-info)"
+                  className="w-4 h-4 shrink-0 text-(--app-accent-ink)"
                   aria-label="Verified"
                 />
               )}
@@ -539,15 +544,21 @@ export const FeedPostCard = memo(function FeedPostCard({
                 </span>
               )}
             </div>
-            <p className="t-meta mt-0.5 text-gray-500 flex items-center gap-1.5">
-              {formatDistanceToNow(new Date(post.createdAt), {
-                addSuffix: true,
-              })}
+            <p className="t-meta mt-0.5 flex min-w-0 items-center gap-1.5 text-(--app-ink-3)">
+              {/* The age is short and fixed; it is the audience label beside it
+                * that varies. Keeping the age on one line and letting the
+                * label shrink is the right way round — "2 months ago" broke
+                * across two lines otherwise. */}
+              <span className="shrink-0 whitespace-nowrap">
+                {formatDistanceToNow(new Date(post.createdAt), {
+                  addSuffix: true,
+                })}
+              </span>
               {/* The author's own posts say who they went out to. An author who
                   cannot see what they published cannot correct it. */}
               {post.isOwner && post.audience && (
                 <span
-                  className="inline-flex items-center gap-1 text-gray-400"
+                  className="inline-flex items-center gap-1 text-(--app-ink-3)"
                   title={
                     post.audience === "PUBLIC"
                       ? "Anyone on the internet can read this post."
@@ -578,8 +589,8 @@ export const FeedPostCard = memo(function FeedPostCard({
               className={cn(
                 "app-press app-tap-row shrink-0 px-3.5 rounded-(--app-r-chip) text-xs font-extrabold border disabled:opacity-50",
                 post.isFollowingAuthor
-                  ? "bg-(--app-surface-2) text-gray-300 border-(--app-line)"
-                  : "bg-transparent text-(--app-info) border-(--app-info-line) hover:bg-(--app-info-soft)"
+                  ? "bg-(--app-surface-2) text-(--app-ink-2) border-(--app-line)"
+                  : "bg-transparent text-(--app-accent-ink) border-(--app-accent-edge) hover:bg-(--app-nav-wash)"
               )}
             >
               {followBusy ? (
@@ -595,7 +606,7 @@ export const FeedPostCard = memo(function FeedPostCard({
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setMenuOpen((v) => !v)}
-                className="app-tap app-press inline-flex items-center justify-center rounded-(--app-r-chip) text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
+                className="app-tap app-press inline-flex items-center justify-center rounded-(--app-r-chip) text-(--app-ink-3) hover:text-white hover:bg-(--app-surface-2)"
                 aria-label="Post actions"
               >
                 <MoreHorizontal className="w-4 h-4" />
@@ -691,7 +702,7 @@ export const FeedPostCard = memo(function FeedPostCard({
               content={post.content}
               postId={post.id}
               wrapperClassName="mt-3"
-              pClassName="text-[15px] text-gray-200 leading-relaxed"
+              pClassName="text-[15px] text-(--app-ink) leading-relaxed"
             />
           ))}
 
@@ -714,7 +725,7 @@ export const FeedPostCard = memo(function FeedPostCard({
       {post.images.length > 0 && (
         <div
           className={cn(
-            "relative grid gap-px bg-gray-800",
+            "relative grid gap-px bg-(--app-surface-2)",
             post.images.length === 1 && "grid-cols-1",
             post.images.length === 2 && "grid-cols-2",
             post.images.length >= 3 && "grid-cols-3"
@@ -739,7 +750,21 @@ export const FeedPostCard = memo(function FeedPostCard({
                   // Hide broken images so a bad URL doesn't leave a giant empty box.
                   e.currentTarget.style.display = "none";
                 }}
-                className="w-full bg-gray-950 max-h-[70vh] object-contain cursor-zoom-in select-none"
+                /* A tall photo does not get to own the screen.
+                 *
+                 * The cap was 70vh, so a portrait shot — measured on a real
+                 * post, 645x1159 — filled seven tenths of a phone and pushed
+                 * the like row off the bottom, with one post per screenful.
+                 * Capped by RATIO instead: 5/4 portrait is the tallest a photo
+                 * renders at, which is what a feed of photos wants and roughly
+                 * where Facebook lands.
+                 *
+                 * `object-contain` stays. Cover would fill the box, but it
+                 * crops — and cropping the top of somebody's screenshot to
+                 * make the feed tidier is not a trade this makes on their
+                 * behalf. A photo taller than 5/4 is shown whole, smaller; a
+                 * tap still opens it full-size. */
+                className="mx-auto block max-h-[min(70vh,125vw)] w-full bg-(--app-page) object-contain cursor-zoom-in select-none"
               />
             ) : (
               <div
@@ -756,7 +781,7 @@ export const FeedPostCard = memo(function FeedPostCard({
                     // Hide broken images so a bad URL doesn't leave a giant empty box.
                     e.currentTarget.style.display = "none";
                   }}
-                  className="object-cover bg-gray-950"
+                  className="object-cover bg-(--app-page)"
                 />
               </div>
             )
@@ -779,17 +804,6 @@ export const FeedPostCard = memo(function FeedPostCard({
       {/* Donation progress */}
       {typeof post.donationGoal === "number" && post.donationGoal > 0 && (
         <DonationBlock post={post} onUpdated={onUpdated} />
-      )}
-
-      {/* Compact sponsor banner under the post, above the reactions row. The
-          caller decides WHICH posts get one (ads.under_post_interval); this only
-          renders what it is told to. The old `[&_*]:max-h-16` clamp is gone —
-          FEED_POST_BELOW declares maxHeightPx: 72 and the renderer enforces it,
-          so the two were fighting over a different number. */}
-      {underPostBanner && (
-        <div className="px-(--app-pad) pb-1">
-          <AdRenderer placement="FEED_POST_BELOW" />
-        </div>
       )}
 
       {/* Reactions row.
@@ -816,14 +830,14 @@ export const FeedPostCard = memo(function FeedPostCard({
             the tap-to-break-down popover has been removed rather than left as a
             control that shows the same number a second time. */}
         {post.likesCount > 0 && (
-          <span className="text-sm text-gray-400 tabular-nums font-bold -ml-1 mr-0.5">
+          <span className="text-sm text-(--app-ink-3) tabular-nums font-bold -ml-1 mr-0.5">
             {post.likesCount}
           </span>
         )}
         <button
           onClick={() => setShowComments((v) => !v)}
           aria-label="Comments"
-          className="app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm font-semibold text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
+          className="app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm font-semibold text-(--app-ink-3) hover:text-white hover:bg-(--app-surface-2)"
         >
           <MessageCircle className="w-5 h-5" />
           <span className="tabular-nums font-bold">
@@ -833,7 +847,7 @@ export const FeedPostCard = memo(function FeedPostCard({
         <button
           onClick={() => setShareOpen(true)}
           aria-label="Share"
-          className="app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm font-semibold text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
+          className="app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm font-semibold text-(--app-ink-3) hover:text-white hover:bg-(--app-surface-2)"
         >
           <Share2 className="w-5 h-5" />
           <span className="hidden sm:inline">Share</span>
@@ -849,8 +863,8 @@ export const FeedPostCard = memo(function FeedPostCard({
           className={cn(
             "app-tap app-press inline-flex items-center justify-center px-3 rounded-(--app-r-chip) text-sm hover:bg-(--app-surface-2)",
             post.isSaved
-              ? "text-(--app-info)"
-              : "text-gray-400 hover:text-white"
+              ? "text-(--app-accent-ink)"
+              : "text-(--app-ink-3) hover:text-white"
           )}
         >
           <Bookmark className={cn("w-5 h-5", post.isSaved && "fill-current")} />
@@ -860,7 +874,7 @@ export const FeedPostCard = memo(function FeedPostCard({
           !(post.boostedUntil && new Date(post.boostedUntil) > new Date()) && (
             <button
               onClick={() => setBoostOpen(true)}
-              className="app-tap app-press ml-auto inline-flex items-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm font-semibold text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
+              className="app-tap app-press ml-auto inline-flex items-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm font-semibold text-(--app-ink-3) hover:text-white hover:bg-(--app-surface-2)"
             >
               <Megaphone className="w-4 h-4" />
               Boost
@@ -876,7 +890,7 @@ export const FeedPostCard = memo(function FeedPostCard({
           <div className="ml-auto flex items-center gap-1">
             {!!(post.linkPreview || findFirstUrl(post.content)) && (
               <span
-                className="app-tap-row inline-flex items-center gap-1.5 px-2 text-sm text-gray-400"
+                className="app-tap-row inline-flex items-center gap-1.5 px-2 text-sm text-(--app-ink-3)"
                 title="Link clicks (total)"
               >
                 <MousePointerClick className="w-4 h-4" />
@@ -885,7 +899,7 @@ export const FeedPostCard = memo(function FeedPostCard({
             )}
             <button
               onClick={() => setShowAnalytics((v) => !v)}
-              className="app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm text-gray-400 hover:text-white hover:bg-(--app-surface-2)"
+              className="app-tap app-press inline-flex items-center justify-center gap-1.5 px-3 rounded-(--app-r-chip) text-sm text-(--app-ink-3) hover:text-white hover:bg-(--app-surface-2)"
               title="View analytics"
             >
               <BarChart3 className="w-4 h-4" />
@@ -894,6 +908,21 @@ export const FeedPostCard = memo(function FeedPostCard({
           </div>
         )}
       </div>
+      {/* Compact sponsor banner under the post. The caller decides WHICH posts
+          get one (ads.under_post_interval); this only renders what it is told
+          to. FEED_POST_BELOW declares maxHeightPx: 72 and the renderer
+          enforces it.
+
+          It used to sit above the reactions row, and that row is part of the
+          post — so the banner ran between what somebody wrote and the buttons
+          for reacting to it, splitting the card in two. "Under the post" means
+          after the whole post, which is also where a reader expects the next
+          thing in the feed to begin. */}
+      {underPostBanner && (
+        <div className="border-t border-(--app-line) px-(--app-pad) py-1.5">
+          <AdRenderer placement="FEED_POST_BELOW" />
+        </div>
+      )}
 
       {showAnalytics && post.isOwner && (
         <PostAnalyticsPanel postId={post.id} />
@@ -982,13 +1011,13 @@ export const FeedPostCard = memo(function FeedPostCard({
           onClick={() => !busy && setBoostOpen(false)}
         >
           <div
-            className="w-full max-w-sm rounded-2xl border border-gray-800 bg-gray-900 p-5"
+            className="w-full max-w-sm rounded-2xl border border-(--app-line) bg-(--app-surface) p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <p className="text-base font-bold text-white inline-flex items-center gap-1.5">
               <Megaphone className="w-4 h-4 text-amber-400" /> Boost this post
             </p>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-(--app-ink-3) mt-1">
               Boosted posts recirculate near the top of the feed for the chosen
               period. Pick how long:
             </p>
@@ -1025,7 +1054,7 @@ export const FeedPostCard = memo(function FeedPostCard({
                       setBusy(false);
                     }
                   }}
-                  className="py-2.5 rounded-lg bg-gray-800 hover:bg-amber-500 hover:text-white text-sm font-semibold text-gray-200 disabled:opacity-50 flex flex-col items-center gap-0.5"
+                  className="py-2.5 rounded-lg bg-(--app-surface-2) hover:bg-amber-500 hover:text-white text-sm font-semibold text-(--app-ink) disabled:opacity-50 flex flex-col items-center gap-0.5"
                 >
                   <span>{label}</span>
                   <span className="text-[11px] font-bold text-amber-400">{pts} pts</span>
@@ -1034,7 +1063,7 @@ export const FeedPostCard = memo(function FeedPostCard({
             </div>
             <button
               onClick={() => !busy && setBoostOpen(false)}
-              className="mt-3 w-full py-2 rounded-lg text-xs text-gray-400 hover:text-white"
+              className="mt-3 w-full py-2 rounded-lg text-xs text-(--app-ink-3) hover:text-white"
             >
               Cancel
             </button>

@@ -62,12 +62,12 @@ const TONE: Record<
   },
   info: {
     icon: Info,
-    gradient: "from-indigo-500 to-violet-600",
-    glow: "bg-indigo-500/25",
-    border: "border-indigo-500/25",
-    line: "via-indigo-500/60",
-    bar: "bg-indigo-500",
-    shadow: "shadow-indigo-500/30",
+    gradient: "from-(--app-grad-a) to-(--app-grad-b)",
+    glow: "bg-(--app-cta)/25",
+    border: "border-(--app-accent-edge)/25",
+    line: "via-(--app-rail-b)/60",
+    bar: "bg-(--app-cta)",
+    shadow: "shadow-(--app-cta)/30",
   },
 };
 
@@ -146,7 +146,7 @@ function SimpleCard({
       role="status"
       onMouseDown={(e) => e.stopPropagation()}
       className={cn(
-        "relative w-full max-w-68 overflow-hidden rounded-3xl border bg-gray-900 px-6 pt-8 pb-9 text-center elevate-2 animate-pop-in",
+        "relative w-full max-w-68 overflow-hidden rounded-3xl border bg-(--app-surface) px-6 pt-8 pb-9 text-center elevate-2 animate-pop-in",
         t.border
       )}
     >
@@ -168,7 +168,7 @@ function SimpleCard({
       <button
         onClick={onClose}
         aria-label="Dismiss"
-        className="absolute right-3 top-3 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-white/5 hover:text-gray-300"
+        className="absolute right-3 top-3 rounded-lg p-1.5 text-(--app-ink-3) transition-colors hover:bg-white/5 hover:text-(--app-ink-2)"
       >
         <X className="h-4 w-4" />
       </button>
@@ -188,7 +188,7 @@ function SimpleCard({
         {item.title}
       </h2>
       {item.description && (
-        <p className="relative mt-1.5 text-sm text-gray-300 whitespace-pre-line">
+        <p className="relative mt-1.5 text-sm text-(--app-ink-2) whitespace-pre-line">
           {item.description}
         </p>
       )}
@@ -210,7 +210,7 @@ function RewardCard({
       role="status"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={onClose}
-      className="relative w-full max-w-xs cursor-pointer overflow-hidden rounded-3xl border border-amber-500/25 bg-linear-to-b from-gray-900 to-gray-950 px-6 pt-8 pb-8 text-center elevate-2 shadow-amber-500/10 animate-pop-in"
+      className="relative w-full max-w-xs cursor-pointer overflow-hidden rounded-3xl border border-amber-500/25 bg-linear-to-b from-(--app-surface) to-(--app-page) px-6 pt-8 pb-8 text-center elevate-2 shadow-amber-500/10 animate-pop-in"
     >
       {/* Sparkle burst */}
       <span className="pointer-events-none absolute inset-0 overflow-hidden rounded-3xl">
@@ -245,9 +245,9 @@ function RewardCard({
       )}
       <h2 className="relative mt-1 text-lg font-bold text-white">{item.title}</h2>
       {item.description && (
-        <p className="relative mt-1 text-sm text-gray-400">{item.description}</p>
+        <p className="relative mt-1 text-sm text-(--app-ink-3)">{item.description}</p>
       )}
-      <p className="relative mt-4 text-[11px] uppercase tracking-wider text-gray-600">
+      <p className="relative mt-4 text-[11px] uppercase tracking-wider text-(--app-ink-3)">
         Tap to dismiss
       </p>
 

@@ -127,7 +127,14 @@ html[data-theme="light"] ::-webkit-calendar-picker-indicator:hover {
    Accent color (profile → Theme). The app's brand is the indigo→violet/purple
    ramp; re-mapping those ramp variables under `html[data-accent="…"]` recolors
    every brand button, tab, gradient, ring and tint at once (Tailwind v4
-   utilities read `var(--color-indigo-500)` etc.). `indigo` is the default.
+   utilities read `var(--color-indigo-500)` etc.).
+
+   The brand ramp is still indigo by default, and that is on purpose FOR NOW.
+   Flipping it to emerald here recolours `bg-indigo-500` everywhere at once —
+   and 145 primary buttons in this app are written `bg-indigo-500 text-white`,
+   which measures 2.54:1 once that fill turns emerald. The ramp moves in the
+   phase that converts those call sites to `--app-cta`, not before, so the two
+   land together instead of leaving every button unreadable in between.
    ───────────────────────────────────────────────────────────────────────── */
 html[data-accent="red"] {
   --color-indigo-300: #fca5a5; --color-indigo-400: #f87171; --color-indigo-500: #ef4444;
@@ -240,7 +247,7 @@ html[data-accent="silver"] {
      at L* 88.2 and a real shadow (white-on-white needs an edge, not a tint).
      Measured on the chrome: gray-400 6.9:1, gray-500 5.2:1 (dark) /
      7.6:1 and 5.8:1 (light) — every shell label clears 4.5:1 in both. */
-  --shell-bg: #15171f;
+  --shell-bg: #0f172a;
   --shell-border: #272b38;
   --shell-hover: #1f2331;
   --shell-shadow: 0 8px 30px -12px rgba(0, 0, 0, 0.7);
@@ -283,9 +290,37 @@ html,
 body {
   overscroll-behavior: none;
 }
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+summary,
+label[for],
+select {
+  cursor: pointer;
+}
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+input:where([type="checkbox"], [type="radio"]) {
+  cursor: pointer;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: var(--app-ring-focus);
+}
+
 body {
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  /* A wallet address, a referral URL or a long email is one unbroken word, and
+     an unbroken word is wider than a phone. `overflow-x: hidden` above keeps
+     the PAGE from scrolling sideways, but it does nothing for the card the
+     word is inside — that still stretches or clips. `break-word` breaks only
+     when the word would otherwise overflow, so ordinary text is untouched. */
+  overflow-wrap: break-word;
 }
 
 /* Chrome (buttons/links/nav) shouldn't be long-press-selectable or show the
@@ -326,6 +361,11 @@ textarea,
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+  /* The lift is a movement, so it answers here too — the colour change on
+     hover stays, since that is information, not motion. */
+  .app-lift:hover {
+    transform: none !important;
   }
   .press:active {
     transform: none;
@@ -739,7 +779,7 @@ html[data-theme="light"] {
      read as chrome rather than as one more card, and a white card laid on the
      bar still separates from it without a shadow.
      chrome #f5f7fc = L* 97.21, border #d6dde9 = L* 87.92 (Δ 9.29). */
-  --shell-bg: #f5f7fc;
+  --shell-bg: #f7f9fc;
   /* 97%, not 88% — see `.app-chrome`. Dark text under a pale bar reads
      through anything looser, and the blur does not hide it. */
   --shell-veil: 97%;
@@ -1138,6 +1178,36 @@ html[data-theme="light"] .on-media[class*="text-"] {
   color: #ffffff !important;
 }
 
+/* The exception to the exception: an element that paints its OWN light ground.
+ *
+ * The rule above says "you are printed on the gradient, so you are white". A
+ * white pill sitting on that gradient is not printed on it — it has its own
+ * background, and white ink on it is invisible. That is exactly what happened
+ * to the Claim button on the balance card in light mode: a blank white pill
+ * with a label nobody could read.
+ *
+ * It cannot be expressed as `:not([class*="bg-"])` on the rule above, because
+ * the case that rule exists for — a chip carrying its own dark scrim AND its
+ * label, `on-media bg-black/60 text-amber-300` — also has a background class
+ * and does need the white. Light ground and dark ground both carry a `bg-`;
+ * only the author knows which. So the author says so, here.
+ *
+ * Put `app-on-white` on anything with a white or near-white background that
+ * lives inside an accent surface. Its ink defaults to the accent colour; a
+ * control whose ink is something else says so with
+ * `[--app-on-white-ink:var(--whatever)]`, because the exemption must not
+ * impose one colour on every control it rescues — the rail's Claim button is
+ * near-black on white, the balance card's is indigo, and both are correct. */
+.app-on-white {
+  color: var(--app-on-white-ink, var(--app-grad-a));
+}
+html[data-theme="light"] .app-accent .app-on-white,
+html[data-theme="light"] .on-media .app-on-white,
+html[data-theme="light"] .app-accent .app-on-white[class*="text-"],
+html[data-theme="light"] .on-media .app-on-white[class*="text-"] {
+  color: var(--app-on-white-ink, var(--app-grad-a)) !important;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
    Card elevation in light mode.
 
@@ -1267,8 +1337,9 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
    Marketing surface theme (isolated from the app's data-theme).
    Driven by `data-mk-theme` on the marketing root (#mk-root). Landing/marketing
    components use bg/text/border-[var(--mk-*)] so a visitor's landing toggle flips
-   the whole surface WITHOUT touching their in-app dashboard theme. Colored brand
-   accents (indigo/violet gradients, emerald money, colored chips) stay literal.
+   the whole surface WITHOUT touching their in-app dashboard theme. The brand
+   gradients and accents are tokens too, so the marketing side carries the same
+   green as the app instead of the old indigo/violet it was drawn in.
    ──────────────────────────────────────────────────────────────────────────── */
 [data-mk-theme="light"] {
   /* The page was #ffffff with #ffffff cards on a #f8fafc band: three surfaces
@@ -1288,20 +1359,31 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
      FAILED body-text contrast the moment the page stopped being pure white.
      Darkened one notch: 4.86:1 on the page, 5.41:1 on a card. */
   --mk-subtle: #5d6b80;
-  /* Accent text. The literal brand indigo (#4f46e5) is a fine FILL but only
-     2.87:1 as TEXT on the dark marketing surface, so any sentence painted with
-     it failed in one of the two themes. This token is the readable half of the
-     brand in each theme and is what prose, links and inline figures use;
-     gradients and icon fills keep the literal brand colours.
-     light #4338ca = 7.90:1 on a card, 7.10:1 on the page. */
-  --mk-accent: #4338ca;
+  /* Accent text: the readable half of the brand in each theme, used by prose,
+     links and inline figures. A brand colour bright enough to be a good FILL is
+     never bright enough to be TEXT on white, which is why this is a separate
+     token from the gradient pair below.
+     light #047857 = 5.48:1 on a card, 4.93:1 on the page. */
+  --mk-accent: #047857;
+  /* Solid brand fill. Dark enough that white ink clears AA at both stops, so a
+     gradient button reads the same on either end of its sweep — the same pair
+     in both themes for that reason. */
+  --mk-grad-a: #047857;
+  --mk-grad-b: #065f46;
+  /* The bright pair, for anything painted ON the page rather than under white
+     ink: clipped headline text, progress bars, small brand tiles. This one has
+     to flip per theme or it disappears into one of the two grounds. */
+  --mk-rail-a: #047857;
+  --mk-rail-b: #065f46;
+  --mk-cta: #047857;
+  --mk-on-cta: #ffffff;
   --mk-nav: rgba(255, 255, 255, 0.72);
   --mk-nav-scrolled: rgba(255, 255, 255, 0.95);
   --mk-quote: #e2e8f0;        /* faint quote glyph */
   --mk-grid: rgba(15, 23, 42, 0.05);
-  --mk-blob-a: rgba(99, 102, 241, 0.14);
-  --mk-blob-b: rgba(139, 92, 246, 0.12);
-  --mk-blob-c: rgba(56, 189, 248, 0.10);
+  --mk-blob-a: rgba(16, 185, 129, 0.14);
+  --mk-blob-b: rgba(5, 150, 105, 0.12);
+  --mk-blob-c: rgba(45, 212, 191, 0.10);
   /* Elevation. On a light surface depth comes from shadow; borders alone give
      a "drawn on paper" look, which is most of why this read as unfinished. */
   --mk-shadow: 0 1px 2px 0 rgba(16, 24, 40, 0.05),
@@ -1320,14 +1402,20 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
   --mk-muted: #94a3b8;
   --mk-subtle: #7c8699;
   /* dark #a5b4fc = 9.05:1 on a card, 9.86:1 on the page. */
-  --mk-accent: #a5b4fc;
+  --mk-accent: #34d399;
+  --mk-grad-a: #047857;
+  --mk-grad-b: #065f46;
+  --mk-rail-a: #34d399;
+  --mk-rail-b: #10b981;
+  --mk-cta: #10b981;
+  --mk-on-cta: #0b0f17;
   --mk-nav: rgba(10, 11, 17, 0.72);
   --mk-nav-scrolled: rgba(10, 11, 17, 0.92);
   --mk-quote: #232734;
   --mk-grid: rgba(255, 255, 255, 0.045);
-  --mk-blob-a: rgba(99, 102, 241, 0.22);
-  --mk-blob-b: rgba(139, 92, 246, 0.20);
-  --mk-blob-c: rgba(56, 189, 248, 0.16);
+  --mk-blob-a: rgba(16, 185, 129, 0.22);
+  --mk-blob-b: rgba(5, 150, 105, 0.20);
+  --mk-blob-c: rgba(45, 212, 191, 0.16);
   /* Same tokens, dark values — on a dark surface depth is a dark drop plus a
      1px top highlight, never a grey glow. */
   --mk-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.04),
@@ -1413,23 +1501,28 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
 /* Extra marketing tokens. Both themes, always — a token that exists in only
    one theme is a hole that shows up as invisible text the first time someone
    flips the toggle. Measured (WCAG 2.1 relative luminance):
-     light  accent #4338ca on accent-soft #eef0fe = 6.97:1
-     dark   accent #a5b4fc on accent-soft #1b1e33 = 8.23:1
+     light  accent #047857 on accent-soft #ecfdf5 = 5.15:1
+     dark   accent #34d399 on accent-soft #0e2a22 = 8.44:1
      light  success #047857 on surface #ffffff 5.48:1, on page #eff3fa 4.93:1
      dark   success #34d399 on surface #14161f 9.38:1, on page #0a0b11 10.22:1 */
 [data-mk-theme="light"] {
-  --mk-accent-soft: #eef0fe;
-  --mk-accent-soft-border: #dcdffb;
+  --mk-accent-soft: #ecfdf5;
+  --mk-accent-soft-border: #c8ead9;
+  /* The one secondary hue, kept because a two-series chart needs two colours.
+     No single literal violet clears 4.5:1 on BOTH the light band and the dark
+     one -- 500 fails light, 600 fails dark -- so it has to be a pair. */
+  --mk-info: #6d28d9;
   --mk-success: #047857;
   --mk-success-soft: #e7f6ef;
-  --mk-ring: rgba(67, 56, 202, 0.28);
+  --mk-ring: rgba(4, 120, 87, 0.28);
 }
 [data-mk-theme="dark"] {
-  --mk-accent-soft: #1b1e33;
-  --mk-accent-soft-border: #2b3052;
+  --mk-accent-soft: #0e2a22;
+  --mk-accent-soft-border: #1d4c3c;
+  --mk-info: #a78bfa;
   --mk-success: #34d399;
   --mk-success-soft: #10241d;
-  --mk-ring: rgba(165, 180, 252, 0.32);
+  --mk-ring: rgba(52, 211, 153, 0.32);
 }
 
 @layer components {
@@ -1726,8 +1819,8 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
      has never opened the theme picker and one who explicitly picks indigo see
      the same measured surface. The accent picker recolours all of this through
      the generated block at the end of this file. */
-  --app-grad-a: #4f39f6;
-  --app-grad-b: #7f22fe;
+  --app-grad-a: #047857;
+  --app-grad-b: #065f46;
   --app-grad: linear-gradient(135deg, var(--app-grad-a) 0%, var(--app-grad-b) 100%);
   --app-grad-glow: 0 10px 30px -12px color-mix(in oklab, var(--app-grad-a) 70%, transparent);
 
@@ -1750,9 +1843,32 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
      opposite directions. One value could not have served both. Every accent's
      pair is in src/lib/accent-palette.ts and re-measured by the verify script
      on every run. */
-  --app-accent-edge: #7c86ff;
-  --app-rail-a: #7c86ff;
-  --app-rail-b: #a684ff;
+  --app-accent-edge: #34d399;
+  --app-rail-a: #34d399;
+  --app-rail-b: #10b981;
+
+  /* The active navigation row — its own pair, not `--app-in`.
+     The design gives the active item an accent wash and accent ink, and the
+     accent here is the same emerald as "money arrived". Borrowing `--app-in`
+     would make the two mean one thing, so a sidebar row would be saying
+     "success" and a balance would be saying "you are here". Measured on the
+     chrome each theme actually paints: dark ink 7.96:1, light ink 5.21:1. */
+  --app-nav-on: #34d399;
+  --app-nav-wash: #14392e;
+
+  /* The filled primary button, and accent-coloured text.
+     Two jobs the gradient cannot do. The gradient is a large surface; a button
+     is a small one, and the design gives it a flat fill with its own ink —
+     obsidian on neon emerald in the dark, white on deep emerald in the light,
+     which is the pair that measures 7.56:1 and 5.48:1.
+     `--app-accent-ink` is the SAME accent used as text on an ordinary card,
+     where the ground is different again: #34d399 is 7.75:1 on the darkest
+     dark plane, and light needs the deeper #065f46 because #059669 is 3.06:1
+     on the page. */
+  --app-cta: #10b981;
+  --app-cta-hover: #34d399;
+  --app-on-cta: #0b0f17;
+  --app-accent-ink: #34d399;
   --app-rail: linear-gradient(180deg, var(--app-rail-a), var(--app-rail-b));
 
   /* ── Semantic colour — four meanings, nothing decorative ─────────────────
@@ -1763,9 +1879,9 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
      Measured against the card surface each sits on; see the table in
      scripts/verify-app-shell.ts, which recomputes these on every run. */
   --app-in: #34d399;
-  --app-out: #f87171;
-  --app-warn: #fbbf24;
-  --app-info: #a5b4fc;
+  --app-out: #ffb4ab;
+  --app-warn: #f59e0b;
+  --app-info: #a78bfa;
   /* Soft fills for the same four. Non-text, so the 3:1 floor applies to the
      border, not the fill. */
   --app-in-soft: #0d2a22;
@@ -1778,18 +1894,30 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
   --app-info-line: #343a63;
 
   /* ── Shape ───────────────────────────────────────────────────────────────
-     Four radii, not the twelve the app had. Crowding and a tight corner are
-     most of what reads as "cheap"; these are one step larger than what was
-     there. */
-  --app-r-chip: 0.625rem;
-  --app-r-control: 0.875rem;
-  --app-r-card: 1.25rem;
-  --app-r-panel: 1.5rem;
+     The design's own ladder: 8px for anything you type in or press, 12px for
+     the modules that hold data, 16px for what floats above them, and full
+     rounds for badges and avatars. I had run these a step softer (10/14/20),
+     which is what made the UI read rounder and looser than the template —
+     "balanced geometric curvature", in the document's words, not pillowy. */
+  --app-r-chip: 0.5rem;
+  --app-r-control: 0.5rem;
+  --app-r-card: 0.75rem;
+  --app-r-panel: 1rem;
 
   /* ── Rhythm ──────────────────────────────────────────────────────────────
-     Fluid rather than a breakpoint, so there is no width at which the padding
-     is briefly the wrong size. */
+     An 8pt scale, fluid between the document's mobile and desktop figures
+     rather than switching at a breakpoint, so there is no width at which the
+     padding is briefly the wrong size.
+       gutter  1rem (mobile) -> 1.5rem (desktop)
+       margin  1rem (mobile) -> 2rem   (desktop)  */
   --app-gap: clamp(0.75rem, 2.2vw, 1rem);
+  --app-space-xs: 0.25rem;
+  --app-space-sm: 0.5rem;
+  --app-space-md: 1rem;
+  --app-space-lg: 1.5rem;
+  --app-space-xl: 2.5rem;
+  --app-gutter: clamp(1rem, 2.5vw, 1.5rem);
+  --app-margin: clamp(1rem, 4vw, 2rem);
   --app-pad: clamp(1rem, 3.2vw, 1.375rem);
   --app-pad-lg: clamp(1.25rem, 4.5vw, 1.75rem);
 
@@ -1812,12 +1940,34 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
   --app-e3: inset 0 1px 0 0 rgba(255, 255, 255, 0.08),
     0 8px 20px -10px rgba(6, 8, 20, 0.36), 0 28px 60px -30px rgba(6, 8, 20, 0.5);
 
+  /* Ambient halos. Elevation for something that is EARNING, as opposed to
+     merely raised — the document calls these "value creation" signals and
+     they are tinted, because a black shadow cannot be seen on this canvas. */
+  --app-halo-earn: 0 14px 36px -12px rgba(16, 185, 129, 0.15),
+    0 0 0 1px rgba(16, 185, 129, 0.35);
+  --app-halo-promo: 0 14px 36px -12px rgba(139, 92, 246, 0.2),
+    0 0 0 1px rgba(139, 92, 246, 0.35);
+  /* The CTA's own glow, and the focus ring every input answers with. */
+  --app-glow-cta: 0 0 16px rgba(16, 185, 129, 0.35);
+  --app-ring-focus: 0 0 0 3px rgba(16, 185, 129, 0.15);
+  /* Frosted layers: modals, command bars, sticky earning headers. */
+  --app-field-bg: #0f172a;
+  --app-glass: rgba(19, 27, 46, 0.75);
+  --app-glass-blur: 16px;
+
   /* Card chrome, so `.app-card` never has to guess. */
-  --app-page: var(--color-gray-950);
-  --app-surface: var(--color-gray-900);
-  --app-surface-2: var(--color-gray-800);
-  --app-line: #262a38;
-  --app-line-strong: #333849;
+  /* Obsidian Kinetic's luminance stack, verbatim. Elevation in this design is
+     not a shadow — a black shadow is invisible on slate — it is a brighter
+     tint per layer, so these four values ARE the depth model:
+       canvas #0b0f17 -> card #131b2e -> elevated #161f33 -> overlay #1c273e */
+  --app-page: #0b0f17;
+  --app-surface: #131b2e;
+  --app-surface-hover: #161f33;
+  --app-surface-2: #1c273e;
+  --app-line-subtle: rgba(255, 255, 255, 0.06);
+  --app-line: rgba(255, 255, 255, 0.08);
+  --app-line-strong: rgba(255, 255, 255, 0.16);
+  --app-line-glow: rgba(16, 185, 129, 0.4);
 
   /* ── Ink, named by JOB rather than by ramp step ──────────────────────────
      The audit that produced these found 164 places where a ramp step had been
@@ -1854,10 +2004,16 @@ html[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #93a0b5; 
      one clears every floor at once: white on it 5.36:1, and the chip itself
      3.33:1 on the dark bar and 5.01:1 on the light one. */
   --app-badge: #d70410;
-  --app-ink: #f6f7fa;
-  --app-ink-2: #c7ccdb;
-  --app-ink-3: #99a0b6;
-  --app-glyph: #5f687e;
+  /* The design names three tiers — primary, secondary, muted #64748b — and
+     puts muted on timestamps and captions. Measured on the design's own card
+     that is 3.6:1, under the 4.5 floor for text. So muted keeps the value the
+     design gives it but only where it is NOT text (decorative glyphs, 3:1),
+     and captions get a step chosen by measurement. This is the one place the
+     palette deliberately departs from the document, and it departs upward. */
+  --app-ink: #f8fafc;
+  --app-ink-2: #94a3b8;
+  --app-ink-3: #8b9ab0;
+  --app-glyph: #64748b;
   --app-on-bright: #0a0b11;
   --app-on-accent: #ffffff;
   --app-bright: #ffffff;
@@ -1878,9 +2034,22 @@ html[data-theme="light"] {
      one lighter than the fill, which reads as a highlight along the top of the
      control instead of a second outline. The rail takes the same step: on
      white, 500 is the most saturated point that still clears 3:1. */
-  --app-accent-edge: #615fff;
-  --app-rail-a: #615fff;
-  --app-rail-b: #8e51ff;
+  --app-accent-edge: #059669;
+  --app-rail-a: #059669;
+  --app-rail-b: #047857;
+  /* #059669 is 3.58:1 on this wash — under the floor for a label. The design's
+     own "deep emerald" is what carries it. */
+  --app-nav-on: #047857;
+  --app-nav-wash: #d5f5e5;
+  /* The document specifies #059669 filled with white text. Measured, that is
+     3.77:1 — a 14px semibold label under the floor. The design's own hover
+     step (#047857) is 5.36:1, so the two swap: #047857 fills the button and
+     #059669 stays on edges, rails and gradient starts, where nothing is read
+     on top of it. */
+  --app-cta: #047857;
+  --app-cta-hover: #065f46;
+  --app-on-cta: #ffffff;
+  --app-accent-ink: #047857;
 
   /* The same four meanings, and — deliberately — the same four inks the
      `[class*="text-<hue>-"]` family rules paint. One light accent ink per hue
@@ -1888,10 +2057,10 @@ html[data-theme="light"] {
      `text-amber-400` label beside it are the same colour instead of two
      near-misses. These replace #047857 / #b45309, which measured 4.51 and 4.13
      against the new page — one of them under the floor. */
-  --app-in: #006045;
-  --app-out: #9f0712;
-  --app-warn: #973c00;
-  --app-info: #4338ca;
+  --app-in: #065f46;
+  --app-out: #b91c1c;
+  --app-warn: #92400e;
+  --app-info: #6d28d9;
   /* The soft chip fills, deepened. They were #e7f6ef / #fdeceb / #fdf2e3 /
      #eef0fe — 0.00 to 0.95 CIE L* away from the raised tile, i.e. a status chip
      laid on a nested panel had no edge at all and was doing nothing but holding
@@ -1916,18 +2085,41 @@ html[data-theme="light"] {
 
   /* The four planes, same values as the ramp flip at the top of the file so
      there is exactly one light palette and not two. */
-  --app-page: #e5e9f2;
+  /* The design's canvas is #f8fafc — an ultra-clean cool white, NOT a grey.
+     I had this at #e2e8f0, two whole steps darker, and that single value is
+     most of why light mode did not look like the template: white cards barely
+     separated from a grey page instead of sitting crisply on near-white. */
+  /* The document says #f8fafc. Rendered, that is 1.8 L* from a white card —
+     no separation at all, and the whole app read as one white sheet. The
+     template's own screenshot shows a canvas you can plainly see against the
+     cards, so the canvas is tinted to match what the picture shows rather than
+     what the frontmatter says:
+       canvas #eef1f6 94.3  <  chrome #f7f9fc 97.7  <  card #ffffff 100
+     Hover goes DOWN from white, never up: on a white card, lightening is
+     invisible, which is why hovering read as "turns white". */
+  --app-page: #eef1f6;
   --app-surface: #ffffff;
-  --app-surface-2: #ecf0f7;
-  --app-line: #dde3ee;
-  --app-line-strong: #c6cfdd;
+  --app-surface-hover: #eef2f7;
+  --app-surface-2: #f1f5f9;
+  --app-line-subtle: rgba(226, 232, 240, 0.6);
+  --app-line: #e2e8f0;
+  --app-line-strong: #cbd5e1;
+  --app-line-glow: rgba(16, 185, 129, 0.35);
+  --app-halo-earn: 0 10px 25px -5px rgba(5, 150, 105, 0.08),
+    0 8px 10px -6px rgba(15, 23, 42, 0.04), 0 0 0 1px rgba(16, 185, 129, 0.35);
+  --app-halo-promo: 0 10px 25px -5px rgba(139, 92, 246, 0.1),
+    0 0 0 1px rgba(139, 92, 246, 0.3);
+  --app-glow-cta: 0 2px 8px rgba(5, 150, 105, 0.25);
+  --app-ring-focus: 0 0 0 3px rgba(5, 150, 105, 0.15);
+  --app-field-bg: #f1f5f9;
+  --app-glass: rgba(255, 255, 255, 0.82);
 
   --app-ink: #0f172a;
-  --app-ink-2: #334155;
+  --app-ink-2: #475569;
   --app-ink-3: #5b6675;
   /* 3.65:1 on the white card, 3.00 on the page — over the 3:1 non-text floor
      everywhere, and still clearly subordinate to body text. It was 1.08:1. */
-  --app-glyph: #7a8799;
+  --app-glyph: #6b7b91;
   --app-on-bright: #0a0b11;
   --app-on-accent: #ffffff;
   --app-bright: #ffffff;
@@ -1943,63 +2135,100 @@ html[data-theme="light"] {
      `t-hero` and `t-figure` are tabular by default: a balance that reflows its
      own digits as it counts up is the single loudest "not a real product" tell
      on a money screen. */
+  /* Each step is the document's figure, with the mobile counterpart as the
+     low end of a clamp so a title drops to its mobile size continuously
+     instead of jumping at 768px. The line-heights are the document's ratios,
+     not my rounder ones — 56/48 on the hero, 44/36 on a headline, 22/14 on
+     body — which is most of why the old scale read tighter and smaller than
+     the template at the same nominal size. */
   .t-hero {
-    font-size: clamp(2.25rem, 10vw, 3rem);
+    /* display-hero 48/56 -0.03em, mobile 32/40 -0.02em */
+    font-size: clamp(2rem, 6.5vw, 3rem);
     font-weight: 800;
-    line-height: 1;
-    letter-spacing: -0.035em;
+    line-height: 1.167;
+    letter-spacing: -0.03em;
     font-variant-numeric: tabular-nums;
   }
   .t-figure {
-    font-size: clamp(1.5rem, 6vw, 2rem);
-    font-weight: 800;
-    line-height: 1.05;
-    letter-spacing: -0.028em;
+    /* metric-mono 28/34 -0.03em — balances, counters, payouts */
+    font-size: clamp(1.5rem, 5vw, 1.75rem);
+    font-weight: 700;
+    line-height: 1.214;
+    letter-spacing: -0.03em;
     font-variant-numeric: tabular-nums;
   }
   .t-figure-sm {
-    font-size: clamp(1.125rem, 4.4vw, 1.375rem);
-    font-weight: 800;
-    line-height: 1.1;
-    letter-spacing: -0.022em;
+    /* headline-sm 20/28 -0.015em, carrying tabular figures */
+    font-size: clamp(1.125rem, 3.4vw, 1.25rem);
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: -0.015em;
     font-variant-numeric: tabular-nums;
   }
   .t-title {
-    font-size: clamp(1.375rem, 3.4vw, 1.75rem);
-    font-weight: 800;
-    line-height: 1.15;
-    letter-spacing: -0.024em;
+    /* headline-lg 36/44 -0.025em, mobile 26/34 -0.02em */
+    font-size: clamp(1.625rem, 4.4vw, 2.25rem);
+    font-weight: 700;
+    line-height: 1.222;
+    letter-spacing: -0.025em;
     text-wrap: balance;
   }
   .t-section {
-    font-size: clamp(1rem, 1.9vw, 1.125rem);
+    /* headline-md 24/32 -0.02em */
+    font-size: clamp(1.25rem, 2.6vw, 1.5rem);
     font-weight: 700;
-    line-height: 1.3;
-    letter-spacing: -0.014em;
+    line-height: 1.333;
+    letter-spacing: -0.02em;
   }
   .t-card-title {
-    font-size: 0.9375rem;
-    font-weight: 700;
-    line-height: 1.35;
-    letter-spacing: -0.008em;
+    /* title-md 16/24 -0.01em */
+    font-size: 1rem;
+    font-weight: 600;
+    line-height: 1.5;
+    letter-spacing: -0.01em;
+  }
+  .t-body-lg {
+    /* body-lg 16/26 */
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.625;
+    text-wrap: pretty;
   }
   .t-body {
+    /* body-md 14/22 */
     font-size: 0.875rem;
     font-weight: 400;
-    line-height: 1.55;
+    line-height: 1.571;
     text-wrap: pretty;
   }
   .t-meta {
+    /* body-sm 12/18 +0.01em */
     font-size: 0.75rem;
-    font-weight: 500;
-    line-height: 1.4;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+  }
+  .t-label {
+    /* label-lg 14/20 +0.01em — buttons and field labels */
+    font-size: 0.875rem;
+    font-weight: 600;
+    line-height: 1.429;
+    letter-spacing: 0.01em;
+  }
+  .t-label-sm {
+    /* label-md 12/16 +0.02em — chips, tabs, table headers */
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.333;
+    letter-spacing: 0.02em;
   }
   .t-eyebrow {
+    /* label-caps 11/14 +0.06em, always uppercase */
     font-size: 0.6875rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.09em;
-    line-height: 1.2;
+    letter-spacing: 0.06em;
+    line-height: 1.273;
   }
 
   /* ── Semantic text ───────────────────────────────────────────────────────
@@ -2060,9 +2289,9 @@ html[data-theme="light"] {
   /* The soft version, for an active nav row or a selected chip: the brand at
      low opacity with a real border, never a second hue. */
   .app-accent-soft {
-    background-color: var(--app-info-soft);
-    border: 1px solid var(--app-info-line);
-    color: var(--app-info);
+    background-color: var(--app-nav-wash);
+    border: 1px solid var(--app-accent-edge);
+    color: var(--app-accent-ink);
   }
 
   /* ── Chips ───────────────────────────────────────────────────────────────
@@ -2071,14 +2300,19 @@ html[data-theme="light"] {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    padding: 0.25rem 0.625rem;
+    /* 22px tall, 2px/8px padding, 11px/700 — the document's badge, to the
+       pixel. A chip that drifts to 26px is the thing that makes a dense row
+       of status tags look approximate. */
+    min-height: 1.375rem;
+    padding: 0.125rem 0.5rem;
     border-radius: 9999px;
     border: 1px solid var(--app-line);
     background-color: var(--app-surface-2);
-    color: var(--color-gray-400);
+    color: var(--app-ink-3);
     font-size: 0.6875rem;
     font-weight: 700;
-    line-height: 1.3;
+    line-height: 1.273;
+    letter-spacing: 0.02em;
     white-space: nowrap;
   }
   .app-chip-in {
@@ -2100,6 +2334,67 @@ html[data-theme="light"] {
     background-color: var(--app-info-soft);
     border-color: var(--app-info-line);
     color: var(--app-info);
+  }
+
+  /* ── Fields ──────────────────────────────────────────────────────────────
+     44px tall, 12px/16px inside, an 8px corner, and a focus state that is a
+     coloured RING rather than a thicker border — so focusing something never
+     shifts the layout by a pixel. */
+  .app-field {
+    width: 100%;
+    min-height: 2.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: var(--app-r-control);
+    border: 1px solid var(--app-line);
+    background-color: var(--app-field-bg);
+    color: var(--app-ink);
+    font-size: 0.875rem;
+    line-height: 1.429;
+    transition: border-color var(--app-fast) ease,
+      box-shadow var(--app-fast) ease;
+  }
+  .app-field::placeholder {
+    color: var(--app-ink-3);
+  }
+  .app-field:hover {
+    border-color: var(--app-line-strong);
+  }
+  .app-field:focus-visible {
+    outline: none;
+    border-color: var(--app-cta);
+    box-shadow: var(--app-ring-focus);
+  }
+
+  /* ── Depth helpers ───────────────────────────────────────────────────────
+     The document expresses "this is live" as a tinted halo, because a black
+     shadow is invisible on obsidian and dirty on near-white. */
+  .app-halo-earn {
+    box-shadow: var(--app-halo-earn);
+  }
+  .app-halo-promo {
+    box-shadow: var(--app-halo-promo);
+  }
+  .app-cta-glow {
+    box-shadow: var(--app-glow-cta);
+  }
+  /* Frosted layers: modals, command bars, the sticky earning header. */
+  .app-glass {
+    background-color: var(--app-glass);
+    backdrop-filter: blur(var(--app-glass-blur));
+    -webkit-backdrop-filter: blur(var(--app-glass-blur));
+  }
+  /* A card that answers the pointer: one step brighter, edge brightened, and
+     two pixels up over 150ms. */
+  .app-lift {
+    transition: background-color 150ms ease, border-color 150ms ease,
+      transform 150ms ease, box-shadow 150ms ease;
+  }
+  @media (hover: hover) {
+    .app-lift:hover {
+      background-color: var(--app-surface-hover);
+      border-color: var(--app-line-strong);
+      transform: translateY(-2px);
+    }
   }
 
   /* ── Icon tiles ──────────────────────────────────────────────────────────
@@ -2165,13 +2460,25 @@ html[data-theme="light"] {
     transition: background-color var(--app-fast) ease,
       color var(--app-fast) ease;
   }
+  /* The desktop sidebar is the one place these rows are never touched: it is
+     `hidden md:flex` and driven by a pointer. There the document's 10px row
+     applies, and it matters — at the 44px finger floor a twenty-item menu runs
+     past the fold, which is what made the column read crowded. Everywhere else
+     this class builds the account menu and the post menu, both of which ARE
+     thumbed, so the floor stays. */
+  @media (min-width: 768px) and (pointer: fine) {
+    .app-sidebar .app-nav-item {
+      min-height: 2.5rem;
+      padding: 0.625rem 0.75rem;
+    }
+  }
   .app-nav-item:hover {
     background-color: var(--shell-hover);
-    color: var(--color-gray-100);
+    color: var(--app-ink);
   }
   .app-nav-item[aria-current="page"] {
-    background-color: var(--app-info-soft);
-    color: var(--app-info);
+    background-color: var(--app-nav-wash);
+    color: var(--app-nav-on);
     font-weight: 700;
   }
   .app-nav-item[aria-current="page"]::before {
@@ -2359,16 +2666,16 @@ html[data-theme="light"][data-accent="green"] {
   --app-rail-b: #009966;
 }
 html[data-accent="emerald"] {
-  --app-grad-a: #007a55;
-  --app-grad-b: #00786f;
-  --app-accent-edge: #00d492;
-  --app-rail-a: #00d492;
-  --app-rail-b: #00d5be;
+  --app-grad-a: #047857;
+  --app-grad-b: #065f46;
+  --app-accent-edge: #34d399;
+  --app-rail-a: #34d399;
+  --app-rail-b: #10b981;
 }
 html[data-theme="light"][data-accent="emerald"] {
-  --app-accent-edge: #009966;
-  --app-rail-a: #009966;
-  --app-rail-b: #009689;
+  --app-accent-edge: #059669;
+  --app-rail-a: #059669;
+  --app-rail-b: #047857;
 }
 html[data-accent="teal"] {
   --app-grad-a: #00786f;

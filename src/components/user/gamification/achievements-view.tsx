@@ -105,11 +105,11 @@ export function AchievementsView() {
   return (
     <div className="space-y-3">
       <h1 className="text-xl font-bold text-white">🏅 Achievements</h1>
-      <p className="text-sm text-gray-400">
+      <p className="text-sm text-(--app-ink-3)">
         Unlocked: <strong className="text-white">{summary?.unlocked ?? 0}</strong> /{" "}
         {summary?.total ?? items.length}
         {summary && summary.pointsEarned > 0 && (
-          <span className="text-gray-500">
+          <span className="text-(--app-ink-3)">
             {" "}
             · {pts(summary.pointsEarned)} pts collected
           </span>
@@ -117,7 +117,7 @@ export function AchievementsView() {
       </p>
 
       {summary && summary.pointsClaimable > 0 && (
-        <div className="rounded-(--app-r-control) border border-(--app-info-line) bg-(--app-info-soft) px-3 py-2.5 t-body text-(--app-info)">
+        <div className="rounded-(--app-r-control) border border-(--app-accent-edge) bg-(--app-nav-wash) px-3 py-2.5 t-body text-(--app-accent-ink)">
           You have <strong>{pts(summary.pointsClaimable)} points</strong> waiting.
           Tap a claimable badge above to collect it.
         </div>
@@ -126,7 +126,7 @@ export function AchievementsView() {
       {loading && <ListSkeleton rows={3} />}
 
       {!loading && items.length === 0 && (
-        <p className="text-sm text-gray-500 py-10 text-center">
+        <p className="text-sm text-(--app-ink-3) py-10 text-center">
           No achievements are set up yet.
         </p>
       )}
@@ -140,7 +140,7 @@ export function AchievementsView() {
               className={cn(
                 "app-tap app-press app-lift relative aspect-square rounded-(--app-r-control) border flex flex-col items-center justify-center gap-0.5 p-1.5 text-center",
                 a.canClaim
-                  ? "bg-(--app-info-soft) border-(--app-info-line)"
+                  ? "bg-(--app-nav-wash) border-(--app-accent-edge)"
                   : a.isUnlocked
                     ? "bg-(--app-surface-2) border-(--app-line) opacity-80"
                     : "bg-(--app-surface-2) border-(--app-line) opacity-60"
@@ -150,17 +150,17 @@ export function AchievementsView() {
                 {a.isUnlocked ? (
                   "🏆"
                 ) : (
-                  <Lock className="w-4 h-4 text-gray-500" />
+                  <Lock className="w-4 h-4 text-(--app-ink-3)" />
                 )}
               </div>
               <p
                 className={cn(
                   "t-meta font-bold text-center line-clamp-2",
                   a.canClaim
-                    ? "text-(--app-info)"
+                    ? "text-(--app-accent-ink)"
                     : a.isUnlocked
-                      ? "text-gray-300"
-                      : "text-gray-500"
+                      ? "text-(--app-ink-2)"
+                      : "text-(--app-ink-3)"
                 )}
               >
                 {a.name}
@@ -168,7 +168,7 @@ export function AchievementsView() {
               {/* Locked badges show how far along you are, so the grid says what
                   to do next instead of only what you have not got. */}
               {!a.isUnlocked && (
-                <span className="text-[10px] text-gray-500 tabular-nums">
+                <span className="text-[10px] text-(--app-ink-3) tabular-nums">
                   {a.progress.current}/{a.progress.target}
                 </span>
               )}
@@ -197,7 +197,7 @@ export function AchievementsView() {
             <div className="text-6xl mb-3">{active.isUnlocked ? "🏆" : "🔒"}</div>
             <h2 className="t-section text-white">{active.name}</h2>
             {active.description && (
-              <p className="t-body text-gray-400 mt-1 mb-3">
+              <p className="t-body text-(--app-ink-3) mt-1 mb-3">
                 {active.description}
               </p>
             )}
@@ -205,18 +205,18 @@ export function AchievementsView() {
             <div className="mb-4">
               <div className="h-1.5 rounded-full bg-(--app-surface-2) overflow-hidden">
                 <div
-                  className="h-full bg-(--app-info)"
+                  className="h-full bg-(--app-cta)"
                   style={{ width: `${active.progress.percentage}%` }}
                 />
               </div>
-              <p className="t-meta text-gray-500 mt-1.5 tabular-nums">
+              <p className="t-meta text-(--app-ink-3) mt-1.5 tabular-nums">
                 {active.progress.current.toLocaleString()} /{" "}
                 {active.progress.target.toLocaleString()} {active.typeLabel}
               </p>
             </div>
 
             {(active.pointsReward > 0 || active.xpReward > 0) && (
-              <p className="t-body font-bold text-(--app-info)">
+              <p className="t-body font-bold text-(--app-accent-ink)">
                 Reward: {active.pointsReward > 0 && `+${pts(active.pointsReward)} pts`}
                 {active.pointsReward > 0 && active.xpReward > 0 && " · "}
                 {active.xpReward > 0 && `+${active.xpReward} XP`}
@@ -228,7 +228,7 @@ export function AchievementsView() {
               </p>
             )}
             {active.isClaimed && (
-              <p className="t-meta text-gray-500 mt-1">Reward collected.</p>
+              <p className="t-meta text-(--app-ink-3) mt-1">Reward collected.</p>
             )}
 
             {active.canClaim && (
@@ -248,7 +248,7 @@ export function AchievementsView() {
               className={cn(
                 "app-press app-tap w-full rounded-(--app-r-control) text-sm font-bold",
                 active.canClaim
-                  ? "mt-2 bg-(--app-surface-2) border border-(--app-line) text-gray-300"
+                  ? "mt-2 bg-(--app-surface-2) border border-(--app-line) text-(--app-ink-2)"
                   : "mt-4 app-accent"
               )}
             >
