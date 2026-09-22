@@ -74,7 +74,12 @@ export const DEPOSIT_METHOD_PRESETS: DepositMethod[] = [
     enabled: false,
     minAmount: 1,
     maxAmount: 100000,
-    autoQr: true,
+    /* A UID is a number, and a QR of a number is a QR of a number. Bitget's
+       app does not read it as a payment code, so a generated one would scan
+       to nothing and leave the user staring at a screen that did not react —
+       worse than no QR at all. Bitget's real payment QR comes from Pay →
+       Receive inside the app, so this one is uploaded. */
+    autoQr: false,
   },
   {
     key: "bitget_usdt",
@@ -88,6 +93,10 @@ export const DEPOSIT_METHOD_PRESETS: DepositMethod[] = [
     minAmount: 1,
     maxAmount: 100000,
     feeFlatUsd: 1,
+    /* A wallet address IS the scannable payload — every wallet app reads one.
+       This is the case the generated QR exists for: 34 characters of mixed
+       case that nobody should be retyping, where one wrong character sends
+       the money somewhere unrecoverable. */
     autoQr: true,
   },
   { key: "binance", label: "Binance Pay", accountLabel: "Binance Pay ID / UID", account: "", instructions: "Send via Binance Pay to the ID above, then paste the transaction ID.", enabled: false, minAmount: 1, maxAmount: 100000 },
@@ -138,12 +147,35 @@ function normalize(raw: unknown): DepositMethod[] {
     .filter((m) => m.key);
 }
 
+/**
+ * Add any preset the saved list has never heard of.
+ *
+ * Without this, shipping a new payment method reaches nobody. The saved list
+ * is whatever the admin last pressed Save on, and `normalize` returns exactly
+ * that — so a method added to the code afterwards is invisible forever, on
+ * every install that has configured deposits even once.
+ *
+ * That is not hypothetical: Bitget was added, shipped, and could not be found
+ * anywhere in the admin screen, because this platform's saved list predates it
+ * by a few days and had seven entries in it.
+ *
+ * New presets arrive at their shipped defaults — switched OFF, with an empty
+ * account — so they appear for the admin to configure and stay invisible to
+ * users until they do. An admin's existing settings are never touched: a
+ * saved key always wins.
+ */
+function withNewPresets(saved: DepositMethod[]): DepositMethod[] {
+  const known = new Set(saved.map((m) => m.key));
+  const additions = DEPOSIT_METHOD_PRESETS.filter((p) => !known.has(p.key));
+  return additions.length ? [...saved, ...additions] : saved;
+}
+
 /** All configured deposit methods (presets when nothing saved yet). */
 export async function getDepositMethods(): Promise<DepositMethod[]> {
   const raw = await getSetting<unknown>(SETTING_KEY, null);
   if (raw == null) return DEPOSIT_METHOD_PRESETS;
   const list = normalize(raw);
-  return list.length ? list : DEPOSIT_METHOD_PRESETS;
+  return list.length ? withNewPresets(list) : DEPOSIT_METHOD_PRESETS;
 }
 
 /** Methods a user can actually pay to (enabled AND has a receiving account). */

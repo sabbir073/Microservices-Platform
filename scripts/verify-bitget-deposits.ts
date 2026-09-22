@@ -5,6 +5,7 @@ import {
   DEPOSIT_METHOD_PRESETS,
   type DepositMethod,
 } from "../src/lib/deposit-methods";
+import { qrPayloadKind } from "../src/lib/deposit-qr";
 import {
   computeDepositBreakdown,
   effectiveChargePct,
@@ -92,9 +93,20 @@ function main() {
         m?.enabled === false && m?.account === ""
       );
     }
+    /* The QR is scanned inside a wallet app at the moment of paying, so the
+       only thing that matters is whether the app can act on what it reads.
+       An address is the payment payload; a UID is a number, and a QR of a
+       number leaves the payer tapping a screen that never reacts — which
+       reads as our site being broken, not as their app not supporting it. */
     check(
-      "both draw their QR from the account",
-      pay?.autoQr === true && usdt?.autoQr === true
+      "the on-chain address draws its QR from the account",
+      usdt?.autoQr === true,
+      "the address is the payload, and an uploaded image goes stale the moment the address changes"
+    );
+    check(
+      "the UID method does NOT",
+      pay?.autoQr !== true,
+      "a generated QR of a Bitget UID scans to a bare number and pays nobody"
     );
   }
 
@@ -275,7 +287,105 @@ function main() {
     }
   }
 
-  console.log(
+  /* ══════════════════════════════════════════════════════════════════════════
+   A new method has to reach an install that is already configured
+   ══════════════════════════════════════════════════════════════════════════
+   This suite passed while the feature was invisible, and that is the lesson
+   worth keeping. It checked that the Bitget presets exist in the code. They
+   did. What nothing checked was whether they could ever be SEEN: the saved
+   list is whatever the admin last pressed Save on, `normalize` returned
+   exactly that, and this platform's saved list predated Bitget by a few days.
+   Seven methods in the column, nine in the code, and the owner could not find
+   the one he had asked for.
+
+   So the check is not "is Bitget in the presets" — it is "does a preset the
+   saved list has never heard of get added to it". */
+{
+  const lib = read("src/lib/deposit-methods.ts");
+  check(
+    "presets the saved list has never seen are added to it",
+    /function withNewPresets/.test(lib) && /withNewPresets\(list\)/.test(lib),
+    "without this, shipping a payment method reaches nobody who has configured deposits even once"
+  );
+  check(
+    "a saved method always wins over its preset",
+    /const known = new Set\(saved\.map/.test(lib),
+    "an admin's own UID must never be overwritten by a shipped default"
+  );
+  check(
+    "a newly appearing method arrives switched off",
+    /enabled: false/.test(lib),
+    "it must be visible to the admin and invisible to users until an account is filled in"
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A generated QR must be one a wallet app can act on
+   ══════════════════════════════════════════════════════════════════════════
+   The owner asked whether the Bitget QR has to be downloaded from the app or
+   is made here, and then said what settles it: the QR is scanned at the
+   moment of paying. That makes the test not "does a QR appear" but "does the
+   payer's app do something when it reads it".
+
+   A wallet address is the payment payload and every wallet reads one. A UID,
+   a phone number or an email is not: the scan yields that text, the app shows
+   nothing, and the payer concludes the site is broken. So the decision is
+   made from the account itself, in three places that must agree — the admin
+   warning, the drawing route, and the screen that shows it. */
+{
+  console.log("\nThe generated QR only exists where scanning does something");
+
+  const ADDRESSES = [
+    "TQ5NMqJjaGqn7ZbRRd8rBmqzxqZ8N1o4Rm", // TRC20
+    "0x2170Ed0880ac9A755fd29B2688956BD959F933F8", // ERC20/BEP20
+    "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", // bech32
+  ];
+  const NOT_ADDRESSES = [
+    "8456921037", // a Bitget UID
+    "01712345678", // a bKash number
+    "+8801712345678",
+    "owner@example.com", // PayPal
+    "Nayeem Ahmed", // a name someone typed in the wrong box
+    "", // nothing filled in yet
+  ];
+  check(
+    `wallet addresses are treated as scannable (${ADDRESSES.length})`,
+    ADDRESSES.every((a) => qrPayloadKind(a) === "address"),
+    ADDRESSES.filter((a) => qrPayloadKind(a) !== "address").join(", ")
+  );
+  check(
+    `UIDs, phone numbers and emails are not (${NOT_ADDRESSES.length})`,
+    NOT_ADDRESSES.every((a) => qrPayloadKind(a) === "plain"),
+    NOT_ADDRESSES.filter((a) => qrPayloadKind(a) !== "plain").join(", ")
+  );
+  check(
+    "a pay link stays scannable — the phone opens it",
+    qrPayloadKind("https://pay.example.com/abc") === "link" &&
+      qrPayloadKind("bitcoin:bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq") === "link"
+  );
+
+  const qr = read("src/app/api/deposits/qr/route.ts");
+  check(
+    "the route refuses to draw a QR of a bare number",
+    /qrPayloadKind\(method\.account\) === "plain"/.test(qr),
+    "a mistaken tick in settings would otherwise hand every payer a dead code"
+  );
+  const view = read("src/components/user/wallet/deposit-view.tsx");
+  check(
+    "…and the screen does not ask for one it would not get",
+    /qrPayloadKind\(selected\.account\) !== "plain"/.test(view),
+    "asking anyway shows the user a broken image, which is worse than no QR"
+  );
+  const form = read("src/components/admin/payment-methods/deposit-methods-form.tsx");
+  check(
+    "the admin is told, at the moment of ticking it, where the real QR comes from",
+    /qrPayloadKind\(m\.account\) === "plain"/.test(form) &&
+      /Pay → Receive/.test(form),
+    "an admin who ticks it and sees nothing has no way to know why"
+  );
+}
+
+console.log(
     `\n${passed} passed, ${failures.length} failed` +
       (failures.length ? `\n\n${failures.map((f) => `  - ${f}`).join("\n")}\n` : "\n")
   );
