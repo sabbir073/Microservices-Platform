@@ -4,6 +4,12 @@ import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
 import { isDuplicateLedgerError } from "@/lib/idempotency";
 import {
+  getPayoutHoldConfig,
+  payOrHoldSeller,
+  getMarketplaceTaxConfig,
+  computeCommissionTax,
+} from "@/lib/marketplace-selling";
+import {
   MarketplaceListingStatus,
   MarketplaceOfferStatus,
   NotificationType,
@@ -59,6 +65,7 @@ export async function PATCH(
             title: true,
             price: true,
             assetType: true,
+            saleMode: true,
             commissionRateBps: true,
           },
         },
@@ -160,7 +167,13 @@ export async function PATCH(
       assetType: offer.listing.assetType,
       perListingOverride: offer.listing.commissionRateBps,
     });
+    const taxCfg = await getMarketplaceTaxConfig();
     const { fee, sellerAmount } = splitPrice(acceptedAmount, bps);
+    // Tax on the commission, charged on top — same rule as every other way of
+    // buying. The buyer therefore has to cover the offer plus the tax, which
+    // the compare-and-set below enforces.
+    const { tax, pct: taxPct } = computeCommissionTax(fee, taxCfg);
+    const buyerTotal = Math.round((acceptedAmount + tax) * 100) / 100;
 
     // Interactive, not the array form, because the buyer debit has to be a
     // compare-and-set and the rest of the sale must not happen when it fails.
@@ -171,20 +184,27 @@ export async function PATCH(
     // `z.number().positive()` on the offer amount, two accounts could mint
     // arbitrary cash: B offers $1,000,000 on a $0 balance, A accepts, A is
     // credited real withdrawable money and B simply goes negative.
+    const hold = await getPayoutHoldConfig();
+
     const settled = await prisma.$transaction(async (tx) => {
       const paid = await tx.user.updateMany({
-        where: { id: offer.buyerId, cashBalance: { gte: acceptedAmount } },
-        data: { cashBalance: { decrement: acceptedAmount } },
+        where: { id: offer.buyerId, cashBalance: { gte: buyerTotal } },
+        data: { cashBalance: { decrement: buyerTotal } },
       });
       if (paid.count === 0) return null; // buyer can't cover — no sale
 
       // Re-check the listing inside the transaction. The status read above is
       // check-then-act; two accepts on competing offers could otherwise both
       // sell the same listing.
+      // Accepting a negotiated price on an UNLIMITED listing sells one
+      // licence, not the listing: it stays on sale for everyone else. Only a
+      // ONE_OFF item is gone once its buyer is settled.
       const claimed = await tx.marketplaceListing.updateMany({
         where: { id, status: MarketplaceListingStatus.ACTIVE },
         data: {
-          status: MarketplaceListingStatus.SOLD,
+          ...(offer.listing.saleMode !== "UNLIMITED"
+            ? { status: MarketplaceListingStatus.SOLD }
+            : {}),
           directPurchasesCount: { increment: 1 },
         },
       });
@@ -197,6 +217,8 @@ export async function PATCH(
           listingId: id,
           buyerId: offer.buyerId,
           amount: acceptedAmount,
+          tax,
+          taxPct,
           fee,
           sellerAmount,
           status: "COMPLETED",
@@ -220,35 +242,42 @@ export async function PATCH(
         },
         data: { status: MarketplaceOfferStatus.WITHDRAWN },
       });
-      await tx.user.update({
-        where: { id: offer.listing.sellerId },
-        data: {
-          cashBalance: { increment: sellerAmount },
-          totalEarnings: { increment: sellerAmount },
-        },
+      // Honours the payout hold, same as the direct and cart checkouts. An
+      // accepted offer is an ordinary sale at a negotiated price; two of the
+      // four sale paths ignoring the switch would mean an owner who turned it
+      // on still had sellers paid instantly through this one.
+      const held = await payOrHoldSeller(tx, {
+        sellerId: offer.listing.sellerId,
+        purchaseId: p.id,
+        amount: toNum(sellerAmount),
+        hold,
       });
       await tx.transaction.create({
         data: {
           userId: offer.buyerId,
           type: TransactionType.PURCHASE,
           status: TransactionStatus.COMPLETED,
-          amount: -acceptedAmount,
+          amount: -buyerTotal,
           points: 0,
           description: `Marketplace offer accepted — "${offer.listing.title}"`,
           reference: `marketplace_offer_${offerId}`,
         },
       });
-      await tx.transaction.create({
-        data: {
-          userId: offer.listing.sellerId,
-          type: TransactionType.EARNING,
-          status: TransactionStatus.COMPLETED,
-          amount: sellerAmount,
-          points: 0,
-          description: `Marketplace sale (offer) — "${offer.listing.title}"`,
-          reference: `marketplace_offer_${offerId}`,
-        },
-      });
+      // Only once the money is really theirs. While held, the release sweep
+      // writes this row on payout instead.
+      if (!held.held) {
+        await tx.transaction.create({
+          data: {
+            userId: offer.listing.sellerId,
+            type: TransactionType.EARNING,
+            status: TransactionStatus.COMPLETED,
+            amount: sellerAmount,
+            points: 0,
+            description: `Marketplace sale (offer) — "${offer.listing.title}"`,
+            reference: `marketplace_offer_${offerId}`,
+          },
+        });
+      }
       return { purchase: p, offer: o };
     });
 

@@ -2,6 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { cn } from "@/lib/utils";
+import { NOTIFICATION_STYLES } from "@/lib/notification-styles";
+import { NotificationCard } from "@/components/user/primitives/notification-card";
 import {
   TaskAudienceTargeting,
   type TaskAudienceValue,
@@ -177,6 +180,11 @@ export function SendNotificationForm() {
     sendInApp: true,
     sendPush: false,
     sendEmail: false,
+    emailSubject: "",
+    emailBody: "",
+    important: false,
+    style: "PLAIN",
+    kicker: "",
   });
 
   const [audience, setAudience] = useState<TaskAudienceValue>(EMPTY_AUDIENCE);
@@ -192,27 +200,43 @@ export function SendNotificationForm() {
 
   // Estimated reach
   const [estimate, setEstimate] = useState<number | null>(null);
+  // Today's email allowance, so a send of 40,000 does not look like a failure
+  // when 500 of them leave today and the rest go out tomorrow.
+  const [budget, setBudget] = useState<{
+    cap: number;
+    usedToday: number;
+    remainingToday: number | null;
+  } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/notifications/send", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => j?.emailBudget && setBudget(j.emailBudget))
+      .catch(() => {});
+  }, []);
   const [estimating, setEstimating] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Recompute estimate whenever target/criteria change
+  // Recompute estimate whenever target/criteria change. Only the audience
+  // fields are read, so typing the title or message does not re-estimate.
+  const { target, packageFilter, segPackages, minLevel, maxLevel, activeWithinDays, minTasksCompleted } = formData;
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setEstimating(true);
       try {
         const payload: Record<string, unknown> = {
-          target: formData.target,
+          target: target,
         };
-        if (formData.target === "package") {
-          payload.packageFilter = formData.packageFilter;
-        } else if (formData.target === "specific") {
+        if (target === "package") {
+          payload.packageFilter = packageFilter;
+        } else if (target === "specific") {
           payload.userIds = selectedUsers.map((u) => u.id);
-        } else if (formData.target === "segment") {
-          payload.criteria = buildCriteria(formData, audience);
-          if (formData.minTasksCompleted)
+        } else if (target === "segment") {
+          payload.criteria = buildCriteria({ segPackages, minLevel, maxLevel, activeWithinDays }, audience);
+          if (minTasksCompleted)
             payload.minTasksCompleted = parseInt(
-              formData.minTasksCompleted,
+              minTasksCompleted,
               10
             );
         }
@@ -236,13 +260,13 @@ export function SendNotificationForm() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [
-    formData.target,
-    formData.packageFilter,
-    formData.segPackages,
-    formData.minLevel,
-    formData.maxLevel,
-    formData.activeWithinDays,
-    formData.minTasksCompleted,
+    target,
+    packageFilter,
+    segPackages,
+    minLevel,
+    maxLevel,
+    activeWithinDays,
+    minTasksCompleted,
     audience,
     selectedUsers,
   ]);
@@ -315,6 +339,15 @@ export function SendNotificationForm() {
         sendInApp: formData.sendInApp,
         sendPush: formData.sendPush,
         sendEmail: formData.sendEmail,
+        important: formData.important,
+        style: formData.style,
+        ...(formData.kicker.trim() ? { kicker: formData.kicker.trim() } : {}),
+        ...(formData.sendEmail && formData.emailSubject.trim()
+          ? { emailSubject: formData.emailSubject.trim() }
+          : {}),
+        ...(formData.sendEmail && formData.emailBody.trim()
+          ? { emailBody: formData.emailBody.trim() }
+          : {}),
       };
       if (formData.target === "package") {
         payload.packageFilter = formData.packageFilter;
@@ -344,13 +377,23 @@ export function SendNotificationForm() {
 
       setSuccess(
         data.scheduled
-          ? `Scheduled for ${new Date(data.scheduledFor).toLocaleString()} — ${data.recipientCount} recipient(s)`
-          : `Successfully sent to ${data.recipientCount} user(s)`
+          ? `Scheduled for ${new Date(data.scheduledFor).toLocaleString()} — ${data.recipientCount} recipient(s). It is sent even if nobody is on the site.`
+          : data.finished
+            ? `Sent to ${data.recipientCount} user(s).`
+            : `Started — ${data.recipientCount} recipient(s). Delivery continues in the background; watch it on Broadcasts.` +
+              (data.note ? ` ${data.note}` : "")
       );
-      setTimeout(() => {
-        router.push("/admin/notifications");
-        router.refresh();
-      }, 2000);
+      setTimeout(
+        () => {
+          router.push(
+            data.scheduled || !data.finished
+              ? "/admin/notifications/broadcasts"
+              : "/admin/notifications"
+          );
+          router.refresh();
+        },
+        2000
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
@@ -539,7 +582,7 @@ export function SendNotificationForm() {
               </div>
               <input
                 type="text"
-                maxLength={50}
+                maxLength={80}
                 value={formData.title}
                 onChange={(e) =>
                   setFormData({ ...formData, title: e.target.value })
@@ -559,7 +602,7 @@ export function SendNotificationForm() {
                 </span>
               </div>
               <textarea
-                maxLength={200}
+                maxLength={500}
                 value={formData.message}
                 onChange={(e) =>
                   setFormData({ ...formData, message: e.target.value })
@@ -568,6 +611,82 @@ export function SendNotificationForm() {
                 rows={3}
                 className="w-full px-4 py-2.5 bg-slate-950 border border-slate-700 rounded-lg text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500 resize-none"
               />
+            </div>
+
+            {/* Template. Kept separate from "Type" above: type decides which
+                filter tab the user finds this under and must keep meaning
+                "wallet" forever; the template decides how loudly it is said. */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                Template
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {NOTIFICATION_STYLES.map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, style: st.id })}
+                    title={st.hint}
+                    className={cn(
+                      "rounded-lg border px-2.5 py-1.5 text-[11px] font-bold transition",
+                      formData.style === st.id
+                        ? "border-white/60 text-white"
+                        : "border-slate-700 text-slate-400 hover:border-slate-600 hover:text-white"
+                    )}
+                    style={
+                      formData.style === st.id
+                        ? { backgroundColor: st.mail.accent }
+                        : undefined
+                    }
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                {NOTIFICATION_STYLES.find((x) => x.id === formData.style)?.hint}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                Kicker <span className="text-slate-600">(optional)</span>
+              </label>
+              <input
+                type="text"
+                maxLength={60}
+                value={formData.kicker}
+                onChange={(e) => setFormData({ ...formData, kicker: e.target.value })}
+                placeholder="e.g. Ends in 3 hours"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+              />
+            </div>
+
+            {/* The real component the user will see, not a mock-up of it. A
+                separate preview drifts from the thing it previews, and the one
+                time that matters is the send that already went out. */}
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1.5">
+                Preview
+              </label>
+              <div className="rounded-xl border border-slate-800 bg-[#0b0b12] p-3">
+                <NotificationCard
+                  title={formData.title || "Your title appears here"}
+                  message={formData.message || "And the message, exactly as the user reads it."}
+                  createdAtLabel="just now"
+                  data={{
+                    style: formData.style,
+                    ...(formData.kicker ? { kicker: formData.kicker } : {}),
+                    ...(formData.imageUrl ? { imageUrl: formData.imageUrl } : {}),
+                    ...(formData.actionUrl ? { actionUrl: formData.actionUrl } : {}),
+                    ...(formData.actionLabel ? { actionLabel: formData.actionLabel } : {}),
+                  }}
+                />
+              </div>
+              <p className="mt-1.5 text-[11px] text-slate-500">
+                The animation is in-app only. Gmail strips CSS animation, so the
+                email uses the same colour as a band, badge and button instead.
+              </p>
             </div>
 
             <div className="grid md:grid-cols-3 gap-4">
@@ -918,10 +1037,79 @@ export function SendNotificationForm() {
                   />
                   <MessageSquare className="w-4 h-4 text-slate-400" />
                   <span className="text-sm text-white">Email</span>
-                  <span className="ml-auto text-xs text-amber-500">
-                    queued
+                  <span className="ml-auto text-xs text-slate-500">paced daily</span>
+                </label>
+
+                <label className="flex items-start gap-3 px-3 py-2 rounded-lg border border-rose-500/30 bg-rose-500/5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.important}
+                    onChange={(e) =>
+                      setFormData({ ...formData, important: e.target.checked })
+                    }
+                    className="mt-0.5 rounded bg-slate-800 border-slate-600 text-rose-400"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm text-white">
+                      Important — service notice, not marketing
+                    </span>
+                    {/* Registering is consent to hear about the account. It is
+                        not consent to be marketed at, and the two must not share
+                        a switch: dropping "your withdrawal failed" because
+                        somebody turned off offers is how a user loses money
+                        without ever being told. */}
+                    <span className="block text-[11px] text-slate-400 mt-0.5">
+                      Security, payments, outages, changes to the terms. Reaches users
+                      who switched marketing email off, ignores the daily cap, and goes
+                      ahead of anything promotional. Do not use it for offers — that is
+                      what gets a sending domain blocked.
+                    </span>
                   </span>
                 </label>
+
+                {formData.sendEmail && (
+                  <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                    {/* An email is not a notification row. Reusing the 80/500
+                        limits above makes a mail with nothing to say, which is
+                        exactly what the email channel used to send. */}
+                    <p className="text-[11px] text-slate-500">
+                      Optional — leave blank to email the title and message above.
+                    </p>
+                    <input
+                      value={formData.emailSubject}
+                      onChange={(e) =>
+                        setFormData({ ...formData, emailSubject: e.target.value })
+                      }
+                      maxLength={150}
+                      placeholder="Email subject"
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+                    />
+                    <textarea
+                      value={formData.emailBody}
+                      onChange={(e) =>
+                        setFormData({ ...formData, emailBody: e.target.value })
+                      }
+                      rows={5}
+                      maxLength={5000}
+                      placeholder="Email body — say as much as you need here."
+                      className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm"
+                    />
+                    {budget && (
+                      <p className="text-[11px] text-slate-400">
+                        {budget.cap === 0
+                          ? `No daily cap set · ${budget.usedToday.toLocaleString()} sent today`
+                          : `${(budget.remainingToday ?? 0).toLocaleString()} of ${budget.cap.toLocaleString()} emails left today`}
+                        {formData.important
+                          ? " — an important notice is not held back by this cap."
+                          : estimate !== null &&
+                              budget.cap > 0 &&
+                              estimate > (budget.remainingToday ?? 0)
+                            ? " — the rest goes out tomorrow, automatically."
+                            : ""}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

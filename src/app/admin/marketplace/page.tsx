@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Tag,
   Settings as SettingsIcon,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
@@ -153,6 +154,7 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
   ]);
 
   const canManage = await can(session.user.id, "marketplace.manage");
+  const seesMoney = await can(session.user.id, "finance.view");
   const canResolveDisputes = await can(session.user.id, "marketplace.disputes");
 
   // Per-tab data fetch
@@ -265,6 +267,24 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
             <SettingsIcon className="h-4 w-4" />
             Settings
           </Link>
+          {canManage && (
+            <>
+              <Link
+                href="/admin/marketplace/brands"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-2 text-sm font-medium text-slate-300 hover:border-slate-600 hover:text-white"
+              >
+                <Store className="h-4 w-4" />
+                Storefronts
+              </Link>
+              <Link
+                href="/admin/marketplace/studio"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-indigo-500/50 bg-indigo-500/10 px-3 py-2 text-sm font-medium text-indigo-300 hover:bg-indigo-500/20"
+              >
+                <Sparkles className="h-4 w-4" />
+                Stock Studio
+              </Link>
+            </>
+          )}
           <CreateListingButton canManage={canManage} />
         </div>
       </div>
@@ -297,13 +317,26 @@ export default async function AdminMarketplacePage({ searchParams }: PageProps) 
           value={openDisputes.toLocaleString()}
           label="Open Disputes"
         />
-        <StatCard
-          icon={<DollarSign className="w-5 h-5" />}
-          tone="amber"
-          value={usd(totalRevenue._sum.amount ?? 0)}
-          label="Revenue"
-          extra={`${totalListings.toLocaleString()} total listings`}
-        />
+        {/* The shop's money is finance's figure. Running the marketplace —
+            listings, disputes, moderation — does not need it, and this tile
+            was showing platform revenue to every admin who can review a
+            listing. */}
+        {seesMoney ? (
+          <StatCard
+            icon={<DollarSign className="w-5 h-5" />}
+            tone="amber"
+            value={usd(totalRevenue._sum.amount ?? 0)}
+            label="Revenue"
+            extra={`${totalListings.toLocaleString()} total listings`}
+          />
+        ) : (
+          <StatCard
+            icon={<DollarSign className="w-5 h-5" />}
+            tone="amber"
+            value={totalListings.toLocaleString()}
+            label="Total listings"
+          />
+        )}
       </div>
 
       {/* Tab Bar */}

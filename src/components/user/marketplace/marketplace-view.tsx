@@ -3,6 +3,7 @@ import { AdRenderer } from "@/components/user/primitives/ad-renderer";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Avatar } from "@/components/user/primitives/avatar";
 import {
   Search,
   Plus,
@@ -13,6 +14,7 @@ import {
   ShoppingCart,
   ShieldCheck,
   Sparkles,
+  Store,
   Gavel,
   Heart,
   Eye,
@@ -23,7 +25,10 @@ import {
 import { ListSkeleton } from "@/components/user/primitives/skeleton";
 import { EmptyState } from "@/components/user/primitives/empty-state";
 import { BottomSheet } from "@/components/user/primitives/bottom-sheet";
-import { ASSET_TYPE_LABEL } from "@/lib/marketplace-categories";
+import {
+  ASSET_TYPE_LABEL,
+  MARKETPLACE_SECTIONS,
+} from "@/lib/marketplace-categories";
 import { SmartImage } from "@/components/user/primitives/smart-image";
 import { AffiliateRewardBadge } from "@/components/user/affiliate/affiliate-reward-badge";
 import { cn } from "@/lib/utils";
@@ -74,9 +79,21 @@ const SORT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "views-desc", label: "Most viewed" },
 ];
 
-export function MarketplaceView() {
+export type Storefront = {
+  slug: string;
+  name: string;
+  logo: string | null;
+  listingCount: number;
+};
+
+export function MarketplaceView({
+  storefronts = [],
+}: {
+  storefronts?: Storefront[];
+} = {}) {
   const [search, setSearch] = useState("");
   const [assetType, setAssetType] = useState<string>("");
+  const [section, setSection] = useState<string>("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [monetizedOnly, setMonetizedOnly] = useState(false);
   const [auctionOnly, setAuctionOnly] = useState(false);
@@ -104,6 +121,7 @@ export function MarketplaceView() {
     setLoading(true);
     const params = new URLSearchParams();
     if (assetType) params.set("assetType", assetType);
+    if (section) params.set("section", section);
     if (search) params.set("search", search);
     if (verifiedOnly) params.set("verified", "true");
     if (monetizedOnly) params.set("monetized", "true");
@@ -132,6 +150,7 @@ export function MarketplaceView() {
     };
   }, [
     assetType,
+    section,
     search,
     verifiedOnly,
     monetizedOnly,
@@ -151,6 +170,18 @@ export function MarketplaceView() {
     minPrice ||
     maxPrice ||
     ageBucket;
+
+  // The featured shelf is for BROWSING, not for searching. Once someone has
+  // typed a query or picked a section they are looking for one thing, and a
+  // promoted strip above their results is just the wrong answer in a bigger
+  // box. The API already floats featured to the top, so this reuses the page
+  // it already fetched rather than asking for more.
+  const browsingUnfiltered = !anyFilterActive && !section;
+  const featured = browsingUnfiltered
+    ? listings.filter((l) => l.isFeatured).slice(0, 4)
+    : [];
+  const featuredIds = new Set(featured.map((l) => l.id));
+  const rest = featured.length ? listings.filter((l) => !featuredIds.has(l.id)) : listings;
 
   const clearAll = () => {
     setAssetType("");
@@ -319,6 +350,72 @@ export function MarketplaceView() {
         </Link>
       </div>
 
+      {/* Storefront sections. Eighteen asset types in one flat row read as a
+          junk drawer: someone buying a stock photo and someone buying a domain
+          were browsing the same undifferentiated list. Picking a section also
+          clears the asset-type chip, because the chip is a refinement WITHIN a
+          section and keeping a stale one would show an empty shop. */}
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => {
+            setSection("");
+            setAssetType("");
+          }}
+          className={sectionClass(!section)}
+        >
+          Everything
+        </button>
+        {MARKETPLACE_SECTIONS.map((s) => (
+          <button
+            key={s.slug}
+            onClick={() => {
+              setSection(s.slug === section ? "" : s.slug);
+              setAssetType("");
+            }}
+            className={sectionClass(section === s.slug)}
+            title={s.tagline}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      {section && (
+        <p className="text-[11px] text-(--app-ink-3) -mt-1">
+          {MARKETPLACE_SECTIONS.find((s) => s.slug === section)?.tagline}
+        </p>
+      )}
+
+      {/* Shop by storefront. The brand pages existed with nothing linking to
+          them, so a shop could be built and then only reached by someone who
+          already knew its URL. Hidden entirely when nobody has a storefront. */}
+      {storefronts.length > 0 && !anyFilterActive && (
+        <div className="space-y-2">
+          <h2 className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-(--app-ink-2)">
+            <Store className="h-3.5 w-3.5" />
+            Shop by storefront
+          </h2>
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {storefronts.map((s) => (
+              <Link
+                key={s.slug}
+                href={`/marketplace/brand/${s.slug}`}
+                className="flex shrink-0 items-center gap-2 rounded-lg border border-(--app-line) bg-(--app-surface) px-3 py-2 hover:border-(--app-accent-edge)"
+              >
+                <Avatar src={s.logo} size={24} fallbackText={s.name.charAt(0).toUpperCase()} />
+                <span className="min-w-0">
+                  <span className="block max-w-[10rem] truncate text-xs font-semibold text-white">
+                    {s.name}
+                  </span>
+                  <span className="block text-[10px] text-(--app-ink-3)">
+                    {s.listingCount} listing{s.listingCount === 1 ? "" : "s"}
+                  </span>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Asset-type chips */}
       <div className="flex flex-wrap gap-1.5">
         <button
@@ -403,14 +500,51 @@ export function MarketplaceView() {
         />
       )}
 
-      {!loading && listings.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {listings.map((l) => (
-            <ListingCardV2 key={l.id} listing={l} />
-          ))}
-        </div>
+      {/* Featured shelf. Being first in a wall of identical cards is not the
+          same as being featured — the flag was sorted on and then rendered as
+          one more card, so a seller paying to be promoted got a position
+          nobody could see they had paid for. */}
+      {!loading && featured.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-(--app-ink-2)">
+            <Sparkles className="h-3.5 w-3.5 text-(--app-accent-ink)" />
+            Featured
+          </h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {featured.map((l) => (
+              <ListingCardV2 key={l.id} listing={l} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!loading && rest.length > 0 && (
+        <section className="space-y-2">
+          {featured.length > 0 && (
+            <h2 className="text-xs font-bold uppercase tracking-wider text-(--app-ink-2)">
+              Everything else
+            </h2>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {rest.map((l) => (
+              <ListingCardV2 key={l.id} listing={l} />
+            ))}
+          </div>
+        </section>
       )}
     </div>
+  );
+}
+
+// Sections are the primary navigation, so they read as tabs rather than as
+// another row of the same small pills the refinements use — a buyer should be
+// able to tell at a glance which choice picks the shop and which narrows it.
+function sectionClass(active: boolean) {
+  return cn(
+    "px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors whitespace-nowrap",
+    active
+      ? "bg-(--app-cta) text-(--app-on-cta) border-transparent"
+      : "bg-(--app-surface) text-(--app-ink-2) border-(--app-line) hover:text-white"
   );
 }
 

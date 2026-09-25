@@ -21,6 +21,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { toast } from "@/lib/toast";
+import { RiskPointsEditor } from "@/components/admin/settings/risk-points-editor";
+import { ProfileGateStandard, ProfileGateFeatures, ProfileGatePercent } from "@/components/admin/settings/profile-gate-settings";
 import { cn, usd } from "@/lib/utils";
 import {
   NotActiveBadge,
@@ -122,6 +124,8 @@ const DEFAULTS: SettingsBag = {
   email_from_address: "noreply@earngpt.com",
   email_from_name: "EarnGPT Team",
   email_notifications_enabled: true,
+  email_daily_cap: 500,
+  email_per_minute: 60,
   // Notifications
   push_notifications_enabled: true,
   notify_new_task: true,
@@ -130,6 +134,9 @@ const DEFAULTS: SettingsBag = {
   notify_level_up: true,
   // Integrations
   gemini_api_key: "",
+  openai_api_key: "",
+  magnific_api_key: "",
+  magnific_webhook_secret: "",
   "bkash.appKey": "",
   "bkash.appSecret": "",
   "bkash.username": "",
@@ -151,6 +158,10 @@ const DEFAULTS: SettingsBag = {
   "antifraud.auto_approve_min_trust": 0,
   "antifraud.spot_check_percent": 0,
   "antifraud.block_duplicate_proof": false,
+  "antifraud.risk_enabled": true,
+  "antifraud.auto_suspend_enabled": true,
+  "antifraud.auto_suspend_at": 100,
+  "antifraud.risk_points": {},
   "antifraud.max_users_per_ip": 0,
   "antifraud.vpn_block_enabled": false,
   "antifraud.vpn_ranges": "",
@@ -163,6 +174,9 @@ const DEFAULTS: SettingsBag = {
   "ui.notification_popup_enabled": true,
   "ui.pwa_install_prompt_enabled": true,
   "ui.require_profile_completion": false,
+  "profile_gate.mode": "ESSENTIALS",
+  "profile_gate.features": ["tasks", "missions"],
+  "profile_gate.min_percent": 100,
   "ui.require_kyc_for_withdrawal": true,
   "ui.groups_enabled": false,
   // Dark, and users may choose — the behaviour before these settings existed,
@@ -189,6 +203,10 @@ export function SystemSettingsForm({
 
   const set = <K extends string>(k: K, v: unknown) =>
     setValues((p) => ({ ...p, [k]: v }));
+
+  const gateFeatures = Array.isArray(values["profile_gate.features"])
+    ? (values["profile_gate.features"] as string[])
+    : ["tasks", "missions"];
 
   const saveCategory = async (category: string) => {
     setBusy(true);
@@ -915,6 +933,28 @@ export function SystemSettingsForm({
               onChange={(v) => set("email_notifications_enabled", v)}
               disabled={!canEdit}
             />
+            <div className="grid grid-cols-2 gap-3">
+              <Field settingKey="email_daily_cap">
+                <input
+                  type="number"
+                  min={0}
+                  value={Number(values.email_daily_cap ?? 500)}
+                  onChange={(e) => set("email_daily_cap", Number(e.target.value))}
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+              <Field settingKey="email_per_minute">
+                <input
+                  type="number"
+                  min={0}
+                  value={Number(values.email_per_minute ?? 60)}
+                  onChange={(e) => set("email_per_minute", Number(e.target.value))}
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+            </div>
             <button
               type="button"
               onClick={sendTestEmail}
@@ -974,16 +1014,61 @@ export function SystemSettingsForm({
         {tab === "integrations" && (
           <div className="space-y-4">
             <Section title="AI & Machine Learning">
-              <Field settingKey="gemini_api_key">
-                <input
-                  type="password"
-                  value={(values.gemini_api_key as string) || ""}
-                  onChange={(e) => set("gemini_api_key", e.target.value)}
-                  disabled={!canEdit}
-                  className={inp}
-                  placeholder="AIza…"
-                />
-              </Field>
+              <p className="text-xs text-slate-500 -mt-1 mb-2">
+                Paste a key and press Save — it takes effect immediately, with no
+                redeploy. The matching environment variable wins when it is set.
+                &ldquo;Test&rdquo; asks the provider whether the key is good using a
+                read-only call, so it never spends generation credits.
+              </p>
+              <div className="space-y-3">
+                <Field settingKey="gemini_api_key">
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={(values.gemini_api_key as string) || ""}
+                      onChange={(e) => set("gemini_api_key", e.target.value)}
+                      disabled={!canEdit}
+                      className={inp}
+                      placeholder="AIza…"
+                    />
+                    <TestKeyButton provider="GEMINI" disabled={!canEdit} />
+                  </div>
+                </Field>
+                <Field settingKey="openai_api_key">
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={(values.openai_api_key as string) || ""}
+                      onChange={(e) => set("openai_api_key", e.target.value)}
+                      disabled={!canEdit}
+                      className={inp}
+                      placeholder="sk-…"
+                    />
+                    <TestKeyButton provider="OPENAI" disabled={!canEdit} />
+                  </div>
+                </Field>
+                <Field settingKey="magnific_api_key">
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={(values.magnific_api_key as string) || ""}
+                      onChange={(e) => set("magnific_api_key", e.target.value)}
+                      disabled={!canEdit}
+                      className={inp}
+                    />
+                    <TestKeyButton provider="MAGNIFIC" disabled={!canEdit} />
+                  </div>
+                </Field>
+                <Field settingKey="magnific_webhook_secret">
+                  <input
+                    type="password"
+                    value={(values.magnific_webhook_secret as string) || ""}
+                    onChange={(e) => set("magnific_webhook_secret", e.target.value)}
+                    disabled={!canEdit}
+                    className={inp}
+                  />
+                </Field>
+              </div>
             </Section>
             <Section title="Payment gateway credentials">
               <p className="text-xs text-slate-500 -mt-1 mb-2">
@@ -1250,6 +1335,39 @@ export function SystemSettingsForm({
               disabled={!canEdit}
             />
 
+            <Section title="Fraud risk & auto-suspension">
+              <Toggle settingKey="antifraud.risk_enabled"
+                checked={values["antifraud.risk_enabled"] !== false}
+                onChange={(v) => set("antifraud.risk_enabled", v)}
+                disabled={!canEdit}
+                tone="red"
+              />
+              <Toggle settingKey="antifraud.auto_suspend_enabled"
+                checked={values["antifraud.auto_suspend_enabled"] !== false}
+                onChange={(v) => set("antifraud.auto_suspend_enabled", v)}
+                disabled={!canEdit}
+                tone="red"
+              />
+              <Field settingKey="antifraud.auto_suspend_at">
+                <input
+                  type="number"
+                  min={10}
+                  max={100}
+                  value={Number(values["antifraud.auto_suspend_at"] ?? 100)}
+                  onChange={(e) => set("antifraud.auto_suspend_at", parseInt(e.target.value) || 100)}
+                  disabled={!canEdit}
+                  className={inp}
+                />
+              </Field>
+              <Field settingKey="antifraud.risk_points">
+                <RiskPointsEditor
+                  value={(values["antifraud.risk_points"] as Record<string, number> | undefined) ?? {}}
+                  onChange={(v) => set("antifraud.risk_points", v)}
+                  disabled={!canEdit}
+                />
+              </Field>
+            </Section>
+
             <Section title="Network anti-abuse">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field settingKey="antifraud.max_users_per_ip">
@@ -1384,6 +1502,34 @@ export function SystemSettingsForm({
               disabled={!canEdit}
               tone="amber"
             />
+            <div className="ml-1 space-y-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+              <Field settingKey="profile_gate.mode">
+                <ProfileGateStandard
+                  on={values["ui.require_profile_completion"] === true}
+                  mode={String(values["profile_gate.mode"] ?? "ESSENTIALS")}
+                  minPercent={Number(values["profile_gate.min_percent"] ?? 100)}
+                  features={gateFeatures}
+                  onMode={(v) => set("profile_gate.mode", v)}
+                  disabled={!canEdit}
+                />
+              </Field>
+              {values["profile_gate.mode"] === "FULL" && (
+                <Field settingKey="profile_gate.min_percent">
+                  <ProfileGatePercent
+                    value={Number(values["profile_gate.min_percent"] ?? 100)}
+                    onChange={(v) => set("profile_gate.min_percent", v)}
+                    disabled={!canEdit}
+                  />
+                </Field>
+              )}
+              <Field settingKey="profile_gate.features">
+                <ProfileGateFeatures
+                  features={gateFeatures}
+                  onFeatures={(v) => set("profile_gate.features", v)}
+                  disabled={!canEdit}
+                />
+              </Field>
+            </div>
             <Toggle settingKey="ui.require_kyc_for_withdrawal"
               checked={values["ui.require_kyc_for_withdrawal"] !== false}
               onChange={(v) => set("ui.require_kyc_for_withdrawal", v)}
@@ -1651,6 +1797,69 @@ function PlatformAllowList({
  * `label`/`hint` remain for the handful of controls that are not one setting
  * each (the retention-window grid writes four fields of one JSON key).
  */
+/**
+ * Ask the provider whether the SAVED key works.
+ *
+ * Deliberately tests what is stored, not what is typed in the box beside it: an
+ * owner who pastes a key and tests without saving would otherwise be told it is
+ * fine while every feature still reads the old one.
+ */
+function TestKeyButton({
+  provider,
+  disabled,
+}: {
+  provider: "GEMINI" | "OPENAI" | "MAGNIFIC";
+  disabled?: boolean;
+}) {
+  const [state, setState] = useState<"idle" | "busy" | "ok" | "bad">("idle");
+  const [note, setNote] = useState("");
+
+  const run = async () => {
+    setState("busy");
+    setNote("");
+    try {
+      const res = await fetch("/api/admin/settings/test-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.ok) {
+        setState("ok");
+        setNote(json.message ?? "Key works.");
+      } else {
+        setState("bad");
+        setNote(json.error ?? "That key did not work.");
+      }
+    } catch (e) {
+      setState("bad");
+      setNote(e instanceof Error ? e.message : "Could not reach the provider");
+    }
+  };
+
+  return (
+    <div className="shrink-0">
+      <button
+        type="button"
+        onClick={run}
+        disabled={disabled || state === "busy"}
+        className="h-full px-3 rounded-lg border border-slate-700 text-xs font-semibold text-slate-300 hover:border-slate-600 hover:text-white disabled:opacity-50"
+      >
+        {state === "busy" ? "Testing…" : "Test"}
+      </button>
+      {note && (
+        <p
+          className={`mt-1 max-w-[16rem] text-[11px] ${
+            state === "ok" ? "text-emerald-400" : "text-rose-400"
+          }`}
+        >
+          {note}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function Field({
   label,
   hint,

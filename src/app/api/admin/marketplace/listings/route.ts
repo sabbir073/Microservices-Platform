@@ -3,10 +3,16 @@ import { auth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { toNum, toNumOrNull } from "@/lib/money";
+import {
+  getLicenseTiersEnabled,
+  sanitizeTiers,
+} from "@/lib/marketplace-selling";
 import { z } from "zod";
 import {
   validateDetails,
   getCategory,
+  resolveSaleMode,
+  canBeUnlimited,
 } from "@/lib/marketplace-categories";
 
 const ASSET_TYPES = [
@@ -19,6 +25,15 @@ const ASSET_TYPES = [
   "MOBILE_APP",
   "MOBILE_GAME",
   "SAAS_PRODUCT",
+  // These five are declared in `lib/marketplace-categories.ts` and accepted by
+  // the seller-facing route, but were missing here — so an admin could not
+  // create the very asset types the taxonomy defines for stock media. Every
+  // attempt failed zod validation with "Invalid input" before reaching Prisma.
+  "PLATFORM",
+  "STOCK_PHOTO",
+  "STOCK_VIDEO",
+  "MUSIC",
+  "EBOOK",
   "DIGITAL_PRODUCT",
   "SERVICE",
   "OTHER",
@@ -31,6 +46,18 @@ const createListingSchema = z.object({
   category: z.string().min(1),
   assetType: z.enum(ASSET_TYPES).default("DIGITAL_PRODUCT"),
   subType: z.string().nullable().optional(),
+  saleMode: z.enum(["ONE_OFF", "UNLIMITED"]).optional(),
+  licenseTiers: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(32),
+        name: z.string().min(1).max(60),
+        price: z.number().positive(),
+        description: z.string().max(300).optional(),
+      })
+    )
+    .max(5)
+    .optional(),
   details: z.record(z.string(), z.unknown()).optional(),
   price: z.number().positive(),
   currency: z.string().default("USD"),
@@ -58,7 +85,15 @@ const createListingSchema = z.object({
   isFeatured: z.boolean().optional(),
   isPromoted: z.boolean().optional(),
   commissionRateBps: z.number().int().min(0).max(10000).nullable().optional(),
-  status: z.enum(["ACTIVE", "SOLD", "CANCELLED", "EXPIRED"]).default("ACTIVE"),
+  // Storefront to publish under. The listing still belongs to the admin's own
+  // account for payouts and the download gate; this only changes whose name
+  // the buyer sees.
+  brandId: z.string().nullable().optional(),
+  // PENDING_REVIEW is what the batch publisher writes: generated listings land
+  // in the existing admin review queue instead of going straight live.
+  status: z
+    .enum(["ACTIVE", "SOLD", "CANCELLED", "EXPIRED", "PENDING_REVIEW"])
+    .default("ACTIVE"),
 });
 
 // POST /api/admin/marketplace/listings - Create a new listing (admin)
@@ -126,18 +161,49 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Reject a brand that does not exist rather than letting Prisma raise a
+    // foreign-key error the admin cannot read.
+    if (data.brandId) {
+      const brand = await prisma.marketplaceBrand.findUnique({
+        where: { id: data.brandId },
+        select: { id: true },
+      });
+      if (!brand) {
+        return NextResponse.json({ error: "That brand no longer exists" }, { status: 400 });
+      }
+    }
+
+    // Same rule as the seller route: only honoured while the admin has the
+    // feature on and only for a category sold repeatedly.
+    const tiers =
+      (await getLicenseTiersEnabled()) && canBeUnlimited(data.assetType)
+        ? sanitizeTiers(data.licenseTiers)
+        : [];
+
     const listing = await prisma.marketplaceListing.create({
       data: {
         sellerId: session.user.id,
+        brandId: data.brandId ?? null,
         title: data.title,
         description: data.description,
         richDescription: data.richDescription ?? null,
         category: data.category,
         assetType: data.assetType,
         subType: data.subType ?? null,
+        // Defaults from the category: stock media, ebooks, digital products
+        // and services are licensed repeatedly, everything else changes hands
+        // once. A seller can still offer a repeatable item as a single
+        // exclusive copy by asking for ONE_OFF.
+        // An auction has exactly one winner by definition, so it forces
+        // ONE_OFF regardless of category — bidding for a licence that stays
+        // on sale to everyone else afterwards is not an auction.
+        licenseTiers: tiers.length > 0 ? tiers : undefined,
+        saleMode: data.auctionMode
+          ? "ONE_OFF"
+          : resolveSaleMode(data.assetType, data.saleMode),
         // Prisma JSON expects a plain JSON value — strip undefined.
         details: data.details ? JSON.parse(JSON.stringify(data.details)) : null,
-        price: data.price,
+        price: tiers.length > 0 ? tiers[0].price : data.price,
         currency: data.currency,
         images: data.images ?? [],
         screenshots: data.screenshots ?? [],

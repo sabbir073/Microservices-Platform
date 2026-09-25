@@ -9,8 +9,6 @@ import {
   parseFeatureOverrides,
   type PackageFeatureKey,
 } from "@/lib/packages";
-import { getUiToggles } from "@/lib/ui-toggles-server";
-import { isProfileComplete } from "@/lib/profile-completion";
 import { getUserDayContext } from "@/lib/user-day";
 import { getTaskChainState } from "@/lib/task-sequence";
 import { matchesTaskAudience } from "@/lib/task-targeting";
@@ -25,8 +23,9 @@ import {
   getFraudConfig,
   isVpnIp,
   accountsOnIp,
-  recordFraudEvent,
 } from "@/lib/fraud";
+import { addFraudRisk } from "@/lib/fraud-risk";
+import { profileGateResponse } from "@/lib/profile-gate-server";
 
 const TASK_TYPE_FEATURE: Record<TaskType, PackageFeatureKey> = {
   SOCIAL: "socialTasks",
@@ -51,6 +50,10 @@ export async function POST(
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    // Profile gate — see lib/profile-gate-server.ts. Checked on every route
+    // that lets a user earn, or a locked user earns through the unchecked one.
+    const profileGated = await profileGateResponse(session.user.id, "tasks");
+    if (profileGated) return profileGated;
 
     // A banned or suspended account must not be able to start a task. `User.status`
     // is otherwise only ever read at login, and the JWT lives 30 days with no
@@ -74,11 +77,14 @@ export async function POST(
         .catch(() => {});
     }
     // VPN/proxy block (best-effort heuristic).
+    // One offence per user per day: every retry of a blocked start used to
+    // write another event, and now each one would also add risk.
+    const today = new Date().toISOString().slice(0, 10);
     if (isVpnIp(ip, fraud)) {
-      await recordFraudEvent({
+      await addFraudRisk({
         userId: session.user.id,
-        eventType: "VPN_DETECTED",
-        severity: "HIGH",
+        signal: "VPN_DETECTED",
+        dedupeKey: `vpn:${session.user.id}:${today}`,
         ipAddress: ip,
         userAgent: ua,
       });
@@ -95,10 +101,10 @@ export async function POST(
     if (fraud.maxUsersPerIp > 0) {
       const n = await accountsOnIp(ip, session.user.id);
       if (n >= fraud.maxUsersPerIp) {
-        await recordFraudEvent({
+        await addFraudRisk({
           userId: session.user.id,
-          eventType: "MULTIPLE_ACCOUNTS",
-          severity: "HIGH",
+          signal: "MULTIPLE_ACCOUNTS",
+          dedupeKey: `multiacct:${session.user.id}:${today}`,
           ipAddress: ip,
           userAgent: ua,
           details: { accountsOnIp: n + 1, cap: fraud.maxUsersPerIp },
@@ -179,13 +185,9 @@ export async function POST(
 
     // Admin-gated profile-completion requirement — block starting any task until
     // the user's core profile is filled.
-    const { requireProfileCompletion } = await getUiToggles();
-    if (requireProfileCompletion && !isProfileComplete(user)) {
-      return NextResponse.json(
-        { error: "Complete your profile to start tasks." },
-        { status: 403 }
-      );
-    }
+    // (The profile gate is enforced at the top of this route, before the
+    // fraud checks, by profileGateResponse — it honours the admin's chosen
+    // standard and feature list, which this old check could not.)
 
     // Resolve effective plan (handles expiry + isDefault fallback).
     const userPackage = await getEffectivePackage(session.user.id);
@@ -345,22 +347,66 @@ export async function POST(
       }
     }
 
-    // Per-task daily limit (admin-set on the task itself)
-    const todaySubmissions = await prisma.taskSubmission.count({
+    // An attempt the user walked away from, before any limit is counted.
+    //
+    // This is THE reason a task the user opened and left became impossible to
+    // get back into. Starting writes a PENDING row; the daily-limit count below
+    // includes PENDING; `dailyLimit` defaults to 1. So one abandoned attempt
+    // filled the day's only slot, the gate fired, and the resume path further
+    // down — which exists precisely for this — was never reached. The card
+    // still said "Start", and pressing it answered "Daily limit reached for
+    // this task" on a task the user had never finished once.
+    //
+    // Resuming what you already started is not a second attempt, so it is
+    // looked up first. `submittedAt: null` is what separates "still in the
+    // middle of it" from "sent in, waiting for review" — the second one IS
+    // finished from the user's side and must still be counted.
+    //
+    // /api/article-tasks/[taskId]/start already had this order. Only this route
+    // had it backwards, which is why every type except ARTICLE was affected.
+    const resumable = await prisma.taskSubmission.findFirst({
       where: {
         taskId: id,
         userId: session.user.id,
-        createdAt: { gte: dayStart },
-        status: { in: ["APPROVED", "AUTO_APPROVED", "PENDING"] },
+        status: SubmissionStatus.PENDING,
+        submittedAt: null,
       },
+      orderBy: { createdAt: "desc" },
     });
 
-    const dailyLimit = task.dailyLimit || 1;
-    if (todaySubmissions >= dailyLimit) {
-      return NextResponse.json(
-        { error: "Daily limit reached for this task" },
-        { status: 400 }
-      );
+    // Per-task daily limit (admin-set on the task itself)
+    if (!resumable) {
+      const todaySubmissions = await prisma.taskSubmission.count({
+        where: {
+          taskId: id,
+          userId: session.user.id,
+          createdAt: { gte: dayStart },
+          status: { in: ["APPROVED", "AUTO_APPROVED", "PENDING"] },
+        },
+      });
+
+      const dailyLimit = task.dailyLimit || 1;
+      if (todaySubmissions >= dailyLimit) {
+        // A submission that is in for review is not "the daily limit" as far as
+        // the user is concerned, and telling them it is sends them looking for
+        // a limit they have not hit.
+        const awaitingReview = await prisma.taskSubmission.count({
+          where: {
+            taskId: id,
+            userId: session.user.id,
+            status: SubmissionStatus.PENDING,
+            submittedAt: { not: null },
+          },
+        });
+        return NextResponse.json(
+          {
+            error: awaitingReview
+              ? "You have already submitted this task — it is waiting to be reviewed."
+              : "Daily limit reached for this task",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Admin-requested redo: if the latest submission is REVISION_REQUESTED,
@@ -412,8 +458,11 @@ export async function POST(
       });
     }
 
-    // Cooldown between attempts on this specific task
-    if (task.cooldownMinutes > 0) {
+    // Cooldown between attempts — again, only for a NEW attempt. A cooldown
+    // measured from "the last submission of any status" includes the very row
+    // the user is trying to get back into, so without this a task with any
+    // cooldown at all locked the user out of their own unfinished attempt.
+    if (!resumable && task.cooldownMinutes > 0) {
       const cooldownTime = new Date(
         Date.now() - task.cooldownMinutes * 60 * 1000
       );
@@ -440,18 +489,9 @@ export async function POST(
       }
     }
 
-    // Resume a pending submission if one exists.
-    const existingPending = await prisma.taskSubmission.findFirst({
-      where: {
-        taskId: id,
-        userId: session.user.id,
-        status: SubmissionStatus.PENDING,
-      },
-    });
-
-    if (existingPending) {
+    if (resumable) {
       return NextResponse.json({
-        submission: existingPending,
+        submission: resumable,
         task: {
           id: task.id,
           title: task.title,
@@ -474,7 +514,7 @@ export async function POST(
           questions: toPlayerQuestions(task.questions),
           autoApprove: task.autoApprove,
         },
-        message: "You already have an active submission for this task",
+        message: "Picking up where you left off.",
       });
     }
 

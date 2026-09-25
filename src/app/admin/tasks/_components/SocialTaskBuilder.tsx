@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Reorder, useDragControls } from "framer-motion";
 import {
   getPlatform,
@@ -81,6 +81,26 @@ export function SocialTaskBuilder({
 }: Props) {
   const platform = useMemo(() => getPlatform(value.platform), [value.platform]);
 
+  // The platform grid is 41 cards — roughly a screen and a half of scrolling
+  // that an admin reads once and then never needs again. It collapses to the
+  // chosen platform the moment one is picked, and reopens on Change.
+  const [pickerOpen, setPickerOpen] = useState(!value.platform);
+  const [platformQuery, setPlatformQuery] = useState("");
+
+  // Filtered groups, empty ones dropped — a heading with nothing under it reads
+  // like a broken search.
+  const platformGroups = useMemo(() => {
+    const q = platformQuery.trim().toLowerCase();
+    return getPlatformGroups()
+      .map((g) => ({
+        ...g,
+        platforms: q
+          ? g.platforms.filter((p) => p.label.toLowerCase().includes(q))
+          : g.platforms,
+      }))
+      .filter((g) => g.platforms.length > 0);
+  }, [platformQuery]);
+
   // Selected items in the admin's chosen order — the exact order users will
   // complete them in. Reorderable by drag (see the Reorder.Group below).
   const items = value.items;
@@ -149,8 +169,46 @@ export function SocialTaskBuilder({
         <label className="block text-sm font-medium text-gray-400 mb-2">
           Platform <span className="text-red-400">*</span>
         </label>
-        <div className="space-y-4">
-          {getPlatformGroups().map((group) => (
+        {/* Chosen and closed: one row instead of a screen and a half. */}
+        {platform && !pickerOpen ? (
+          <div className="flex items-center gap-3 rounded-lg border border-gray-700 bg-gray-800 p-2.5">
+            <BrandIcon
+              brand={platform.key}
+              fallback={platform.emoji}
+              colored
+              className="w-6 h-6 shrink-0"
+            />
+            <span className="min-w-0 truncate text-sm font-semibold text-white">
+              {platform.label}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setPlatformQuery("");
+                setPickerOpen(true);
+              }}
+              className="ml-auto shrink-0 rounded-lg border border-gray-600 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:border-gray-500 hover:text-white"
+            >
+              Change
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* 41 platforms is more than anyone scans. Typing two letters beats
+                hunting through four groups of cards. */}
+            <input
+              value={platformQuery}
+              onChange={(e) => setPlatformQuery(e.target.value)}
+              placeholder="Search platforms…"
+              className="w-full rounded-lg border border-gray-700 bg-gray-950 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-indigo-500 focus:outline-none"
+            />
+            {platformGroups.length === 0 && (
+              <p className="text-xs text-gray-500">
+                Nothing matches “{platformQuery}”.
+              </p>
+            )}
+            <div className="space-y-4">
+              {platformGroups.map((group) => (
             <div key={group.key}>
               <p className="text-[11px] uppercase tracking-wider text-gray-500 font-bold mb-2">
                 {group.label}
@@ -165,7 +223,13 @@ export function SocialTaskBuilder({
                     <button
                       key={p.key}
                       type="button"
-                      onClick={() => setPlatform(p.key)}
+                      onClick={() => {
+                        setPlatform(p.key);
+                        // Collapse straight away: the grid has done its job and
+                        // the actions below are what the admin needs next.
+                        setPickerOpen(false);
+                        setPlatformQuery("");
+                      }}
                       className={`flex flex-col items-center gap-1 p-3 rounded-lg border transition-colors ${
                         selected
                           ? `${p.brandColor} border-transparent shadow-lg`
@@ -183,9 +247,11 @@ export function SocialTaskBuilder({
                   );
                 })}
               </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Action checklist (only after platform selected) */}
@@ -317,6 +383,24 @@ export function SocialTaskBuilder({
 // -----------------------------------------------------------------------------
 // Draggable per-action config card (order = the order users complete them in)
 // -----------------------------------------------------------------------------
+
+/**
+ * Admin fields in the order the user will work through them.
+ *
+ * `def.recipe` is the resolved user-facing order (image-first platforms already
+ * have the picture at the top). Anything with no recipe step — the target URL
+ * the task points at, admin-only knobs — has no place in that sequence and
+ * sorts first.
+ *
+ * Sorted, never filtered: a field missing from the recipe must still be
+ * editable, or an admin loses the ability to set it at all.
+ */
+function orderedAdminFields(def: SocialAction): SocialAction["adminFields"] {
+  const pos = new Map((def.recipe ?? []).map((s, i) => [s.key, i]));
+  return [...def.adminFields].sort(
+    (a, b) => (pos.get(a.key) ?? -1) - (pos.get(b.key) ?? -1)
+  );
+}
 
 function SocialActionCard({
   item,
@@ -460,11 +544,25 @@ function SocialActionCard({
         />
       ) : null}
 
-      {/* Admin fields. When AI-generate is on, the content field stays visible
-          as the "reference/example" the AI bases each user's variant on (and it
-          becomes optional — users may generate purely from the task). */}
-      <div className="space-y-3">
-        {def.adminFields.map((field) => {
+      {/* Admin fields, in the order the USER works through them.
+        *
+        * The declaration order put the image and the image prompt near the
+        * bottom, below the title, body and hashtags — the exact opposite of a
+        * Pinterest pin, where the picture has to exist before anything else can
+        * be filled in. An admin setting the task up read one order here and
+        * their users were shown another, so the form felt arbitrary and the
+        * image fields were easy to miss entirely.
+        *
+        * `def.recipe` is already the resolved user order, so sorting by it
+        * keeps the two screens in step for free. Fields with no recipe step
+        * (the target URL to open, admin-only knobs) sort first: they are what
+        * the task points AT, not part of composing the post.
+        *
+        * When AI-generate is on, the content field stays visible as the
+        * "reference/example" the AI bases each user's variant on (and it
+        * becomes optional — users may generate purely from the task). */}
+      {(() => {
+        const renderField = (field: SocialAction["adminFields"][number]) => {
           const isAiGen = def.aiGeneratableFields?.includes(field.key);
           const aiRef = item.aiPromptEnabled && isAiGen;
           return (
@@ -487,8 +585,44 @@ function SocialActionCard({
               }
             />
           );
-        })}
-      </div>
+        };
+
+        const ordered = orderedAdminFields(def);
+        // With AI on, the admin's job is two prompts: the content box above and
+        // the image prompt. Everything the AI writes for itself — title, body,
+        // hashtags — is only an optional example, and the image upload is only
+        // the alternative to the image prompt. Showing all of them open made a
+        // two-field job look like a seven-field one, and buried the two that
+        // matter among five that usually stay blank.
+        const isAside = (f: SocialAction["adminFields"][number]) =>
+          item.aiPromptEnabled &&
+          f.role !== "imagePrompt" &&
+          (def.aiGeneratableFields?.includes(f.key) || f.role === "image");
+
+        const primary = ordered.filter((f) => !isAside(f));
+        const aside = ordered.filter(isAside);
+
+        return (
+          <div className="space-y-3">
+            {primary.map(renderField)}
+            {aside.length > 0 && (
+              /* Collapsed, never removed. These still feed the prompt when they
+                 are filled, so an admin who wants to steer the wording — or to
+                 upload a picture instead of describing one — must be able to
+                 get at them. */
+              <details className="rounded-lg border border-gray-800 bg-gray-950/40">
+                <summary className="cursor-pointer select-none px-3 py-2 text-xs text-gray-400 hover:text-gray-200">
+                  Optional — example title, description, hashtags, or upload an
+                  image instead of describing one ({aside.length})
+                </summary>
+                <div className="space-y-3 border-t border-gray-800 p-3">
+                  {aside.map(renderField)}
+                </div>
+              </details>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Auto-verify by code — content actions only. The server fetches the
           user's proof URL and confirms their unique code is present, so it
@@ -728,7 +862,7 @@ function AiPromptSection({
                 {label} task image prompt
               </span>{" "}
               — describes the picture. It comes from the{" "}
-              <span className="font-semibold">Image prompt</span> field above,
+              <span className="font-semibold">Image prompt</span> field below,
               not from this box.{" "}
               {imagePromptSet ? (
                 <span className="text-emerald-400">Set.</span>

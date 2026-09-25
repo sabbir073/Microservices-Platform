@@ -16,6 +16,7 @@ import { RecentActivityFeed, type ActivityLogEntry } from "@/components/admin/re
 import { getEffectivePermissions } from "@/lib/permissions";
 import { getPendingSources } from "@/lib/admin/pending-counts";
 import { format, startOfDay, subDays, startOfMonth } from "date-fns";
+import { AWAITING_REVIEW_WHERE, completedBetween } from "@/lib/submission-status";
 
 // Auto-revalidate every 30 seconds (matches PROTOTYPE_ADMIN.md §38 spec)
 export const revalidate = 30;
@@ -66,6 +67,13 @@ export default async function AdminDashboardPage() {
   // Every pending request/application this admin may review, with live counts —
   // feeds the "Pending Requests" hub below (permission-scoped, fail-safe).
   const perms = await getEffectivePermissions(session.user.id);
+  // The company's money is shown to finance only. This page used to put
+  // revenue, deposits, withdrawals and the wallet liability in front of every
+  // admin role — a moderator saw the platform's lifetime revenue on login. The
+  // rule is super admin + finance admin + anyone a super admin has granted
+  // `finance.view`; `getEffectivePermissions` already applies exactly that.
+  // Hidden figures are not rendered at all, so they never reach the browser.
+  const seesMoney = perms.has("finance.view");
   const pendingSources = await getPendingSources(perms);
 
   const now = new Date();
@@ -130,13 +138,11 @@ export default async function AdminDashboardPage() {
     }),
 
     prisma.task.count(),
-    prisma.taskSubmission.count({
-      where: { status: "APPROVED", reviewedAt: { gte: todayStart } },
-    }),
-    prisma.taskSubmission.count({
-      where: { status: "APPROVED", reviewedAt: { gte: monthStart } },
-    }),
-    prisma.taskSubmission.count({ where: { status: "PENDING" } }),
+    // Auto-approved completions are the majority here and were being left
+    // out; see lib/submission-status.ts.
+    prisma.taskSubmission.count({ where: completedBetween(todayStart) }),
+    prisma.taskSubmission.count({ where: completedBetween(monthStart) }),
+    prisma.taskSubmission.count({ where: AWAITING_REVIEW_WHERE }),
 
 
     prisma.withdrawal.aggregate({
@@ -298,8 +304,14 @@ export default async function AdminDashboardPage() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Stats row 1 — 5 cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      {/* Stats row 1 — people for everyone, money for finance */}
+      <div
+        className={
+          seesMoney
+            ? "grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3"
+            : "grid grid-cols-2 gap-3"
+        }
+      >
         <StatCard
           title="Total Users"
           value={totalUsers}
@@ -316,6 +328,7 @@ export default async function AdminDashboardPage() {
           tone="purple"
           href="/admin/users"
         />
+        {seesMoney && (<>
         <StatCard
           title="Subscription Revenue"
           value={usd(monthRevenue)}
@@ -340,9 +353,11 @@ export default async function AdminDashboardPage() {
           tone="orange"
           href="/admin/withdrawals"
         />
+        </>)}
       </div>
 
-      {/* Stats row 2 — 4 cards */}
+      {/* Stats row 2 — money only */}
+      {seesMoney && (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard
           title="Total Revenue"
@@ -376,11 +391,13 @@ export default async function AdminDashboardPage() {
           href="/admin/withdrawals?status=COMPLETED"
         />
       </div>
+      )}
 
       {/* Pending requests hub — all reviewable applications/submissions at a glance */}
       <PendingRequestsHub sources={pendingSources} />
 
-      {/* Finance overview — deposits, liabilities & ad economy */}
+      {/* Finance overview — deposits, liabilities & ad economy. Finance only. */}
+      {seesMoney && (
       <div>
         <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2 px-1">
           Finance Overview
@@ -436,6 +453,7 @@ export default async function AdminDashboardPage() {
           />
         </div>
       </div>
+      )}
 
       {/* Charts row 1 — User growth (2/3) + Platform stats (1/3) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
@@ -455,8 +473,8 @@ export default async function AdminDashboardPage() {
         </div>
       </div>
 
-      {/* Charts row 2 — 30-day revenue trend */}
-      <RevenueTrendChart data={revenueSeries} />
+      {/* Charts row 2 — 30-day revenue trend. Finance only. */}
+      {seesMoney && <RevenueTrendChart data={revenueSeries} />}
 
 
       {/* Detailed stats — Task Performance + Platform Overview */}

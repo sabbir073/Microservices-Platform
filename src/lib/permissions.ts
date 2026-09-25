@@ -3,7 +3,8 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { auth } from "@/lib/auth";
-import { getSetting, invalidateSettingsCache } from "@/lib/system-settings";
+import { getSetting, invalidateSettingsCache,
+  primeSetting } from "@/lib/system-settings";
 import {
   ROLE_PERMISSIONS,
   isPermission,
@@ -91,7 +92,12 @@ export async function saveRolePermissionConfig(
     },
     update: { category: SETTING_CATEGORY, value: clean as unknown as object },
   });
+  // Clear first, then prime — priming before the clear would simply be wiped
+  // by it. The read goes through an Accelerate cacheStrategy whose edge cache
+  // is not ours to clear, so without the prime a permission change appeared to
+  // take up to a minute to apply, or nothing at all on the very first save.
   invalidateSettingsCache();
+  primeSetting(ROLE_PERM_SETTING_KEY, clean);
 }
 
 /**
@@ -109,6 +115,7 @@ export const getEffectivePermissions = cache(
         select: {
           role: true,
           permissionOverrides: true,
+          financeGrants: true,
           customRoleId: true,
           customRole: { select: { permissions: true, isActive: true } },
         },
@@ -134,9 +141,10 @@ export const getEffectivePermissions = cache(
       if (granted) perms.add(perm as Permission);
       else perms.delete(perm as Permission);
     }
-    // Hard backstop: strip finance + admins.manage for non-super principals
-    // (finance kept only for the built-in FINANCE_ADMIN role).
-    return stripProtectedForRole(perms, role);
+    // Hard backstop: strip admins.manage for non-super principals, and every
+    // finance permission that was not granted to this person by name. See
+    // `stripProtectedForRole` — `financeGrants` is the only way in.
+    return stripProtectedForRole(perms, role, user.financeGrants ?? []);
   }
 );
 

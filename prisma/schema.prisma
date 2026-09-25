@@ -32,6 +32,11 @@ enum UserRole {
   AGENCY
   // Ad Manager admin — scoped to the Ads Manager surface.
   AD_MANAGER
+  // Finance data entry. Records expenses and reads the books; cannot approve,
+  // pay, void or configure. Created by a super admin OR a finance admin — the
+  // only role a finance admin may create — and walled off from MANAGER exactly
+  // as FINANCE_ADMIN is.
+  FINANCE_MODERATOR
 }
 
 enum UserStatus {
@@ -1031,6 +1036,11 @@ model FraudEvent {
   id           String        @id @default(cuid())
   userId       String?
   eventType    String // MULTIPLE_ACCOUNTS, VPN_DETECTED, etc.
+  // Set by fraud-risk signals: one event (and one risk bump) per offence, so a
+  // retried request cannot add the same points twice.
+  dedupeKey    String?       @unique
+  // Risk points this event added to the user's `fraudRisk` (0 for telemetry).
+  riskPoints   Int           @default(0)
   severity     FraudSeverity @default(MEDIUM)
   details      Json?
   ipAddress    String?
@@ -1482,6 +1492,15 @@ model User {
   // auto-approvable submissions (see src/lib/trust.ts).
   trustScore                        Int                          @default(50)
   fraudStrikes                      Int                          @default(0)
+  // Task-fraud risk, 0–100 (src/lib/fraud-risk.ts). Each caught attempt adds
+  // the admin-set points for its kind; reaching the auto-suspend bar suspends
+  // the account, which can then appeal (SuspensionAppeal).
+  fraudRisk                         Int                          @default(0)
+  // Why and when the account was last suspended — shown on the appeal page and
+  // to the admin reviewing the appeal. Cleared on reactivation.
+  suspendedReason                   String?                      @db.Text
+  suspendedAt                       DateTime?
+  suspensionAppeals                 SuspensionAppeal[]
   packageId                         String?
   package                           Package?                     @relation(fields: [packageId], references: [id], onDelete: SetNull)
   packageExpiresAt                  DateTime?
@@ -1502,6 +1521,16 @@ model User {
   googleLinkedAt                    DateTime?
   featureOverrides                  Json? // per-user feature grants/denials { [featureKey]: boolean } overriding the package
   permissionOverrides               Json? // per-user RBAC permission grants/denials { [permission]: boolean } on top of the role
+  /// Finance permissions granted to THIS person by a super admin (or, for a
+  /// FINANCE_MODERATOR, by a finance admin).
+  ///
+  /// Deliberately NOT part of `permissionOverrides`. A MANAGER may edit
+  /// overrides — administering staff is its job — and the one thing a manager
+  /// must never be able to do is hand out access to the company's money. So
+  /// finance access lives in its own column that only the finance-grant route
+  /// writes, and `stripProtectedForRole` honours finance permissions from here
+  /// and nowhere else.
+  financeGrants                     String[]                     @default([])
   pageOverrides                     Json? // per-user page-visibility grants/denials { [path]: boolean } — super-admin page hiding
   // Anti-fraud: IP captured at signup + most recent request IP (per-IP account
   // cap + VPN/proxy heuristic). @@index on signupIp for the per-IP count.
@@ -1593,8 +1622,14 @@ model User {
   withdrawals                       Withdrawal[]
   paymentMethods                    UserPaymentMethod[]
   notifications                     Notification[]
+  broadcastsCreated                 Broadcast[]                  @relation("BroadcastAuthor")
+  broadcastDeliveries               BroadcastRecipient[]         @relation("BroadcastRecipientUser")
+  financeEntriesCreated             FinanceEntry[]               @relation("FinanceEntryCreatedBy")
+  financeEntriesApproved            FinanceEntry[]               @relation("FinanceEntryApprovedBy")
+  employeeRecord                    Employee?                    @relation("EmployeeUser")
   marketplaceListings               MarketplaceListing[]
   marketplacePurchases              MarketplacePurchase[]
+  marketplacePayouts                MarketplacePayout[]
   marketplaceWatches                MarketplaceWatch[]
   marketplaceViews                  MarketplaceListingView[]
   marketplaceBids                   MarketplaceBid[]
@@ -1687,6 +1722,8 @@ model User {
   // FK index — present in the live database; declared here so schema and DB
   // agree and a future `db push` can't drop it.
   @@index([customRoleId])
+  // The Fraud Monitor lists users by risk, highest first.
+  @@index([fraudRisk])
 }
 
 model Account {
@@ -1819,6 +1856,28 @@ model KYCAppeal {
   @@index([kycDocumentId])
   @@index([status])
   @@index([createdAt])
+}
+
+/// A suspended user asking to be let back in. Filed from /appeal with a
+/// signed link (login or the suspension email), because a suspended account
+/// cannot sign in. One PENDING appeal per user at a time.
+model SuspensionAppeal {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message      String    @db.Text
+  status       String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  // The risk and reason at the moment of appeal, so the reviewer sees what the
+  // user was suspended for even if an admin has edited the account since.
+  riskAtAppeal Int       @default(0)
+  reasonAtAppeal String? @db.Text
+  adminNote    String?   @db.Text
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  @@index([status, createdAt])
 }
 
 model Task {
@@ -2383,6 +2442,12 @@ model MarketplaceListing {
   id                       String                   @id @default(cuid())
   sellerId                 String
   seller                   User                     @relation(fields: [sellerId], references: [id])
+  // Storefront the listing is presented under. Admin-curated stock is owned by
+  // an admin account but should read as the brand, not as a staff member, so
+  // the buyer-facing seller block prefers this when set. Null = show the real
+  // seller, which is every user listing.
+  brandId                  String?
+  brand                    MarketplaceBrand?        @relation(fields: [brandId], references: [id], onDelete: SetNull)
   title                    String
   description              String                   @db.Text
   // Free-form category retained for back-compat (existing rows). New listings
@@ -2392,6 +2457,27 @@ model MarketplaceListing {
   // commission. Defaults to "DIGITAL_PRODUCT" so legacy rows stay valid.
   assetType                String                   @default("DIGITAL_PRODUCT")
   subType                  String?
+  // "ONE_OFF" | "UNLIMITED" — see SaleMode in src/lib/marketplace-categories.ts.
+  //
+  // ONE_OFF listings go SOLD on the first purchase, which is right for a domain
+  // or an account: there is one of them and it changes hands. UNLIMITED
+  // listings stay ACTIVE and are licensed to every buyer who wants them, which
+  // is the entire point of stock media and digital products — marking those
+  // SOLD after one sale deleted the listing from the shop after a single $5
+  // licence.
+  //
+  // Defaults to ONE_OFF so existing rows keep exactly the behaviour they had.
+  saleMode                 String                   @default("ONE_OFF")
+  // Optional licence tiers, e.g. [{ id, name, price, description }].
+  //
+  // A stock marketplace sells the same file at different prices depending on
+  // what the buyer may do with it — a standard licence for a blog post, an
+  // extended one for a product someone resells. `price` stays the headline
+  // (and the price of the cheapest tier); a tier only ever raises it.
+  //
+  // Null = single price, which is every listing until a seller adds tiers and
+  // the whole behaviour when the admin has the feature switched off.
+  licenseTiers             Json?
   // Category-specific structured data (mirrors customConfig pattern on Task).
   details                  Json?
   price                    Decimal                  @db.Decimal(18, 6)
@@ -2472,6 +2558,78 @@ model MarketplaceListing {
   @@index([category])
   @@index([assetType])
   @@index([isFeatured])
+  @@index([brandId])
+  @@index([status, saleMode])
+}
+
+/**
+ * A seller's share of one sale, held before it reaches their wallet.
+ *
+ * Without this the seller is paid the instant a buyer clicks Buy, so a refund
+ * has to claw money back out of a balance they may already have withdrawn —
+ * the clawback is clamped to whatever is left and the rest is simply lost to
+ * the platform. Holding the money for a few days means a refund inside the
+ * window reverses an untouched row instead of chasing a spent one.
+ *
+ * Only created when the admin turns the hold on. With it off the seller is
+ * credited immediately exactly as before and no row is written, so the feature
+ * leaves no trace when unused.
+ *
+ * Escrow deals do NOT go through here: `MarketplaceDeal` already holds funds
+ * through its own lifecycle, and holding twice would pay the seller late for a
+ * sale the buyer had explicitly confirmed.
+ */
+model MarketplacePayout {
+  id         String              @id @default(cuid())
+  purchaseId String              @unique
+  purchase   MarketplacePurchase @relation(fields: [purchaseId], references: [id], onDelete: Cascade)
+  sellerId   String
+  seller     User                @relation(fields: [sellerId], references: [id])
+  amount     Decimal             @db.Decimal(18, 6)
+  /// HELD → the money is promised but not spendable.
+  /// RELEASED → paid into the seller's wallet.
+  /// REVERSED → a refund cancelled it before release; never paid.
+  status     String              @default("HELD")
+  /// When the scheduler may release it.
+  releaseAt  DateTime
+  releasedAt DateTime?
+  reversedAt DateTime?
+  /// Why it was reversed, shown to the seller.
+  reason     String?
+  createdAt  DateTime            @default(now())
+
+  /// Drives the release sweep: "everything still held whose time has come".
+  @@index([status, releaseAt])
+  @@index([sellerId, status])
+}
+
+/**
+ * A storefront name that listings can be published under.
+ *
+ * Admin-curated stock (AI-generated or licensed) still needs a real `sellerId`
+ * for payouts, escrow and the deliverable-download gate, so a brand is a
+ * presentation layer over that account rather than a second seller identity.
+ * Modelling it as its own row — instead of a text column, and instead of fake
+ * User accounts — is what makes "browse everything by this company" a plain
+ * indexed lookup, and keeps invented sellers out of user counts, staff
+ * listings and Who-to-Follow.
+ */
+model MarketplaceBrand {
+  id        String               @id @default(cuid())
+  name      String
+  /** URL segment for /marketplace/brand/<slug>. Unique, lowercased. */
+  slug      String               @unique
+  logo      String?
+  bio       String?              @db.Text
+  website   String?
+  /** Inactive brands stay attached to sold listings but are not offered in the
+   *  publisher or shown as a browsable storefront. */
+  isActive  Boolean              @default(true)
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  listings  MarketplaceListing[]
+
+  @@index([isActive])
 }
 
 model MarketplacePurchase {
@@ -2484,11 +2642,29 @@ model MarketplacePurchase {
   fee          Decimal              @db.Decimal(18, 6)
   sellerAmount Decimal              @db.Decimal(18, 6)
   status       String               @default("COMPLETED")
+  /// Which licence tier was bought, by tier id. Null = the listing had none.
+  /// Recorded rather than derived: a seller can edit their tiers afterwards,
+  /// and the buyer's rights are whatever they paid for on the day.
+  licenseTier  String?
+  /// Tax charged ON TOP of `amount`, on the platform's commission only.
+  ///
+  /// This is money owed to a tax authority, NOT platform income — it must never
+  /// be added to revenue. It is stored separately from `fee` for exactly that
+  /// reason: `fee` is what the platform earned, `tax` is what it is holding on
+  /// someone else's behalf.
+  tax          Decimal              @default(0) @db.Decimal(18, 6)
+  /// The rate applied, kept so an old receipt still reconciles after the rate
+  /// is changed.
+  taxPct       Decimal              @default(0) @db.Decimal(9, 4)
   createdAt    DateTime             @default(now())
   disputes     MarketplaceDispute[]
+  payout       MarketplacePayout?
 
   @@index([listingId])
   @@index([buyerId])
+  // "has this buyer already licensed this listing?" — asked on every view of
+  // an UNLIMITED listing, where repeat buyers are the normal case.
+  @@index([buyerId, listingId])
 }
 
 // Buyer↔seller conversation scoped to a listing. An admin can join a thread to
@@ -4603,4 +4779,439 @@ model ScheduledJobRun {
   @@unique([job, windowKey])
   @@index([job, claimedAt])
   @@index([state])
+}
+
+/// One admin broadcast — an in-app notification, a push and/or an email sent to
+/// a chosen audience.
+///
+/// This exists because the send used to happen inside the HTTP request that
+/// started it: every recipient id loaded into memory, one `createMany`, then
+/// emails forty at a time. Past a few thousand users that request cannot
+/// finish, and when it died there was no record of who had already been
+/// written to — so the only safe thing an admin could do was not press the
+/// button. Scheduling was worse: it wrote an audit row saying "scheduled" and
+/// nothing ever sent it.
+///
+/// A broadcast is now a durable row that the scheduler drains a batch at a
+/// time. Anything killed mid-flight resumes exactly where it stopped, because
+/// progress lives in BroadcastRecipient rather than in the running function.
+model Broadcast {
+  id          String @id @default(cuid())
+  createdById String
+  createdBy   User   @relation("BroadcastAuthor", fields: [createdById], references: [id])
+
+  /// In-app / push copy. Short by nature — these render in a list row.
+  title   String
+  message String           @db.Text
+  type    NotificationType @default(SYSTEM)
+
+  /// Email copy. Kept separate because an email is not a notification: the
+  /// 50/200-character limits that suit a list row make a useless email, and
+  /// reusing them is why the email channel had nothing more to say than the
+  /// toast did. Null → fall back to title/message.
+  emailSubject String?
+  emailBody    String? @db.Text
+
+  priority    String  @default("NORMAL")
+  imageUrl    String?
+  actionUrl   String?
+  actionLabel String?
+
+  /// Visual template — see `lib/notification-styles.ts` (URGENT, OFFER, …).
+  ///
+  /// Kept apart from `type` deliberately. `type` is what the message is ABOUT
+  /// and drives the user's filter tabs, so it has to keep meaning "wallet"
+  /// forever; style is how loudly it is said. The same wallet message is calm
+  /// when a payout lands and urgent when one fails, and folding the two
+  /// together would force a choice between a correct filter and a correct
+  /// colour.
+  ///
+  /// A plain string rather than an enum: adding a template is then a code
+  /// change, not a migration, and an unknown value renders as PLAIN instead of
+  /// breaking the row.
+  style  String  @default("PLAIN")
+  /// Short line above the title, e.g. "Ends in 3 hours".
+  kicker String?
+
+  /// { inApp: bool, push: bool, email: bool }
+  channels Json
+
+  /// A service notice rather than marketing.
+  ///
+  /// Registering for an account is consent to hear about the account — a
+  /// security alert, a failed withdrawal, an outage, a change of terms. It is
+  /// NOT consent to be marketed at, and the two must not share a switch: a user
+  /// who turns off "email notifications" is turning off offers, and silently
+  /// dropping "your withdrawal failed" on the same setting is how somebody
+  /// loses money without ever being told.
+  ///
+  /// So an important broadcast ignores the marketing opt-out and the master
+  /// email switch, and is not held back by our own daily cap. It still obeys
+  /// the per-minute rate, because that one is physics: the provider will reject
+  /// what it rejects regardless of how urgent we think the message is.
+  important Boolean @default(false)
+
+  /// ALL | SEGMENT | PACKAGE | SPECIFIC
+  targetKind String
+  /// AudienceCriteria (see lib/audience.ts) when targetKind = SEGMENT.
+  criteria   Json?
+  /// Explicit recipients when targetKind = SPECIFIC; package slugs for PACKAGE.
+  userIds    String[]
+  packages   String[]
+
+  /// DRAFT | SCHEDULED | SENDING | PAUSED | DONE | CANCELLED | FAILED
+  status       String    @default("SENDING")
+  scheduledFor DateTime?
+  /// False until every recipient row has been written. The audience is resolved
+  /// in chunks, so a broadcast can be delivering to the first ten thousand
+  /// while the rest are still being enumerated.
+  audienceReady Boolean  @default(false)
+  startedAt     DateTime?
+  finishedAt    DateTime?
+
+  totalRecipients Int     @default(0)
+  inAppSent       Int     @default(0)
+  pushSent        Int     @default(0)
+  emailSent       Int     @default(0)
+  emailFailed     Int     @default(0)
+  lastError       String?
+
+  recipients BroadcastRecipient[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, scheduledFor])
+  @@index([status, important, createdAt])
+  @@index([createdAt])
+  // Foreign keys / sort keys the database had no index for.
+  @@index([createdById])
+}
+
+/// One recipient of one broadcast, and what has actually reached them.
+///
+/// Yes, this is a row per user per broadcast. That is the price of being able
+/// to answer "did this person get it?", to resume a half-finished send without
+/// writing to anyone twice, and to retry only the addresses that bounced. A
+/// cursor would be cheaper and could do none of those.
+model BroadcastRecipient {
+  id          String    @id @default(cuid())
+  broadcastId String
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation("BroadcastRecipientUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Snapshotted at enumeration time. An address changed mid-send must not
+  /// silently redirect a message the admin already believes was delivered.
+  email String?
+
+  inAppAt DateTime?
+  emailAt DateTime?
+  /// Why the email did not go. Kept so "1,203 failed" is a list, not a number.
+  emailError String?
+  attempts   Int       @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([broadcastId, userId])
+  /// The delivery sweep's own query: the next unsent slice of one broadcast.
+  @@index([broadcastId, emailAt])
+  @@index([broadcastId, inAppAt])
+  /// Today's email usage, for the daily cap.
+  @@index([emailAt])
+  // Foreign keys / sort keys the database had no index for.
+  @@index([userId])
+}
+
+
+// ════════════════════════════════════════════════════════════════════════════
+//  Company finance & HR
+//
+//  Everything above this line records money moving INSIDE the platform — a
+//  user's wallet, a sale, a withdrawal. Nothing recorded money the company
+//  spends out of its own pocket: the electricity bill, the office rent, the
+//  server, the salary of a cleaner who has no account here. The payroll module
+//  (src/lib/payroll) can only pay staff who DO have an account, into their
+//  wallet, and its own comments say an off-platform payment "needs a row of its
+//  own". These are those rows.
+//
+//  Three rules hold for every table here:
+//   - Amounts are entered in the currency actually paid, and the USD rate is
+//     SNAPSHOTTED on the row. A report of last March must not change because
+//     today's taka rate did.
+//   - Nothing is hard-deleted. A wrong entry is VOIDed with a reason; the books
+//     keep it. Accounting records that can silently disappear are not records.
+//   - Custom fields are data, not schema: an admin can add "meter number" to
+//     Electricity without a migration.
+// ════════════════════════════════════════════════════════════════════════════
+
+/// What a money entry is for. Admin-defined, seeded with the usual office set.
+model FinanceCategory {
+  id       String  @id @default(cuid())
+  /// EXPENSE | INCOME | TAX_PAYMENT
+  kind     String  @default("EXPENSE")
+  name     String
+  /// Stable machine key for seeded categories (e.g. "rent"). Null for ones an
+  /// admin adds; code never looks those up by key.
+  slug     String? @unique
+  color    String? // hex, for the charts
+  icon     String? // lucide name
+  order    Int     @default(0)
+  isActive Boolean @default(true)
+  /// Seeded categories cannot be deleted, only deactivated — reports and
+  /// recurring templates point at them.
+  isSystem Boolean @default(false)
+
+  entries   FinanceEntry[]
+  recurring RecurringEntry[]
+  fields    FinanceFieldDef[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind, isActive, order])
+}
+
+/// A custom field an admin added — to one category's entries, to every
+/// employee, or to every payee. The VALUES live in each row's `customFields`.
+model FinanceFieldDef {
+  id         String           @id @default(cuid())
+  /// ENTRY | EMPLOYEE | PAYEE
+  entity     String
+  /// Only for ENTRY: the category this field belongs to. Null = every entry.
+  categoryId String?
+  category   FinanceCategory? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  /// Key inside `customFields`. Never renamed once used, or old values orphan.
+  key        String
+  label      String
+  /// TEXT | NUMBER | DATE | SELECT | URL | TEXTAREA
+  type       String           @default("TEXT")
+  options    String[]         @default([])
+  required   Boolean          @default(false)
+  order      Int              @default(0)
+  isActive   Boolean          @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([entity, categoryId, key])
+  @@index([entity, isActive, order])
+  // Foreign keys / sort keys the database had no index for.
+  @@index([categoryId])
+}
+
+/// Somebody the company pays who is not an employee: a company, a person, a
+/// platform (AWS, Google, a courier).
+model Payee {
+  id             String  @id @default(cuid())
+  /// COMPANY | PERSON | PLATFORM
+  kind           String  @default("COMPANY")
+  name           String
+  contactName    String?
+  phone          String?
+  email          String?
+  address        String?
+  /// e.g. "bKash", "Bank transfer", "Card"
+  paymentMethod  String?
+  /// Account number, bKash number, IBAN — free text on purpose.
+  paymentDetails String?
+  /// BIN / TIN / VAT number
+  taxId          String?
+  notes          String?
+  customFields   Json?
+  isActive       Boolean @default(true)
+
+  entries   FinanceEntry[]
+  recurring RecurringEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind, isActive])
+  @@index([name])
+}
+
+/// An employee — anyone the company pays a wage, with or without an account
+/// on this platform. A cleaner and a finance admin are both employees; only the
+/// second also has a `userId`.
+model Employee {
+  id     String  @id @default(cuid())
+  /// Optional link to a platform account (a staff member). Unique: one person,
+  /// one HR record.
+  userId String? @unique
+  user   User?   @relation("EmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  name        String
+  /// "Office assistant", "Cleaner", "Backend developer"
+  designation String?
+  department  String?
+  phone       String?
+  email       String?
+  address     String?
+  nationalId  String?
+  photoUrl    String?
+
+  /// FULL_TIME | PART_TIME | CONTRACT | DAILY | INTERN
+  employmentType String    @default("FULL_TIME")
+  /// ACTIVE | ON_LEAVE | LEFT
+  status         String    @default("ACTIVE")
+  joinDate       DateTime?
+  leaveDate      DateTime?
+
+  /// Pay for one cycle, in `salaryCurrency`.
+  salaryAmount   Decimal   @default(0) @db.Decimal(18, 2)
+  salaryCurrency String    @default("BDT")
+  /// MONTHLY | WEEKLY | DAILY
+  salaryCycle    String    @default("MONTHLY")
+  /// Free text for how commission works for this person, plus an optional
+  /// percentage for the common case. Commission itself is recorded as entries.
+  commissionNote String?
+  commissionPct  Decimal?  @db.Decimal(9, 4)
+
+  paymentMethod    String?
+  paymentDetails   String?
+  emergencyContact String?
+  notes            String?
+  customFields     Json?
+
+  entries   FinanceEntry[]
+  recurring RecurringEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([name])
+}
+
+/// One money event in the company's own books.
+model FinanceEntry {
+  id   String @id @default(cuid())
+  /// EXPENSE — money out. INCOME — money in that the platform's own revenue
+  /// streams do not already record (a sponsorship, a grant). TAX_PAYMENT —
+  /// money paid TO a tax authority, which settles collected tax and is never
+  /// an operating expense.
+  kind String @default("EXPENSE")
+
+  categoryId String
+  category   FinanceCategory @relation(fields: [categoryId], references: [id])
+
+  /// Who was paid. At most one is set; both null = unnamed (petty cash).
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  payeeId    String?
+  payee      Payee?    @relation(fields: [payeeId], references: [id], onDelete: SetNull)
+
+  title       String
+  description String?
+
+  /// In the currency actually paid.
+  amount    Decimal @db.Decimal(18, 2)
+  currency  String  @default("BDT")
+  /// Units of `currency` per 1 USD at the time of entry. Snapshotted.
+  usdRate   Decimal @default(1) @db.Decimal(18, 6)
+  /// `amount / usdRate`, stored so every report sums one column in one currency.
+  amountUsd Decimal @db.Decimal(18, 6)
+
+  /// Tax that is PART OF this payment — VAT on a vendor's bill, AIT withheld.
+  /// Kept on its own so the tax register can report it and so it is never
+  /// silently counted as an operating cost.
+  taxAmount    Decimal @default(0) @db.Decimal(18, 2)
+  taxAmountUsd Decimal @default(0) @db.Decimal(18, 6)
+  /// "VAT", "Income tax", "AIT", "Withholding" — free text, grouped by it.
+  taxLabel     String?
+
+  /// The month this is FOR (`YYYY-MM`). A July electricity bill paid in August
+  /// belongs to July's costs.
+  period  String
+  dueDate DateTime?
+  paidAt  DateTime?
+  /// PENDING — recorded, not yet paid. PAID. VOID — cancelled, kept.
+  status  String    @default("PENDING")
+
+  /// cash, bank, bKash, card …
+  paymentMethod String?
+  /// Cheque number, bank transaction id, bKash trxID.
+  reference     String?
+  attachments   String[] @default([])
+  customFields  Json?
+  /// Itemised lines — one per trip on a conveyance bill, one per item on an
+  /// expense bill: [{ date?, description, from?, to?, mode?, qty?, amount }].
+  /// When present they ARE the entry: `amount` is set to their sum, so the
+  /// printed bill and the books can never disagree.
+  lineItems     Json?
+
+  /// Where it came from: MANUAL, RECURRING, SALARY.
+  source    String  @default("MANUAL")
+  /// Makes generated entries idempotent: `salary:<employeeId>:2026-09`,
+  /// `recurring:<id>:2026-09`. Unique, so a double click, a retry and the
+  /// scheduler running twice all collapse to one row.
+  dedupeKey String? @unique
+
+  recurringId String?
+  recurring   RecurringEntry? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+
+  createdById  String
+  createdBy    User      @relation("FinanceEntryCreatedBy", fields: [createdById], references: [id])
+  approvedById String?
+  approvedBy   User?     @relation("FinanceEntryApprovedBy", fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+  voidedById   String?
+  voidedAt     DateTime?
+  voidReason   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([kind, status, period])
+  @@index([period])
+  @@index([categoryId, period])
+  @@index([employeeId, period])
+  @@index([payeeId])
+  @@index([paidAt])
+  @@index([status, dueDate])
+  // Foreign keys / sort keys the database had no index for.
+  @@index([approvedById])
+  @@index([createdById])
+  @@index([recurringId])
+}
+
+/// A cost that repeats — rent, internet, a server, a salary. The scheduler
+/// writes one PENDING entry per period; paying it is still a human act.
+model RecurringEntry {
+  id         String          @id @default(cuid())
+  kind       String          @default("EXPENSE")
+  categoryId String
+  category   FinanceCategory @relation(fields: [categoryId], references: [id])
+  employeeId String?
+  employee   Employee?       @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  payeeId    String?
+  payee      Payee?          @relation(fields: [payeeId], references: [id], onDelete: SetNull)
+
+  title     String
+  amount    Decimal @db.Decimal(18, 2)
+  currency  String  @default("BDT")
+  taxAmount Decimal @default(0) @db.Decimal(18, 2)
+  taxLabel  String?
+  /// Day of the month it falls due, 1–28. Capped at 28 so February exists.
+  dueDay    Int     @default(1)
+  /// First and last period it applies to. Empty end = open-ended.
+  startPeriod String
+  endPeriod   String?
+  isActive    Boolean @default(true)
+  /// The last period an entry was generated for. The sweep only moves this
+  /// forward; the entry's dedupeKey is what actually prevents doubles.
+  lastPeriod  String?
+  notes       String?
+
+  entries FinanceEntry[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  // Foreign keys / sort keys the database had no index for.
+  @@index([categoryId])
+  @@index([employeeId])
+  @@index([payeeId])
 }

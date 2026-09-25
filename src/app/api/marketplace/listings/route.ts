@@ -7,8 +7,15 @@ import {
   getCategory,
   requiresDeliverable,
   getDeliverableKind,
+  resolveSaleMode,
+  canBeUnlimited,
+  getSection,
 } from "@/lib/marketplace-categories";
 import { extractMediaMetadata, type MediaMeta } from "@/lib/media-metadata";
+import {
+  getLicenseTiersEnabled,
+  sanitizeTiers,
+} from "@/lib/marketplace-selling";
 import { hammingDistance, PHASH_HAMMING_THRESHOLD } from "@/lib/phash";
 import { assertPublicUrl } from "@/lib/link-preview";
 import { inngest, EVENTS } from "@/lib/inngest/client";
@@ -17,6 +24,7 @@ import { toNum, toNumOrNull } from "@/lib/money";
 import { getSetting } from "@/lib/system-settings";
 import { formatAffiliateReward } from "@/lib/affiliate";
 import { z } from "zod";
+import { profileGateResponse } from "@/lib/profile-gate-server";
 
 // Cap how many bytes we pull back to analyse a deliverable (bounds bandwidth
 // for large stock video; images/audio are usually far smaller). For a bigger
@@ -75,6 +83,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const category = searchParams.get("category");
     const assetType = searchParams.get("assetType");
+    const section = searchParams.get("section");
     const subType = searchParams.get("subType");
     const search = searchParams.get("search");
     const minPrice = searchParams.get("minPrice");
@@ -113,6 +122,14 @@ export async function GET(request: NextRequest) {
       }
     }
     if (category) where.category = category;
+    // A storefront section is a group of asset types (stock media, digital
+    // products, digital assets, services). Narrowing by section rather than
+    // making the buyer tick nine separate asset-type chips is the whole point
+    // of having sections; an explicit assetType filter still wins over it.
+    if (section && !assetType) {
+      const sec = getSection(section);
+      if (sec) where.assetType = { in: sec.assetTypes as unknown as string[] };
+    }
     if (assetType) where.assetType = assetType;
     if (subType) where.subType = subType;
     if (verifiedOnly) where.verifiedMetrics = true;
@@ -205,6 +222,7 @@ export async function GET(request: NextRequest) {
       category: l.category,
       assetType: l.assetType,
       subType: l.subType,
+      saleMode: l.saleMode,
       price: toNum(l.price),
       currency: l.currency,
       status: l.status,
@@ -239,9 +257,20 @@ export async function GET(request: NextRequest) {
     }));
 
     // Asset-type facets (replace category facets for the new UI)
+    // Scoped to the chosen section. The chips are a refinement WITHIN a
+    // storefront, so offering "Domain" while the buyer is in Stock media
+    // either shows nothing or quietly throws them out of the section they
+    // picked.
+    const facetSection = section ? getSection(section) : null;
     const assetTypeGroupsRaw = await prisma.marketplaceListing.groupBy({
       by: ["assetType"],
-      where: { status: MarketplaceListingStatus.ACTIVE, nsfw: false },
+      where: {
+        status: MarketplaceListingStatus.ACTIVE,
+        nsfw: false,
+        ...(facetSection
+          ? { assetType: { in: facetSection.assetTypes as unknown as string[] } }
+          : {}),
+      },
       _count: { _all: true },
     });
     const assetTypeGroups = assetTypeGroupsRaw as unknown as Array<{
@@ -298,6 +327,18 @@ const userCreateSchema = z.object({
   category: z.string().min(1),
   assetType: z.enum(ASSET_TYPES).default("DIGITAL_PRODUCT"),
   subType: z.string().nullable().optional(),
+  saleMode: z.enum(["ONE_OFF", "UNLIMITED"]).optional(),
+  licenseTiers: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(32),
+        name: z.string().min(1).max(60),
+        price: z.number().positive(),
+        description: z.string().max(300).optional(),
+      })
+    )
+    .max(5)
+    .optional(),
   details: z.record(z.string(), z.unknown()).optional(),
   price: z.number().positive(),
   currency: z.string().default("USD"),
@@ -336,6 +377,10 @@ export async function POST(request: NextRequest) {
     if (!session?.user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+    // Profile gate — see lib/profile-gate-server.ts. Checked on every route
+    // that lets a user earn, or a locked user earns through the unchecked one.
+    const profileGated = await profileGateResponse(session.user.id, "selling");
+    if (profileGated) return profileGated;
     if (!(await userCanFeature(session.user.id, "marketplace"))) {
       return NextResponse.json({ error: "Marketplace is disabled for your plan" }, { status: 403 });
     }
@@ -413,6 +458,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Tiers are only honoured while the admin has the feature on, and only
+    // for a category sold repeatedly: a domain has one buyer, so offering it
+    // at three licence levels would promise something it cannot deliver.
+    const tiers =
+      (await getLicenseTiersEnabled()) && canBeUnlimited(data.assetType)
+        ? sanitizeTiers(data.licenseTiers)
+        : [];
+
     const listing = await prisma.marketplaceListing.create({
       data: {
         sellerId: session.user.id,
@@ -422,8 +475,22 @@ export async function POST(request: NextRequest) {
         category: data.category,
         assetType: data.assetType,
         subType: data.subType ?? null,
+        // Defaults from the category: stock media, ebooks, digital products
+        // and services are licensed repeatedly, everything else changes hands
+        // once. A seller can still offer a repeatable item as a single
+        // exclusive copy by asking for ONE_OFF.
+        // An auction has exactly one winner by definition, so it forces
+        // ONE_OFF regardless of category — bidding for a licence that stays
+        // on sale to everyone else afterwards is not an auction.
+        saleMode: data.auctionMode
+          ? "ONE_OFF"
+          : resolveSaleMode(data.assetType, data.saleMode),
+        licenseTiers: tiers.length > 0 ? tiers : undefined,
         details: data.details ? JSON.parse(JSON.stringify(data.details)) : null,
-        price: data.price,
+        // The headline price IS the cheapest tier when tiers are used. Letting
+        // the two drift means the card advertises one number while checkout,
+        // or the cart which has no tier to pick, charges another.
+        price: tiers.length > 0 ? tiers[0].price : data.price,
         currency: data.currency,
         affiliateCommissionType:
           data.affiliateCommissionValue && data.affiliateCommissionValue > 0

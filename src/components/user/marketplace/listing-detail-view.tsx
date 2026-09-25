@@ -78,6 +78,13 @@ interface Listing {
   verifiedMetrics: boolean;
   ndaGated: boolean;
   nsfw: boolean;
+  /** "ONE_OFF" | "UNLIMITED" — whether buying it takes it off the market. */
+  saleMode: string;
+  /** Licence options, cheapest first. Empty when the feature is off or the
+   *  seller offers a single price. */
+  licenseTiers: { id: string; name: string; price: number; description?: string }[];
+  /** Tax charged on the platform commission, on top of the price. */
+  tax: { enabled: boolean; pct: number; label: string; commissionBps: number };
   auctionMode: boolean;
   startingBid: number | null;
   reservePrice: number | null;
@@ -94,6 +101,18 @@ interface Listing {
     memberSince: string;
     totalListings: number;
   };
+  /**
+   * Storefront the listing is published under, when there is one. Admin-curated
+   * stock belongs to a staff account for payouts and the download gate, but a
+   * buyer should see the shop it is sold by — not the name of an administrator.
+   */
+  brand?: {
+    name: string;
+    slug: string;
+    logo: string | null;
+    bio: string | null;
+    listingCount: number;
+  } | null;
 }
 
 interface Props {
@@ -134,6 +153,23 @@ export function ListingDetailView({
   };
   const [showReport, setShowReport] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [tierId, setTierId] = useState<string>(
+    listing.licenseTiers[0]?.id ?? ""
+  );
+  const selectedTier =
+    listing.licenseTiers.find((t) => t.id === tierId) ?? null;
+  // What the buyer will actually be charged. The listing price is the cheapest
+  // tier, so these agree until a dearer licence is picked.
+  const effectivePrice = selectedTier ? selectedTier.price : listing.price;
+  // Mirrors the server: commission on the chosen price, tax on the commission,
+  // both rounded to cents. A buyer must never see one total and be charged
+  // another, so the same arithmetic runs in both places.
+  const commission =
+    Math.round((effectivePrice * listing.tax.commissionBps) / 10000 * 100) / 100;
+  const taxAmount = listing.tax.enabled
+    ? Math.round(commission * (listing.tax.pct / 100) * 100) / 100
+    : 0;
+  const payable = Math.round((effectivePrice + taxAmount) * 100) / 100;
   const [addingToCart, setAddingToCart] = useState(false);
   const [watched, setWatched] = useState(initialWatched);
   const [watchCount, setWatchCount] = useState(listing.watchCount);
@@ -204,7 +240,7 @@ export function ListingDetailView({
     // is purchased the status flips to SOLD and the spend is final.
     const ok = await confirmDialog({
       title: "Confirm purchase",
-      description: `Buy "${listing.title}" for $${listing.price.toLocaleString()}? The amount will be debited from your wallet immediately.`,
+      description: `Buy "${listing.title}"${selectedTier ? ` (${selectedTier.name})` : ""} for $${payable.toLocaleString()}${taxAmount > 0 ? ` (incl. $${taxAmount.toLocaleString()} ${listing.tax.label})` : ""}? The amount will be debited from your wallet immediately.`,
       tone: "info",
       confirmLabel: "Buy now",
     });
@@ -214,6 +250,7 @@ export function ListingDetailView({
       const res = await fetch(`/api/marketplace/${listing.id}/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "Idempotency-Key": newIdempotencyKey() },
+        body: JSON.stringify(tierId ? { tier: tierId } : {}),
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -228,7 +265,20 @@ export function ListingDetailView({
           });
           return;
         }
-        // 409 = race-loss. Specific copy.
+        // 409 covers two very different things. An UNLIMITED listing stays on
+        // sale, so a repeat buyer has not lost a race — they already own it,
+        // and telling them someone else got there first would be nonsense.
+        if (res.status === 409 && d.alreadyOwned) {
+          toast.success("You already own this", {
+            description: d.error ?? "Download it again from Orders at no extra cost.",
+            action: {
+              label: "Orders",
+              onClick: () => router.push("/marketplace/orders"),
+            },
+          });
+          return;
+        }
+        // 409 = race-loss on a one-off listing. Specific copy.
         if (res.status === 409) {
           toast.error("Just missed it", {
             description: d.error ?? "Another buyer took this listing first.",
@@ -388,6 +438,66 @@ export function ListingDetailView({
             </p>
             <p className="text-3xl font-extrabold text-white tabular-nums">
               ${listing.price.toLocaleString()}
+            </p>
+            {listing.licenseTiers.length > 1 && (
+              <div className="space-y-1.5 pt-1">
+                <p className="text-[11px] uppercase tracking-wider font-bold text-(--app-ink-3)">
+                  Choose a licence
+                </p>
+                {listing.licenseTiers.map((t) => (
+                  <label
+                    key={t.id}
+                    className={cn(
+                      "flex items-start gap-2 rounded-lg border p-2 cursor-pointer transition-colors",
+                      tierId === t.id
+                        ? "border-(--app-accent-edge) bg-(--app-cta)/10"
+                        : "border-(--app-line) hover:border-(--app-accent-edge)/50"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="licence"
+                      checked={tierId === t.id}
+                      onChange={() => setTierId(t.id)}
+                      className="mt-1"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium text-white">{t.name}</span>
+                        <span className="text-sm font-bold tabular-nums text-white">
+                          ${t.price.toLocaleString()}
+                        </span>
+                      </span>
+                      {t.description && (
+                        <span className="block text-[11px] text-(--app-ink-3)">
+                          {t.description}
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {taxAmount > 0 && (
+              <div className="text-[11px] text-(--app-ink-3) space-y-0.5 pt-1">
+                <p className="flex justify-between">
+                  <span>{listing.tax.label} on service fee</span>
+                  <span className="tabular-nums">+${taxAmount.toLocaleString()}</span>
+                </p>
+                <p className="flex justify-between font-bold text-white">
+                  <span>You pay</span>
+                  <span className="tabular-nums">${payable.toLocaleString()}</span>
+                </p>
+              </div>
+            )}
+
+            {/* A buyer needs to know which of the two things they are buying:
+                the only copy, or a licence alongside everyone else. */}
+            <p className="text-[11px] text-(--app-ink-3)">
+              {listing.saleMode === "UNLIMITED"
+                ? "Licensed to every buyer — stays on sale after you buy it."
+                : "Sold once. It leaves the marketplace when it sells."}
             </p>
             {listing.auctionMode && (
               <div className="flex flex-wrap gap-3 text-xs text-(--app-ink-3)">
@@ -714,34 +824,61 @@ export function ListingDetailView({
         </section>
       )}
 
-      {/* Seller card */}
+      {/* Seller card — or the storefront, when the listing is sold under one */}
       <section className="glass rounded-xl p-4 sm:p-5">
-        <div className="flex items-center gap-3">
-          <Avatar
-            src={listing.seller.avatar}
-            size={48}
-            fallbackText={(listing.seller.name ?? listing.seller.username ?? "S")
-              .charAt(0)
-              .toUpperCase()}
-          />
-          <div className="flex-1 min-w-0">
-            <Link
-              href={profileHref(listing.seller)}
-              className="text-sm font-bold text-white hover:text-(--app-accent-ink)"
-            >
-              {listing.seller.name ?? "Seller"}
-            </Link>
-            {listing.seller.username && (
-              <p className="text-[11px] text-(--app-ink-3)">
-                @{listing.seller.username}
+        {listing.brand ? (
+          <div className="flex items-center gap-3">
+            <Avatar
+              src={listing.brand.logo}
+              size={48}
+              fallbackText={listing.brand.name.charAt(0).toUpperCase()}
+            />
+            <div className="flex-1 min-w-0">
+              <Link
+                href={`/marketplace/brand/${listing.brand.slug}`}
+                className="text-sm font-bold text-white hover:text-(--app-accent-ink)"
+              >
+                {listing.brand.name}
+              </Link>
+              {listing.brand.bio && (
+                <p className="text-[11px] text-(--app-ink-3) line-clamp-2">
+                  {listing.brand.bio}
+                </p>
+              )}
+              <p className="text-[11px] text-(--app-ink-3) mt-0.5">
+                {listing.brand.listingCount} listing
+                {listing.brand.listingCount === 1 ? "" : "s"} in this store
               </p>
-            )}
-            <p className="text-[11px] text-(--app-ink-3) mt-0.5">
-              Joined {format(new Date(listing.seller.memberSince), "MMM yyyy")}{" "}
-              · {listing.seller.totalListings} listings
-            </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <Avatar
+              src={listing.seller.avatar}
+              size={48}
+              fallbackText={(listing.seller.name ?? listing.seller.username ?? "S")
+                .charAt(0)
+                .toUpperCase()}
+            />
+            <div className="flex-1 min-w-0">
+              <Link
+                href={profileHref(listing.seller)}
+                className="text-sm font-bold text-white hover:text-(--app-accent-ink)"
+              >
+                {listing.seller.name ?? "Seller"}
+              </Link>
+              {listing.seller.username && (
+                <p className="text-[11px] text-(--app-ink-3)">
+                  @{listing.seller.username}
+                </p>
+              )}
+              <p className="text-[11px] text-(--app-ink-3) mt-0.5">
+                Joined {format(new Date(listing.seller.memberSince), "MMM yyyy")}{" "}
+                · {listing.seller.totalListings} listings
+              </p>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Modals */}

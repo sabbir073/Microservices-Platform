@@ -16,6 +16,7 @@ import {
   getTaskViewerContext,
   visibleTaskWhere,
 } from "@/lib/task-visibility";
+import { profileGateResponse } from "@/lib/profile-gate-server";
 
 /**
  * POST /api/article-tasks/[taskId]/start
@@ -36,6 +37,10 @@ export async function POST(
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Profile gate — see lib/profile-gate-server.ts. Checked on every route
+  // that lets a user earn, or a locked user earns through the unchecked one.
+  const profileGated = await profileGateResponse(session.user.id, "tasks");
+  if (profileGated) return profileGated;
 
   // A banned or suspended account must not be able to start a task. `User.status`
   // is otherwise only ever read at login, and the JWT lives 30 days with no
@@ -110,11 +115,19 @@ export async function POST(
 
   // Reuse an in-flight PENDING submission if one exists for this user/task —
   // this lets the user resume mid-flow without losing popup progress.
+  //
+  // In flight means NOT yet submitted (`submittedAt: null`), as in
+  // /api/tasks/[id]/start. PENDING alone also matches yesterday's submission
+  // still waiting for review, and resuming that one sent the user through the
+  // whole article again only for submit to answer "You've already submitted
+  // this" — a repeatable task could never be done a second time while the
+  // first was in the review queue.
   let submission = await prisma.taskSubmission.findFirst({
     where: {
       taskId: task.id,
       userId: session.user.id,
       status: SubmissionStatus.PENDING,
+      submittedAt: null,
     },
     orderBy: { createdAt: "desc" },
   });
