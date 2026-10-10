@@ -19,6 +19,18 @@ export type PackageFeatureKey =
   | "courses"
   | "advertiser"
   | "games"
+  | "browseEarn"
+  | "rewardedAds"
+  | "cpa"
+  | "events"
+  | "missions"
+  | "quizGames"
+  | "boards"
+  | "leaderboard"
+  | "chat"
+  | "groups"
+  | "affiliate"
+  | "socialEarning"
   // Creator/monetization capabilities (admin-grantable per user)
   | "createTasks"
   | "sellCourses"
@@ -36,7 +48,8 @@ export type PackageFeatureKey =
   | "quizTasks"
   | "surveyTasks"
   | "offerwallTasks"
-  | "appInstall";
+  | "appInstall"
+  | "visitTasks";
 
 export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   tasks: "tasksEnabled",
@@ -50,6 +63,18 @@ export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   courses: "coursesEnabled",
   advertiser: "advertiserEnabled",
   games: "gamesEnabled",
+  browseEarn: "browseEarnEnabled",
+  rewardedAds: "rewardedAdsEnabled",
+  cpa: "cpaEnabled",
+  events: "eventsEnabled",
+  missions: "missionsEnabled",
+  quizGames: "quizGamesEnabled",
+  boards: "boardsEnabled",
+  leaderboard: "leaderboardEnabled",
+  chat: "chatEnabled",
+  groups: "groupsEnabled",
+  affiliate: "affiliateEnabled",
+  socialEarning: "socialEarningEnabled",
   createTasks: "createTasksEnabled",
   sellCourses: "sellCoursesEnabled",
   sellMarketplace: "sellMarketplaceEnabled",
@@ -66,6 +91,7 @@ export const FEATURE_TO_COLUMN: Record<PackageFeatureKey, string> = {
   surveyTasks: "surveyTasksEnabled",
   offerwallTasks: "offerwallTasksEnabled",
   appInstall: "appInstallEnabled",
+  visitTasks: "visitTasksEnabled",
 };
 
 /** All feature keys (stable order) — for iterating overrides + admin UIs. */
@@ -95,6 +121,18 @@ export const FEATURES: {
   { key: "lottery", label: "Lottery", group: "section" , description: "Buy tickets and take part in the lottery draws." },
   { key: "courses", label: "Courses", group: "section" , description: "Browse and enrol in courses." },
   { key: "games", label: "HTML5 Games", group: "section" , description: "Play the HTML5 games and earn from them." },
+  { key: "browseEarn", label: "Browse & Earn", group: "section", description: "Earn points for time spent viewing pages with ads (/watch-ads)." },
+  { key: "rewardedAds", label: "Watch Ads (rewarded)", group: "section", description: "Watch a rewarded video ad to the end for points." },
+  { key: "cpa", label: "CPA Offers", group: "section", description: "See and complete CPA partner offers (sign up / install / buy) for rewards." },
+  { key: "events", label: "Events", group: "section", description: "Take part in time-limited events and claim their rewards." },
+  { key: "missions", label: "Missions", group: "section", description: "Work on missions (goals) and claim their rewards." },
+  { key: "quizGames", label: "Quiz Games", group: "section", description: "Play quiz games and win their rewards." },
+  { key: "boards", label: "Task Boards", group: "section", description: "Open task boards and claim a board's bundle reward." },
+  { key: "leaderboard", label: "Leaderboards", group: "section", description: "See the leaderboards and compete for prizes." },
+  { key: "chat", label: "Chat", group: "section", description: "Send and read direct messages." },
+  { key: "groups", label: "Groups", group: "section", description: "Create and join groups." },
+  { key: "affiliate", label: "Affiliate", group: "section", description: "Join the affiliate programme and earn commission on sales from their links." },
+  { key: "socialEarning", label: "Creator earnings (likes & comments)", group: "creator", description: "Earn points when their posts get likes, comments, shares, views and votes (Feed settings → Social earning sets the rates)." },
   // Creator/monetization capabilities (admin-grantable per user)
   { key: "advertiser", label: "Run Ads (advertiser)", group: "creator" , description: "Run their OWN ad campaigns: create ads, fund them and see their own stats. This is the grant for a customer who wants to advertise — NOT the Ad Manager staff role, which controls everyone's campaigns." },
   { key: "boost", label: "Boost Posts", group: "creator" , description: "Pay to boost their own posts so more people see them." },
@@ -114,6 +152,7 @@ export const FEATURES: {
   { key: "surveyTasks", label: "Survey Tasks", group: "task" , description: "Create SURVEY tasks." },
   { key: "offerwallTasks", label: "Offerwall Tasks", group: "task" , description: "Create OFFERWALL tasks." },
   { key: "appInstall", label: "App Install Tasks", group: "task" , description: "Create APP INSTALL tasks with screenshot proof steps." },
+  { key: "visitTasks", label: "Visit Tasks (links & shorteners)", group: "task", description: "Do VISIT tasks: open a direct / smart link for a set time, or pass a URL shortener and enter the code." },
 ];
 
 /**

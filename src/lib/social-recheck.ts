@@ -14,6 +14,7 @@ import {
   parseContentRules,
 } from "@/lib/link-verify";
 import { normalizeSocialConfig } from "@/lib/social-tasks";
+import { proofHostAllowed } from "@/lib/social-proof-url";
 import { verifyCodeFor, contentHasCode } from "@/lib/task-verify-code";
 import { getPointsPerUsd } from "@/lib/economy";
 import { chargeTaskCompletion, claimTaskCompletionSlot, notifyTaskClosed } from "@/lib/task-credit";
@@ -126,6 +127,7 @@ export async function recheckPendingSocialSubmissions(opts?: {
     userId: string;
     taskId: string;
     metadata: unknown;
+    user: { status: string } | null;
     task: {
       id: string;
       title: string;
@@ -162,6 +164,7 @@ export async function recheckPendingSocialSubmissions(opts?: {
       userId: true,
       taskId: true,
       metadata: true,
+      user: { select: { status: true } },
       task: {
         select: {
           id: true,
@@ -204,6 +207,18 @@ export async function recheckPendingSocialSubmissions(opts?: {
     const neverChecked = statuses.length === 0;
     if (!neverChecked && !statuses.includes("unverifiable")) continue;
 
+    // The submit route's own reasons to send a claim to a person are final
+    // here too: a re-read must never pay what submit deliberately held (low
+    // trust / spot check), what matched someone else's proof, or a banned user.
+    const subMeta = (sub.metadata ?? {}) as Record<string, unknown>;
+    if (
+      subMeta.heldForReview ||
+      (Array.isArray(subMeta.fraudFlags) && subMeta.fraudFlags.length > 0) ||
+      sub.user?.status !== "ACTIVE"
+    ) {
+      continue;
+    }
+
     summary.examined++;
 
     try {
@@ -212,11 +227,16 @@ export async function recheckPendingSocialSubmissions(opts?: {
         ? ([...(meta.items as unknown[])] as Record<string, unknown>[])
         : [];
 
+      // Only the task's own platform is ever read. Submit refuses to fetch an
+      // off-platform link (marks it unverifiable), and this re-read used to
+      // fetch it anyway — so a page on the user's own site carrying the
+      // keywords and code was approved and paid.
+      const onPlatform = (u: string) => proofHostAllowed(cfg.platform, u);
       const urls = [
         ...new Set(
           verifyItems
             .map((x) => (items[x.i]?.proofUrl as string | undefined) ?? "")
-            .filter(Boolean)
+            .filter((u) => !!u && onPlatform(u))
         ),
       ];
       const pages = new Map<string, string | null>();
@@ -231,7 +251,9 @@ export async function recheckPendingSocialSubmissions(opts?: {
         const html = url ? pages.get(url) : null;
         let status: string = "unverifiable";
 
-        if (!html) {
+        if (url && !onPlatform(url)) {
+          status = "failed";
+        } else if (!html) {
           status = "unverifiable";
         } else if (it.verify === "CODE") {
           status = contentHasCode(html, verifyCodeFor(sub.taskId, i, sub.userId))

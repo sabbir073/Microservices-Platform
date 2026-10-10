@@ -1,4 +1,5 @@
 import { assertPageVisible } from "@/lib/page-visibility-server";
+import { planFeatureGate } from "@/lib/plan-gate";
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -13,6 +14,9 @@ export async function GET() {
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Plan switch (Admin → Packages): this plan may not use it.
+  const planGated = await planFeatureGate(session.user.id, "boards");
+  if (planGated) return planGated;
   // Super-admin page visibility: refuse when /board-tasks is hidden for this user.
   const pageHidden = await assertPageVisible(session.user.id, "/board-tasks");
   if (pageHidden) return pageHidden;
@@ -67,7 +71,9 @@ export async function GET() {
       }),
       unlockIds.length
         ? prisma.taskBoard.findMany({
-            where: { id: { in: unlockIds } },
+            // Only prerequisites this viewer can see: one they can't (other
+            // audience / level / plan / expired) used to lock the board forever.
+            where: { id: { in: unlockIds }, ...(ctx ? visibleBoardWhere(ctx.viewer, { accessLevel: ctx.accessLevel }) : {}) },
             select: { id: true, title: true },
           })
         : Promise.resolve([]),

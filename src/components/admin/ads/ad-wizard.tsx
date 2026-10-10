@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { ImageUploadField } from "@/components/admin/shared/ImageUploadField";
 import { AudienceBuilder } from "@/components/admin/ads/audience-builder";
 import { AD_PLACEMENTS, placementSpec } from "@/lib/ad-placements";
+import { HTML_AD_NETWORKS } from "@/lib/ad-networks/registry";
 import { AD_SIZES } from "@/lib/ad-sizes";
 import { type AdTargeting } from "@/lib/ad-targeting";
 import { DateField } from "@/components/ui/date-field";
@@ -95,7 +96,9 @@ export function AdWizard({
     : 120;
 
   // Step 3 — creative
-  const [creative, setCreative] = useState<"IMAGE" | "VIDEO" | "HTML">("IMAGE");
+  const [creative, setCreative] = useState<"IMAGE" | "VIDEO" | "HTML" | "VAST">("IMAGE");
+  const [vastUrl, setVastUrl] = useState("");
+  const [vastNetworkId, setVastNetworkId] = useState("");
   const [contentUrl, setContentUrl] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
   const [htmlContent, setHtmlContent] = useState("");
@@ -106,6 +109,7 @@ export function AdWizard({
   const [height, setHeight] = useState("");
   const [targetUrl, setTargetUrl] = useState("");
   const [weight, setWeight] = useState("10");
+  const [priority, setPriority] = useState("0");
   const [format, setFormat] = useState("BANNER");
   const [brandName, setBrandName] = useState("");
   const [ctaLabel, setCtaLabel] = useState("");
@@ -132,6 +136,7 @@ export function AdWizard({
         (creative === "IMAGE" && !!contentUrl) ||
         (creative === "VIDEO" && !!videoUrl) ||
         (creative === "HTML" && !!htmlContent.trim()) ||
+        (creative === "VAST" && /^https:\/\/\S+$/i.test(vastUrl.trim())) ||
         !!headline.trim()
       );
     return true;
@@ -177,17 +182,19 @@ export function AdWizard({
       const payload = {
         campaignId: cid,
         placementIds: selected,
-        type: creative === "HTML" ? "HTML" : "LOCAL",
+        type: creative === "HTML" ? "HTML" : creative === "VAST" ? "VAST" : "LOCAL",
         format,
         contentUrl: creative === "IMAGE" ? contentUrl : "",
         videoUrl: creative === "VIDEO" ? videoUrl : "",
         targetUrl,
         htmlContent: creative === "HTML" ? htmlContent : "",
         ...htmlNetworkPayload(netFields, creative === "HTML"),
+        ...(creative === "VAST" ? { vastUrl: vastUrl.trim(), networkId: vastNetworkId || null } : {}),
         size,
         width: size === "custom" ? Number(width) || null : null,
         height: size === "custom" ? Number(height) || null : null,
         weight: Number(weight) || 10,
+        priority: Number(priority) || 0,
         status: "ACTIVE",
         headline,
         brandName,
@@ -411,7 +418,7 @@ export function AdWizard({
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Creative</label>
                 <div className="flex gap-2">
-                  {(["IMAGE", "VIDEO", "HTML"] as const).map((c) => (
+                  {(["IMAGE", "VIDEO", "HTML", "VAST"] as const).map((c) => (
                     <button
                       key={c}
                       type="button"
@@ -421,7 +428,7 @@ export function AdWizard({
                         creative === c ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"
                       )}
                     >
-                      {c === "IMAGE" ? "Image / GIF" : c === "VIDEO" ? "Video" : "HTML / Script"}
+                      {c === "IMAGE" ? "Image / GIF" : c === "VIDEO" ? "Video" : c === "HTML" ? "HTML / Script" : "VAST video"}
                     </button>
                   ))}
                 </div>
@@ -446,6 +453,30 @@ export function AdWizard({
                       inputCls={inputCls}
                     />
                   </div>
+                </div>
+              ) : creative === "VAST" ? (
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">VAST tag URL (from the ad network)</label>
+                    <input value={vastUrl} onChange={(e) => setVastUrl(e.target.value)} className={inputCls} placeholder="https://…/vast?…" />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">Network</label>
+                    <select value={vastNetworkId} onChange={(e) => setVastNetworkId(e.target.value)} className={inputCls}>
+                      <option value="">Own / direct-sold</option>
+                      {HTML_AD_NETWORKS.map((n) => (
+                        <option key={n.id} value={n.id}>
+                          {n.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    The viewer&apos;s browser loads the tag and plays the video muted in the space (sound on tap). It is
+                    never cut off by rotation — the next ad comes when it ends, or straight away if the network has
+                    none. Network VAST follows the same paid-page rule as the network&apos;s other ads. Spaces shorter than
+                    150px (strips, page scripts) refuse it. VPAID (JavaScript) ads are not played.
+                  </p>
                 </div>
               ) : creative === "VIDEO" ? (
                 <div>
@@ -492,6 +523,16 @@ export function AdWizard({
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Weight</label>
                 <input type="number" min={1} value={weight} onChange={(e) => setWeight(e.target.value)} className={inputCls} />
+              </div>
+
+              <div>
+                <label
+                  className="block text-xs text-slate-400 mb-1"
+                  title="Higher is shown first in its space; if its network shows nothing, the next ad fills in. Same priority = weight decides."
+                >
+                  Priority (0–100)
+                </label>
+                <input type="number" min={0} max={100} value={priority} onChange={(e) => setPriority(e.target.value)} className={inputCls} />
               </div>
 
               <div>

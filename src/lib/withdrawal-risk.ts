@@ -13,6 +13,8 @@ export interface RiskInputs {
   accountAgeDays: number; // days since user.createdAt
   previousSuccessfulWithdrawals: number; // count COMPLETED
   previousRejectedWithdrawals: number; // count REJECTED
+  /** Other accounts that withdrew to / saved the same payout number. */
+  otherUsersSameAccount?: number;
 }
 
 export interface RiskAssessment {
@@ -80,6 +82,16 @@ export function assessWithdrawalRisk(inputs: RiskInputs): RiskAssessment {
     flags.push("Large amount (> $500)");
   } else if (inputs.amount > 100) {
     score += 10;
+  }
+
+  // One bKash / Nagad number collecting for several accounts is what an
+  // account farm cashing out looks like (KYC per account does not catch it).
+  if ((inputs.otherUsersSameAccount ?? 0) > 0) {
+    score += 30;
+    flags.push(`Same payout number used by ${inputs.otherUsersSameAccount} other account${inputs.otherUsersSameAccount === 1 ? "" : "s"}`);
+    checks.push({ label: "Payout number used only by this account", ok: false });
+  } else if (inputs.otherUsersSameAccount === 0) {
+    checks.push({ label: "Payout number used only by this account", ok: true });
   }
 
   // Package

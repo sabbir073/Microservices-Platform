@@ -1,10 +1,12 @@
 import { prisma } from "@/lib/prisma";
+import { currentDevice } from "@/lib/device-current";
 import { syncCountryMode } from "@/lib/country-mode";
 import { TaskType } from "@/generated/prisma";
 import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
 import { getUserDayContext } from "@/lib/user-day";
 import { getTaskChainState } from "@/lib/task-sequence";
 import { TASK_TYPE_FEATURE, visibleTaskWhere } from "@/lib/task-visibility";
+import { stripUniqueKey } from "@/lib/task-player-view";
 
 export interface TaskListParams {
   type?: TaskType | null;
@@ -98,7 +100,7 @@ export async function listTasksForUser(
 
   // ONE definition of task visibility — src/lib/task-visibility.ts. Every
   // other task route builds its where from the same function now.
-  const where = visibleTaskWhere(user, {
+  const where = visibleTaskWhere({ ...user, device: await currentDevice() }, {
     accessLevel,
     allowedTypes,
     type,
@@ -301,7 +303,8 @@ export async function listTasksForUser(
       instructions: task.instructions,
       instructionVideoUrl: task.instructionVideoUrl,
       contentUrl: task.contentUrl,
-      videoConfig: task.videoConfig,
+      // The proof key (`uniqueKey`) never leaves the server — every other path strips it.
+      videoConfig: stripUniqueKey(task.videoConfig),
       minLevel: task.minLevel,
       requiredAccessLevel: task.requiredAccessLevel,
       categories: taskCategoryMap.get(task.id) || [],

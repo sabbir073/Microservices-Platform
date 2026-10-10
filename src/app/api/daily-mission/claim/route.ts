@@ -1,4 +1,5 @@
 import { assertPageVisible } from "@/lib/page-visibility-server";
+import { planFeatureGate } from "@/lib/plan-gate";
 import { NextRequest, NextResponse } from "next/server";
 import { enforceDbRateLimit } from "@/lib/rate-limit-db";
 import { auth } from "@/lib/auth";
@@ -20,12 +21,21 @@ import { toNum } from "@/lib/money";
 import { usd } from "@/lib/utils";
 import { getUserDayContext, localDayKeyDaysAgo } from "@/lib/user-day";
 import { profileGateResponse } from "@/lib/profile-gate-server";
+import { requireActiveUser } from "@/lib/require-active";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Plan switch (Admin → Packages): this plan may not use it.
+  // A banned / suspended account earns nothing (the session outlives the ban).
+  const activeCheck = await requireActiveUser(session.user.id);
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.message }, { status: activeCheck.httpStatus });
+  }
+  const planGated = await planFeatureGate(session.user.id, "dailyMission");
+  if (planGated) return planGated;
   // Super-admin page visibility: refuse when /daily-mission is hidden for this user.
   const pageHidden = await assertPageVisible(session.user.id, "/daily-mission");
   if (pageHidden) return pageHidden;

@@ -122,6 +122,7 @@ export type Permission =
   | "tasks.create.offerwall"
   | "tasks.create.custom"
   | "tasks.create.appinstall"
+  | "tasks.create.visit"
   | "boards.view"
   | "boards.manage"
   // Submissions
@@ -261,6 +262,7 @@ export const TASK_TYPES = [
   "OFFERWALL",
   "CUSTOM",
   "APPINSTALL",
+  "VISIT",
 ] as const;
 export type TaskTypeName = (typeof TASK_TYPES)[number];
 
@@ -814,9 +816,11 @@ export function customRolePermissionsForEditor(stored: readonly string[]): strin
 export function stripProtectedForRole(
   perms: Set<Permission>,
   role: UserRole | undefined,
-  /** `User.financeGrants` — the ONLY source of finance access for anyone who
-   *  is not a super admin or finance admin. */
-  financeGrants: readonly string[] = []
+  /** `User.financeGrants` — money granted to this person by name. */
+  financeGrants: readonly string[] = [],
+  /** Money the super admin gave this person's whole designation
+   *  (src/lib/role-money.ts), minus anything blocked for them by name. */
+  designationMoney: readonly string[] = []
 ): Set<Permission> {
   if (role === "SUPER_ADMIN") return perms;
   // Staff administration: super admin and manager only.
@@ -837,7 +841,7 @@ export function stripProtectedForRole(
   //    role already has it, so the role matrix can narrow a moderator but can
   //    never widen one past the ceiling.
   if (role !== "FINANCE_ADMIN") {
-    const granted = expandLegacyPermissions(new Set<string>(financeGrants));
+    const granted = expandLegacyPermissions(new Set<string>([...financeGrants, ...designationMoney]));
     for (const p of FINANCE_SET) {
       const fromCeiling =
         role === "FINANCE_MODERATOR" && FINANCE_MODERATOR_CEILING_SET.has(p) && perms.has(p);
@@ -1103,6 +1107,7 @@ export const PERMISSION_META: Partial<Record<Permission, { label: string; descri
   "tasks.create.offerwall": { label: "Create Offerwall tasks", description: "Create offerwall tasks." },
   "tasks.create.custom": { label: "Create Custom tasks", description: "Create custom-type tasks." },
   "tasks.create.appinstall": { label: "Create App-Install tasks", description: "Create app-install-with-proof tasks." },
+  "tasks.create.visit": { label: "Create Visit tasks", description: "Create direct / smart link and URL-shortener visit tasks." },
   "boards.view": { label: "View task boards", description: "See task boards (bundled task sets) and their progress." },
   "boards.manage": { label: "Manage task boards", description: "Create, edit and assign tasks to task boards." },
   "submissions.view": { label: "View submissions", description: "See users' task submissions and their proof." },
@@ -1782,6 +1787,22 @@ export const ADMIN_MODULES: AdminModule[] = [
     name: "Analytics",
     href: "/admin/analytics",
     icon: "BarChart3",
+    permissions: ["analytics.view"],
+    category: "OVERVIEW",
+  },
+  {
+    // Where new accounts came from (lib/signup-source.ts).
+    name: "Sign-up sources",
+    href: "/admin/signup-sources",
+    icon: "Compass",
+    permissions: ["analytics.view"],
+    category: "OVERVIEW",
+  },
+  {
+    // Which phones / computers people use (lib/device-info.ts).
+    name: "Devices",
+    href: "/admin/devices",
+    icon: "Smartphone",
     permissions: ["analytics.view"],
     category: "OVERVIEW",
   },

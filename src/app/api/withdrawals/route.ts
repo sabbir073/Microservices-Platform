@@ -18,6 +18,8 @@ import {
 import { getUiToggles } from "@/lib/ui-toggles-server";
 import { getWithdrawalConfig } from "@/lib/withdrawal";
 import { profileGateResponse } from "@/lib/profile-gate-server";
+import { getCourseSettings } from "@/lib/course-settings";
+import { getDisputeWindowDays } from "@/lib/marketplace-selling";
 
 // GET /api/withdrawals - Get user's withdrawal history
 export async function GET(request: NextRequest) {
@@ -320,6 +322,37 @@ export async function POST(request: NextRequest) {
     if (amount > availableCash) {
       return NextResponse.json(
         { error: "Insufficient balance" },
+        { status: 400 }
+      );
+    }
+
+    // Affiliate commission on a course / marketplace sale is paid at once, but
+    // the buyer can still be refunded for a while. Withdrawn before that, the
+    // refund's claw-back found an empty balance — a seller with a second
+    // account as "affiliate" could refund the buyer and keep the commission.
+    // It stays in the wallet (spendable) but can't be withdrawn until the
+    // refund / dispute window has passed.
+    const [courseCfg, disputeDays] = await Promise.all([getCourseSettings(), getDisputeWindowDays()]);
+    const lockedSince = (days: number) => new Date(Date.now() - days * 86_400_000);
+    const recentCommissions = await prisma.affiliateCommission.findMany({
+      where: {
+        affiliateUserId: session.user.id,
+        status: "ACTIVE",
+        OR: [
+          { sourceType: "COURSE", createdAt: { gte: lockedSince(courseCfg.refundWindowDays) } },
+          { sourceType: "MARKETPLACE", createdAt: { gte: lockedSince(disputeDays) } },
+        ],
+      },
+      select: { commissionAmount: true },
+    });
+    const lockedAffiliate = recentCommissions.reduce((n, c) => n + toNum(c.commissionAmount), 0);
+    if (lockedAffiliate > 0 && amount > availableCash - lockedAffiliate) {
+      const free = Math.max(0, availableCash - lockedAffiliate);
+      return NextResponse.json(
+        {
+          error: `${usd(lockedAffiliate)} of your balance is recent affiliate commission that can be withdrawn once the buyer's refund period ends. You can withdraw up to ${usd(free)} now.`,
+          code: "AFFILIATE_HOLD",
+        },
         { status: 400 }
       );
     }

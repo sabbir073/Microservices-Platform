@@ -39,6 +39,17 @@ const PLAN_INPUT = z
     advertiserEnabled: z.boolean().optional(),
     gamesEnabled: z.boolean().optional(),
     adFree: z.boolean().optional(),
+    browseEarnEnabled: z.boolean().optional(),
+    rewardedAdsEnabled: z.boolean().optional(),
+    cpaEnabled: z.boolean().optional(),
+    eventsEnabled: z.boolean().optional(),
+    missionsEnabled: z.boolean().optional(),
+    quizGamesEnabled: z.boolean().optional(),
+    boardsEnabled: z.boolean().optional(),
+    leaderboardEnabled: z.boolean().optional(),
+    chatEnabled: z.boolean().optional(),
+    groupsEnabled: z.boolean().optional(),
+    affiliateEnabled: z.boolean().optional(),
 
     // Creator / monetization capabilities
     createTasksEnabled: z.boolean().optional(),
@@ -59,6 +70,7 @@ const PLAN_INPUT = z
     surveyTasksEnabled: z.boolean(),
     offerwallTasksEnabled: z.boolean(),
     appInstallEnabled: z.boolean().optional(),
+    visitTasksEnabled: z.boolean().optional(),
 
     // Limits
     dailyTaskLimit: z.number().int().min(-1).max(100000),
@@ -189,6 +201,17 @@ export async function POST(req: NextRequest) {
         advertiserEnabled: data.advertiserEnabled ?? true,
         gamesEnabled: data.gamesEnabled ?? true,
         adFree: data.adFree ?? false,
+        browseEarnEnabled: data.browseEarnEnabled ?? true,
+        rewardedAdsEnabled: data.rewardedAdsEnabled ?? true,
+        cpaEnabled: data.cpaEnabled ?? true,
+        eventsEnabled: data.eventsEnabled ?? true,
+        missionsEnabled: data.missionsEnabled ?? true,
+        quizGamesEnabled: data.quizGamesEnabled ?? true,
+        boardsEnabled: data.boardsEnabled ?? true,
+        leaderboardEnabled: data.leaderboardEnabled ?? true,
+        chatEnabled: data.chatEnabled ?? true,
+        groupsEnabled: data.groupsEnabled ?? true,
+        affiliateEnabled: data.affiliateEnabled ?? true,
 
         createTasksEnabled: data.createTasksEnabled ?? false,
         sellCoursesEnabled: data.sellCoursesEnabled ?? false,
@@ -207,6 +230,7 @@ export async function POST(req: NextRequest) {
         surveyTasksEnabled: data.surveyTasksEnabled,
         offerwallTasksEnabled: data.offerwallTasksEnabled,
         appInstallEnabled: data.appInstallEnabled ?? true,
+        visitTasksEnabled: data.visitTasksEnabled ?? true,
 
         dailyTaskLimit: data.dailyTaskLimit,
         dailyPostLimit: data.dailyPostLimit ?? -1,

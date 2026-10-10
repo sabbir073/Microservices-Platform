@@ -17,6 +17,7 @@ import {
 import { getPointsPerUsd } from "@/lib/economy";
 import { getReferralBonusMission } from "@/lib/daily-mission-progress";
 import { getUserDayContext } from "@/lib/user-day";
+import { getReferralBonusConfig, qualifiedReferralCount } from "@/lib/referral-bonus";
 
 const DEFAULT_DAILY_PER_REFERRAL = 5; // points per L1 referral, used if Package.referralBonus is 0
 
@@ -57,9 +58,11 @@ export async function GET() {
   // throwaway addresses that are never opened therefore bought a permanent
   // daily income. `audienceWhere()` already treats `status: "ACTIVE"` as the
   // house rule for who counts as a real user.
-  const referralCount = await prisma.user.count({
-    where: { referredById: userId, status: "ACTIVE" },
-  });
+  // …and ACTIVE is not enough for an income paid every day forever: a
+  // referral counts only while it is really used (the referral ladder's
+  // activity rule — active days in a recent window). Idle or farmed
+  // accounts stop counting.
+  const referralCount = await qualifiedReferralCount(userId, (await getReferralBonusConfig()).milestoneActivity);
 
   // Per-referral bonus from the user's plan; default 5 if 0/null. Plan that
   // doesn't unlock L1 earns nothing regardless of bonus value.
@@ -170,11 +173,8 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const referralCount = await prisma.user.count({
-    // ACTIVE only, matching GET: banned/suspended referrals (e.g. a farmed
-    // signup the fraud rules caught) must not keep paying a daily bonus.
-    where: { referredById: userId, status: "ACTIVE" },
-  });
+  // Same rule as GET: ACTIVE and really used (see qualifiedReferralCount).
+  const referralCount = await qualifiedReferralCount(userId, (await getReferralBonusConfig()).milestoneActivity);
   if (referralCount === 0) {
     return NextResponse.json(
       { error: "You don't have any referrals yet" },

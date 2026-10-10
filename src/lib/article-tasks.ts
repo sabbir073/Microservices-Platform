@@ -1034,3 +1034,29 @@ export function buildEngagementPlan(
     delayJitterMs,
   };
 }
+
+/**
+ * Seconds the embed makes a reader wait before popup `idx` on this page shows
+ * (mirrors embed-config's `popupTiming` and the embed's per-popup delay). The
+ * SERVER uses it so progress can't be claimed faster than the page allows:
+ * the embed's waits used to be the only gate, and a script posting
+ * `popupsCompleted: 99` finished every page at once.
+ */
+export function popupDelaySeconds(page: ArticlePage, idx: number): number {
+  const interval = Math.max(3, Math.min(600, page.popupIntervalSeconds ?? 15));
+  const fallback = idx === 0 ? Math.max(0, Math.min(600, page.firstPopupDelaySeconds ?? interval)) : interval;
+  const templates = (page.popups ?? []).filter((p) => String(p?.text ?? "").trim().length > 0);
+  const own = templates.length > 0 ? (templates[idx % templates.length] as { delaySeconds?: unknown }).delaySeconds : undefined;
+  return typeof own === "number" && own >= 0 ? own : fallback;
+}
+
+/** The least time a real reader can finish this page in (every popup's wait). */
+export function minPageSeconds(page: ArticlePage): number {
+  const n = renderedPopupCount(page);
+  let total = 0;
+  for (let i = 0; i < n; i++) total += popupDelaySeconds(page, i);
+  return total;
+}
+
+/** Server-side slack for network and clock jitter (the browser can only be slower). */
+export const ARTICLE_TIMING_SLACK = 0.8;

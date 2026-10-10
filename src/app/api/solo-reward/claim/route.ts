@@ -9,6 +9,7 @@ import { getUserDayContext } from "@/lib/user-day";
 import { getPointsPerUsd } from "@/lib/economy";
 
 import { getSoloRewardConfig } from "@/lib/reward-config-server";
+import { requireActiveUser } from "@/lib/require-active";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -17,6 +18,11 @@ export async function POST(request: NextRequest) {
   }
   // Reward claim. Correctness comes from the unique ledger constraints; this
   // keeps a claim flood from being absorbed by the database.
+  // A banned / suspended account earns nothing (the session outlives the ban).
+  const activeCheck = await requireActiveUser(session.user.id);
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.message }, { status: activeCheck.httpStatus });
+  }
   const limited = await enforceDbRateLimit(request, "claim", session.user.id, 30, 60_000);
   if (limited) return limited;
 

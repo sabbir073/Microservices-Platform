@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { renderedPopupCount } from "@/lib/article-tasks";
+import { ARTICLE_TIMING_SLACK, popupDelaySeconds, renderedPopupCount } from "@/lib/article-tasks";
 import type { ArticleConfig } from "@/lib/article-tasks";
 import { verifyArticleTaskToken } from "@/lib/article-task-token";
 import { corsPreflight, corsResponse } from "@/lib/article-task-cors";
@@ -52,7 +52,34 @@ export async function POST(
   // Must be the number the embed actually draws, or the page can never
   // be completed. See renderedPopupCount.
   const required = renderedPopupCount(pageDef);
-  const clamped = Math.min(popupsCompleted, required);
+  let clamped = Math.min(popupsCompleted, required);
+
+  // Paced on the SERVER clock. The count used to be taken as sent, so one
+  // request with `popupsCompleted: 99` finished a page that was never opened.
+  // Each popup now needs its configured wait since the previous one was
+  // recorded; a lost request is caught up as long as the time has passed.
+  // ("fast" mode is the admin's no-gates smoke-test setting.)
+  if (cfg?.engagementMode !== "fast") {
+    const prev = await prisma.articleTaskPageProgress.findUnique({
+      where: { submissionId_pageIndex: { submissionId: v.payload.s, pageIndex } },
+      select: { popupsCompleted: true, updatedAt: true },
+    });
+    if (!prev) {
+      // First popup on this page: no earlier server time to measure from.
+      clamped = Math.min(clamped, 1);
+    } else {
+      let allowed = prev.popupsCompleted;
+      let budget = (Date.now() - prev.updatedAt.getTime()) / 1000;
+      while (allowed < required) {
+        const need = popupDelaySeconds(pageDef, allowed) * ARTICLE_TIMING_SLACK;
+        if (budget < need) break;
+        budget -= need;
+        allowed++;
+      }
+      // Never move backwards either.
+      clamped = Math.max(prev.popupsCompleted, Math.min(clamped, allowed));
+    }
+  }
   const pageCompleted = clamped >= required;
 
   const row = await prisma.articleTaskPageProgress.upsert({

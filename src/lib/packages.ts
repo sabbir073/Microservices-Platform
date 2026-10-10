@@ -51,6 +51,17 @@ export interface PackageRow {
   advertiserEnabled: boolean;
   gamesEnabled: boolean;
   adFree: boolean;
+  browseEarnEnabled: boolean;
+  rewardedAdsEnabled: boolean;
+  cpaEnabled: boolean;
+  eventsEnabled: boolean;
+  missionsEnabled: boolean;
+  quizGamesEnabled: boolean;
+  boardsEnabled: boolean;
+  leaderboardEnabled: boolean;
+  chatEnabled: boolean;
+  groupsEnabled: boolean;
+  affiliateEnabled: boolean;
   createTasksEnabled: boolean;
   sellCoursesEnabled: boolean;
   sellMarketplaceEnabled: boolean;
@@ -67,6 +78,7 @@ export interface PackageRow {
   surveyTasksEnabled: boolean;
   offerwallTasksEnabled: boolean;
   appInstallEnabled: boolean;
+  visitTasksEnabled: boolean;
   dailyTaskLimit: number;
   dailyPostLimit: number;
   minWithdrawal: number;

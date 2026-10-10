@@ -1,6 +1,7 @@
 import { usd, pts } from "@/lib/utils";
 import { CountryFlag } from "@/components/admin/ui/country-flag";
 import { describeUserAgent } from "@/lib/user-agent";
+import { describeDevice, type DeviceType } from "@/lib/device-info";
 import { countryOfIp } from "@/lib/geo";
 import { getPointsPerUsd } from "@/lib/economy";
 import { auth } from "@/lib/auth";
@@ -16,6 +17,7 @@ import {
   Phone,
   MapPin,
   Calendar,
+  Compass,
   Clock,
   CheckCircle,
   Wallet,
@@ -35,6 +37,7 @@ import {
   Pin,
 } from "lucide-react";
 import Link from "next/link";
+import { sourceLabel } from "@/lib/signup-source";
 import { format, formatDistanceToNow } from "date-fns";
 import { profileHref } from "@/lib/user-href";
 import { ROLE_CONFIG, roleDescription, type UserRole } from "@/lib/rbac";
@@ -591,6 +594,15 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
               Joined {format(user.createdAt, "MMM d, yyyy")} (
               {formatDistanceToNow(user.createdAt, { addSuffix: true })})
             </span>
+            <Link
+              href={`/admin/signup-sources?range=all&source=${user.signupSource ?? "unknown"}`}
+              className="inline-flex items-center gap-1.5 hover:underline"
+              title={[user.signupMedium, user.signupCampaign, user.signupReferrer, user.signupLanding].filter(Boolean).join(" · ") || undefined}
+            >
+              <Compass className="w-3.5 h-3.5 text-sky-400" />
+              Came from {sourceLabel(user.signupSource)}
+              {user.signupCampaign ? ` · ${user.signupCampaign}` : ""}
+            </Link>
             {user.lastLoginAt && (
               <span className="inline-flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-purple-400" />
@@ -917,12 +929,29 @@ export default async function UserDetailPage({ params, searchParams }: PageProps
                     return (
                       <li key={d.id} className="rounded-lg border border-gray-800 p-3">
                         <div className="flex flex-wrap items-baseline justify-between gap-2">
-                          <span className="text-sm font-medium text-white">{describeUserAgent(d.userAgent) || "Unknown browser"}</span>
+                          <span className="text-sm font-medium text-white">
+                            {d.deviceType
+                              ? describeDevice({
+                                  type: d.deviceType as DeviceType,
+                                  os: d.os ?? undefined,
+                                  osVersion: d.osVersion,
+                                  brand: d.brand,
+                                  model: d.model,
+                                  browser: d.browser ?? undefined,
+                                })
+                              : describeUserAgent(d.userAgent) || "Unknown browser"}
+                          </span>
                           <span className="text-xs text-gray-500">
                             seen {d.seenCount}× · first {format(d.firstSeenAt, "MMM d, yyyy")} · last{" "}
                             {formatDistanceToNow(d.lastSeenAt, { addSuffix: true })}
                           </span>
                         </div>
+                        {d.userAgent && (
+                          <details className="mt-1">
+                            <summary className="cursor-pointer text-[11px] text-gray-500 hover:text-gray-300">User agent</summary>
+                            <code className="mt-1 block break-all text-[11px] text-gray-400">{d.userAgent}</code>
+                          </details>
+                        )}
                         <div className="mt-1.5 flex flex-wrap gap-1.5">
                           {d.ips.map((ip) => (
                             <span key={ip} className="inline-flex items-center gap-1 rounded bg-gray-800 px-1.5 py-0.5 font-mono text-[11px] text-gray-300">

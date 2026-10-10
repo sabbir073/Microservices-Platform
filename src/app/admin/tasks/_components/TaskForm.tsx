@@ -1,5 +1,9 @@
 "use client";
 
+import { VisitTaskBuilder } from "./VisitTaskBuilder";
+import { normalizeVisitConfig, validateVisitConfig, type VisitConfig } from "@/lib/visit-tasks";
+import { DeviceTargetPicker } from "@/components/shared/device-target-picker";
+import type { DeviceTarget } from "@/lib/device-target";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Video, FileText, HelpCircle, ClipboardList, Share2, Globe, Gift, Sparkles, Save, X, Plus, Trash2, AlertCircle, Loader2, Image as ImageIcon, Smartphone } from "lucide-react";
@@ -79,6 +83,7 @@ const taskTypes = [
   { id: "PROXY", label: "Proxy", icon: Globe, color: "cyan", description: "Geo-targeted browsing" },
   { id: "OFFERWALL", label: "Offerwall", icon: Gift, color: "emerald", description: "Complete offers" },
   { id: "APPINSTALL", label: "App Install", icon: Smartphone, color: "emerald", description: "Install an app + proof" },
+  { id: "VISIT", label: "Visit Link", icon: Globe, color: "cyan", description: "Direct / smart link or URL shortener" },
   { id: "CUSTOM", label: "Custom", icon: Sparkles, color: "indigo", description: "Custom task type" },
 ];
 
@@ -129,6 +134,7 @@ interface TaskFormProps {
     surveyConfig?: SurveyConfig | null;
     customConfig?: CustomConfig | null;
     appInstallConfig?: AppInstallConfig | null;
+    visitConfig?: unknown;
     proxyInstructions: string | null;
     startsAt: Date | null;
     expiresAt: Date | null;
@@ -137,6 +143,9 @@ interface TaskFormProps {
     boardId?: string | null;
     requireApp?: boolean;
     requirePush?: boolean;
+    deviceTypes?: string[];
+    deviceOses?: string[];
+    deviceBrands?: string[];
     /** Set once users have been told about the task (lib/task-announce.ts). */
     announcedAt?: Date | string | null;
   };
@@ -219,6 +228,12 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
   // once the task has been announced (it is sent once per task).
   const alreadyAnnounced = !!task?.announcedAt;
   const [notify, setNotify] = useState({ inApp: false, push: false, email: false });
+  // Which devices see the task (lib/device-target.ts). Empty = every device.
+  const [deviceTarget, setDeviceTarget] = useState<DeviceTarget>({
+    deviceTypes: task?.deviceTypes ?? [],
+    deviceOses: task?.deviceOses ?? [],
+    deviceBrands: task?.deviceBrands ?? [],
+  });
 
   // Keep `?type=` and the picked type in step with each other.
   //
@@ -362,6 +377,7 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
   );
 
   // App-install task config
+  const [visitConfig, setVisitConfig] = useState<VisitConfig>(() => normalizeVisitConfig(task?.visitConfig));
   const [appInstallConfig, setAppInstallConfig] = useState<AppInstallConfig>(
     task?.appInstallConfig ?? { appName: "", steps: [], autoApprove: false }
   );
@@ -547,6 +563,12 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
         customConfigOut = customConfig;
       }
 
+      // VISIT: direct / smart link or URL shortener.
+      if (formData.type === "VISIT") {
+        const err = validateVisitConfig(visitConfig);
+        if (err) throw new Error(err);
+      }
+
       // For APPINSTALL tasks, validate and prep config
       let appInstallConfigOut: AppInstallConfig | null = null;
       if (formData.type === "APPINSTALL") {
@@ -572,6 +594,7 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
         surveyConfig: surveyConfigOut,
         customConfig: customConfigOut,
         appInstallConfig: appInstallConfigOut,
+        ...(formData.type === "VISIT" ? { visitConfig } : {}),
         contentUrl: contentUrlOut,
         duration: durationOut
           ? parseInt(durationOut.toString())
@@ -591,6 +614,7 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
         questions: formData.type === "QUIZ" ? questions : null,
         boardId: formData.boardId || null,
         ...(alreadyAnnounced ? {} : { notify }),
+        ...deviceTarget,
         // Only on create: counts the task against the template it came from.
         ...(!effectiveTaskId && usedTemplateId ? { templateId: usedTemplateId } : {}),
       };
@@ -1008,6 +1032,23 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
             </p>
           </div>
           <CustomTaskBuilder value={customConfig} onChange={setCustomConfig} />
+        </div>
+      )}
+
+      {/* Visit builder */}
+      {formData.type === "VISIT" && (
+        <div className="bg-gray-900 rounded-xl border border-gray-800 p-6 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-white inline-flex items-center gap-2">
+              <Globe className="w-5 h-5 text-cyan-400" />
+              Visit Task
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Users open a link through our tracker. Direct / smart link: they must stay for the time you set. URL
+              shortener: they finish the short link and get a personal code on our page.
+            </p>
+          </div>
+          <VisitTaskBuilder value={visitConfig} onChange={setVisitConfig} taskId={effectiveTaskId} />
         </div>
       )}
 
@@ -1512,6 +1553,12 @@ export function TaskForm({ task, allowedTypes, defaultBoardId }: TaskFormProps) 
             </label>
           </div>
         </div>
+
+        <DeviceTargetPicker
+          value={deviceTarget}
+          onChange={setDeviceTarget}
+          note="The task is listed and can be started only on these devices — checked on the device the person is using."
+        />
 
         <div>
           <h2 className="text-lg font-semibold text-white">Tell users about this task</h2>

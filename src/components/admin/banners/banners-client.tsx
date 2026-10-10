@@ -1,10 +1,12 @@
 "use client";
 
+import { DeviceTargetPicker } from "@/components/shared/device-target-picker";
+import type { DeviceTarget } from "@/lib/device-target";
 import { hasAudienceTargeting } from "@/lib/task-targeting";
 import { TaskAudienceTargeting, type TaskAudienceValue } from "@/components/admin/tasks/task-audience-targeting";
 import { confirmDialog } from "@/lib/confirm";
 
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -49,12 +51,25 @@ interface Banner {
   minAge: number | null;
   maxAge: number | null;
   kycAudience: string;
+  deviceTypes?: string[];
+  deviceOses?: string[];
+  deviceBrands?: string[];
+  planAudience?: string;
+  packageIds?: string[];
+  minLevel?: number | null;
+  maxLevel?: number | null;
+  minAccountDays?: number | null;
+  maxAccountDays?: number | null;
 }
 
 interface Props {
   initial: Banner[];
   canManage: boolean;
+  /** Plans, for the "only these plans" rule. */
+  packages?: { id: string; name: string }[];
 }
+
+const PackagesCtx = createContext<{ id: string; name: string }[]>([]);
 
 const GRADIENT_PRESETS = [
   "from-blue-600 to-purple-600",
@@ -68,7 +83,7 @@ const GRADIENT_PRESETS = [
   "from-lime-500 to-emerald-600",
 ];
 
-export function BannersClient({ initial, canManage }: Props) {
+export function BannersClient({ initial, canManage, packages = [] }: Props) {
   const router = useRouter();
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Banner | null>(null);
@@ -212,7 +227,15 @@ export function BannersClient({ initial, canManage }: Props) {
                     <span className="px-2 py-0.5 rounded-full text-xs bg-slate-800 text-slate-300">
                       {b.location}
                     </span>
-                    {(hasAudienceTargeting(b) || (b.kycAudience && b.kycAudience !== "ANY")) && (
+                    {(hasAudienceTargeting(b) ||
+                      (b.kycAudience && b.kycAudience !== "ANY") ||
+                      (b.deviceTypes?.length ?? 0) + (b.deviceOses?.length ?? 0) + (b.deviceBrands?.length ?? 0) > 0 ||
+                      (b.planAudience ?? "ANY") !== "ANY" ||
+                      (b.packageIds?.length ?? 0) > 0 ||
+                      b.minLevel != null ||
+                      b.maxLevel != null ||
+                      b.minAccountDays != null ||
+                      b.maxAccountDays != null) && (
                       <span
                         className="px-2 py-0.5 rounded-full text-xs bg-indigo-500/15 text-indigo-300"
                         title="Shown only to the users it targets"
@@ -283,6 +306,7 @@ export function BannersClient({ initial, canManage }: Props) {
         </div>
       )}
 
+      <PackagesCtx.Provider value={packages}>
       {showCreate && (
         <CreateBannerModal
           gradients={GRADIENT_PRESETS}
@@ -296,6 +320,7 @@ export function BannersClient({ initial, canManage }: Props) {
           onClose={() => setEditing(null)}
         />
       )}
+      </PackagesCtx.Provider>
     </>
   );
 }
@@ -336,6 +361,15 @@ function EditBannerModal({
     minAge: banner.minAge ?? null,
     maxAge: banner.maxAge ?? null,
     kycAudience: banner.kycAudience ?? "ANY",
+    deviceTypes: banner.deviceTypes ?? [],
+    deviceOses: banner.deviceOses ?? [],
+    deviceBrands: banner.deviceBrands ?? [],
+    planAudience: banner.planAudience ?? "ANY",
+    packageIds: banner.packageIds ?? [],
+    minLevel: banner.minLevel ?? null,
+    maxLevel: banner.maxLevel ?? null,
+    minAccountDays: banner.minAccountDays ?? null,
+    maxAccountDays: banner.maxAccountDays ?? null,
   });
 
   const submit = async () => {
@@ -809,9 +843,25 @@ const EMPTY_BANNER_AUDIENCE = {
   minAge: null as number | null,
   maxAge: null as number | null,
   kycAudience: "ANY",
+  deviceTypes: [] as string[],
+  deviceOses: [] as string[],
+  deviceBrands: [] as string[],
+  planAudience: "ANY",
+  packageIds: [] as string[],
+  minLevel: null as number | null,
+  maxLevel: null as number | null,
+  minAccountDays: null as number | null,
+  maxAccountDays: null as number | null,
 };
 
-type AudienceForm = TaskAudienceValue & { kycAudience: string };
+type AudienceForm = TaskAudienceValue & { kycAudience: string } & DeviceTarget & {
+  planAudience: string;
+  packageIds: string[];
+  minLevel: number | null;
+  maxLevel: number | null;
+  minAccountDays: number | null;
+  maxAccountDays: number | null;
+};
 
 /**
  * Who sees the banner — the same audience picker tasks use (country, region,
@@ -819,6 +869,64 @@ type AudienceForm = TaskAudienceValue & { kycAudience: string };
  * everyone. Matching is strict: a user whose profile has no district does not
  * see a banner aimed at a district.
  */
+/** Plan, level and account age — the same rules popups have (lib/audience-extra.ts). */
+function BannerExtraFields<F extends AudienceForm>({ form, setForm }: { form: F; setForm: (f: F) => void }) {
+  const packages = useContext(PackagesCtx);
+  const num = (v: string) => (v.trim() === "" ? null : Math.max(0, parseInt(v) || 0));
+  const box = "w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm text-white";
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Plan">
+          <select value={form.planAudience} onChange={(e) => setForm({ ...form, planAudience: e.target.value })} className={box}>
+            <option value="ANY">Any plan</option>
+            <option value="FREE">Only the free plan</option>
+            <option value="PAID">Only paid plans</option>
+          </select>
+        </Field>
+        <Field label="Level (from – to)">
+          <div className="grid grid-cols-2 gap-2">
+            <input type="number" min={0} placeholder="any" value={form.minLevel ?? ""} onChange={(e) => setForm({ ...form, minLevel: num(e.target.value) })} className={box} />
+            <input type="number" min={0} placeholder="any" value={form.maxLevel ?? ""} onChange={(e) => setForm({ ...form, maxLevel: num(e.target.value) })} className={box} />
+          </div>
+        </Field>
+        <Field label="Account age in days (from – to)">
+          <div className="grid grid-cols-2 gap-2">
+            <input type="number" min={0} placeholder="any" value={form.minAccountDays ?? ""} onChange={(e) => setForm({ ...form, minAccountDays: num(e.target.value) })} className={box} />
+            <input type="number" min={0} placeholder="any" value={form.maxAccountDays ?? ""} onChange={(e) => setForm({ ...form, maxAccountDays: num(e.target.value) })} className={box} />
+          </div>
+        </Field>
+      </div>
+      {packages.length > 0 && (
+        <Field label="Only these plans (optional)">
+          <div className="flex flex-wrap gap-1.5">
+            {packages.map((pk) => {
+              const on = form.packageIds.includes(pk.id);
+              return (
+                <button
+                  key={pk.id}
+                  type="button"
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      packageIds: on ? form.packageIds.filter((x) => x !== pk.id) : [...form.packageIds, pk.id],
+                    })
+                  }
+                  className={`rounded-lg border px-2.5 py-1 text-xs ${
+                    on ? "border-sky-500 bg-sky-500/15 text-sky-200" : "border-slate-700 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {pk.name}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
+      )}
+    </div>
+  );
+}
+
 function BannerAudienceFields<F extends AudienceForm>({
   form,
   setForm,
@@ -846,6 +954,12 @@ function BannerAudienceFields<F extends AudienceForm>({
         </select>
       </Field>
       <TaskAudienceTargeting value={form} onChange={(patch) => setForm({ ...form, ...patch })} />
+      <DeviceTargetPicker
+        value={{ deviceTypes: form.deviceTypes, deviceOses: form.deviceOses, deviceBrands: form.deviceBrands }}
+        onChange={(d) => setForm({ ...form, ...d })}
+        note="Shown only on these devices — the one the person is using."
+      />
+      <BannerExtraFields form={form} setForm={setForm} />
     </div>
   );
 }

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { matchesExtraAudience } from "@/lib/audience-extra";
+import { currentDevice } from "@/lib/device-current";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { bannerMatches, type BannerViewer } from "@/lib/banner-audience";
@@ -26,7 +28,6 @@ import {
 } from "@/lib/popups";
 import { activePopups } from "@/lib/popups-server";
 
-const DAY_MS = 86_400_000;
 
 /** A video link → what the player needs; unknown links are dropped. */
 function toPopupVideo(url: string): PopupVideo | null {
@@ -73,6 +74,7 @@ export async function GET(request: NextRequest) {
   // shown to them.
   await syncCountryMode();
   let viewer: BannerViewer = { lastCountry: countryOfIp(clientIp(request)) };
+  const viewerDevice = await currentDevice();
   let level: number | null = null;
   let joinedAt: number | null = null;
   let plan: { id: string; paid: boolean } | null = null;
@@ -98,30 +100,12 @@ export async function GET(request: NextRequest) {
     if (pkg) plan = { id: pkg.id, paid: !pkg.isDefault && (pkg.priceMonthly > 0 || (pkg.priceYearly ?? 0) > 0) };
   }
 
-  const matchesExtra = (p: (typeof inPlay)[number]): boolean => {
-    const planAudience = sanitizePopupPlanAudience(p.planAudience);
-    if (planAudience !== "ANY" || p.packageIds.length) {
-      if (!plan) return false;
-      if (planAudience === "FREE" && plan.paid) return false;
-      if (planAudience === "PAID" && !plan.paid) return false;
-      if (p.packageIds.length && !p.packageIds.includes(plan.id)) return false;
-    }
-    if (p.minLevel != null || p.maxLevel != null) {
-      if (level == null) return false;
-      if (p.minLevel != null && level < p.minLevel) return false;
-      if (p.maxLevel != null && level > p.maxLevel) return false;
-    }
-    if (p.minAccountDays != null || p.maxAccountDays != null) {
-      if (joinedAt == null) return false;
-      const days = Math.floor((now - joinedAt) / DAY_MS);
-      if (p.minAccountDays != null && days < p.minAccountDays) return false;
-      if (p.maxAccountDays != null && days > p.maxAccountDays) return false;
-    }
-    return true;
-  };
+  // Plan / level / account age — shared with banners (lib/audience-extra.ts).
+  const matchesExtra = (p: (typeof inPlay)[number]): boolean =>
+    matchesExtraAudience(p, { plan, level, joinedAt }, now);
 
   const popups: PopupView[] = inPlay
-    .filter((p) => bannerMatches(p, viewer) && matchesExtra(p))
+    .filter((p) => bannerMatches(p, { ...viewer, device: viewerDevice }) && matchesExtra(p))
     .slice(0, 5)
     .map((p) => {
       const kind = sanitizePopupKind(p.kind);

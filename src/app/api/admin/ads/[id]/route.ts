@@ -14,7 +14,7 @@ interface RouteParams {
   params: Promise<{ id: string }>;
 }
 
-const AD_TYPES = ["LOCAL", "HTML", "ADSENSE", "GAM"];
+const AD_TYPES = ["LOCAL", "HTML", "ADSENSE", "GAM", "VAST"];
 
 /** Per-ad full-screen timing: null/"" clears it, else clamped to [min, max]. */
 function parseSeconds(v: unknown, min: number, max: number): number | null | undefined {
@@ -56,6 +56,10 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (body.clickTracker !== undefined) data.clickTracker = body.clickTracker ? String(body.clickTracker) : null;
   if (body.allowSameOrigin !== undefined) data.allowSameOrigin = Boolean(body.allowSameOrigin);
   if (body.networkId !== undefined) data.networkId = body.networkId ? String(body.networkId).slice(0, 40) : null;
+  if (body.vastUrl !== undefined && body.vastUrl && !/^https:\/\/\S+$/i.test(String(body.vastUrl).trim())) {
+    return NextResponse.json({ error: "The VAST tag URL must start with https://" }, { status: 400 });
+  }
+  if (body.vastUrl !== undefined) data.vastUrl = body.vastUrl ? String(body.vastUrl).trim().slice(0, 2000) : null;
   if (body.mobileHtmlContent !== undefined)
     data.mobileHtmlContent = body.mobileHtmlContent ? String(body.mobileHtmlContent) : null;
   {
@@ -74,6 +78,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
   if (body.height !== undefined)
     data.height = Number.isFinite(Number(body.height)) && Number(body.height) > 0 ? Math.round(Number(body.height)) : null;
   if (body.weight !== undefined) data.weight = Math.max(1, Number(body.weight) || 10);
+  if (body.priority !== undefined) data.priority = Math.min(100, Math.max(0, Math.round(Number(body.priority) || 0)));
   {
     const skip = parseSeconds(body.skipAfterSeconds, 0, 60);
     if (skip !== undefined) data.skipAfterSeconds = skip;

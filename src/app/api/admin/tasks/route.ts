@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { normalizeVisitConfig, validateVisitConfig } from "@/lib/visit-tasks";
+import { sanitizeDeviceTarget } from "@/lib/device-target";
 import { announceTask, parseTaskNotify } from "@/lib/task-announce";
 import { auth } from "@/lib/auth";
 import { can, canAny } from "@/lib/permissions";
@@ -85,7 +87,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate task type
-    const validTypes = ["VIDEO", "ARTICLE", "QUIZ", "SURVEY", "SOCIAL", "PROXY", "OFFERWALL", "CUSTOM", "APPINSTALL"];
+    const validTypes = ["VIDEO", "ARTICLE", "QUIZ", "SURVEY", "SOCIAL", "PROXY", "OFFERWALL", "CUSTOM", "APPINSTALL", "VISIT"];
     if (!validTypes.includes(type)) {
       return NextResponse.json({ error: "Invalid task type" }, { status: 400 });
     }
@@ -107,6 +109,13 @@ export async function POST(request: NextRequest) {
       const err = validateAppInstallConfig(appInstallConfig);
       if (err) return NextResponse.json({ error: err }, { status: 400 });
       appInstallConfigOut = normalizeAppInstallConfig(appInstallConfig as AppInstallConfig);
+    }
+
+    // VISIT: direct / smart link or URL shortener (lib/visit-tasks.ts).
+    const visitConfigOut = type === "VISIT" ? normalizeVisitConfig(body.visitConfig) : null;
+    if (visitConfigOut) {
+      const err = validateVisitConfig(visitConfigOut);
+      if (err) return NextResponse.json({ error: err }, { status: 400 });
     }
 
     // Validate CUSTOM task config
@@ -187,6 +196,7 @@ export async function POST(request: NextRequest) {
         questions,
         videoConfig,
         articleConfig,
+        visitConfig: visitConfigOut,
       },
       { aiQuizAvailable: await isGeminiConfigured() }
     );
@@ -247,11 +257,16 @@ export async function POST(request: NextRequest) {
         appInstallConfig: appInstallConfigOut
           ? JSON.parse(JSON.stringify(appInstallConfigOut))
           : null,
+        visitConfig: visitConfigOut ? JSON.parse(JSON.stringify(visitConfigOut)) : undefined,
         proxyInstructions: proxyInstructions || null,
         startsAt: startsAt ? new Date(startsAt) : null,
         expiresAt: expiresAt ? new Date(expiresAt) : null,
         cooldownMinutes: parseInt(cooldownMinutes?.toString() || "0"),
         autoApprove: autoApprove || false,
+        // Device targeting (lib/device-target.ts) — only when the form sent it.
+        ...("deviceTypes" in body || "deviceOses" in body || "deviceBrands" in body
+          ? sanitizeDeviceTarget(body)
+          : {}),
         // "Installed app only" / "notifications on" (lib/task-device-gate.ts).
         ...(typeof body.requireApp === "boolean" ? { requireApp: body.requireApp } : {}),
         ...(typeof body.requirePush === "boolean" ? { requirePush: body.requirePush } : {}),

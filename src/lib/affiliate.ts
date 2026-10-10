@@ -126,7 +126,13 @@ export function parseAttribution(
  */
 export async function reverseAffiliateCommission(
   sourceType: AffiliateTarget,
-  orderRef: string
+  orderRef: string,
+  /**
+   * Share of the sale that was refunded (0–1). A partial refund takes back
+   * the same share of the commission; the affiliate used to keep all of it
+   * while the buyer got 99% back.
+   */
+  fraction = 1
 ): Promise<void> {
   try {
     const comm = await prisma.affiliateCommission.findUnique({
@@ -141,7 +147,9 @@ export async function reverseAffiliateCommission(
     });
     if (already) return; // already reversed
 
-    const amount = Number(comm.commissionAmount);
+    const share = Math.min(1, Math.max(0, Number.isFinite(fraction) ? fraction : 1));
+    if (share <= 0) return;
+    const amount = Math.round(Number(comm.commissionAmount) * share * 1e6) / 1e6;
     await prisma.$transaction(async (tx) => {
       // Status CAS first: two concurrent refunds cannot both claw back, and
       // affiliate stats stop counting the commission.
@@ -180,7 +188,9 @@ export async function reverseAffiliateCommission(
           metadata: {
             sourceType,
             orderRef,
-            commissionAmount: amount,
+            commissionAmount: Number(comm.commissionAmount),
+            refundedShare: share,
+            reversedAmount: amount,
             clawedBack: debit,
             shortfall: amount - debit,
           },

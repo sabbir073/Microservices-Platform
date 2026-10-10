@@ -10,7 +10,7 @@ import { clampRewardCooldown } from "@/lib/ad-billing";
 import { checkAdFitsPlacement, placementLabel } from "@/lib/ad-placements";
 import { checkHtmlAd, optInt } from "@/lib/ad-networks/validate";
 
-const AD_TYPES = ["LOCAL", "HTML", "ADSENSE", "GAM"];
+const AD_TYPES = ["LOCAL", "HTML", "ADSENSE", "GAM", "VAST"];
 const AD_STATUSES = ["ACTIVE", "INACTIVE", "PAUSED"];
 
 /** Per-ad full-screen timing: null/"" clears it, else clamped to [min, max]. */
@@ -94,6 +94,10 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  if (body.type === "VAST" && !/^https:\/\/\S+$/i.test(String(body.vastUrl ?? "").trim())) {
+    return NextResponse.json({ error: "Paste the network's VAST tag URL (https://…)." }, { status: 400 });
+  }
+
   // Shared creative/targeting for every placement row.
   const shared = {
     campaignId: String(body.campaignId),
@@ -112,7 +116,9 @@ export async function POST(request: NextRequest) {
     allowSameOrigin: Boolean(body.allowSameOrigin),
     // HTML network snippets: which network, an optional mobile variant, and
     // (page scripts) the per-viewer frequency cap.
-    networkId: body.type === "HTML" && body.networkId ? String(body.networkId).slice(0, 40) : null,
+    networkId:
+      (body.type === "HTML" || body.type === "VAST") && body.networkId ? String(body.networkId).slice(0, 40) : null,
+    vastUrl: body.type === "VAST" && body.vastUrl ? String(body.vastUrl).trim().slice(0, 2000) : null,
     mobileHtmlContent:
       body.type === "HTML" && body.mobileHtmlContent ? String(body.mobileHtmlContent) : null,
     mobileWidth: body.type === "HTML" && body.mobileHtmlContent ? optInt(body.mobileWidth, 2000) ?? null : null,
@@ -123,6 +129,7 @@ export async function POST(request: NextRequest) {
     width: Number.isFinite(Number(body.width)) && Number(body.width) > 0 ? Math.round(Number(body.width)) : null,
     height: Number.isFinite(Number(body.height)) && Number(body.height) > 0 ? Math.round(Number(body.height)) : null,
     weight: Number.isFinite(Number(body.weight)) ? Math.max(1, Number(body.weight)) : 10,
+    priority: Number.isFinite(Number(body.priority)) ? Math.min(100, Math.max(0, Math.round(Number(body.priority)))) : 0,
     skipAfterSeconds: parseSeconds(body.skipAfterSeconds, 0, 60) ?? null,
     showSeconds: parseSeconds(body.showSeconds, 1, 300) ?? null,
     // Admin-created ads are auto-approved (admin IS the reviewer) — stamping

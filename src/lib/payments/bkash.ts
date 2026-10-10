@@ -131,10 +131,14 @@ export const bkash: PaymentProvider = {
       const paidBdt = Number(data?.amount);
       const rate = Number(await getSetting<number>("bkash.usdToBdtRate", 123)) || 123;
       const paidUsd = paidBdt / rate;
+      const hasAmount = Number.isFinite(paidUsd) && paidUsd > 0;
       return {
-        success: !!ok,
+        // "Completed" with no amount is not a verified payment: the callback
+        // treats a missing amount as nothing to compare and would credit the
+        // stored amount unchecked. It stays PENDING for an admin instead.
+        success: !!ok && hasAmount,
         gatewayRef: paymentID,
-        amount: Number.isFinite(paidUsd) && paidUsd > 0 ? paidUsd : undefined,
+        amount: hasAmount ? paidUsd : undefined,
         currency: "USD",
       };
     } catch {

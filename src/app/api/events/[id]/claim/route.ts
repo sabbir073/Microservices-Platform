@@ -1,4 +1,6 @@
 import { assertPageVisible } from "@/lib/page-visibility-server";
+import { planFeatureGate } from "@/lib/plan-gate";
+import { profileGateResponse } from "@/lib/profile-gate-server";
 import { NextRequest, NextResponse } from "next/server";
 import { enforceDbRateLimit } from "@/lib/rate-limit-db";
 import { auth } from "@/lib/auth";
@@ -17,6 +19,9 @@ export async function POST(
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  // Plan switch (Admin → Packages): this plan may not use it.
+  const planGated = await planFeatureGate(session.user.id, "events");
+  if (planGated) return planGated;
   // Super-admin page visibility: refuse when /events is hidden for this user.
   const pageHidden = await assertPageVisible(session.user.id, "/events");
   if (pageHidden) return pageHidden;
@@ -24,6 +29,9 @@ export async function POST(
   // keeps a claim flood from being absorbed by the database.
   const limited = await enforceDbRateLimit(req, "claim", session.user.id, 30, 60_000);
   if (limited) return limited;
+  // Profile gate — events are goals like missions and share its switch.
+  const profileGated = await profileGateResponse(session.user.id, "missions");
+  if (profileGated) return profileGated;
   // A reward claim pays out: a banned / suspended account may not claim.
   const active = await requireActiveUser(session.user.id);
   if (!active.ok) {

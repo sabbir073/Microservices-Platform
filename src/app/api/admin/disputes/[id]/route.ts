@@ -562,13 +562,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
           }
         });
 
-        // Reverse the affiliate's cut too, but only on a FULL refund — the
-        // helper is all-or-nothing and idempotent per (sourceType, orderRef), so
-        // calling it on a partial refund would claw back more than was unwound.
-        // On a partial refund the affiliate keeps their commission and the
-        // shortfall is visible in the seller clawback metadata.
-        if (purchase && commission && ratio >= 1) {
-          await reverseAffiliateCommission("MARKETPLACE", purchase.id);
+        // Reverse the affiliate's cut too (once per order — the helper is
+        // idempotent per (sourceType, orderRef)).
+        // Pro-rata: the share of the sale refunded is the share of the
+        // commission taken back (a 99% refund used to leave the affiliate 100%).
+        if (purchase && commission && ratio > 0) {
+          await reverseAffiliateCommission("MARKETPLACE", purchase.id, Math.min(1, ratio));
         }
 
         // Resolving a dispute moves cash between two real accounts and had no

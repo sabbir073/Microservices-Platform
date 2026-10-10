@@ -1,4 +1,6 @@
 import { assertPageVisible } from "@/lib/page-visibility-server";
+import { normalizeVisitConfig, normVisitCode } from "@/lib/visit-tasks";
+import { redeemVisitPass, visitCodeFor, visitEvidence } from "@/lib/visit-tasks-server";
 import { taskTypePage } from "@/lib/page-visibility";
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
@@ -162,6 +164,8 @@ export async function POST(
       videoSteps,
       // APPINSTALL structured per-requirement proof [{id,kind,label,target,value?}]
       appInstallProof,
+      // VISIT (shortener): the code shown at the end of the link.
+      visitCode,
     } = body;
 
     // Get the task
@@ -273,14 +277,19 @@ export async function POST(
     // If the real video is SHORTER than the configured watch target, cap the
     // requirement at the actual length — otherwise a fully-watched short video
     // can never satisfy 80% of a longer target.
+    // The length is reported by the BROWSER, and the platform stores no real
+    // length to check it against — so `videoDuration: 1` on a 300s task cut the
+    // watch to 8 seconds and auto-paid. A lowered target still lets a genuinely
+    // short video be submitted, but that claim is never paid automatically: it
+    // goes to an admin (see `videoTargetLowered` below).
+    let videoTargetLowered: { claimedSec: number; targetSec: number } | null = null;
     if (
       task.type === "VIDEO" &&
       typeof videoDuration === "number" &&
       videoDuration > 0 &&
       videoDuration < requiredSeconds
     ) {
-      // The length is reported by the browser, so it can only lower the target
-      // so far: `videoDuration: 1` used to make the requirement 0 seconds.
+      videoTargetLowered = { claimedSec: Math.round(videoDuration), targetSec: requiredSeconds };
       requiredSeconds = Math.max(videoDuration, Math.min(requiredSeconds, 10));
     }
     // SOCIAL bundles with watch items are gated on SERVER-accrued watch seconds
@@ -638,6 +647,86 @@ export async function POST(
       appInstallMeta = { appKind: cfg?.appKind ?? "app", items: metaItems };
     }
 
+    // ── Visit task (lib/visit-tasks.ts) ──
+    // DIRECT: a finished visit on THIS attempt (stayed long enough, measured
+    // with the server's clock by /api/tasks/[id]/visit-return).
+    // SHORTENER: the person's own code from /v/[taskId]; held for an admin when
+    // the destination wasn't reached on this attempt or the arrival was doubtful.
+    let visitAutoApprove = false;
+    let visitHold: string | null = null;
+    let visitMeta: Record<string, unknown> | null = null;
+    if (task.type === "VISIT") {
+      const vcfg = normalizeVisitConfig(task.visitConfig);
+      const ev = await visitEvidence(submission.id);
+      const early = ev.visits.filter((v) => v.outcome === "EARLY").length;
+      if (vcfg.kind === "DIRECT") {
+        if (!ev.done) {
+          return NextResponse.json(
+            {
+              error: `Open the link and stay at least ${vcfg.staySeconds} seconds before coming back.`,
+              code: "VISIT_NOT_DONE",
+            },
+            { status: 400 }
+          );
+        }
+        visitMeta = { kind: "DIRECT", opens: ev.visits.length, early, stayedSec: ev.done.elapsedSec, needSec: vcfg.staySeconds };
+        visitAutoApprove = vcfg.autoApprove;
+      } else {
+        const typed = String(visitCode ?? "").trim();
+        if (!typed) {
+          return NextResponse.json({ error: "Enter the code you got at the end of the link." }, { status: 400 });
+        }
+        const typedN = normVisitCode(typed);
+        // The arrival this claim rests on: the signed-in one recorded by
+        // /v/[taskId], or — for a one-time code from a signed-out browser —
+        // the pass, tied to this attempt by redeemVisitPass.
+        let reached: { verdict: string | null; referrerHost: string | null; elapsedSec: number | null } | null =
+          ev.reached ? { verdict: ev.reached.verdict, referrerHost: ev.reached.referrerHost, elapsedSec: ev.reached.elapsedSec } : null;
+        let viaPass = false;
+        if (typedN !== normVisitCode(visitCodeFor(task.id, session.user.id))) {
+          if (vcfg.signedOutCode === "off" || !/^P[A-Z0-9]{6}$/.test(typedN)) {
+            return NextResponse.json(
+              { error: "That code isn't right. Use the code shown to you at the end of the link.", code: "VISIT_BAD_CODE" },
+              { status: 400 }
+            );
+          }
+          const r = await redeemVisitPass({
+            taskId: task.id,
+            code: typedN,
+            userId: session.user.id,
+            submissionId: submission.id,
+            minSeconds: vcfg.minSeconds,
+          });
+          if (!r.ok) return NextResponse.json({ error: r.error, code: r.code }, { status: 400 });
+          viaPass = true;
+          reached = { verdict: r.verdict, referrerHost: r.referrerHost, elapsedSec: r.elapsedSec };
+        }
+        const verdict = reached?.verdict ?? null;
+        visitMeta = {
+          kind: "SHORTENER",
+          opens: ev.visits.length,
+          verdict,
+          referrerHost: reached?.referrerHost ?? null,
+          secondsToArrive: reached?.elapsedSec ?? null,
+          minSec: vcfg.minSeconds,
+          ...(viaPass ? { signedOutCode: true } : {}),
+        };
+        if (!reached) {
+          visitHold = "Code entered, but this attempt never reached the link's end page — check before paying.";
+        } else if (verdict !== "OK") {
+          visitHold =
+            verdict === "MISMATCH"
+              ? `Arrived from ${reached.referrerHost ?? "another site"}, not the shortener — check before paying.`
+              : verdict === "TOO_FAST"
+                ? "Got through the link faster than it allows — check before paying."
+                : "Couldn't see where the visit came from (no referrer) — check before paying.";
+        } else if (viaPass && vcfg.signedOutCode === "review") {
+          visitHold = "Claimed with a one-time code from a browser that wasn't signed in — check before paying.";
+        }
+        visitAutoApprove = vcfg.autoApprove && !visitHold;
+      }
+    }
+
     // ── Social task: enforce each action's configured proof requirements ──
     // These were previously checked only in the browser, so a crafted POST with
     // an empty `items` array was accepted and went to a reviewer with no proof
@@ -782,6 +871,8 @@ export async function POST(
     const socialBundle: Array<Record<string, unknown>> | null =
       isSocial && Array.isArray(socialItems) ? socialItems : null;
     const submissionMetadata: Record<string, unknown> = {};
+    if (visitMeta) submissionMetadata.visit = visitMeta;
+    if (videoTargetLowered) submissionMetadata.videoTargetLowered = videoTargetLowered;
     if (articleEntryEvidence) {
       submissionMetadata.articleEntry = articleEntryEvidence;
     }
@@ -846,6 +937,45 @@ export async function POST(
           seen.add(k);
           return true;
         });
+      // The SAME user's proof from an earlier claim on this task. Engagement is
+      // one-time (a follow, a comment, a share); the lookup below excludes the
+      // user on purpose, so one comment carrying the (per-user, never-changing)
+      // code verified and auto-paid again every day. A post link or screenshot
+      // that already paid — or is waiting to — can't be used again.
+      const reusable = pairs.filter((p) => p.kind === "URL" || p.kind === "SCREENSHOT");
+      if (reusable.length > 0) {
+        const own = await prisma.socialProofFingerprint.findMany({
+          where: {
+            taskId: task.id,
+            userId: session.user.id,
+            submissionId: { not: submission.id },
+            OR: reusable.map((p) => ({ kind: p.kind, valueHash: p.valueHash })),
+          },
+          select: { submissionId: true },
+          take: 20,
+        });
+        if (own.length > 0) {
+          const used = await prisma.taskSubmission.count({
+            where: {
+              id: { in: own.map((o) => o.submissionId) },
+              OR: [
+                { status: { in: [SubmissionStatus.APPROVED, SubmissionStatus.AUTO_APPROVED] } },
+                { status: SubmissionStatus.PENDING, submittedAt: { not: null } },
+              ],
+            },
+          });
+          if (used > 0) {
+            return NextResponse.json(
+              {
+                error: "You already used this proof for this task. Do the task again and submit the new post or screenshot.",
+                code: "PROOF_ALREADY_USED",
+              },
+              { status: 400 }
+            );
+          }
+        }
+      }
+
       if (pairs.length > 0) {
         const matches = await prisma.socialProofFingerprint.findMany({
           where: {
@@ -1293,10 +1423,12 @@ export async function POST(
       (isArticleKeyPool ||
         customAutoApprove ||
         appInstallAutoApprove ||
+        visitAutoApprove ||
         socialCodeAutoApprove ||
         (task.type !== "ARTICLE" &&
           task.type !== "CUSTOM" &&
           task.type !== "APPINSTALL" &&
+          task.type !== "VISIT" &&
           // `task.autoApprove` alone. This used to be or-ed with a hardcoded
           // `|| task.type === "VIDEO" || task.type === "QUIZ"`, which overrode
           // the admin's own switch: a VIDEO or QUIZ task with auto-approve
@@ -1325,6 +1457,9 @@ export async function POST(
         shouldAutoApprove = !uniqueKeyMismatch && vcfg?.autoApprove === true;
       }
     }
+    // Watched less than the task's target on the browser's word about the
+    // video's length: a person decides.
+    if (videoTargetLowered) shouldAutoApprove = false;
 
     // Anti-fraud gate: even if the submission qualifies for auto-approval, hold
     // it for MANUAL review when the submitter's trust is below the admin bar, or
@@ -1406,6 +1541,12 @@ export async function POST(
            review screen already shows — a reason buried in JSON is a reason
            nobody reads. */
         ...(articleEntryHold ? { feedback: articleEntryHold } : {}),
+        ...(visitHold ? { feedback: visitHold } : {}),
+        ...(videoTargetLowered
+          ? {
+              feedback: `Watched less than the ${videoTargetLowered.targetSec}s target because the browser said the video is only ${videoTargetLowered.claimedSec}s long — check the video's real length before paying.`,
+            }
+          : {}),
         ...(shouldAutoApprove && {
           reviewedAt: new Date(),
           pointsEarned: isBoardTask ? 0 : task.pointsReward,

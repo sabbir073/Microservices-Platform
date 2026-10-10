@@ -8,6 +8,7 @@ import {
 import type { ArticleConfig } from "@/lib/article-tasks";
 import { signArticleVisitToken } from "@/lib/article-task-token";
 import { corsPreflight, corsResponse } from "@/lib/article-task-cors";
+import { clientIp, rateLimit } from "@/lib/rate-limit";
 
 export function OPTIONS() {
   return corsPreflight();
@@ -39,6 +40,9 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ taskId: string }> }
 ) {
+  // Anonymous and public: one address can't open journeys in bulk.
+  const { ok: underLimit } = rateLimit(`article-landing:${clientIp(req)}`, 20, 60_000);
+  if (!underLimit) return corsResponse({ error: "Too many requests" }, { status: 429 });
   const { taskId } = await params;
   const body = (await req.json().catch(() => ({}))) as {
     referrer?: unknown;

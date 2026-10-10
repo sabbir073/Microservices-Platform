@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { getPointsPerUsd } from "@/lib/economy";
 import { toNum } from "@/lib/money";
+import { getReferralBonusConfig, qualifiedReferralCount } from "@/lib/referral-bonus";
 
 /**
  * Achievements — the one place that knows what an achievement type MEANS.
@@ -46,7 +47,10 @@ export const ACHIEVEMENT_TYPES: Record<string, AchievementType> = {
   referrals_made: {
     key: "referrals_made",
     label: "friends referred",
-    measure: (userId) => prisma.user.count({ where: { referredById: userId } }),
+    // Referrals that are really used (same rule as the referral ladder), not
+    // sign-ups — unverified throwaway accounts used to count.
+    measure: async (userId) =>
+      qualifiedReferralCount(userId, (await getReferralBonusConfig()).milestoneActivity),
   },
   withdrawals_made: {
     key: "withdrawals_made",

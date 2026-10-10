@@ -153,7 +153,32 @@ export default async function WithdrawalDetailPage({ params }: PageProps) {
     new Date(),
     new Date(withdrawal.user.createdAt)
   );
+  // Other accounts paid to (or saving) the same number — the last 10 digits,
+  // so "+8801…" and "01…" match.
+  const payoutDigits = String(accountDetails?.accountNumber ?? "").replace(/\D/g, "").slice(-10);
+  let otherUsersSameAccount: number | undefined;
+  if (payoutDigits.length >= 6) {
+    const [viaWithdrawals, viaMethods] = await Promise.all([
+      prisma.withdrawal.findMany({
+        where: {
+          userId: { not: withdrawal.userId },
+          accountDetails: { path: ["accountNumber"], string_contains: payoutDigits },
+        },
+        select: { userId: true },
+        distinct: ["userId"],
+        take: 50,
+      }),
+      prisma.userPaymentMethod.findMany({
+        where: { userId: { not: withdrawal.userId }, accountNumber: { contains: payoutDigits } },
+        select: { userId: true },
+        distinct: ["userId"],
+        take: 50,
+      }),
+    ]);
+    otherUsersSameAccount = new Set([...viaWithdrawals, ...viaMethods].map((r) => r.userId)).size;
+  }
   const risk = assessWithdrawalRisk({
+    otherUsersSameAccount,
     amount: toNum(withdrawal.amount),
     userKycStatus: withdrawal.user.kycStatus,
     userPackageTier: withdrawal.user.package?.slug ?? "default",

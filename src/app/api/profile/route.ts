@@ -637,7 +637,27 @@ export async function PATCH(request: NextRequest) {
       }
       updateData.language = body.language;
     }
-    if (body.timezone !== undefined) updateData.timezone = body.timezone;
+    if (body.timezone !== undefined) {
+      // Daily rewards, the daily mission and solo reward key on the user's
+      // LOCAL day, so jumping across the date line opened the next day early
+      // (one extra claim per jump). One change per 30 days; setting the same
+      // value is not a change.
+      const cur = await prisma.user.findUnique({
+        where: { id: session.user.id },
+        select: { timezone: true, timezoneChangedAt: true },
+      });
+      if ((cur?.timezone ?? "UTC") !== body.timezone) {
+        const last = cur?.timezoneChangedAt?.getTime() ?? 0;
+        if (last && Date.now() - last < 30 * 86_400_000) {
+          return NextResponse.json(
+            { error: "You can change your time zone once every 30 days." },
+            { status: 400 }
+          );
+        }
+        updateData.timezone = body.timezone;
+        updateData.timezoneChangedAt = new Date();
+      }
+    }
     if (body.theme !== undefined) {
       if (!["dark", "light", "system"].includes(body.theme)) {
         return NextResponse.json({ error: "Invalid theme" }, { status: 400 });

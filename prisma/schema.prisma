@@ -63,6 +63,9 @@ enum TaskType {
   OFFERWALL
   CUSTOM
   APPINSTALL
+  // Visit a link: an ad network's direct/smart link (stay N seconds) or a URL
+  // shortener that ends on our page with a personal code (lib/visit-tasks.ts).
+  VISIT
 }
 
 enum TaskStatus {
@@ -379,6 +382,17 @@ model Banner {
   maxAge       Int?
   /// "ANY" | "VERIFIED" (KYC approved) | "NOT_VERIFIED" (anything else).
   kycAudience  String   @default("ANY")
+  // Device targeting (src/lib/device-target.ts). Empty = any device.
+  deviceTypes  String[] @default([])
+  deviceOses   String[] @default([])
+  deviceBrands String[] @default([])
+  /// Plan / level / account-age rules — the same as popups (lib/audience-extra.ts).
+  planAudience   String   @default("ANY")
+  packageIds     String[] @default([])
+  minLevel       Int?
+  maxLevel       Int?
+  minAccountDays Int?
+  maxAccountDays Int?
 
   @@index([location])
   @@index([isActive])
@@ -430,6 +444,10 @@ model SitePopup {
   maxAge       Int?
   /// "ANY" | "VERIFIED" (KYC approved) | "NOT_VERIFIED"
   kycAudience  String   @default("ANY")
+  // Device targeting (src/lib/device-target.ts). Empty = any device.
+  deviceTypes  String[] @default([])
+  deviceOses   String[] @default([])
+  deviceBrands String[] @default([])
 
   // ── Content (2026-10-07) ─────────────────────────────────────────────────
   /// Video links for a VIDEO popup — YouTube, Vimeo or a direct .mp4 (our
@@ -502,6 +520,9 @@ model Offer {
   bgGradient   String?
   blocks       Json     @default("[]")
   status       String   @default("DRAFT") // DRAFT | PUBLISHED
+  // A published offer is live only between these (null = no limit).
+  startsAt     DateTime?
+  endsAt       DateTime?
   createdById  String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -874,6 +895,10 @@ model Ad {
   format            String               @default("BANNER") // BANNER | NATIVE (feed post-like)
   contentUrl        String? // image / GIF creative URL
   videoUrl          String? // MP4/WebM video creative URL
+  /// type VAST: the network's VAST tag URL. Fetched by the viewer's browser
+  /// (never our server — the network must see the real viewer), followed
+  /// through wrappers and played in-slot (src/lib/vast-client.ts).
+  vastUrl           String?
   targetUrl         String?
   htmlContent       String?              @db.Text
   // Third-party ad-network config (type ADSENSE | GAM). The self-contained
@@ -889,6 +914,10 @@ model Ad {
   width             Int?
   height            Int?
   weight            Int                  @default(10)
+  /// Higher priority is served first; weight decides between ads of the same
+  /// priority. An empty network frame falls through to the next ad, so a
+  /// space works like a waterfall (lib/ad-serve.ts).
+  priority          Int                  @default(0)
   /// Full-screen (interstitial) timing for THIS ad, set by the admin.
   /// skipAfterSeconds: when Skip/Close appears (0–60). Null = the space's
   /// setting, then 5 — so one space can mix 5s, 10s and 15s ads.
@@ -1370,6 +1399,14 @@ model TaskBoard {
   category      String?
   // null = no deadline
   expiresAt     DateTime?
+  // Shown from this time (null = straight away).
+  startsAt      DateTime?
+  /// "ANY" | "VERIFIED" (KYC approved) | "NOT_VERIFIED"
+  kycAudience   String      @default("ANY")
+  // Device targeting (src/lib/device-target.ts). Empty = any device.
+  deviceTypes   String[]    @default([])
+  deviceOses    String[]    @default([])
+  deviceBrands  String[]    @default([])
   pointsReward  Int         @default(0)
   xpReward      Int         @default(0)
   isActive      Boolean     @default(true)
@@ -1701,6 +1738,9 @@ model User {
   bio                               String?
   country                           String?
   timezone                          String?                      @default("UTC")
+  /// Last time the user changed `timezone`. Daily claims key on the LOCAL day,
+  /// so hopping UTC-12 → UTC+14 opened "tomorrow" at once; changes are limited.
+  timezoneChangedAt                 DateTime?
   role                              UserRole                     @default(USER)
   // Optional super-admin-defined custom role (permissions come from it; the
   // user's `role` is kept as ADMIN as the admin-panel baseline). Null = plain role.
@@ -1828,6 +1868,14 @@ model User {
   lastReengageAt                    DateTime?
   // Super admin's "never log in as this account" switch (src/lib/impersonation.ts).
   impersonationBlocked              Boolean                      @default(false)
+  // Where the person came from before signing up (src/lib/signup-source.ts):
+  // first outside touch on this device — Google, Facebook, a utm link… Null =
+  // joined before tracking started.
+  signupSource                      String?
+  signupMedium                      String?
+  signupCampaign                    String?
+  signupReferrer                    String?
+  signupLanding                     String?
   isBlueVerified                    Boolean                      @default(false)
   // Visual style for the verified badge. Null/"BLUE" = classic blue tick.
   // Other presets (GOLD, RAINBOW, EMERALD, PURPLE, ROSE, OCEAN) render
@@ -2024,6 +2072,7 @@ model User {
   // /admin/users/app-installs lists and counts installs by first-seen date.
   @@index([pwaFirstSeenAt])
   @@index([pwaUninstalledAt])
+  @@index([signupSource, createdAt])
 }
 
 model Account {
@@ -2195,12 +2244,22 @@ model UserDevice {
   seenCount   Int      @default(1)
   firstSeenAt DateTime @default(now())
   lastSeenAt  DateTime @default(now())
+  // Parsed from the user agent + Client Hints (src/lib/device-info.ts).
+  deviceType  String?
+  os          String?
+  osVersion   String?
+  brand       String?
+  model       String?
+  browser     String?
 
   @@unique([userId, deviceId])
   @@index([deviceId])
   @@index([fpHash])
   @@index([lastIp])
   @@index([lastSeenAt])
+  @@index([deviceType])
+  @@index([os])
+  @@index([brand])
 }
 
 /// A suspended user asking to be let back in. Filed from /appeal with a
@@ -2275,6 +2334,7 @@ model Task {
   surveyConfig        Json? // Survey task config (see lib/survey-tasks.ts SurveyConfig)
   customConfig        Json? // Custom task config (see lib/custom-tasks.ts CustomConfig)
   appInstallConfig    Json? // App-install task config (see lib/app-install-tasks.ts AppInstallConfig)
+  visitConfig         Json? // Visit task config (see lib/visit-tasks.ts VisitConfig)
   proxyInstructions   String?          @db.Text
   startsAt            DateTime?
   expiresAt           DateTime?
@@ -2286,6 +2346,10 @@ model Task {
   requirePush         Boolean          @default(false)
   // When users were told about this task (src/lib/task-announce.ts) — once only.
   announcedAt         DateTime?
+  // Device targeting (src/lib/device-target.ts). Empty = any device.
+  deviceTypes  String[] @default([])
+  deviceOses   String[] @default([])
+  deviceBrands String[] @default([])
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
   createdById         String?
@@ -2670,6 +2734,18 @@ model Package {
   advertiserEnabled      Boolean @default(true)
   gamesEnabled           Boolean @default(true)
   adFree                 Boolean @default(false)
+  // More plan switches (2026-10-11) — default ON so nothing changes until an admin turns one off.
+  browseEarnEnabled        Boolean @default(true)
+  rewardedAdsEnabled       Boolean @default(true)
+  cpaEnabled               Boolean @default(true)
+  eventsEnabled            Boolean @default(true)
+  missionsEnabled          Boolean @default(true)
+  quizGamesEnabled         Boolean @default(true)
+  boardsEnabled            Boolean @default(true)
+  leaderboardEnabled       Boolean @default(true)
+  chatEnabled              Boolean @default(true)
+  groupsEnabled            Boolean @default(true)
+  affiliateEnabled         Boolean @default(true)
   // Creator/monetization capabilities — default OFF (granted per-user by admin)
   createTasksEnabled     Boolean @default(false)
   sellCoursesEnabled     Boolean @default(false)
@@ -2693,6 +2769,7 @@ model Package {
   surveyTasksEnabled    Boolean @default(true)
   offerwallTasksEnabled Boolean @default(true)
   appInstallEnabled     Boolean @default(true)
+  visitTasksEnabled     Boolean @default(true)
 
   // Limits
   dailyTaskLimit        Int     @default(-1)
@@ -5921,4 +5998,57 @@ model CourseTutorPayout {
   @@index([status, releaseAt])
   @@index([tutorId, status])
   @@index([courseId])
+}
+
+/// One open of a Visit task's link (lib/visit-tasks.ts). Times are the
+/// SERVER's: `openedAt` when /go/task redirected out, `returnedAt` when the
+/// task tab came back (direct link), `reachedAt` when our shortener
+/// destination page was reached. A visit pays only through the normal submit
+/// (and its budget/limit CAS) — this table is the evidence and the counts.
+model TaskVisit {
+  id           String    @id @default(cuid())
+  taskId       String
+  submissionId String
+  userId       String
+  /// DIRECT | SHORTENER
+  kind         String
+  openedAt     DateTime  @default(now())
+  returnedAt   DateTime?
+  reachedAt    DateTime?
+  elapsedSec   Int?
+  /// OPEN | EARLY (came back too soon) | DONE (stayed long enough) | REACHED (shortener destination)
+  outcome      String    @default("OPEN")
+  /// Shortener: OK | UNKNOWN (no referrer) | MISMATCH (not the shortener) | TOO_FAST
+  verdict      String?
+  referrerHost String?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+
+  @@index([taskId, openedAt])
+  @@index([submissionId])
+  @@index([userId, openedAt])
+}
+
+/// A one-time code shown by /v/[taskId] when the shortener ended in a browser
+/// that isn't signed in (an app opening links in the phone's other browser).
+/// The user types it into the task; the submit route ties it to their own
+/// open (`TaskVisit`) — it must be made AFTER that open, at least
+/// `minSeconds` later, within 30 minutes — and burns it (one use).
+model VisitPass {
+  id           String    @id @default(cuid())
+  code         String    @unique
+  taskId       String
+  /// OK | UNKNOWN | MISMATCH (same meaning as TaskVisit.verdict)
+  verdict      String
+  referrerHost String?
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime  @default(now())
+  usedAt       DateTime?
+  usedByUserId String?
+  submissionId String?   @unique
+
+  @@index([taskId, createdAt])
+  @@index([ip, createdAt])
 }

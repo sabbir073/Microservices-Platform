@@ -1,4 +1,7 @@
 import "server-only";
+import { deviceTargetWhere } from "@/lib/device-target";
+import { currentDevice } from "@/lib/device-current";
+import type { DeviceInfo } from "@/lib/device-info";
 import { syncCountryMode } from "@/lib/country-mode";
 import type { Prisma } from "@/generated/prisma/client";
 import { TaskStatus, TaskType } from "@/generated/prisma";
@@ -35,6 +38,7 @@ export const TASK_TYPE_FEATURE: Record<TaskType, PackageFeatureKey> = {
   OFFERWALL: "offerwallTasks",
   CUSTOM: "tasks",
   APPINSTALL: "appInstall",
+  VISIT: "visitTasks",
 };
 
 /** The viewer columns task visibility depends on. */
@@ -52,9 +56,17 @@ export const TASK_VIEWER_SELECT = {
   postalCode: true,
   gender: true,
   dateOfBirth: true,
+  // Boards (and banners) can target KYC status.
+  kycStatus: true,
 } as const;
 
-export type TaskViewer = TaskAudienceUser & { level?: number | null };
+export type TaskViewer = TaskAudienceUser & {
+  level?: number | null;
+  kycStatus?: string | null;
+  /** The device they are on now (lib/device-current.ts). Undefined = not
+   *  known here (background job) → device rules are not applied. */
+  device?: Pick<DeviceInfo, "type" | "os" | "brand"> | null;
+};
 
 export interface TaskVisibilityOpts {
   accessLevel: number;
@@ -92,6 +104,8 @@ export function visibleTaskWhere(
     // Audience targeting (country + state/division/district/upazila + gender +
     // age) — STRICT: a viewer missing a targeted attribute is excluded.
     ...taskAudienceWhere(viewer),
+    // Device targeting: phone / computer, OS, brand (lib/device-target.ts).
+    ...deviceTargetWhere<Prisma.TaskWhereInput>(viewer.device),
   ];
 
   if (!opts.includeBoardTasks) {
@@ -122,15 +136,16 @@ export interface TaskViewerContext {
 export async function getTaskViewerContext(
   userId: string
 ): Promise<TaskViewerContext | null> {
-  const [user, pkg] = await Promise.all([
+  const [user, pkg, device] = await Promise.all([
     prisma.user.findUnique({ where: { id: userId }, select: TASK_VIEWER_SELECT }),
     getEffectivePackage(userId),
+    currentDevice(),
     syncCountryMode(),
   ]);
   if (!user) return null;
 
   return {
-    viewer: user,
+    viewer: { ...user, device },
     accessLevel: pkg?.accessLevel ?? 0,
     allowedTypes: (Object.keys(TASK_TYPE_FEATURE) as TaskType[]).filter((t) =>
       packageHasFeature(pkg, TASK_TYPE_FEATURE[t])
@@ -185,9 +200,19 @@ export function visibleBoardWhere(
     isActive: true,
     AND: [
       { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
+      { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
       { minLevel: { lte: viewer.level ?? 1 } },
       { requiredAccessLevel: { lte: opts.accessLevel } },
       ...taskAudienceWhere<Prisma.TaskBoardWhereInput>(viewer),
+      // Device, at board level too: a board whose tasks are all for another
+      // device used to show as an empty board.
+      ...deviceTargetWhere<Prisma.TaskBoardWhereInput>(viewer.device),
+      // KYC status (unknown → only "ANY" boards).
+      viewer.kycStatus === "APPROVED"
+        ? { kycAudience: { in: ["ANY", "VERIFIED"] } }
+        : viewer.kycStatus !== undefined
+          ? { kycAudience: { in: ["ANY", "NOT_VERIFIED"] } }
+          : {},
     ],
   };
 }
