@@ -21,6 +21,7 @@ import { toNum } from "@/lib/money";
 import { usd } from "@/lib/utils";
 import { getUserDayContext, localDayKeyDaysAgo } from "@/lib/user-day";
 import { profileGateResponse } from "@/lib/profile-gate-server";
+import { requireActiveUser } from "@/lib/require-active";
 
 export async function POST(request: NextRequest) {
   const session = await auth();
@@ -28,6 +29,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   // Plan switch (Admin → Packages): this plan may not use it.
+  // A banned / suspended account earns nothing (the session outlives the ban).
+  const activeCheck = await requireActiveUser(session.user.id);
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.message }, { status: activeCheck.httpStatus });
+  }
   const planGated = await planFeatureGate(session.user.id, "dailyMission");
   if (planGated) return planGated;
   // Super-admin page visibility: refuse when /daily-mission is hidden for this user.

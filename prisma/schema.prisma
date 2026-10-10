@@ -1738,6 +1738,9 @@ model User {
   bio                               String?
   country                           String?
   timezone                          String?                      @default("UTC")
+  /// Last time the user changed `timezone`. Daily claims key on the LOCAL day,
+  /// so hopping UTC-12 → UTC+14 opened "tomorrow" at once; changes are limited.
+  timezoneChangedAt                 DateTime?
   role                              UserRole                     @default(USER)
   // Optional super-admin-defined custom role (permissions come from it; the
   // user's `role` is kept as ADMIN as the admin-panel baseline). Null = plain role.

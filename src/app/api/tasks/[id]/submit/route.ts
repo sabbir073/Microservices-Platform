@@ -277,14 +277,19 @@ export async function POST(
     // If the real video is SHORTER than the configured watch target, cap the
     // requirement at the actual length — otherwise a fully-watched short video
     // can never satisfy 80% of a longer target.
+    // The length is reported by the BROWSER, and the platform stores no real
+    // length to check it against — so `videoDuration: 1` on a 300s task cut the
+    // watch to 8 seconds and auto-paid. A lowered target still lets a genuinely
+    // short video be submitted, but that claim is never paid automatically: it
+    // goes to an admin (see `videoTargetLowered` below).
+    let videoTargetLowered: { claimedSec: number; targetSec: number } | null = null;
     if (
       task.type === "VIDEO" &&
       typeof videoDuration === "number" &&
       videoDuration > 0 &&
       videoDuration < requiredSeconds
     ) {
-      // The length is reported by the browser, so it can only lower the target
-      // so far: `videoDuration: 1` used to make the requirement 0 seconds.
+      videoTargetLowered = { claimedSec: Math.round(videoDuration), targetSec: requiredSeconds };
       requiredSeconds = Math.max(videoDuration, Math.min(requiredSeconds, 10));
     }
     // SOCIAL bundles with watch items are gated on SERVER-accrued watch seconds
@@ -867,6 +872,7 @@ export async function POST(
       isSocial && Array.isArray(socialItems) ? socialItems : null;
     const submissionMetadata: Record<string, unknown> = {};
     if (visitMeta) submissionMetadata.visit = visitMeta;
+    if (videoTargetLowered) submissionMetadata.videoTargetLowered = videoTargetLowered;
     if (articleEntryEvidence) {
       submissionMetadata.articleEntry = articleEntryEvidence;
     }
@@ -931,6 +937,45 @@ export async function POST(
           seen.add(k);
           return true;
         });
+      // The SAME user's proof from an earlier claim on this task. Engagement is
+      // one-time (a follow, a comment, a share); the lookup below excludes the
+      // user on purpose, so one comment carrying the (per-user, never-changing)
+      // code verified and auto-paid again every day. A post link or screenshot
+      // that already paid — or is waiting to — can't be used again.
+      const reusable = pairs.filter((p) => p.kind === "URL" || p.kind === "SCREENSHOT");
+      if (reusable.length > 0) {
+        const own = await prisma.socialProofFingerprint.findMany({
+          where: {
+            taskId: task.id,
+            userId: session.user.id,
+            submissionId: { not: submission.id },
+            OR: reusable.map((p) => ({ kind: p.kind, valueHash: p.valueHash })),
+          },
+          select: { submissionId: true },
+          take: 20,
+        });
+        if (own.length > 0) {
+          const used = await prisma.taskSubmission.count({
+            where: {
+              id: { in: own.map((o) => o.submissionId) },
+              OR: [
+                { status: { in: [SubmissionStatus.APPROVED, SubmissionStatus.AUTO_APPROVED] } },
+                { status: SubmissionStatus.PENDING, submittedAt: { not: null } },
+              ],
+            },
+          });
+          if (used > 0) {
+            return NextResponse.json(
+              {
+                error: "You already used this proof for this task. Do the task again and submit the new post or screenshot.",
+                code: "PROOF_ALREADY_USED",
+              },
+              { status: 400 }
+            );
+          }
+        }
+      }
+
       if (pairs.length > 0) {
         const matches = await prisma.socialProofFingerprint.findMany({
           where: {
@@ -1412,6 +1457,9 @@ export async function POST(
         shouldAutoApprove = !uniqueKeyMismatch && vcfg?.autoApprove === true;
       }
     }
+    // Watched less than the task's target on the browser's word about the
+    // video's length: a person decides.
+    if (videoTargetLowered) shouldAutoApprove = false;
 
     // Anti-fraud gate: even if the submission qualifies for auto-approval, hold
     // it for MANUAL review when the submitter's trust is below the admin bar, or
@@ -1494,6 +1542,11 @@ export async function POST(
            nobody reads. */
         ...(articleEntryHold ? { feedback: articleEntryHold } : {}),
         ...(visitHold ? { feedback: visitHold } : {}),
+        ...(videoTargetLowered
+          ? {
+              feedback: `Watched less than the ${videoTargetLowered.targetSec}s target because the browser said the video is only ${videoTargetLowered.claimedSec}s long — check the video's real length before paying.`,
+            }
+          : {}),
         ...(shouldAutoApprove && {
           reviewedAt: new Date(),
           pointsEarned: isBoardTask ? 0 : task.pointsReward,

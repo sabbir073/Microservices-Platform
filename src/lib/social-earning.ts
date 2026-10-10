@@ -727,8 +727,13 @@ export async function awardSocialEarning(
   //    to dedup repeats.
   // Deliberately ahead of the master-switch check: mission progress is decoupled
   // from earning.
+  // Engaging with your OWN post is not engagement: liking / commenting on your
+  // own posts used to complete the daily mission's social items (and so
+  // unlock the referral daily claim). Creating a post is the exception.
+  const selfEngagement =
+    !!actorUserId && !!postOwnerUserId && actorUserId === postOwnerUserId && logAction !== "POST_CREATED";
   const logForMissions =
-    cfg.countTowardDailyMissions && !!logAction && MISSION_LOG_ACTIONS.has(logAction);
+    !selfEngagement && cfg.countTowardDailyMissions && !!logAction && MISSION_LOG_ACTIONS.has(logAction);
   if ((logForMissions || anyRatio) && actorUserId && logAction) {
     // Key by the actor's LOCAL day so daily-mission progress reads it with the
     // same boundary (buildDailyProgress uses the same context).

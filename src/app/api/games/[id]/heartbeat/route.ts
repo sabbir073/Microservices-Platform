@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { enforceDbRateLimit } from "@/lib/rate-limit-db";
 import { heartbeat, BEAT_INTERVAL_SECONDS } from "@/lib/game-session";
+import { requireActiveUser } from "@/lib/require-active";
 
 /**
  * POST /api/games/:id/heartbeat — accrue play time and credit points.
@@ -21,6 +22,11 @@ export async function POST(
   }
   // Generous enough for the real cadence (4/min) with headroom for retries,
   // tight enough that a script can't turn the endpoint into a busy loop.
+  // A banned / suspended account earns nothing (the session outlives the ban).
+  const activeCheck = await requireActiveUser(session.user.id);
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.message }, { status: activeCheck.httpStatus });
+  }
   const limited = await enforceDbRateLimit(
     req,
     "game-beat",

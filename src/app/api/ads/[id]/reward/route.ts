@@ -8,6 +8,7 @@ import { getAdClickCost } from "@/lib/ad-billing";
 import { servableCampaignWhere } from "@/lib/ad-serve";
 import { enforceDbRateLimit } from "@/lib/rate-limit-db";
 import { getUserDayContext } from "@/lib/user-day";
+import { requireActiveUser } from "@/lib/require-active";
 import {
   getRewardedConfig,
   rewardReference,
@@ -44,6 +45,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   // Plan switch (Admin → Packages): this plan may not use it.
+  // A banned / suspended account earns nothing (the session outlives the ban).
+  const activeCheck = await requireActiveUser(session.user.id);
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.message }, { status: activeCheck.httpStatus });
+  }
   const planGated = await planFeatureGate(session.user.id, "rewardedAds");
   if (planGated) return planGated;
   const { id } = await params;

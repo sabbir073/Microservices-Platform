@@ -6,6 +6,7 @@ import { withIdempotency } from "@/lib/idempotency";
 import { prisma } from "@/lib/prisma";
 import { getPointsPerUsd } from "@/lib/economy";
 import { getMilestones, milestoneProgress } from "@/lib/milestones";
+import { requireActiveUser } from "@/lib/require-active";
 
 export async function POST(
   _request: NextRequest,
@@ -16,6 +17,11 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   // Super-admin page visibility: refuse when /milestones is hidden for this user.
+  // A banned / suspended account earns nothing (the session outlives the ban).
+  const activeCheck = await requireActiveUser(session.user.id);
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.message }, { status: activeCheck.httpStatus });
+  }
   const pageHidden = await assertPageVisible(session.user.id, "/milestones");
   if (pageHidden) return pageHidden;
   // Reward claim. Correctness comes from the unique ledger constraints; this

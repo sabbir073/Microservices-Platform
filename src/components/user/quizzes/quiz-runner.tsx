@@ -40,7 +40,8 @@ interface PlayQuiz {
 }
 interface ReviewItem {
   questionId: string;
-  correctIndex: number;
+  /** Only for questions answered correctly — the key is never revealed. */
+  correctIndex?: number;
   chosen: number;
   isCorrect: boolean;
   explanation: string | null;
@@ -246,9 +247,11 @@ export function QuizRunner({ quizId }: { quizId: string }) {
                       <span className="text-(--app-ink-3)">Q{i + 1}.</span>{" "}
                       {q.question || "(image question)"}
                     </p>
-                    <p className="text-xs mt-1 text-emerald-400">
-                      Correct: {q.options[r?.correctIndex ?? -1] ?? `Option ${(r?.correctIndex ?? 0) + 1}`}
-                    </p>
+                    {typeof r?.correctIndex === "number" && (
+                      <p className="text-xs mt-1 text-emerald-400">
+                        Correct: {q.options[r.correctIndex] ?? `Option ${r.correctIndex + 1}`}
+                      </p>
+                    )}
                     {r && !ok && r.chosen >= 0 && (
                       <p className="text-xs text-red-400/80">
                         Your answer: {q.options[r.chosen] ?? `Option ${r.chosen + 1}`}

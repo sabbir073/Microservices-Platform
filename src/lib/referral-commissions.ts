@@ -63,8 +63,19 @@ export async function processReferralCommissions(
   // is on by default — today's behaviour — and then no task lookup is needed.
   try {
     const sources = await getCommissionSources();
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      select: { type: true, fundedByUserId: true },
+    });
+    // A buyer-funded task: the buyer paid the worker's reward (plus the fee)
+    // from task credit, and nobody paid for a commission on top — paying one
+    // minted points. A buyer + a referred worker + an upline could loop that
+    // (buy credit, complete own quizzes, convert, repeat) for unbounded points.
+    if (task?.fundedByUserId) {
+      console.log(`[referral-commission] skip task=${taskId} reason=buyer_funded`);
+      return;
+    }
     if (!allTaskTypesOn(sources)) {
-      const task = await prisma.task.findUnique({ where: { id: taskId }, select: { type: true } });
       if (!taskTypeCommissionOn(sources, task?.type)) {
         console.log(`[referral-commission] skip task=${taskId} type=${task?.type} reason=source_off`);
         return;
@@ -175,6 +186,32 @@ async function payReferralChain(userId: string, pointsEarned: number, ev: Commis
     // self-referral pays nobody.
     const visited = new Set<string>([userId]);
 
+    // The earner's devices. An upline on the SAME device is the same person
+    // running a second account: farm accounts never need KYC because they never
+    // withdraw — their earnings reached the one verified account as commission.
+    // Signup bonuses already had this hold; the commission chain did not.
+    const earnerDevices = await prisma.userDevice.findMany({
+      where: { userId },
+      select: { deviceId: true, fpHash: true },
+      take: 20,
+    });
+    const earnerIds = earnerDevices.map((d) => d.deviceId);
+    const earnerFps = earnerDevices.map((d) => d.fpHash).filter((f): f is string => !!f);
+    const sharesDevice = async (uplineId: string): Promise<boolean> => {
+      if (earnerIds.length === 0 && earnerFps.length === 0) return false;
+      const hit = await prisma.userDevice.findFirst({
+        where: {
+          userId: uplineId,
+          OR: [
+            ...(earnerIds.length ? [{ deviceId: { in: earnerIds } }] : []),
+            ...(earnerFps.length ? [{ fpHash: { in: earnerFps } }] : []),
+          ],
+        },
+        select: { id: true },
+      });
+      return !!hit;
+    };
+
     // Walk to the DEEPEST active level, not to the number of active levels:
     // with only levels 1 and 5 on, the count is 2, so level 5 never paid.
     const deepest = Math.min(10, Math.max(...referralLevels.map((r) => r.level)));
@@ -219,7 +256,11 @@ async function payReferralChain(userId: string, pointsEarned: number, ev: Commis
 
       const allowedLevels = upline?.package?.referralCommissionLevels ?? 0;
       const referralsOn = upline?.package?.referralsEnabled ?? false;
-      const eligible = referralsOn && allowedLevels >= level;
+      const sameDevice = !!upline && (await sharesDevice(upline.id));
+      if (sameDevice) {
+        console.log(`[referral-commission] skip user=${upline!.id} level=${level} reason=same_device earner=${userId}`);
+      }
+      const eligible = referralsOn && allowedLevels >= level && !sameDevice;
 
       if (!eligible) {
         // Surfaces the exact reason a commission was skipped — invaluable

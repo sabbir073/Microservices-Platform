@@ -565,10 +565,15 @@ export async function POST(request: NextRequest) {
       passed,
       pointsEarned,
       xpEarned,
+      // Right / wrong per question only. The correct answer and explanation
+      // used to come back on every attempt — pass or fail — so one throwaway
+      // attempt handed out the key, and the same fixed questions then scored
+      // 100% every day, on every account. (The player only shows the score.)
       results: results.map((r, i) => ({
-        ...r,
+        questionId: r.questionId,
+        isCorrect: r.isCorrect,
+        userAnswer: r.userAnswer,
         question: key[i].question,
-        explanation: key[i].explanation,
       })),
       message: passed
         ? `Congratulations! You scored ${score}% and earned ${pointsEarned} points!`

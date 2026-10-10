@@ -6,6 +6,7 @@ import { creditPoints } from "@/lib/ledger";
 import { isDuplicateLedgerError } from "@/lib/idempotency";
 import { calculateLevel } from "@/lib/level";
 import { TransactionType } from "@/generated/prisma";
+import { requireActiveUser } from "@/lib/require-active";
 
 /**
  * POST /api/achievements/[id]/claim — collect an unlocked achievement's reward.
@@ -30,6 +31,11 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     // Super-admin page visibility: refuse when /achievements is hidden for this user.
+    // A banned / suspended account earns nothing (the session outlives the ban).
+    const activeCheck = await requireActiveUser(session.user.id);
+    if (!activeCheck.ok) {
+      return NextResponse.json({ error: activeCheck.message }, { status: activeCheck.httpStatus });
+    }
     const pageHidden = await assertPageVisible(session.user.id, "/achievements");
     if (pageHidden) return pageHidden;
     const userId = session.user.id;

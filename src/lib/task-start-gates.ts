@@ -61,6 +61,15 @@ export async function taskStartFraudGate(
   // fraud risk (once a day) and, by default, stops the task.
   const seen = await readDevice();
   void recordDevice(userId, { ...seen, ip: ip && ip !== "unknown" ? ip : seen.ip });
+  // No device id at all: every real browser gets one from the page beacon
+  // before it can press Start, so a request without it is a script — and the
+  // per-device limit used to be skipped entirely for it.
+  if (fraud.maxAccountsPerDevice > 0 && !seen.deviceId) {
+    return NextResponse.json(
+      { error: "Please reload the page and try again.", code: "DEVICE_REQUIRED" },
+      { status: 403 }
+    );
+  }
   if (fraud.maxAccountsPerDevice > 0 && seen.deviceId) {
     const n = await accountsOnDevice(seen.deviceId);
     if (n > fraud.maxAccountsPerDevice) {

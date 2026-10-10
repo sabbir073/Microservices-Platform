@@ -20,6 +20,7 @@ import {
 } from "@/lib/quiz-period";
 import { closeQuizIfFull, quizParticipantCount } from "@/lib/quiz-slots";
 import { profileGateResponse } from "@/lib/profile-gate-server";
+import { requireActiveUser } from "@/lib/require-active";
 
 interface RouteParams {
   params: Promise<{ id: string }>;
@@ -33,6 +34,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   // Plan switch (Admin → Packages): this plan may not use it.
+  // A banned / suspended account earns nothing (the session outlives the ban).
+  const activeCheck = await requireActiveUser(session.user.id);
+  if (!activeCheck.ok) {
+    return NextResponse.json({ error: activeCheck.message }, { status: activeCheck.httpStatus });
+  }
   const planGated = await planFeatureGate(session.user.id, "quizGames");
   if (planGated) return planGated;
   // Super-admin page visibility: refuse when /quizzes is hidden for this user.
@@ -157,12 +163,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     const chosen = typeof answers[q.id] === "number" ? answers[q.id] : -1;
     const isCorrect = chosen === q.correctIndex;
     if (isCorrect) correct += 1;
+    // The key is revealed only where the user already has it (answered
+    // right). Sending `correctIndex` for every question on every attempt meant
+    // one blank attempt handed the full key to every account.
     return {
       questionId: q.id,
-      correctIndex: q.correctIndex,
+      ...(isCorrect ? { correctIndex: q.correctIndex, explanation: q.explanation ?? null } : { explanation: null }),
       chosen,
       isCorrect,
-      explanation: q.explanation ?? null,
     };
   });
   const percent = total > 0 ? Math.round((correct / total) * 100) : 0;

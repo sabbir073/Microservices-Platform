@@ -6,6 +6,7 @@ import { getEffectivePackage, packageHasFeature } from "@/lib/packages";
 import { getUserDayContext } from "@/lib/user-day";
 import { getTaskChainState } from "@/lib/task-sequence";
 import { TASK_TYPE_FEATURE, visibleTaskWhere } from "@/lib/task-visibility";
+import { stripUniqueKey } from "@/lib/task-player-view";
 
 export interface TaskListParams {
   type?: TaskType | null;
@@ -302,7 +303,8 @@ export async function listTasksForUser(
       instructions: task.instructions,
       instructionVideoUrl: task.instructionVideoUrl,
       contentUrl: task.contentUrl,
-      videoConfig: task.videoConfig,
+      // The proof key (`uniqueKey`) never leaves the server — every other path strips it.
+      videoConfig: stripUniqueKey(task.videoConfig),
       minLevel: task.minLevel,
       requiredAccessLevel: task.requiredAccessLevel,
       categories: taskCategoryMap.get(task.id) || [],

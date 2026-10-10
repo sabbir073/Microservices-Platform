@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { toNum } from "@/lib/money";
 import { getSetting } from "@/lib/system-settings";
-import { getReferralBonusConfig } from "@/lib/referral-bonus";
+import { getReferralBonusConfig, qualifiedReferralCount } from "@/lib/referral-bonus";
 import {
   MILESTONE_REWARDS_KEY,
   MILESTONE_REFERRAL_DEFER_KEY,
@@ -138,10 +138,13 @@ export async function milestoneProgress(userId: string): Promise<Map<string, num
         },
       }),
       prisma.post.count({ where: { userId } }),
+      // Likes from OTHER people — your own likes on your own posts aren't earned.
       prisma.like.count({
-        where: { post: { userId } },
+        where: { post: { userId }, userId: { not: userId } },
       }),
-      prisma.user.count({ where: { referredById: userId } }),
+      // Referrals that are really used, not sign-ups: 50 made-up addresses
+      // (never verified) claimed refer_1/10/50 — 13,000 pts.
+      getReferralBonusConfig().then((c) => qualifiedReferralCount(userId, c.milestoneActivity)),
     ]);
 
   if (!user) return null;

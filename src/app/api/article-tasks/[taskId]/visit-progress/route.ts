@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { renderedPopupCount } from "@/lib/article-tasks";
+import { ARTICLE_TIMING_SLACK, minPageSeconds, renderedPopupCount } from "@/lib/article-tasks";
 import type { ArticleConfig } from "@/lib/article-tasks";
 import {
   signArticleVisitToken,
@@ -66,6 +66,17 @@ export async function POST(
 
   // Idempotent: a refresh or a double-click must not grow the list, and the
   // note has to stay small enough to ride in a URL.
+  // Paced on the server clock: the token is re-signed at each finished page
+  // (and first at landing), so `iat` is when the previous step happened. A
+  // page can't be finished faster than its popups' waits add up to — this
+  // used to add the page on request, with no time at all.
+  if (!v.payload.p.includes(pageIndex) && cfg?.engagementMode !== "fast") {
+    const since = Math.floor(Date.now() / 1000) - (v.payload.iat ?? 0);
+    if (since < minPageSeconds(pages[pageIndex]!) * ARTICLE_TIMING_SLACK) {
+      return corsResponse({ error: "Keep reading — this page isn't finished yet." }, { status: 425 });
+    }
+  }
+
   const done = Array.from(new Set([...v.payload.p, pageIndex])).sort(
     (a, b) => a - b
   );

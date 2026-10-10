@@ -211,6 +211,13 @@ export interface ProvisionUserInput {
  * Throws `EMAIL_TAKEN` | `INVALID_USERNAME` | `USERNAME_TAKEN` |
  * `USERNAME_RESERVED` | `PROVISION_FAILED`.
  */
+/** The real Gmail inbox behind an address (dots and +tags dropped), or null if not Gmail. */
+function gmailCanonical(email: string): string | null {
+  const [local, domain] = email.toLowerCase().split("@");
+  if (!local || (domain !== "gmail.com" && domain !== "googlemail.com")) return null;
+  return local.split("+")[0]!.replace(/\./g, "");
+}
+
 export async function provisionUser(input: ProvisionUserInput) {
   const email = input.email.toLowerCase();
 
@@ -219,6 +226,22 @@ export async function provisionUser(input: ProvisionUserInput) {
     select: { id: true },
   });
   if (clash) throw new Error("EMAIL_TAKEN");
+
+  // Gmail ignores dots and anything after "+", so a.b+1@gmail.com and
+  // ab@gmail.com are ONE inbox — and each spelling used to verify a new
+  // account. A typed sign-up whose inbox already has an account is refused.
+  // (Google sign-in returns the account's own address, so it is left alone.)
+  if (input.source === "credentials") {
+    const canon = gmailCanonical(email);
+    if (canon) {
+      const same = await prisma.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "User"
+        WHERE split_part(lower(email), '@', 2) IN ('gmail.com', 'googlemail.com')
+          AND replace(split_part(split_part(lower(email), '@', 1), '+', 1), '.', '') = ${canon}
+        LIMIT 1`;
+      if (same.length > 0) throw new Error("EMAIL_TAKEN");
+    }
+  }
 
   // Resolve the handle. Never null — a handle-less account has no /u/ link,
   // can't be @-mentioned and doesn't appear in search.
@@ -439,7 +462,28 @@ async function selfReferralDeviceHold(userId: string): Promise<boolean> {
       ids.add(d.deviceId);
       if (d.fpHash) fps.add(d.fpHash);
     }
-    if (ids.size === 0 && fps.size === 0) return false;
+    // No device evidence at all — no cookie, no recorded device. A real
+    // browser has run the page beacon by now; an account made by a script has
+    // not, and "nothing to compare" used to pay the bonus. Held for a person.
+    if (ids.size === 0 && fps.size === 0) {
+      const { raiseAbuseSignal } = await import("@/lib/abuse/signal");
+      raiseAbuseSignal({
+        kind: "FRAUD_PATTERN",
+        severity: "MEDIUM",
+        userId,
+        entityType: "referral",
+        entityId: referrerId,
+        summary: "Referral signup bonus held: the new account has no device record (never loaded the site in a browser)",
+        evidence: {
+          referrerId,
+          referredUserId: userId,
+          matchedOn: "no_device",
+          heldBonuses: ["refbonus_signup", "refbonus_invitee", "referral_signup progress"],
+          release: "If legitimate, grant the referral bonus by hand from the user's balance page.",
+        },
+      });
+      return true;
+    }
 
     const match = await prisma.userDevice.findFirst({
       where: {
